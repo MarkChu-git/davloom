@@ -1,6 +1,6 @@
 # Davloom — 产品与技术开发总计划
 
-**版本：** v1.1  
+**版本：** v1.2  
 **日期：** 2026 年 11 月 4 日  
 **类型：** Open-source · Self-hosted · WebDAV · Cloud Storage  
 **产品口号：** *Your storage. Your rules.*  
@@ -129,6 +129,7 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | Security | CodeQL + Dependency Review |
 | Release | Changesets |
 | Container | Docker + Docker Compose |
+| Spec Workflow | OpenSpec |
 
 ---
 
@@ -281,6 +282,8 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 
 优先完成基础 WebDAV Class 1 所需行为，再完善锁和 Class 2 兼容性。
 
+Class 2（LOCK / UNLOCK）是 V1 发布门槛：服务器不支持锁时，macOS Finder 只能只读挂载。
+
 不得声明尚未正确实现的协议能力。
 
 ### 核心要求
@@ -298,6 +301,8 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 
 对象存储不具备原子目录移动，因此 COPY/MOVE 需要明确部分失败及恢复策略。
 
+目录 COPY/MOVE 设同步处理上限。超过上限时不做部分执行，直接返回明确错误。上限数值由 Phase 0 实测确定，响应码和 `operation_jobs` 的执行方式在 WebDAV 协议设计中确定。
+
 ---
 
 ## 6. Authentication & Authorization
@@ -312,7 +317,7 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 - API Key
 - 凭据过期和撤销
 - 可选 MFA
-- 用户与角色管理
+- 管理员账户管理
 
 默认关闭公开注册。
 
@@ -334,7 +339,7 @@ V1 支持：
 - Mount Scope
 - Path Prefix Scope
 
-默认单管理员、多客户端凭据、多 Mount。
+V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不做多用户。Read Only、Read / Write、Mount Scope 和 Path Prefix Scope 都绑定在 API Key 凭据上。多用户放到 V2.0。
 
 ---
 
@@ -350,7 +355,7 @@ V1 支持：
 |---|---|
 | storage_backends | 对象存储配置 |
 | mounts | Mount 与 Prefix 映射 |
-| mount_permissions | 访问控制 |
+| mount_permissions | API Key 凭据的 Mount 与路径权限 |
 | dav_properties | WebDAV 自定义属性 |
 | dav_locks | 文件锁 |
 | operation_jobs | 复制和移动任务 |
@@ -459,6 +464,13 @@ Dashboard 优先使用 SPA Mode，降低 SSR 运行成本。
 
 Cloudflare Free 的 Worker CPU、请求次数和 R2 上传限制必须通过实际测试。
 
+官方文档已写明的限制（2026 年 11 月核对）：
+
+- **请求体上限 100 MB（Free / Pro 域名）：** 超过时 WebDAV PUT 返回 413。V1 把它写入文档，作为 Cloud Free 的明确限制。Dashboard 大文件上传另行评估分片直传 R2。
+- **每个 HTTP 请求 10 ms CPU：** 测试必须覆盖包含认证的完整请求链路。
+- **单次调用最多 1000 次内部子请求（R2、D1）：** 决定目录 COPY/MOVE 的同步处理上限。
+- **R2 `ListObjects` 属于 Class A，免费额度每月 100 万次：** 目录 PROPFIND 都会消耗这一额度。
+
 ### Docker Self-hosted
 
 使用：
@@ -532,8 +544,15 @@ davloom/
 │   ├── deployment/
 │   └── security/
 │
+├── openspec/               # OpenSpec specs 与 changes
+│   ├── config.yaml
+│   ├── specs/
+│   └── changes/
+│
+├── .claude/                # OpenSpec 的 Claude Code 命令与 skill
 ├── .github/
 ├── AGENTS.md
+├── prd.md
 ├── package.json
 ├── bun.lock
 ├── tsconfig.json
@@ -620,7 +639,11 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - Astryx 组件与 TanStack Start 的集成。
 - StyleX Vite 编译。
 - Astryx Theme 与 Dark Mode。
-- Cloudflare Free 的 CPU 和请求开销。
+- Cloudflare Free 的 CPU 和请求开销，覆盖包含认证的完整请求链路。
+- WebDAV 方法（OPTIONS、PROPFIND、MKCOL、COPY、MOVE、PROPPATCH、LOCK、UNLOCK）穿过 Elysia、Workers 和 Bun。
+- PUT 和 GET 全程流式，不把完整文件缓冲到内存。
+- 目录 COPY/MOVE 在 Cloud Free 上的同步处理上限。
+- Elysia 起步版本（1.x 稳定版或 2.0）。
 
 ### Phase 4 UI 交付
 
@@ -666,6 +689,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - [ ] Better Auth 登录和 API Key 可用。
 - [ ] 文件和目录基础操作可用。
 - [ ] WebDAV 基础协议通过测试。
+- [ ] WebDAV Class 2（LOCK / UNLOCK）通过测试，macOS Finder 可以读写挂载。
 - [ ] R2 与通用 S3 Adapter 可用。
 - [ ] D1 与 SQLite Adapter 可用。
 - [ ] 权限控制通过测试。
@@ -719,5 +743,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 **可移植部署：** Bun + SQLite + S3-compatible Storage。
 
 **设计系统：** Astryx Components + StyleX + Davloom Theme。
+
+**开发流程：** OpenSpec（proposal → specs → design → tasks）。
 
 **产品目标：** 一个免费套餐可用、可自行托管、没有强制云厂商绑定，并具备现代化文件管理体验的开源 WebDAV 平台。
