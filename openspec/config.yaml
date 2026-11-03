@@ -1,0 +1,68 @@
+schema: spec-driven
+
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  产品：Davloom，开源、可自托管的 WebDAV 文件存储平台，把 R2、S3、MinIO 等对象存储转换为标准 WebDAV 服务。需求来源是仓库根目录的 prd.md。spec 与 PRD 冲突时先提出来，不要静默选择。
+
+  技术栈：
+  - 语言和工具：TypeScript、Bun Workspaces、Oxlint、Oxfmt、tsgo、Vitest、@cloudflare/vitest-plugin、Playwright、GitHub Actions、Changesets
+  - 前端：React 19、TanStack Start / Router / Query / Store / Virtual、Meta Astryx、StyleX（@stylexjs/unplugin）、Lucide。不使用 Tailwind、shadcn/ui、Radix 作为基础依赖
+  - 后端：ElysiaJS 只做 HTTP 入口，Effect v4 负责业务编排，校验用 Effect Schema，错误用 Effect Typed Errors，XML 解析用 saxes，流用 Web Streams，加密用 Web Crypto
+  - 身份：Better Auth 管理身份、Session 和 API Key；文件、Mount 和路径权限由 Effect Policy Service 决策
+  - 数据：Drizzle ORM + SQLite 方言；云上 D1 + R2，自托管 Bun SQLite + S3-compatible（AWS SDK S3 Client）
+
+  架构约束（Hexagonal + Effect Layers）：
+  - Domain 不依赖云厂商 SDK
+  - Elysia Router 不直接操作 R2 或 D1，TanStack Start 不直接读取数据库
+  - Effect Services 通过 Port 访问基础设施，Adapter 必须通过统一契约测试
+  - Cloudflare 专属能力只出现在 Infrastructure Layer
+
+  UI 约束：
+  - 优先使用 Astryx 现有组件和设计令牌，不重复实现通用组件，不修改依赖源码
+  - Astryx 用官方预编译 CSS，Davloom 自己的样式用 StyleX，不引入第二套 CSS-in-JS
+  - 锁定经过测试的 Astryx 版本，StyleX 版本跟随 Astryx 的 peer 依赖
+
+  协议与安全约束：
+  - 不声明尚未正确实现的协议能力
+  - 默认私有存储、最小权限，默认拒绝跨 Mount 操作
+  - 防止路径穿越，限制 XML 大小和解析复杂度，防止递归操作耗尽资源
+  - API Key 不明文长期保存，日志不记录敏感认证内容
+  - WebDAV 不把管理员主账户密码作为默认认证方案
+
+  V1 范围决策：
+  - WebDAV Class 2（LOCK / UNLOCK）是 V1 发布门槛
+  - V1 只有一个管理员账户和多个 API Key，Mount 与路径权限绑定在凭据上，不做多用户
+  - Cloud Free 的请求体上限 100 MB 是明确的产品限制，写入文档
+  - 目录 COPY/MOVE 设同步处理上限，超限时不做部分执行，直接返回明确错误
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always state what is out of scope
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+rules:
+  specs:
+    - Scenario 要能转成自动化测试；需要真实部署或人工验证的，直接写明
+  design:
+    - 说明 Cloudflare Workers 和 Bun 两种运行环境的差异，没有差异也写明
+  tasks:
+    - 每个任务写明验证方式
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing
