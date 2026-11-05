@@ -130,6 +130,8 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | Release | Changesets |
 | Container | Docker + Docker Compose |
 | Spec Workflow | OpenSpec |
+| Issue Tracking | Linear |
+| Code Intelligence | GitNexus |
 
 ---
 
@@ -549,9 +551,10 @@ davloom/
 │   ├── specs/
 │   └── changes/
 │
-├── .claude/                # OpenSpec 的 Claude Code 命令与 skill
+├── .claude/                # OpenSpec 和 GitNexus 的 Claude Code 命令与 skill
 ├── .github/
 ├── AGENTS.md
+├── CLAUDE.md
 ├── prd.md
 ├── package.json
 ├── bun.lock

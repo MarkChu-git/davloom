@@ -34,5 +34,5 @@ coverage/
 .cache/
 *.tsbuildinfo
 
-# Generated knowledge graph
-graphify-out/
+# GitNexus index
+.gitnexus/

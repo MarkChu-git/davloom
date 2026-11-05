@@ -66,3 +66,10 @@ rules:
 #     archive:
 #       guidance:
 #         - Summarize the archive outcome before finishing
+operations:
+  apply:
+    guidance:
+      - 任务开始和完成时，同步 Linear 项目 davloom（P-MAR-3）中同编号的 issue，状态分别设为 In Progress 和 Done
+  archive:
+    guidance:
+      - 归档前确认 Linear 中这个 change 对应的 issue 都已关闭
