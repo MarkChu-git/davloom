@@ -126,6 +126,16 @@ The maintainer ruled out Node on 2026-11-07: every script, test, tool and CI job
 
 Checked on 2026-11-07 with a logging `node` first on `PATH`: with `[run] bun = true`, `bun run check` passes without calling Node, so `bun run check` now starts each step with `bun --bun run`. With the same setting `bun run test:compat` fails, because `wrangler dev` answers every request with 503 under Bun. Miniflare runs on Bun when it is called directly, so task 2.1 moves the compatibility servers to Miniflare and then sets `[run] bun = true` in `bunfig.toml`.
 
+Implemented on 2026-11-07:
+
+- `tests/integration/compat/http/servers.ts` bundles each Worker with `wrangler deploy --dry-run --outdir`, takes the Miniflare options that Wrangler derives from the same config (`unstable_getMiniflareWorkerOptions`), converts them with Miniflare's `convertV4MiniflareOptions`, applies the D1 migrations through `getD1Database()` and sends every request to the URL that `Miniflare.ready` returns. Under Bun that URL answers, while `Miniflare.dispatchFetch` fails with `ECONNREFUSED`: it routes requests through an undici dispatcher that Bun's `fetch` ignores. Wrangler's own types document the same limit for `createTestHarness`. Playwright starts the Workers build through `scripts/serve-workers.ts`, which uses the same code.
+- `miniflare` is a direct dev dependency of `@davloom/compat-tests` at `5.20261104.0-beta`, the exact version that Wrangler 4.158.0 and `@cloudflare/vitest-plugin` 1.6.0 pin, both of which are on the npm `latest` tag. It is the one dependency that is not on `latest` itself. That tag points to 4.20260730.0, whose workerd 1.20260730.1 does not support the compatibility date 2026-11-04 that both Worker configs set, and it would add a second Miniflare and workerd to the tree.
+- Bun applies `[run] bun = true` only when `bun run` starts a package script or a `node_modules/.bin` tool in the repository root, `--filter` included, and the `node` that points to Bun stays first on `PATH` for their child processes. The setting does not reach `bunx`, `bun run` started inside a package directory, a file run with `bun <file>` or the lifecycle scripts of `bun install`. Scripts that start `bunx` or a nested `bun run` therefore pass `--bun` themselves.
+- With a logging `node` first on `PATH`, `bun run check` (5 s) and `bun run test:compat` (32 s) exit with status 0 and make no Node call. The 111 HTTP tests take 9.9 s, against 16.4 s for 110 tests on `wrangler dev` under Node.
+- In a fresh export of the tree, `bun install --frozen-lockfile` runs one dependency script: the postinstall of `workerd` 1.20261104.1, `node install.js`. It hard-links `bin/workerd` to the binary in the platform package, such as `@cloudflare/workerd-darwin-arm64`, and checks its version. Bun blocks the postinstalls of `@astryxdesign/cli` and `@astryxdesign/core`, which are not trusted dependencies. When a `node` is on `PATH`, Bun runs the workerd script on it, even with `[run] bun = true`. When none is, Bun runs the script itself through a temporary `node` that points to Bun, and the install succeeds. Miniflare loads workerd from the platform package, so the tests do not depend on that script. GitHub's Ubuntu 24.04 runner image ships Node 22, so the `check` job of task 3.1 would run the script on that Node unless it takes Node off `PATH` or skips the script.
+- The GitNexus CLI runs on Bun as `bunx --bun gitnexus <command>`. `bun .gitnexus/run.cjs` is not enough, because it starts the global `gitnexus` launcher, whose shebang names Node. `AGENTS.md` and `CLAUDE.md` say this outside the section that `gitnexus analyze` rewrites.
+- Two gaps remain. `cloud:free` needs the maintainer's approval and was not run, so Wrangler's remote commands and `wrangler tail` are untested on Bun. `dev:workers` in `apps/api` still runs `wrangler dev`, which answers 503 under Bun.
+
 ### 8. Each Phase brings its own CI tasks
 
 From now on, the `tasks.md` of every change includes a task that wires the new tests into CI. This rule goes into the tasks rules of `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml`, so `/opsx:propose` can see it when it generates tasks.
@@ -164,8 +174,8 @@ To reach these times:
 - `check` builds the web app once and passes it on as an artifact.
 - Jobs cache Bun's install cache and the Playwright browsers. The Playwright container image is not used, because it ships Node.
 - Every job sets `timeout-minutes: 20`.
-- HTTP tests start their servers once per job in `globalSetup` and keep cases apart by Mount and path. Today almost all of their time goes into restarting Bun and `wrangler dev` for each `describe` block.
-- Workers tests stay serial within a job. `vitest.http.config.ts` turns off file parallelism because `wrangler dev` sessions share a build directory.
+- HTTP tests start their servers once per job in `globalSetup` and keep cases apart by Mount and path. Today almost all of their time goes into restarting Bun, and bundling and restarting workerd, for each `describe` block.
+- Workers tests stay serial within a job. `vitest.http.config.ts` runs one file at a time, so the streaming and memory limits are measured with one server running.
 
 Measured on the M4 Pro on 2026-11-07: 23 unit tests took 0.63 s, with a median of 0.13 ms; 110 HTTP tests took 16.4 s, with under 1 s spent in test bodies and medians of 0.5 ms on Bun, 1.5 ms on workerd and 6 ms on workerd with D1 and Durable Objects; and 22 Chromium tests took 6.7 s with one worker, with a median of 164 ms. The largest unknown is the browser average on CI, assumed to be 2 to 3 s per test.
 
@@ -175,14 +185,14 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 
 | Aspect | Workers | Bun |
 | --- | --- | --- |
-| How it runs | Vitest on Node starts `wrangler dev` (workerd) until task 2.1 moves it to Miniflare on Bun, and D1 uses `@cloudflare/vitest-plugin` | Vitest on Node starts a Bun process until task 2.1, and Bun SQLite uses `bun --bun vitest` |
+| How it runs | Vitest on Bun bundles the Worker with `wrangler deploy --dry-run` and starts workerd through Miniflare, and D1 uses `@cloudflare/vitest-plugin` | Vitest on Bun starts a Bun process, and Bun SQLite uses `bun --bun vitest` |
 | Type environment | `tsconfig.workers.json` | `tsconfig.bun.json` |
-| Browser tests | `wrangler dev` serves the static assets | The Bun process serves them |
+| Browser tests | Miniflare serves the static assets | The Bun process serves them |
 | What only a real deployment can verify | CPU and request body limits, shown as skipped in CI | Nothing |
 
 ## Risks / Trade-offs
 
-- [`compat` becomes slow or unstable on GitHub-hosted runners, especially the 1 GiB upload and `wrangler dev`] → Record the run time the first time it is added. When it fails repeatedly, look for the root cause first instead of hiding it with retries; adjust the timeout only when the cause lies with the runner alone.
+- [`compat` becomes slow or unstable on GitHub-hosted runners, especially the 1 GiB upload and workerd] → Record the run time the first time it is added. When it fails repeatedly, look for the root cause first instead of hiding it with retries; adjust the timeout only when the cause lies with the runner alone.
 - [A newly published vulnerability fails all PRs] → Fix it, or register an exception with an expiry date; see Decision 4.
 - [Versions go stale after pinning to a SHA] → Renovate updates the SHA, through the same flow as dependency updates.
 - [A version that is withdrawn or poisoned soon after release goes into a PR right away] → The maintainer chose no waiting period and accepts this risk. Mitigation: automerge stays off and every check must pass before merging; OSV carries malicious package records (`MAL-` IDs), and OSV-Scanner blocks the registered packages among them.
