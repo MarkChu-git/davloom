@@ -30,6 +30,7 @@ Davloom follows Hexagonal architecture with Effect Layers.
 - The WebDAV entry point takes a Web standard `Request` and returns a `Response`, so the protocol engine can be tested without an HTTP framework.
 - Production entries never import from `tests/integration/compat/probe`.
 - Never advertise a protocol capability that is not implemented correctly.
+- Write logic that decides an outcome without IO in Bend 2, with its laws in `LAWS.bend` and their proofs in `PROOF.bend` (PRD §4, Proven Domain Logic). Every change to `LAWS.bend` needs the owner's approval, and a law is never weakened or deleted to make a proof pass.
 
 ## UI rules
 

@@ -12,6 +12,7 @@ context: |
   - Backend: ElysiaJS is only the HTTP entry point. Effect v4 orchestrates the business logic, with Effect Schema for validation, Effect Typed Errors for errors, saxes for XML parsing, Web Streams for streams and Web Crypto for cryptography
   - Identity: Better Auth manages identity, sessions and API Keys; the Effect Policy Service decides file, Mount and path permissions
   - Data: Drizzle ORM with the SQLite dialect. In the cloud, D1 plus Durable Objects (SQLite backend, holding file contents), with R2 optional and no KV. Self-hosted, Bun SQLite plus S3-compatible storage (AWS SDK S3 Client), with RustFS as the open-source option and no MinIO
+  - Verification: Bend 2 proves every rule that decides an outcome without IO, with laws in LAWS.bend and proofs in PROOF.bend; TypeScript calls the compiled JavaScript modules
 
   Architecture constraints (Hexagonal + Effect Layers):
   - Domain code does not depend on cloud vendor SDKs
@@ -51,6 +52,7 @@ rules:
     - Each scenario must be convertible into an automated test; when it needs a real deployment or manual verification, say so explicitly
   design:
     - Describe how Cloudflare Workers and Bun differ for the change, and say so when they do not
+    - List the logic the change adds that decides an outcome without IO and the Bend laws that prove it; for any such logic left in TypeScript, give the reason
   tasks:
     - Each task states how it is verified
 

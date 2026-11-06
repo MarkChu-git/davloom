@@ -1,7 +1,7 @@
 # Davloom — Product and Engineering Plan
 
-**Version:** v1.2  
-**Date:** November 4, 2026  
+**Version:** v1.3  
+**Date:** November 7, 2026  
 **Type:** Open-source · Self-hosted · WebDAV · Cloud Storage  
 **Product tagline:** *Your storage. Your rules.*  
 **Architecture principle:** Cloudflare-first, Vendor-neutral by design.
@@ -21,6 +21,7 @@ Users can turn storage such as Cloudflare Durable Objects, Cloudflare R2, AWS S3
 - **Self-hostable:** Support Docker, Bun and SQLite.
 - **WebDAV-first:** Protocol correctness comes first.
 - **Type-safe:** TypeScript + Effect Schema + Drizzle.
+- **Proof-backed:** Logic that decides an outcome without IO is written in Bend 2 and proven, not only tested.
 - **Secure-by-default:** Private storage and least privilege by default.
 - **Portable:** Support migration of configuration, databases and file data.
 - **Agent-friendly:** Code structure, component conventions and documentation are easy for AI coding agents to understand.
@@ -126,6 +127,7 @@ Better Auth manages identity centrally, while Effect decides file path and Mount
 | Unit Tests | Vitest |
 | Workers Integration | @cloudflare/vitest-plugin |
 | E2E | Playwright |
+| Formal Verification | Bend 2 (`LAWS.bend` + `PROOF.bend`, checked with `bend --verdict`) |
 | CI/CD | GitHub Actions |
 | Security | CodeQL + OSV-Scanner + Gitleaks |
 | Dependency Updates | Renovate |
@@ -245,6 +247,7 @@ Davloom follows Hexagonal Architecture and uses Effect Layers.
 - Effect Schema
 - Domain Errors
 - Authorization Policies
+- Proven Domain Rules (Bend 2)
 
 ### Infrastructure Layer
 
@@ -265,6 +268,32 @@ Davloom follows Hexagonal Architecture and uses Effect Layers.
 4. Effect Services reach infrastructure through Ports.
 5. Every Adapter must pass the shared contract tests.
 6. Cloudflare-only features appear only in the Infrastructure Layer.
+
+### Proven Domain Logic
+
+Davloom proves as much of its logic as Bend 2 can express. Every rule that decides an outcome without doing IO is written in Bend: `LAWS.bend` states its laws and `PROOF.bend` proves them. `bend <module>.bend -o <module>.mjs` compiles a module to JavaScript, and the TypeScript packages call that output, so the code that runs is the code that was proven. Phase 1 adds `packages/laws`, a pinned Bend release and the CI checks.
+
+| Phase | Logic | Example laws |
+|---|---|---|
+| Phase 1 | Namespace model: MKCOL, PUT, DELETE, COPY and MOVE on a file tree | Every entry has a parent, names are unique within a directory, and no operation creates a cycle. The Storage Contract Tests check every Adapter against this model. |
+| Phase 2 | Path normalization, name validation and Mount resolution | Normalizing a normalized path changes nothing, and no input resolves outside its Mount root. |
+| Phase 2 | COPY and MOVE: `Depth`, `Overwrite`, `Destination` and the synchronous limit | A request over the limit executes nothing, and a collection is never copied or moved into itself. |
+| Phase 2 | Recovery of multi-object operations | A failure at any step never leaves a file missing from both the source and the destination, and running recovery again changes nothing. |
+| Phase 2 | Conditional requests and HTTP Range | Preconditions are evaluated in the order RFC 9110 sets, and every returned range lies inside the resource. |
+| Phase 3 | Permission decisions in the Policy Service | Access is denied unless a credential grants it, a credential never reaches outside its Mount and path prefix, a Read Only credential never writes, and an unauthorized cross-Mount operation is always denied. |
+| Phase 5 | Class 2 locks and the `If` header | For any sequence of LOCK, UNLOCK, refresh and write requests, a write to a locked resource without its token fails, and conflicting locks never exist at once. |
+| Phase 6 | Data export and import plans | Every exported entry is imported exactly once, and a failed validation leaves the target unchanged. |
+
+The laws also run as fast-check property tests against each compiled module. The proofs hold for Bend's semantics, and these tests check that the JavaScript backend keeps them.
+
+Rules:
+
+- **TypeScript keeps only what Bend cannot do.** IO and integration code stays in TypeScript: storage and database Adapters, Elysia routes, Better Auth, XML parsing, streaming, cryptography and the UI. Pure logic stays in TypeScript only when Bend cannot express it or cannot meet the Workers CPU budget. The OpenSpec design of that change records the reason, and fast-check property tests check the same laws.
+- **The owner approves every law.** An AI agent may propose a law, but each change to `LAWS.bend` needs the owner's approval. A law is never weakened or deleted to make a proof pass.
+- **Both checkers must pass.** `bend PROOF.bend` must print ALL PROOFS CHECK, and so must `bend PROOF.bend --verdict`. The second run rechecks every proof with a small kernel that has a proof in Lean, and it refuses proofs that rely on `@unsafe` or foreign code.
+- **The boundary stays thin.** Effect Services call the compiled modules through typed wrappers that convert values at the boundary. An array passed to a Bend function is the caller's own array and may be updated in place, so a wrapper copies it whenever the caller keeps it. Bend does not yet write TypeScript declarations ([bendlang/bend#1144](https://github.com/bendlang/bend/issues/1144)), so each wrapper declares its module's types and its tests check them.
+- **Numbers are Nat or U32.** Nothing about F32 can be proven in Bend, so proven rules never depend on floating point. Sizes, offsets and timestamps use Nat, which reaches JavaScript as a plain number.
+- **Shipped Bend code does no IO.** The JavaScript output carries only non-IO defs, and Davloom adds no foreign JavaScript to its Bend code.
 
 ---
 
@@ -308,6 +337,8 @@ Object storage has no atomic directory move, so COPY/MOVE needs an explicit stra
 
 Directory COPY/MOVE has a synchronous processing limit: the default Durable Objects storage handles at most 1000 objects at a time, and R2 at most 400. Above the limit there is no partial execution, and the server returns a clear error. The Durable Objects limit comes from Phase 0 measurements: one copy-and-delete of 2000 objects used 91 ms of CPU and wrote 14,000 rows, so 1000 objects write about 7000 rows, which is 7% of the Free plan's daily write quota. The R2 limit is estimated from 1000 internal subrequests per request and must be confirmed by measurement once R2 is enabled. The response code and how `operation_jobs` runs are decided in the WebDAV protocol design.
 
+Every rule in this section that decides an outcome without IO, from path normalization to locks, is proven in Bend 2; see Proven Domain Logic in §4.
+
 ---
 
 ## 6. Authentication & Authorization
@@ -345,6 +376,8 @@ V1 supports:
 - Path Prefix Scope
 
 V1 has only one admin account, with multiple client credentials and multiple Mounts, and no multi-user support. Read Only, Read / Write, Mount Scope and Path Prefix Scope are all bound to the API Key credential. Multi-user support is deferred to V2.0.
+
+The Policy Service's decisions are proven in Bend 2; see Proven Domain Logic in §4.
 
 ---
 
@@ -527,6 +560,7 @@ davloom/
 │
 ├── packages/
 │   ├── core/               # Effect
+│   ├── laws/               # Bend 2 code, laws and proofs
 │   ├── schema/             # Effect Schema
 │   ├── webdav/             # WebDAV Protocol
 │   ├── auth/               # Better Auth
@@ -576,6 +610,8 @@ davloom/
 
 `packages/ui` holds only shared Davloom business components, themes and design tokens. It does not copy all of Astryx.
 
+`packages/laws` holds the Bend 2 modules with their `LAWS.bend` and `PROOF.bend`, and the typed wrappers through which the TypeScript packages call the compiled modules.
+
 ---
 
 ## 11. CI/CD
@@ -590,6 +626,7 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 | Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
 | Required on PR | Vitest V8 Coverage with no threshold; track the trend first | After Phase 0 |
 | Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
+| Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module, and fast-check property tests of the laws against the compiled modules | Phase 1 |
 | Scheduled | StrykerJS, covering only runtime-independent code such as `packages/core` and `packages/webdav` | Phase 1 |
 | Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
 | Required on PR | UI-specific tests | Phase 4 |
@@ -609,6 +646,7 @@ The Cloud Free quota check asserts the number of D1 and Durable Objects calls pe
 - **Gitleaks as a CLI, alongside GitHub native secret scanning:** The Gitleaks author has stated that they will only fix security issues.
 - **No Cosign for now:** Artifact Attestations are themselves signed with Sigstore and can prove which workflow built an image.
 - **Two approvals, which the owner can bypass:** A PR needs two approvals and every required check. The repository owner can bypass the approvals but not the checks, because an author cannot approve their own PR. CODEOWNERS names the owners without requiring code owner review.
+- **Bend 2 proofs, not a separate Lean or TLA+ model:** A model written in another language can drift from the code, while Bend proves the module that Davloom runs. CI installs a pinned Bend release, verifies the archive against its sha256, and sets `BEND_NO_TELEMETRY=1` so that `bend` skips its daily version check.
 - **AWS S3 stays out of CI:** It costs money and is only an optional backend for users. D1, Durable Objects and R2 can all be tested in the local Workers runtime without an account.
 
 ### Workflow Security
@@ -653,6 +691,7 @@ Supports SBOM, build attestations and version rollback.
 - File reads and writes support conditional requests.
 - Do not log sensitive authentication content.
 - Unauthorized cross-Mount operations are denied by default.
+- The rules behind path traversal protection, permission decisions, cross-Mount denial and locks are proven in Bend 2.
 
 ---
 
@@ -668,6 +707,8 @@ Supports SBOM, build attestations and version rollback.
 | Phase 5 | Week 6 | WebDAV compatibility and file locks |
 | Phase 6 | Week 7 | Docker, Cloudflare, data migration |
 | Phase 7 | Week 8 | Testing, security, documentation, release |
+
+A phase is done only when the laws that Proven Domain Logic (§4) lists for it are proven.
 
 ### Phase 0 Must Verify
 
@@ -716,6 +757,10 @@ All of it uses the same design tokens.
 | WebDAV locks and concurrency | SQL Lock Tests, conservative capability advertisement |
 | Large directory operations | Pagination, virtualization, recoverable jobs |
 | Loss during cross-platform migration | Data validation and recovery tests |
+| Bend 2 is young: its compiler is 99% AI-written and not yet fully audited, and releases can break JavaScript hosts | Pin the release and its checksum, read the CHANGELOG before each upgrade, and require `--verdict` |
+| Proofs cover Bend's semantics, not the JavaScript backend | fast-check property tests run every law against the compiled modules |
+| Proofs take effort, because Bend has no tactics or proof search | Keep laws small and prove them in phase order; an unproven law blocks only the feature that needs it |
+| Compiled modules cost CPU or bundle size on Workers Free | Measure CPU per call and bundle size when each module lands; moving logic back to TypeScript needs a recorded exception |
 
 ---
 
@@ -734,6 +779,7 @@ All of it uses the same design tokens.
 - [ ] The D1 and SQLite Adapters work.
 - [ ] Permission control passes its tests.
 - [ ] Concurrency and error recovery behavior is verified.
+- [ ] Every law in `LAWS.bend` is proven: `bend PROOF.bend` and `bend PROOF.bend --verdict` both print ALL PROOFS CHECK.
 - [ ] Data export and migration pass their tests.
 - [ ] Cloudflare / Docker Smoke Tests pass.
 - [ ] No known Critical security vulnerabilities.
@@ -773,10 +819,13 @@ Multi-user support, teams, fine-grained permissions, PostgreSQL and optional dis
 - Cloudflare Durable Objects + S3-compatible Storage + Cloudflare R2 (optional)
 - Oxlint + Oxfmt
 - Vitest + Playwright
+- Bend 2 for formal proofs
 - GitHub Actions
 - Cloudflare Workers + Docker
 
 **Architecture:** Hexagonal Architecture + Effect Layers.
+
+**Verification:** Bend 2 proves every rule that decides an outcome without IO; TypeScript calls the compiled modules, and tests cover the rest.
 
 **Default deployment:** Workers + D1 + Durable Objects, with R2 optional.
 
