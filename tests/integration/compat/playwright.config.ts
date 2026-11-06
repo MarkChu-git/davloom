@@ -30,10 +30,11 @@ export default defineConfig({
       url: `http://127.0.0.1:${BUN_PORT}/api/health`,
     },
     {
-      command: `bunx wrangler dev --config apps/api/wrangler.jsonc --ip 127.0.0.1 --port ${WORKERS_PORT} --inspector-port 0 --show-interactive-dev-session=false`,
+      command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${WORKERS_PORT}`,
       cwd: REPO_ROOT,
-      env: { WRANGLER_SEND_METRICS: "false" },
       url: `http://127.0.0.1:${WORKERS_PORT}/api/health`,
+      // Without it Playwright sends SIGKILL, and the script cannot remove its bundle.
+      gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
     },
   ],
 });
