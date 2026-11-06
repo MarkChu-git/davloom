@@ -79,12 +79,20 @@ Every pull request MUST run static security analysis on the TypeScript code. Hig
 - **WHEN** a pull request introduces code that the analysis tool rates as high-severity
 - **THEN** the pull request cannot be merged
 
-### Requirement: Coverage is reported without a threshold
-CI SHALL report test coverage in a required job. The level of coverage and changes in it MUST NOT fail that job or block merging.
+### Requirement: Coverage gates per package
+CI SHALL measure test coverage in a required job, and that job MUST fail when any package's coverage falls below its threshold. A threshold MUST NOT be lowered without a reason recorded in the design of the change that lowers it.
 
-#### Scenario: Coverage drops (needs a real repository, manual verification)
-- **WHEN** a pull request lowers coverage
-- **THEN** CI reports the new coverage, the coverage job passes, and the pull request can still be merged
+#### Scenario: Coverage falls below a threshold
+- **WHEN** a change lowers a package's line or branch coverage below its threshold
+- **THEN** `bun run test:coverage` exits with a non-zero status and names the package
+
+#### Scenario: Coverage meets every threshold
+- **WHEN** every package's coverage is at or above its thresholds
+- **THEN** `bun run test:coverage` exits with status 0 and its report lists the coverage of each package
+
+#### Scenario: A drop blocks merging (needs a real repository, manual verification)
+- **WHEN** a pull request lowers a package's coverage below its threshold
+- **THEN** the coverage job fails, the job summary shows the package, and the pull request cannot be merged
 
 ### Requirement: Local reproduction
 The quality checks and the compatibility tests in CI MUST call the same commands that contributors run locally.

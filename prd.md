@@ -1,6 +1,6 @@
 # Davloom — Product and Engineering Plan
 
-**Version:** v1.3  
+**Version:** v1.4  
 **Date:** November 7, 2026  
 **Type:** Open-source · Self-hosted · WebDAV · Cloud Storage  
 **Product tagline:** *Your storage. Your rules.*  
@@ -624,10 +624,11 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 |---|---|---|
 | Repository setup | GitHub Rulesets, CODEOWNERS, Renovate | After Phase 0 |
 | Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
-| Required on PR | Vitest V8 Coverage with no threshold; track the trend first | After Phase 0 |
+| Required on PR | Coverage gates per package (Vitest with Istanbul coverage), starting at the measured coverage | After Phase 0 |
 | Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
 | Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module, and fast-check property tests of the laws against the compiled modules | Phase 1 |
-| Scheduled | StrykerJS, covering only runtime-independent code such as `packages/core` and `packages/webdav` | Phase 1 |
+| Weekly, and required before release | StrykerJS on `packages/core` and `packages/webdav`, with a mutation score of at least 80% | Phase 1 |
+| Required on PR | Requirement coverage: every OpenSpec scenario maps to at least one test | Phase 1 |
 | Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
 | Required on PR | UI-specific tests | Phase 4 |
 | Scheduled | Grafana k6, run only against local Bun or Docker, never against Cloud Free | Phase 5 |
@@ -637,6 +638,54 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 Not adopted for now: oasdiff, Lighthouse CI, CodSpeed, Cosign. They will be added when there is a clear need.
 
 The Cloud Free quota check asserts the number of D1 and Durable Objects calls per request in the Workers tests, and uses the values measured in Phase 0 as the CPU thresholds.
+
+### Test Budget
+
+Davloom has at least 8,000 unique test cases at V1, and the plan holds about 9,500. One `it` or `test` is one case, and each row of an `it.each` table is one case. A case runs once for every runtime, backend or browser in its matrix, so a full CI run executes about 18,300 cases.
+
+The black-box layers run on four deployment combinations: Workers + D1 + Durable Objects (the Cloud Free default), Workers + D1 + R2, Workers + D1 + S3 (Hybrid), and Bun + SQLite + S3 or RustFS (the Docker default).
+
+| Layer | Unique cases | Matrix | Executions |
+|---|---|---|---|
+| Unit: `packages/webdav` (headers, XML bodies, paths and encoding, the lock state machine, status codes and ETag) | 1,670 | 1 | 1,670 |
+| Unit: `packages/core` (the exhaustive policy table of 1,440 cases, COPY/MOVE planning, `operation_jobs`, Mount resolution) | 2,190 | 1 | 2,190 |
+| Unit: other packages | 400 | 1 | 400 |
+| Property and fuzz: 60 fast-check properties and 200 fuzz regressions | 260 | 1 | 260 |
+| Effect Services | 450 | 1 | 450 |
+| Storage contract | 300 | 3 backends | 900 |
+| Database contract and upgrade | 350 | 2 databases | 700 |
+| WebDAV protocol, black-box | 1,240 | 4 deployments | 4,960 |
+| Permissions and security, black-box | 1,190 | 2 runtimes | 2,380 |
+| Concurrency and fault recovery | 200 | 4 deployments | 800 |
+| Management API and quota | 340 | API on 2 runtimes, quota on 3 deployments | 720 |
+| Real clients: rclone, cadaver and davfs2 | 130 | rclone on 4 deployments, the others on 2 | 420 |
+| Data migration, in 5 directions | 300 | 1 | 300 |
+| Browser E2E | about 410 | Up to 3 browsers × 3 viewports | about 2,040 |
+| Runtime compatibility and release smoke tests | 110 | 1 | 110 |
+| **Total** | **about 9,500** | | **about 18,300** |
+
+The policy table is the product of 2 permissions, 4 scopes, 12 methods, 5 target relations and 3 Mount states. The security layer covers the whole 480-cell permission table, 80 path traversal payloads at each of the 6 entry points that take a path, XML attacks, authentication headers, resource exhaustion and log redaction. In the browser layer, 170 core flows run in Chromium, WebKit and Firefox at desktop, tablet and phone sizes; 130 other states run in desktop Chromium; screenshot tests cover 15 screens in both themes; and 36 more cases cover accessibility and large-list performance. litmus reports its results separately and does not count toward the budget.
+
+Rules for tests at this size:
+
+- Expected values come from an independent oracle: a small reference model, such as the one behind the policy table, or the text of RFC 4918 for the protocol tables. Tests never compare against snapshots of what the implementation returns.
+- Cases come from data tables run with `it.each`, so reviews cover the tables and the models instead of thousands of functions.
+- Modules that Bend proves are tested too: their tables run against the compiled JavaScript.
+- HTTP and browser tests start their servers once per job and keep cases apart by Mount and path.
+
+### Coverage Gates
+
+| Code | Lines | Branches | Functions |
+|---|---|---|---|
+| `packages/webdav`, `packages/core` | 95% | 90% | 95% |
+| `packages/auth`, `packages/database` | 90% | 85% | Not gated |
+| `apps/api`, `apps/web`, `packages/ui` | 80% | 75% | Not gated |
+
+- The table holds the V1 targets. Each package starts at the coverage measured when its gate is added, its thresholds rise every phase, and they reach the targets before V1.
+- Thresholds only go up. Lowering one needs a reason in the `design.md` of the change that lowers it.
+- Coverage comes from Istanbul instrumentation through `@vitest/coverage-istanbul`. Bun runs JavaScriptCore and workerd supports only instrumented coverage, so V8 coverage cannot measure Davloom's tests.
+- StrykerJS keeps a mutation score of at least 80% on `packages/core` and `packages/webdav`. It runs weekly and must pass before a release.
+- From Phase 1, requirement coverage is a required check: every OpenSpec scenario maps to at least one test whose name carries the scenario's ID, and the check fails when a scenario has none. Scenarios that need a real deployment or manual verification are listed with how they were verified.
 
 ### Tooling Choices
 
@@ -761,6 +810,7 @@ All of it uses the same design tokens.
 | Proofs cover Bend's semantics, not the JavaScript backend | fast-check property tests run every law against the compiled modules |
 | Proofs take effort, because Bend has no tactics or proof search | Keep laws small and prove them in phase order; an unproven law blocks only the feature that needs it |
 | Compiled modules cost CPU or bundle size on Workers Free | Measure CPU per call and bundle size when each module lands; moving logic back to TypeScript needs a recorded exception |
+| The test suite outgrows the CI time budget | Start servers once per job, shard the browser tests, cache installs, and compare each phase's run time with the estimate in `docs/ci.md` |
 
 ---
 
@@ -780,6 +830,9 @@ All of it uses the same design tokens.
 - [ ] Permission control passes its tests.
 - [ ] Concurrency and error recovery behavior is verified.
 - [ ] Every law in `LAWS.bend` is proven: `bend PROOF.bend` and `bend PROOF.bend --verdict` both print ALL PROOFS CHECK.
+- [ ] At least 8,000 unique test cases pass, each on every combination in its matrix.
+- [ ] Coverage meets the V1 gates, and the mutation score of `packages/core` and `packages/webdav` is at least 80%.
+- [ ] Every OpenSpec scenario maps to a passing test or to a recorded manual verification.
 - [ ] Data export and migration pass their tests.
 - [ ] Cloudflare / Docker Smoke Tests pass.
 - [ ] No known Critical security vulnerabilities.
