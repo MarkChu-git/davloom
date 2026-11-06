@@ -127,7 +127,8 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | Workers Integration | @cloudflare/vitest-plugin |
 | E2E | Playwright |
 | CI/CD | GitHub Actions |
-| Security | CodeQL + Dependency Review |
+| Security | CodeQL + OSV-Scanner + Gitleaks |
+| Dependency Updates | Renovate |
 | Release | Changesets |
 | Container | Docker + Docker Compose |
 | Spec Workflow | OpenSpec |
@@ -579,19 +580,43 @@ davloom/
 
 ## 11. CI/CD
 
-每个 Pull Request 检查：
+CI 分层接入，跟着 Phase 走，不一次上完。每个 Phase 的 `tasks.md` 都带上把新测试接入 CI 的任务。基线的具体规划在 OpenSpec change `add-ci-baseline`。仓库在接入基线 CI 时公开，因为免费账号下 Rulesets、CodeQL 和原生密钥扫描都要求公开仓库。
 
-- Oxlint
-- Oxfmt
-- TypeScript Typecheck
-- Vitest
-- Effect Service Tests
-- Database Contract Tests
-- Storage Contract Tests
-- WebDAV Protocol Tests
-- Playwright
-- Build Verification
-- CodeQL / Dependency Review
+### 接入计划
+
+| 运行时机 | 内容 | 接入时间 |
+|---|---|---|
+| 仓库配置 | GitHub Rulesets、CODEOWNERS、Renovate | Phase 0 之后 |
+| PR 必过 | Frozen Lockfile、Oxlint + tsgolint、Oxfmt、TypeScript Typecheck、Vitest、Workers 和 Bun 兼容性测试、Playwright、Build Verification、OSV-Scanner、Gitleaks、CodeQL、actionlint、zizmor | Phase 0 之后 |
+| PR 不阻塞 | Vitest V8 Coverage，先看趋势，不设门槛 | Phase 0 之后 |
+| PR 必过 | Effect Service Tests、Database Contract Tests、Storage Contract Tests（Vitest + Testcontainers + RustFS）、数据库升级测试（D1 和 SQLite） | Phase 1 |
+| 定时 | StrykerJS，只覆盖 `packages/core`、`packages/webdav` 这类不依赖运行时的代码 | Phase 1 |
+| PR 必过 | WebDAV Protocol Tests（自建 RFC 测试 + litmus）、rclone 真实客户端测试、fast-check 属性测试（路径规范化、`If` 头、XML 限制） | Phase 2 |
+| PR 必过 | UI 专项测试 | Phase 4 |
+| 定时 | Grafana k6，只打本地 Bun 或 Docker，不打 Cloud Free | Phase 5 |
+| 发布时 | Changesets、Wrangler、Docker Buildx、Trivy、Syft SBOM + 许可证检查、Artifact Attestations | Phase 6 |
+| 发布前 | Cloud Free 配额检查、macOS Finder 人工验收 | Phase 6 |
+
+暂不接入：oasdiff、Lighthouse CI、CodSpeed、Cosign。有明确需求时再加。
+
+Cloud Free 配额检查在 Workers 测试里断言单个请求的 D1 和 Durable Objects 调用次数，CPU 用 Phase 0 的实测值做阈值。
+
+### 工具取舍
+
+- **Renovate，不用 Dependabot：** GitHub 依赖图的支持列表里没有 Bun，读不到 `bun.lock`，所以基于依赖图的 Dependabot 告警看不到锁文件里的间接依赖。Renovate 能定期刷新 `bun.lock`（Lock File Maintenance），也能用 OSV 的数据为直接依赖提出安全更新。新版本一发布就提 PR，不设等待期。
+- **OSV-Scanner，不用 Dependency Review：** Dependency Review 依赖依赖图，看不到 `bun.lock`。
+- **Trivy 只扫镜像、Dockerfile 和 Compose：** 依赖交给 OSV-Scanner。2026 年 3 月 `trivy-action` 有 76 个 tag 被强推成窃取凭据的代码，所以要固定版本和校验值，放在没有 secrets 的 job 里。
+- **Gitleaks 用 CLI，配合 GitHub 原生密钥扫描：** Gitleaks 作者已声明只修安全问题。
+- **Cosign 先不上：** Artifact Attestations 本身用 Sigstore 签名，能证明镜像由哪个 workflow 构建。
+- **CODEOWNERS 不配强制审核：** 现在只有一个维护者，作者又不能批准自己的 PR。必需审批数先设为 0，有第二个维护者再打开。
+- **AWS S3 不进 CI：** 它有费用，只是用户可选的后端。D1、Durable Objects 和 R2 都能在本地 Workers 运行时测试，不需要账号。
+
+### 工作流安全
+
+- Action 固定到 commit SHA。
+- 每个 workflow 声明最小 `permissions`。
+- 不使用 `pull_request_target`。
+- PR 检查不读取云凭据和仓库 secrets。
 
 ### UI 专项测试
 
