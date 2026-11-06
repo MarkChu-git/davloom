@@ -127,7 +127,7 @@ Better Auth manages identity centrally, while Effect decides file path and Mount
 | Unit Tests | Vitest |
 | Workers Integration | @cloudflare/vitest-plugin |
 | E2E | Playwright |
-| Formal Verification | Bend 2 (`LAWS.bend` + `PROOF.bend`, checked with `bend --verdict`) |
+| Formal Verification | Bend 2 (`LAWS.bend` + `PROOF.bend`, checked by `bend PROOF.bend`, plain and with `--verdict`) |
 | CI/CD | GitHub Actions |
 | Security | CodeQL + OSV-Scanner + Gitleaks |
 | Dependency Updates | Renovate |
@@ -271,17 +271,17 @@ Davloom follows Hexagonal Architecture and uses Effect Layers.
 
 ### Proven Domain Logic
 
-Davloom proves as much of its logic as Bend 2 can express. Every rule that decides an outcome without doing IO is written in Bend: `LAWS.bend` states its laws and `PROOF.bend` proves them. `bend <module>.bend -o <module>.mjs` compiles a module to JavaScript, and the TypeScript packages call that output, so the code that runs is the code that was proven. Phase 1 adds `packages/laws`, a pinned Bend release and the CI checks.
+Davloom proves as much of its logic as Bend 2 can express. Every rule that decides an outcome without doing IO is written in Bend: `LAWS.bend` states its laws and `PROOF.bend` proves them. `bend <module>.bend -o <module>.mjs` compiles a module to JavaScript, and the TypeScript packages call that output, so the code that runs is compiled from the code that was proven. Phase 1 adds `packages/laws`, a pinned Bend release and the CI checks.
 
 | Phase | Logic | Example laws |
 |---|---|---|
-| Phase 1 | Namespace model: MKCOL, PUT, DELETE, COPY and MOVE on a file tree | Every entry has a parent, names are unique within a directory, and no operation creates a cycle. The Storage Contract Tests check every Adapter against this model. |
+| Phase 1 | Namespace model: MKCOL, PUT, DELETE, COPY and MOVE on a file tree | Every entry except the root has a parent, names are unique within a directory, and no operation creates a cycle. The Storage Contract Tests check every Adapter against this model. |
 | Phase 2 | Path normalization, name validation and Mount resolution | Normalizing a normalized path changes nothing, and no input resolves outside its Mount root. |
 | Phase 2 | COPY and MOVE: `Depth`, `Overwrite`, `Destination` and the synchronous limit | A request over the limit executes nothing, and a collection is never copied or moved into itself. |
 | Phase 2 | Recovery of multi-object operations | A failure at any step never leaves a file missing from both the source and the destination, and running recovery again changes nothing. |
 | Phase 2 | Conditional requests and HTTP Range | Preconditions are evaluated in the order RFC 9110 sets, and every returned range lies inside the resource. |
 | Phase 3 | Permission decisions in the Policy Service | Access is denied unless a credential grants it, a credential never reaches outside its Mount and path prefix, a Read Only credential never writes, and an unauthorized cross-Mount operation is always denied. |
-| Phase 5 | Class 2 locks and the `If` header | For any sequence of LOCK, UNLOCK, refresh and write requests, a write to a locked resource without its token fails, and conflicting locks never exist at once. |
+| Phase 5 | Class 2 locks and the lock tokens in the `If` header | For any sequence of LOCK, UNLOCK, refresh and write requests, a write to a locked resource without its token fails, and conflicting locks never exist at once. |
 | Phase 6 | Data export and import plans | Every exported entry is imported exactly once, and a failed validation leaves the target unchanged. |
 
 The laws also run as fast-check property tests against each compiled module. The proofs hold for Bend's semantics, and these tests check that the JavaScript backend keeps them.
@@ -289,10 +289,10 @@ The laws also run as fast-check property tests against each compiled module. The
 Rules:
 
 - **TypeScript keeps only what Bend cannot do.** IO and integration code stays in TypeScript: storage and database Adapters, Elysia routes, Better Auth, XML parsing, streaming, cryptography and the UI. Pure logic stays in TypeScript only when Bend cannot express it or cannot meet the Workers CPU budget. The OpenSpec design of that change records the reason, and fast-check property tests check the same laws.
-- **The owner approves every law.** An AI agent may propose a law, but each change to `LAWS.bend` needs the owner's approval. A law is never weakened or deleted to make a proof pass.
-- **Both checkers must pass.** `bend PROOF.bend` must print ALL PROOFS CHECK, and so must `bend PROOF.bend --verdict`. The second run rechecks every proof with a small kernel that has a proof in Lean, and it refuses proofs that rely on `@unsafe` or foreign code.
+- **The owner approves every law.** An AI agent may propose a law, but each change to `LAWS.bend` needs the owner's approval. GitHub does not let the owner approve a pull request they opened, so the approval is the `laws-approved` label: a required check fails on any pull request that changes `LAWS.bend` until the owner adds that label after its last commit, and the check reads from the pull request's events who added it. A law is never weakened or deleted to make a proof pass.
+- **Both checkers must pass.** `bend PROOF.bend` must print ALL PROOFS CHECK, and so must `bend PROOF.bend --verdict`. The second run rechecks every proof with a small kernel that has a proof in Lean, and it refuses proofs that rely on `@unsafe` or foreign code. That kernel is a Lean program, so `--verdict` needs the Lean release that the Bend release names (Lean v4.34.0 for Bend v2.0.40), or a kernel built earlier and named by `$BENDTT`.
 - **The boundary stays thin.** Effect Services call the compiled modules through typed wrappers that convert values at the boundary. An array passed to a Bend function is the caller's own array and may be updated in place, so a wrapper copies it whenever the caller keeps it. Bend does not yet write TypeScript declarations ([bendlang/bend#1144](https://github.com/bendlang/bend/issues/1144)), so each wrapper declares its module's types and its tests check them.
-- **Numbers are Nat or U32.** Nothing about F32 can be proven in Bend, so proven rules never depend on floating point. Sizes, offsets and timestamps use Nat, which reaches JavaScript as a plain number.
+- **Numbers are Nat or U32.** Nothing about F32 can be proven in Bend, so proven rules never depend on floating point. Sizes, offsets and timestamps use Nat, which reaches JavaScript as a plain number. Bend stops with an error when a Nat passes 2^48 − 1 and rejects host numbers above 2^53, so the wrappers bound client values such as `Range` offsets and `Content-Length` before calling Bend, and turn any error Bend throws into a typed error.
 - **Shipped Bend code does no IO.** The JavaScript output carries only non-IO defs, and Davloom adds no foreign JavaScript to its Bend code.
 
 ---
@@ -646,7 +646,7 @@ The Cloud Free quota check asserts the number of D1 and Durable Objects calls pe
 - **Gitleaks as a CLI, alongside GitHub native secret scanning:** The Gitleaks author has stated that they will only fix security issues.
 - **No Cosign for now:** Artifact Attestations are themselves signed with Sigstore and can prove which workflow built an image.
 - **Two approvals, which the owner can bypass:** A PR needs two approvals and every required check. The repository owner can bypass the approvals but not the checks, because an author cannot approve their own PR. CODEOWNERS names the owners without requiring code owner review.
-- **Bend 2 proofs, not a separate Lean or TLA+ model:** A model written in another language can drift from the code, while Bend proves the module that Davloom runs. CI installs a pinned Bend release, verifies the archive against its sha256, and sets `BEND_NO_TELEMETRY=1` so that `bend` skips its daily version check.
+- **Bend 2 proofs, not a separate Lean or TLA+ model:** A model written in another language can drift from the code, while Bend proves the module that Davloom runs. CI installs a pinned Bend release, verifies the archive against its sha256, and sets `BEND_NO_TELEMETRY=1` so that `bend` skips its daily version check. `--verdict` builds its kernel with Lean, so CI also installs the Lean release that the pinned Bend release names (v4.34.0 for Bend v2.0.40), verifies that archive against a checksum recorded in the repository, and caches the built kernel, which it passes to `bend` through `$BENDTT`. Both pins move together when Bend is upgraded.
 - **AWS S3 stays out of CI:** It costs money and is only an optional backend for users. D1, Durable Objects and R2 can all be tested in the local Workers runtime without an account.
 
 ### Workflow Security
@@ -708,7 +708,7 @@ Supports SBOM, build attestations and version rollback.
 | Phase 6 | Week 7 | Docker, Cloudflare, data migration |
 | Phase 7 | Week 8 | Testing, security, documentation, release |
 
-A phase is done only when the laws that Proven Domain Logic (§4) lists for it are proven.
+A feature ships only when the laws it needs are proven (Proven Domain Logic, §4), so a phase is done when every law of the features it ships is proven.
 
 ### Phase 0 Must Verify
 
@@ -757,7 +757,7 @@ All of it uses the same design tokens.
 | WebDAV locks and concurrency | SQL Lock Tests, conservative capability advertisement |
 | Large directory operations | Pagination, virtualization, recoverable jobs |
 | Loss during cross-platform migration | Data validation and recovery tests |
-| Bend 2 is young: its compiler is 99% AI-written and not yet fully audited, and releases can break JavaScript hosts | Pin the release and its checksum, read the CHANGELOG before each upgrade, and require `--verdict` |
+| Bend 2 is young: its compiler is 99% AI-written and not yet fully audited, and releases can break JavaScript hosts | Pin the Bend release and the Lean release its `--verdict` kernel builds with, each with its checksum; read the CHANGELOG before each upgrade; and require `--verdict` |
 | Proofs cover Bend's semantics, not the JavaScript backend | fast-check property tests run every law against the compiled modules |
 | Proofs take effort, because Bend has no tactics or proof search | Keep laws small and prove them in phase order; an unproven law blocks only the feature that needs it |
 | Compiled modules cost CPU or bundle size on Workers Free | Measure CPU per call and bundle size when each module lands; moving logic back to TypeScript needs a recorded exception |
