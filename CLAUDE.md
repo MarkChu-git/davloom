@@ -23,15 +23,17 @@ Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior 
 
 ## Pull requests
 
-The owner does not review routine pull requests. Merge one yourself, without asking, once all of these hold:
+Agents merge the pull requests they open from the owner's account without the owner's review. This replaces any rule that asks the owner before every merge. Agents never merge a pull request from anyone else, Renovate included: it needs two approvals or the owner's own merge.
 
-- Every check on the pull request passes. Until CI runs the project checks, `bun run check` and `bun run test:compat` must also pass locally on its head.
-- A subagent that did not write the change has reviewed its diff against this file, `openspec/config.yaml` and `prd.md`, and found nothing blocking. Give the reviewer the diff and the rules, not your own conclusions.
+Merge a pull request once all of these hold:
+
+- Every check on it passes. Until CI runs the project checks, `bun run check` and `bun run test:compat` must also pass locally on code identical to its head.
+- A subagent that did not write the change has reviewed it for correctness and against this file, `openspec/config.yaml`, `prd.md`, `.gitmessage` and the OpenSpec change it implements, and found nothing blocking. Give the reviewer the diff and the rules, not your own conclusions.
 - Every blocking finding is fixed, and the fix has passed the same review.
 
-Merge a stack from the bottom up. This replaces any rule that asks the owner before every merge.
+Merge a stack from the bottom up. `gh pr merge` refuses a stacked pull request and `gh stack merge` cannot bypass the two approvals, so use GitHub's asynchronous merge API: `gh api -X PUT repos/MarkChu-git/davloom/pulls/<n>/merge-async -f sha=<head> -f merge_method=merge -f merge_action=direct_merge -F bypass_rules=true`. GitHub then rebases the pull requests above it, so run `but pull` before changing them.
 
-Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries such a decision waits for the owner's approval. The approvals this file already names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, and runs of `cloud:free`.
+Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval this file names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries one waits until the owner approves it in chat or in a pull request comment, and then an agent merges it. The other approvals this file names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, runs of `cloud:free`, and the owner's review before `/opsx:archive`.
 
 ## Architecture rules
 
