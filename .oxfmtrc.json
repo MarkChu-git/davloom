@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "ignorePatterns": [
+    "openspec/**",
+    ".claude/**",
+    "prd.md",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "bun.lock",
+    "**/*.gen.ts",
+    "**/drizzle/meta/**",
+    "packages/ui/src/themes/davloom.css",
+    "packages/ui/src/themes/davloom.js",
+    "packages/ui/src/themes/davloom.d.ts",
+    "packages/ui/src/themes/davloom.css.d.ts",
+    "packages/ui/src/themes/davloom.variants.d.ts"
+  ]
+}

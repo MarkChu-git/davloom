@@ -1,0 +1,30 @@
+{
+  "name": "davloom",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "tests/integration/compat"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "bun scripts/check.ts",
+    "lint": "oxlint -c oxlint.json --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/integration/compat' typecheck",
+    "test": "vitest run",
+    "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
+    "test:compat": "bun run --filter @davloom/compat-tests test"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.7.8",
+    "@astryxdesign/core": "0.7.8",
+    "@types/bun": "1.4.4",
+    "oxfmt": "0.76.0",
+    "oxlint": "1.91.0",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "packageManager": "bun@1.4.4"
+}
