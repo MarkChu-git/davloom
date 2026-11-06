@@ -50,9 +50,9 @@
 - **WHEN** 客户端向 Bun 上的探测入口上传 1 GiB 请求体，处理入口边读边丢弃
 - **THEN** 上传成功，进程常驻内存的峰值增量低于 128 MiB
 
-#### Scenario: Workers 上的文件直通 R2（需要真实部署）
-- **WHEN** 客户端向 Workers Free 上的探测入口上传 95 MB 请求体，处理入口把请求流直接写入 R2
-- **THEN** R2 中对象的大小和校验值与上传内容一致，请求没有因 CPU 超限而失败
+#### Scenario: Workers 上的文件直通 Durable Object（需要真实部署）
+- **WHEN** 客户端向 Workers Free 上的探测入口上传 95 MB 请求体，处理入口把请求流直接交给 Durable Object，由它分块写入 SQLite
+- **THEN** 读回内容的大小和校验值与上传内容一致，请求没有因 CPU 超限而失败
 
 ### Requirement: 响应体流式传输
 系统 MUST 在响应体生成时逐段发送，MUST NOT 等完整响应生成后才开始发送。

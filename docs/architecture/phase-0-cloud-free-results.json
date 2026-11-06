@@ -1,0 +1,1027 @@
+{
+  "startedAt": "2026-11-06T14:45:29.534Z",
+  "target": "workers.dev",
+  "setup": {
+    "attempts": [200]
+  },
+  "apiKeyRequests": {
+    "requests": 100,
+    "statuses": {
+      "200": 100
+    },
+    "clientMs": {
+      "count": 100,
+      "p50": 104,
+      "p90": 150,
+      "p99": 189,
+      "max": 197
+    },
+    "cpuMs": {
+      "count": 6,
+      "p50": 3,
+      "p90": 24,
+      "p99": 24,
+      "max": 24
+    },
+    "wallMs": {
+      "count": 6,
+      "p50": 78,
+      "p90": 143,
+      "p99": 143,
+      "max": 143
+    },
+    "outcomes": {
+      "ok": 6
+    },
+    "tailEvents": 6
+  },
+  "workerLogins": {
+    "requests": 20,
+    "statuses": {
+      "200": 20
+    },
+    "clientMs": {
+      "count": 20,
+      "p50": 193,
+      "p90": 246,
+      "p99": 300,
+      "max": 300
+    },
+    "cpuMs": {
+      "count": 12,
+      "p50": 63,
+      "p90": 80,
+      "p99": 94,
+      "max": 94
+    },
+    "wallMs": {
+      "count": 12,
+      "p50": 144,
+      "p90": 168,
+      "p99": 178,
+      "max": 178
+    },
+    "outcomes": {
+      "ok": 12
+    },
+    "tailEvents": 12
+  },
+  "objectLogins": {
+    "caller": {
+      "requests": 5,
+      "statuses": {
+        "200": 5
+      },
+      "clientMs": {
+        "count": 5,
+        "p50": 209,
+        "p90": 1291,
+        "p99": 1291,
+        "max": 1291
+      },
+      "cpuMs": {
+        "count": 5,
+        "p50": 0,
+        "p90": 0,
+        "p99": 0,
+        "max": 0
+      },
+      "wallMs": {
+        "count": 5,
+        "p50": 158,
+        "p90": 847,
+        "p99": 847,
+        "max": 847
+      },
+      "outcomes": {
+        "ok": 5
+      },
+      "tailEvents": 5
+    },
+    "object": {
+      "requests": 0,
+      "statuses": {},
+      "clientMs": null,
+      "cpuMs": {
+        "count": 5,
+        "p50": 75,
+        "p90": 117,
+        "p99": 117,
+        "max": 117
+      },
+      "wallMs": {
+        "count": 5,
+        "p50": 139,
+        "p90": 204,
+        "p99": 204,
+        "max": 204
+      },
+      "outcomes": {
+        "ok": 5
+      },
+      "tailEvents": 5
+    },
+    "errors": []
+  },
+  "upload95": {
+    "write": {
+      "status": 200,
+      "response": "{\"size\":95000000,\"chunks\":91,\"rowsRead\":1,\"rowsWritten\":185}",
+      "clientMs": 11768,
+      "caller": {
+        "requests": 0,
+        "statuses": {},
+        "clientMs": null,
+        "cpuMs": {
+          "count": 1,
+          "p50": 4,
+          "p90": 4,
+          "p99": 4,
+          "max": 4
+        },
+        "wallMs": {
+          "count": 1,
+          "p50": 6981,
+          "p90": 6981,
+          "p99": 6981,
+          "max": 6981
+        },
+        "outcomes": {
+          "ok": 1
+        },
+        "tailEvents": 1
+      },
+      "object": {
+        "requests": 0,
+        "statuses": {},
+        "clientMs": null,
+        "cpuMs": {
+          "count": 1,
+          "p50": 937,
+          "p90": 937,
+          "p99": 937,
+          "max": 937
+        },
+        "wallMs": {
+          "count": 1,
+          "p50": 6892,
+          "p90": 6892,
+          "p99": 6892,
+          "max": 6892
+        },
+        "outcomes": {
+          "ok": 1
+        },
+        "tailEvents": 1
+      }
+    },
+    "read": {
+      "status": 200,
+      "bytes": 95000000,
+      "clientMs": 4393
+    }
+  },
+  "upload105": {
+    "bytes": 105000000,
+    "status": 413
+  },
+  "directoryChurn": {
+    "seed": {
+      "created": 2500,
+      "rowsRead": 1,
+      "rowsWritten": 12500
+    },
+    "objectBytes": 1024,
+    "steps": [
+      {
+        "objects": 100,
+        "status": 200,
+        "clientMs": 106,
+        "cpuMs": 5,
+        "outcome": "ok",
+        "response": "{\"moved\":100,\"rowsRead\":701,\"rowsWritten\":700}"
+      },
+      {
+        "objects": 400,
+        "status": 200,
+        "clientMs": 165,
+        "cpuMs": 14,
+        "outcome": "ok",
+        "response": "{\"moved\":400,\"rowsRead\":2801,\"rowsWritten\":2800}"
+      },
+      {
+        "objects": 2000,
+        "status": 200,
+        "clientMs": 261,
+        "cpuMs": 91,
+        "outcome": "ok",
+        "response": "{\"moved\":2000,\"rowsRead\":14001,\"rowsWritten\":14000}"
+      }
+    ]
+  },
+  "directoryPropfind": {
+    "children": 100,
+    "first": {
+      "children": 100,
+      "d1": {
+        "queries": 3,
+        "rowsRead": 5,
+        "rowsWritten": 2
+      },
+      "durableObject": {
+        "rowsRead": 100,
+        "rowsWritten": 0
+      }
+    },
+    "second": {
+      "children": 100,
+      "d1": {
+        "queries": 3,
+        "rowsRead": 5,
+        "rowsWritten": 2
+      },
+      "durableObject": {
+        "rowsRead": 100,
+        "rowsWritten": 0
+      }
+    },
+    "caller": {
+      "requests": 2,
+      "statuses": {
+        "200": 2
+      },
+      "clientMs": {
+        "count": 2,
+        "p50": 111,
+        "p90": 118,
+        "p99": 118,
+        "max": 118
+      },
+      "cpuMs": {
+        "count": 2,
+        "p50": 3,
+        "p90": 4,
+        "p99": 4,
+        "max": 4
+      },
+      "wallMs": {
+        "count": 2,
+        "p50": 77,
+        "p90": 99,
+        "p99": 99,
+        "max": 99
+      },
+      "outcomes": {
+        "ok": 2
+      },
+      "tailEvents": 2
+    }
+  },
+  "workerCpu": {
+    "lastSuccessfulCpuMs": 1019,
+    "steps": [
+      {
+        "targetMs": 1,
+        "iterations": 1000000,
+        "status": 200,
+        "clientMs": 54,
+        "cpuMs": 6,
+        "wallMs": 6,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1,
+        "iterations": 1000001,
+        "status": 200,
+        "clientMs": 18,
+        "cpuMs": 5,
+        "wallMs": 5,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1,
+        "iterations": 1000002,
+        "status": 200,
+        "clientMs": 17,
+        "cpuMs": null,
+        "wallMs": null,
+        "outcome": null,
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 2,
+        "iterations": 114473,
+        "status": 200,
+        "clientMs": 139,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 2,
+        "iterations": 114474,
+        "status": 200,
+        "clientMs": 17,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 2,
+        "iterations": 114475,
+        "status": 200,
+        "clientMs": 14,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5,
+        "iterations": 41442,
+        "status": 200,
+        "clientMs": 17,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5,
+        "iterations": 41443,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5,
+        "iterations": 41444,
+        "status": 200,
+        "clientMs": 37,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 11178,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 11179,
+        "status": 200,
+        "clientMs": 14,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 11180,
+        "status": 200,
+        "clientMs": 17,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 15,
+        "iterations": 9824,
+        "status": 200,
+        "clientMs": 28,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 15,
+        "iterations": 9825,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": null,
+        "wallMs": null,
+        "outcome": null,
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 15,
+        "iterations": 9826,
+        "status": 200,
+        "clientMs": 56,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 3535,
+        "status": 200,
+        "clientMs": 12,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 3536,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 3537,
+        "status": 200,
+        "clientMs": 14,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 30,
+        "iterations": 7681,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 30,
+        "iterations": 7682,
+        "status": 200,
+        "clientMs": 13,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 30,
+        "iterations": 7683,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 26436,
+        "status": 200,
+        "clientMs": 12,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 26437,
+        "status": 200,
+        "clientMs": 22,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 26438,
+        "status": 200,
+        "clientMs": 12,
+        "cpuMs": 0,
+        "wallMs": 0,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 223566,
+        "status": 200,
+        "clientMs": 15,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 223567,
+        "status": 200,
+        "clientMs": 16,
+        "cpuMs": null,
+        "wallMs": null,
+        "outcome": null,
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 223568,
+        "status": 200,
+        "clientMs": 46,
+        "cpuMs": 1,
+        "wallMs": 1,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 2878287,
+        "status": 200,
+        "clientMs": 54,
+        "cpuMs": 12,
+        "wallMs": 13,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 2878288,
+        "status": 200,
+        "clientMs": 41,
+        "cpuMs": 13,
+        "wallMs": 13,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 2878289,
+        "status": 200,
+        "clientMs": 26,
+        "cpuMs": 12,
+        "wallMs": 13,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 119928739,
+        "status": 200,
+        "clientMs": 554,
+        "cpuMs": 539,
+        "wallMs": 540,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 119928740,
+        "status": 200,
+        "clientMs": 538,
+        "cpuMs": 525,
+        "wallMs": 525,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 119928741,
+        "status": 200,
+        "clientMs": 540,
+        "cpuMs": 526,
+        "wallMs": 526,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1000,
+        "iterations": 228001442,
+        "status": 200,
+        "clientMs": 1344,
+        "cpuMs": 1134,
+        "wallMs": 1142,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1000,
+        "iterations": 228001443,
+        "status": 200,
+        "clientMs": 1154,
+        "cpuMs": 1133,
+        "wallMs": 1140,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1000,
+        "iterations": 228001444,
+        "status": 200,
+        "clientMs": 1116,
+        "cpuMs": 1019,
+        "wallMs": 1020,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      }
+    ]
+  },
+  "objectCpu": {
+    "lastSuccessfulCpuMs": 32278,
+    "steps": [
+      {
+        "targetMs": 5,
+        "iterations": 1000000,
+        "status": 200,
+        "clientMs": 41,
+        "cpuMs": 7,
+        "wallMs": 8,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5,
+        "iterations": 1000001,
+        "status": 200,
+        "clientMs": 32,
+        "cpuMs": 5,
+        "wallMs": 5,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5,
+        "iterations": 1000002,
+        "status": 200,
+        "clientMs": 40,
+        "cpuMs": 5,
+        "wallMs": 5,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 2000007,
+        "status": 200,
+        "clientMs": 35,
+        "cpuMs": 9,
+        "wallMs": 9,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 2000008,
+        "status": 200,
+        "clientMs": 43,
+        "cpuMs": 9,
+        "wallMs": 9,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10,
+        "iterations": 2000009,
+        "status": 200,
+        "clientMs": 38,
+        "cpuMs": 9,
+        "wallMs": 10,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 4444471,
+        "status": 200,
+        "clientMs": 106,
+        "cpuMs": 20,
+        "wallMs": 20,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 4444472,
+        "status": 200,
+        "clientMs": 59,
+        "cpuMs": 32,
+        "wallMs": 33,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20,
+        "iterations": 4444473,
+        "status": 200,
+        "clientMs": 45,
+        "cpuMs": 20,
+        "wallMs": 20,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 11111192,
+        "status": 200,
+        "clientMs": 83,
+        "cpuMs": 52,
+        "wallMs": 52,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 11111193,
+        "status": 200,
+        "clientMs": 75,
+        "cpuMs": 51,
+        "wallMs": 51,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 50,
+        "iterations": 11111194,
+        "status": 200,
+        "clientMs": 130,
+        "cpuMs": null,
+        "wallMs": null,
+        "outcome": null,
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 8571004,
+        "status": 200,
+        "clientMs": 150,
+        "cpuMs": 42,
+        "wallMs": 44,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 8571005,
+        "status": 200,
+        "clientMs": 67,
+        "cpuMs": 41,
+        "wallMs": 41,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 100,
+        "iterations": 8571006,
+        "status": 200,
+        "clientMs": 97,
+        "cpuMs": 70,
+        "wallMs": 72,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 24488604,
+        "status": 200,
+        "clientMs": 182,
+        "cpuMs": 117,
+        "wallMs": 118,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 24488605,
+        "status": 200,
+        "clientMs": 152,
+        "cpuMs": 123,
+        "wallMs": 124,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 200,
+        "iterations": 24488606,
+        "status": 200,
+        "clientMs": 255,
+        "cpuMs": 192,
+        "wallMs": 195,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 63772430,
+        "status": 200,
+        "clientMs": 515,
+        "cpuMs": 473,
+        "wallMs": 480,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 63772431,
+        "status": 200,
+        "clientMs": 633,
+        "cpuMs": 334,
+        "wallMs": 337,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 500,
+        "iterations": 63772432,
+        "status": 200,
+        "clientMs": 354,
+        "cpuMs": 328,
+        "wallMs": 329,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 1000,
+        "iterations": 194428168,
+        "status": 200,
+        "clientMs": 913,
+        "cpuMs": 885,
+        "wallMs": 885,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 2000,
+        "iterations": 439385713,
+        "status": 200,
+        "clientMs": 2380,
+        "cpuMs": 2257,
+        "wallMs": 2351,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 5000,
+        "iterations": 973384412,
+        "status": 200,
+        "clientMs": 5942,
+        "cpuMs": 5440,
+        "wallMs": 5912,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 10000,
+        "iterations": 1789309605,
+        "status": 200,
+        "clientMs": 11418,
+        "cpuMs": 10514,
+        "wallMs": 11310,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 15000,
+        "iterations": 2552752934,
+        "status": 200,
+        "clientMs": 16053,
+        "cpuMs": 14852,
+        "wallMs": 16024,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 20000,
+        "iterations": 3437588141,
+        "status": 200,
+        "clientMs": 22319,
+        "cpuMs": 20668,
+        "wallMs": 22289,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 25000,
+        "iterations": 4158104514,
+        "status": 200,
+        "clientMs": 27379,
+        "cpuMs": 25302,
+        "wallMs": 27349,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 29000,
+        "iterations": 4765830038,
+        "status": 200,
+        "clientMs": 30963,
+        "cpuMs": 28404,
+        "wallMs": 30908,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 31000,
+        "iterations": 5201405859,
+        "status": 200,
+        "clientMs": 35268,
+        "cpuMs": 32278,
+        "wallMs": 35241,
+        "outcome": "ok",
+        "exceptions": [],
+        "error": null
+      },
+      {
+        "targetMs": 35000,
+        "iterations": 5640039843,
+        "status": 502,
+        "clientMs": 33059,
+        "cpuMs": 30221,
+        "wallMs": 33020,
+        "outcome": "exceededCpu",
+        "exceptions": ["Error: Durable Object exceeded its CPU time limit and was reset."],
+        "error": "{\"error\":\"Error: Durable Object exceeded its CPU time limit and was reset.\"}"
+      }
+    ]
+  }
+}

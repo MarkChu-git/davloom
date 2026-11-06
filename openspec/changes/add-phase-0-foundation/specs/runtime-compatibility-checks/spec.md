@@ -66,12 +66,16 @@ Dashboard 的生产构建 MUST 在 SPA 模式下渲染设计系统的交互组�
 - **THEN** 95 MB 写入成功，105 MB 返回 413
 
 #### Scenario: 目录操作上限（需要真实部署）
-- **WHEN** 探测入口在一次已认证的请求内逐个复制并删除对象，直到触发子请求限制
-- **THEN** 结论文档记录单次请求完成的最大对象数，并给出目录 COPY/MOVE 的同步处理上限
+- **WHEN** 探测入口在一次已认证的请求内，把 Durable Object 中的对象逐个复制并删除，直到触发平台限制或达到设定的测量上限
+- **THEN** 结论文档记录单次请求完成的最大对象数、CPU 时间和写入行数，并给出目录 COPY/MOVE 的同步处理上限
 
 #### Scenario: 配额消耗（需要真实部署）
 - **WHEN** 发送一次携带 API Key 的目录 PROPFIND 探测请求
-- **THEN** 结论文档记录这次请求产生的 D1 读写次数和 R2 Class A、Class B 操作次数
+- **THEN** 结论文档记录这次请求产生的 D1 读写行数和 Durable Object 读写行数
+
+#### Scenario: Durable Object 的 CPU 上限（需要真实部署）
+- **WHEN** 在 Workers Free 上的 Durable Object 内逐级增加单次请求的 CPU 负载，直到请求失败或超过文档写明的 30 秒
+- **THEN** 结论文档记录成功完成的最大 CPU 时间和超限时的表现，并判断 30 秒上限在 Free 上是否成立
 
 ### Requirement: 探测入口隔离
 兼容性测试使用的探测路由 MUST NOT 进入生产入口。云端的探测 Worker 和测试数据 MUST 在实测结束后删除。
@@ -82,7 +86,7 @@ Dashboard 的生产构建 MUST 在 SPA 模式下渲染设计系统的交互组�
 
 #### Scenario: 实测后清理（需要真实部署，人工验证）
 - **WHEN** 实测结束
-- **THEN** Cloudflare 账号中不再有探测 Worker 及其 D1 和 R2 测试资源
+- **THEN** Cloudflare 账号中不再有探测 Worker、它的 Durable Object 命名空间和 D1 测试数据库
 
 ### Requirement: 验证结论可追溯
 每轮兼容性验证 MUST 产出结论文档，逐项记录验证清单的结果、数据、依赖版本和后续动作。验证未通过时 MUST 记录数据和可选方案，MUST NOT 通过降低安全参数等方式静默绕过。

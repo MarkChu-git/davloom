@@ -9,7 +9,7 @@ PRD 的选型里有几项还没有人验证过能否组合运行：Elysia 的 Wo
 - 建立 Bun Workspaces 单仓骨架，提供统一的检查命令，并在项目 `AGENTS.md` 中补充开发规则。
 - 建立 API 骨架：在 Workers 和 Bun 上接收全部 WebDAV 方法，并流式传输请求体和响应体。协议行为实现之前一律返回 501，不声明任何 DAV 能力。
 - 建立 Dashboard 骨架：以 SPA 模式运行，集成 Astryx 和 StyleX，支持 Light / Dark / System。
-- 建立可重复运行的兼容性测试，覆盖业务编排、身份组件在 D1 和 SQLite 上的行为，以及 Cloud Free 的 CPU、子请求和请求体限制。
+- 建立可重复运行的兼容性测试，覆盖业务编排、身份组件在 D1 和 SQLite 上的行为，以及 Cloud Free 的 CPU、请求体和每日配额限制。
 - 产出 Phase 0 结论文档，逐项记录 PRD 验证清单的结果，并确定 Elysia 起步版本和目录 COPY/MOVE 的同步处理上限。
 
 不包含：真实的 WebDAV 协议行为（Phase 2）、存储 Adapter（Phase 1）、正式的认证和权限流程（Phase 3）、Dashboard 业务页面（Phase 4）、Docker 部署（Phase 6）和 CI 工作流。
@@ -31,5 +31,5 @@ PRD 的选型里有几项还没有人验证过能否组合运行：Elysia 的 Wo
 
 - 代码：新增 `apps/api`、`apps/web`、`packages/core`、`packages/auth`、`packages/database`、`packages/webdav`、`packages/ui` 和 `tests/integration/compat`。
 - 依赖：首次引入 PRD 第 2 节的前端、后端、身份、数据和工程工具依赖，其中 Astryx 和 StyleX 固定精确版本。存储 SDK 留到 Phase 1。
-- 外部系统：实测部分需要一个可使用 D1 和 R2 的 Cloudflare 账号。探测 Worker 和测试数据在实测结束后删除。
+- 外部系统：实测部分需要一个 Cloudflare 账号，使用 Workers、D1 和 Durable Objects，不需要绑定支付方式。探测 Worker 和测试数据在实测结束后删除。
 - 文档：扩充 `AGENTS.md`，新增 `docs/architecture/phase-0-findings.md`。实测结果写回 `prd.md`；如果结果要求改变选型或安全参数，先由用户决定。

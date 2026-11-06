@@ -5,18 +5,18 @@ context: |
   All artifacts must be written in zh-CN.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
 
-  产品：Davloom，开源、可自托管的 WebDAV 文件存储平台，把 R2、S3、MinIO 等对象存储转换为标准 WebDAV 服务。需求来源是仓库根目录的 prd.md。spec 与 PRD 冲突时先提出来，不要静默选择。
+  产品：Davloom，开源、可自托管的 WebDAV 文件存储平台，把 Durable Objects、R2、AWS S3、RustFS 等存储转换为标准 WebDAV 服务。需求来源是仓库根目录的 prd.md。spec 与 PRD 冲突时先提出来，不要静默选择。
 
   技术栈：
-  - 语言和工具：TypeScript、Bun Workspaces、Oxlint、Oxfmt、tsgo、Vitest、@cloudflare/vitest-plugin、Playwright、GitHub Actions、Changesets
+  - 语言和工具：TypeScript 7（原生 tsc）、Bun Workspaces、Oxlint、Oxfmt、Vitest、@cloudflare/vitest-plugin、Playwright、GitHub Actions、Changesets
   - 前端：React 19、TanStack Start / Router / Query / Store / Virtual、Meta Astryx、StyleX（@stylexjs/unplugin）、Lucide。不使用 Tailwind、shadcn/ui、Radix 作为基础依赖
   - 后端：ElysiaJS 只做 HTTP 入口，Effect v4 负责业务编排，校验用 Effect Schema，错误用 Effect Typed Errors，XML 解析用 saxes，流用 Web Streams，加密用 Web Crypto
   - 身份：Better Auth 管理身份、Session 和 API Key；文件、Mount 和路径权限由 Effect Policy Service 决策
-  - 数据：Drizzle ORM + SQLite 方言；云上 D1 + R2，自托管 Bun SQLite + S3-compatible（AWS SDK S3 Client）
+  - 数据：Drizzle ORM + SQLite 方言；云上 D1 + Durable Objects（SQLite 后端，存文件内容），R2 可选，不使用 KV；自托管 Bun SQLite + S3-compatible（AWS SDK S3 Client），开源选项是 RustFS，不使用 MinIO
 
   架构约束（Hexagonal + Effect Layers）：
   - Domain 不依赖云厂商 SDK
-  - Elysia Router 不直接操作 R2 或 D1，TanStack Start 不直接读取数据库
+  - Elysia Router 不直接操作存储后端或 D1，TanStack Start 不直接读取数据库
   - Effect Services 通过 Port 访问基础设施，Adapter 必须通过统一契约测试
   - Cloudflare 专属能力只出现在 Infrastructure Layer
 

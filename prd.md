@@ -12,7 +12,7 @@
 
 Davloom 是一个开源、现代化、可自托管的 WebDAV 文件存储平台。
 
-用户可以将 Cloudflare R2、AWS S3、MinIO 等 S3-compatible 对象存储转换为标准 WebDAV 服务，同时使用现代化 Web Dashboard 进行文件、账户、凭据和存储管理。
+用户可以把 Cloudflare Durable Objects、Cloudflare R2、AWS S3、RustFS 等存储转换为标准 WebDAV 服务，同时使用现代化 Web Dashboard 进行文件、账户、凭据和存储管理。Cloudflare 免费部署默认把文件内容存进 Durable Objects，不需要绑定支付方式。
 
 ### 核心原则
 
@@ -28,7 +28,7 @@ Davloom 是一个开源、现代化、可自托管的 WebDAV 文件存储平台�
 ### 目标用户
 
 1. 需要使用 WebDAV 同步配置的开发者。
-2. 希望低成本使用 Cloudflare R2 的个人用户。
+2. 希望免费使用 Cloudflare、不绑定支付方式的个人用户。
 3. 拥有 NAS、Home Server 或 VPS 的自托管用户。
 4. 希望统一管理不同 S3-compatible 存储的用户。
 
@@ -68,7 +68,7 @@ Astryx 提供 React 组件、布局原语、主题和交互能力；StyleX 负�
 
 | 类别 | 选型 |
 |---|---|
-| HTTP Framework | ElysiaJS |
+| HTTP Framework | ElysiaJS 1.4（Phase 0 确定的起步版本，2.0 正式发布后再评估） |
 | Business Framework | Effect v4 |
 | Dependency Injection | Effect Context / Layer |
 | Validation | Effect Schema |
@@ -106,7 +106,8 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | SQL Dialect | SQLite |
 | Cloud Database | Cloudflare D1 |
 | Self-hosted Database | Bun SQLite |
-| Cloud Storage | Cloudflare R2 |
+| Cloud Storage（默认） | Cloudflare Durable Objects（SQLite 后端） |
+| Cloud Storage（可选） | Cloudflare R2 |
 | Generic Storage | S3-compatible API |
 | Storage SDK | AWS SDK S3 Client |
 | Native Optimization | R2 Binding |
@@ -121,7 +122,7 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | Monorepo | Bun Workspaces |
 | Linter | Oxlint |
 | Formatter | Oxfmt |
-| Type Check | TypeScript / tsgo |
+| Type Check | TypeScript 7（原生 `tsc`） |
 | Unit Tests | Vitest |
 | Workers Integration | @cloudflare/vitest-plugin |
 | E2E | Playwright |
@@ -246,6 +247,7 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 
 ### Infrastructure Layer
 
+- Cloudflare Durable Objects Storage Adapter
 - Cloudflare R2 Adapter
 - Generic S3 Adapter
 - Cloudflare D1 Adapter
@@ -257,7 +259,7 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 ### 依赖规则
 
 1. Domain 不依赖云厂商 SDK。
-2. Elysia Router 不直接操作 R2 或 D1。
+2. Elysia Router 不直接操作存储后端或 D1。
 3. TanStack Start 不直接读取数据库。
 4. Effect Services 使用 Port 访问基础设施。
 5. Adapter 必须通过统一契约测试。
@@ -303,7 +305,7 @@ Class 2（LOCK / UNLOCK）是 V1 发布门槛：服务器不支持锁时，macOS
 
 对象存储不具备原子目录移动，因此 COPY/MOVE 需要明确部分失败及恢复策略。
 
-目录 COPY/MOVE 设同步处理上限。超过上限时不做部分执行，直接返回明确错误。上限数值由 Phase 0 实测确定，响应码和 `operation_jobs` 的执行方式在 WebDAV 协议设计中确定。
+目录 COPY/MOVE 设同步处理上限：默认的 Durable Objects 存储一次最多处理 1000 个对象，R2 一次最多 400 个。超过上限时不做部分执行，直接返回明确错误。Durable Objects 的上限来自 Phase 0 实测：一次复制并删除 2000 个对象用了 91 ms CPU、写 14,000 行，1000 个对象约写 7000 行，占 Free 每天写入配额的 7%。R2 的上限按每个请求 1000 次内部子请求估算，开通 R2 后要实测确认。响应码和 `operation_jobs` 的执行方式在 WebDAV 协议设计中确定。
 
 ---
 
@@ -355,7 +357,7 @@ V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不�
 
 | 表 | 用途 |
 |---|---|
-| storage_backends | 对象存储配置 |
+| storage_backends | 存储后端配置 |
 | mounts | Mount 与 Prefix 映射 |
 | mount_permissions | API Key 凭据的 Mount 与路径权限 |
 | dav_properties | WebDAV 自定义属性 |
@@ -366,7 +368,9 @@ V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不�
 
 默认不建立强制性的完整文件索引。
 
-文件目录通过对象存储 API 获取，需要搜索能力时再引入可重建索引。
+文件目录通过存储后端获取，需要搜索能力时再引入可重建索引。
+
+Durable Objects 后端把路径和文件分块分表存放在对象内部的 SQLite 中，分块单行不超过 2 MB。表结构在 Phase 1 确定。
 
 ### 数据迁移
 
@@ -374,6 +378,7 @@ V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不�
 
 - D1 → SQLite
 - SQLite → D1
+- Durable Objects → R2 或 S3-compatible Storage
 - R2 → S3-compatible Storage
 - S3-compatible Storage → R2
 
@@ -459,19 +464,24 @@ V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不�
 
 - TanStack Start Web
 - Elysia Worker
-- D1
-- R2
+- D1，存元数据
+- Durable Objects（SQLite 后端），存文件内容
 
 Dashboard 优先使用 SPA Mode，降低 SSR 运行成本。
 
-Cloudflare Free 的 Worker CPU、请求次数和 R2 上传限制必须通过实际测试。
+R2 和 S3 兼容服务是用户可选的后端。R2 开通时要走结账流程，超额按量计费，所以默认部署不依赖它。不使用 KV。
+
+Cloudflare Free 的 Worker CPU、请求次数，以及 Durable Objects 的 CPU 和写入配额必须通过实际测试。
 
 官方文档已写明的限制（2026 年 11 月核对）：
 
-- **请求体上限 100 MB（Free / Pro 域名）：** 超过时 WebDAV PUT 返回 413。V1 把它写入文档，作为 Cloud Free 的明确限制。Dashboard 大文件上传另行评估分片直传 R2。
-- **每个 HTTP 请求 10 ms CPU：** 测试必须覆盖包含认证的完整请求链路。
-- **单次调用最多 1000 次内部子请求（R2、D1）：** 决定目录 COPY/MOVE 的同步处理上限。
-- **R2 `ListObjects` 属于 Class A，免费额度每月 100 万次：** 目录 PROPFIND 都会消耗这一额度。
+- **请求体上限 100 MB（Free / Pro 域名）：** 超过时 WebDAV PUT 返回 413。V1 把它写入文档，作为 Cloud Free 的明确限制。Dashboard 大文件上传另行评估分片上传。
+- **每个 HTTP 请求 10 ms CPU：** 测试必须覆盖包含认证的完整请求链路。Phase 0 在 Workers Free 上实测（2026-11-06）没有触发这个上限：用了 1134 ms 的请求也成功了，Worker 里的管理员登录用了 63–94 ms。文档没有写这种宽松，设计仍按 10 ms 留余量。
+- **Durable Objects 每个请求 30 秒 CPU：** 这一行没有区分套餐，但同一页又写 Workers 的限制也适用，所以默认存储方案要靠 Phase 0 实测确认。实测确认 Free 上成立：用了 32.3 秒 CPU 的请求完成，下一个请求在约 30.2 秒时被重置，返回 502。
+- **Durable Objects Free 配额：** 只能用 SQLite 后端，单个对象 1 GB，总共 5 GB，单行 2 MB；每天 10 万次请求、13,000 GB-s、读 500 万行、写 10 万行（删除也算写入）。超额时报错，不会计费。
+- **D1 Free 配额：** 单库 500 MB，总共 5 GB，单行 2 MB；每次调用最多 50 次查询，每天读 500 万行、写 10 万行。
+- **单次调用最多 50 次外部子请求和 1000 次内部子请求：** R2 的调用算内部子请求，选用 R2 时目录 COPY/MOVE 的同步处理上限据此定为 400 个对象。
+- **R2 `ListObjects` 属于 Class A，免费额度每月 100 万次：** 选用 R2 时，目录 PROPFIND 都会消耗这一额度。
 
 ### Docker Self-hosted
 
@@ -482,7 +492,7 @@ Cloudflare Free 的 Worker CPU、请求次数和 R2 上传限制必须通过实�
 - Elysia
 - SQLite
 - S3-compatible Storage
-- 可选 MinIO
+- 可选 RustFS
 
 由 Docker Compose 提供标准部署入口。
 
@@ -626,7 +636,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 | 阶段 | 周期 | 目标 |
 |---|---|---|
 | Phase 0 | Week 1 | Monorepo、框架、部署和 UI 兼容性验证 |
-| Phase 1 | Week 2 | Effect Core、D1/SQLite、R2/S3 |
+| Phase 1 | Week 2 | Effect Core、D1/SQLite、Durable Objects/R2/S3 |
 | Phase 2 | Week 3 | WebDAV 基础协议 |
 | Phase 3 | Week 4 | Better Auth、API Key、权限 |
 | Phase 4 | Week 5 | Astryx + StyleX Dashboard |
@@ -643,6 +653,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - StyleX Vite 编译。
 - Astryx Theme 与 Dark Mode。
 - Cloudflare Free 的 CPU 和请求开销，覆盖包含认证的完整请求链路。
+- Durable Objects 在 Cloudflare Free 上的 CPU 上限和文件写入。
 - WebDAV 方法（OPTIONS、PROPFIND、MKCOL、COPY、MOVE、PROPPATCH、LOCK、UNLOCK）穿过 Elysia、Workers 和 Bun。
 - PUT 和 GET 全程流式，不把完整文件缓冲到内存。
 - 目录 COPY/MOVE 在 Cloud Free 上的同步处理上限。
@@ -675,7 +686,8 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 | Workers Free CPU 超限 | SPA 优先、减少请求 CPU |
 | Elysia Workers 兼容性 | Runtime Integration Tests |
 | D1 / SQLite 差异 | Driver Contract Tests |
-| R2 / S3 行为差异 | Storage Capability Tests |
+| Durable Objects 在 Free 上没有 30 秒 CPU | Phase 0 实测；不成立时由用户在 base64 分块等方案中决定 |
+| Durable Objects / R2 / S3 行为差异 | Storage Capability Tests |
 | WebDAV 锁与并发 | SQL Lock Tests、保守能力声明 |
 | 大型目录操作 | 分页、虚拟化、可恢复任务 |
 | 跨平台迁移损失 | 数据校验与恢复测试 |
@@ -693,7 +705,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - [ ] 文件和目录基础操作可用。
 - [ ] WebDAV 基础协议通过测试。
 - [ ] WebDAV Class 2（LOCK / UNLOCK）通过测试，macOS Finder 可以读写挂载。
-- [ ] R2 与通用 S3 Adapter 可用。
+- [ ] Durable Objects、R2 与通用 S3 Adapter 可用。
 - [ ] D1 与 SQLite Adapter 可用。
 - [ ] 权限控制通过测试。
 - [ ] 并发和错误恢复行为经过验证。
@@ -733,7 +745,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - Better Auth
 - Drizzle ORM
 - SQLite + Cloudflare D1
-- S3-compatible Storage + Cloudflare R2
+- Cloudflare Durable Objects + S3-compatible Storage + Cloudflare R2（可选）
 - Oxlint + Oxfmt
 - Vitest + Playwright
 - GitHub Actions
@@ -741,7 +753,7 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 
 **架构：** Hexagonal Architecture + Effect Layers。
 
-**默认部署：** Workers + D1 + R2。
+**默认部署：** Workers + D1 + Durable Objects，R2 可选。
 
 **可移植部署：** Bun + SQLite + S3-compatible Storage。
 
