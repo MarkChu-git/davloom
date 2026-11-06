@@ -12,6 +12,7 @@ import {
 import type { Target } from "../shared/target";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../../..");
+const COMPAT_DIRECTORY = resolve(import.meta.dirname, "..");
 const STARTUP_TIMEOUT_MS = 60_000;
 const READY_LINE = /listening on (http:\/\/\S+)/;
 
@@ -80,12 +81,26 @@ export const startBunServer = (entry: string): Promise<Server> =>
     env: { PORT: "0", HOST: "127.0.0.1" },
   });
 
+// Bundle directories that still exist. Miniflare exits the process on SIGINT, SIGTERM and SIGHUP
+// without returning to `stop`, so they are also removed when the process exits.
+const bundleDirectories = new Set<string>();
+process.on("exit", () => {
+  for (const directory of bundleDirectories) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 /** Bundles a Worker the way `wrangler deploy` does, and returns the path of its one module. */
 const bundleWorker = (configPath: string, outdir: string): string => {
+  // The compat package holds the Wrangler that `bun.lock` records; the repository root has none.
   const { status, stdout, stderr } = spawnSync(
     "bunx",
     ["--bun", "wrangler", "deploy", "--dry-run", "--outdir", outdir, "--config", configPath],
-    { cwd: REPO_ROOT, env: { ...process.env, WRANGLER_SEND_METRICS: "false" }, encoding: "utf8" },
+    {
+      cwd: COMPAT_DIRECTORY,
+      env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+      encoding: "utf8",
+    },
   );
   if (status !== 0) {
     throw new Error(`Bundling ${configPath} failed:\n${stdout}${stderr}`);
@@ -97,10 +112,17 @@ const bundleWorker = (configPath: string, outdir: string): string => {
   return join(outdir, modules[0]);
 };
 
-/** Applies each D1 database's migrations, the files that `wrangler d1 migrations apply` reads. */
-const applyD1Migrations = async (miniflare: Miniflare, config: Unstable_Config) => {
+/**
+ * Applies each D1 database's migrations, the files that `wrangler d1 migrations apply` reads.
+ * Wrangler resolves `migrations_dir` against the directory of the config file, `configDirectory`.
+ */
+const applyD1Migrations = async (
+  miniflare: Miniflare,
+  config: Unstable_Config,
+  configDirectory: string,
+) => {
   for (const { binding, migrations_dir = "migrations" } of config.d1_databases) {
-    const directory = resolve(dirname(config.configPath ?? REPO_ROOT), migrations_dir);
+    const directory = resolve(configDirectory, migrations_dir);
     const database = await miniflare.getD1Database(binding);
     const files = readdirSync(directory)
       .filter((file) => file.endsWith(".sql"))
@@ -133,18 +155,28 @@ export const startWorkerdServer = async (
 ): Promise<Server> => {
   const configFile = resolve(REPO_ROOT, configPath);
   const outdir = mkdtempSync(join(tmpdir(), "davloom-worker-"));
+  bundleDirectories.add(outdir);
   let miniflare: Miniflare | undefined;
   const stop = async () => {
-    await miniflare?.dispose();
-    rmSync(outdir, { recursive: true, force: true });
+    try {
+      await miniflare?.dispose();
+    } finally {
+      rmSync(outdir, { recursive: true, force: true });
+      bundleDirectories.delete(outdir);
+    }
   };
   try {
     const scriptPath = bundleWorker(configFile, outdir);
     const config = unstable_readConfig({ config: configFile });
-    const { workerOptions } = unstable_getMiniflareWorkerOptions({
+    const { workerOptions, externalWorkers } = unstable_getMiniflareWorkerOptions({
       ...config,
       vars: { ...config.vars, ...vars },
     });
+    if (externalWorkers.length > 0) {
+      throw new Error(
+        `${configPath} needs Workers beside its own, which this harness cannot start`,
+      );
+    }
     miniflare = new Miniflare(
       convertV4MiniflareOptions({
         ...workerOptions,
@@ -158,10 +190,11 @@ export const startWorkerdServer = async (
       }),
     );
     const url = (await miniflare.ready).href.replace(/\/$/, "");
-    await applyD1Migrations(miniflare, config);
+    await applyD1Migrations(miniflare, config, dirname(configFile));
     return { url, fetch: (path, init) => fetch(`${url}${path}`, init), stop };
   } catch (error) {
-    await stop();
+    // Reports why the start failed, not why the cleanup after it did.
+    await stop().catch(() => undefined);
     throw error;
   }
 };
