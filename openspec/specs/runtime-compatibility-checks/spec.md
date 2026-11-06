@@ -1,99 +1,99 @@
 # runtime-compatibility-checks Specification
 
 ## Purpose
-用可重复运行的测试验证选型组合在 Workers 和 Bun 上可用，并记录 Cloud Free 限制的实测结果，为版本升级和后续设计提供依据。
+This spec uses repeatable tests to verify that the chosen combination of technologies works on Workers and Bun, and records measurements of the Cloud Free limits as a basis for version upgrades and later design.
 
 ## Requirements
 
-### Requirement: 不依赖云账号的本地兼容性测试
-项目 SHALL 提供一条命令，在没有 Cloudflare 凭据的环境中，于 Workers 运行时和 Bun 上运行兼容性测试。需要真实部署的用例 MUST 标记为跳过，不算失败。
+### Requirement: Local compatibility tests without a cloud account
+The project SHALL provide one command that runs the compatibility tests on the Workers runtime and on Bun in an environment without Cloudflare credentials. Test cases that need a real deployment MUST be marked as skipped, and a skipped case is not counted as a failure.
 
-#### Scenario: 没有云凭据
-- **WHEN** 贡献者在没有 Cloudflare 凭据的环境运行兼容性测试命令
-- **THEN** 本地用例在两种运行时上运行，需要真实部署的用例显示为跳过，命令以状态 0 退出
+#### Scenario: No cloud credentials
+- **WHEN** a contributor runs the compatibility test command in an environment without Cloudflare credentials
+- **THEN** the local cases run on both runtimes, the cases that need a real deployment show as skipped, and the command exits with status 0
 
-### Requirement: 业务错误映射为确定的 HTTP 响应
-API 入口 MUST 把业务编排层的成功结果和已声明错误映射为确定的 HTTP 响应。未预期的缺陷 MUST 返回 500，响应 MUST NOT 包含内部错误细节。
+### Requirement: Business errors map to deterministic HTTP responses
+The API entry MUST map the success results and declared errors of the business orchestration layer to deterministic HTTP responses. An unexpected defect MUST return 500, and the response MUST NOT include internal error details.
 
-#### Scenario: 业务成功
-- **WHEN** 业务程序在任一运行时上成功完成
-- **THEN** 响应包含程序的结果和对应的成功状态码
+#### Scenario: Business success
+- **WHEN** a business program completes successfully on either runtime
+- **THEN** the response contains the program's result and the matching success status code
 
-#### Scenario: 已声明错误
-- **WHEN** 业务程序以已声明的错误失败
-- **THEN** 响应使用该错误对应的状态码和错误码
+#### Scenario: Declared error
+- **WHEN** a business program fails with a declared error
+- **THEN** the response uses the status code and error code that correspond to that error
 
-#### Scenario: 未预期缺陷
-- **WHEN** 业务程序抛出未声明的缺陷
-- **THEN** 响应状态码是 500，响应体不含错误消息和堆栈
+#### Scenario: Unexpected defect
+- **WHEN** a business program throws an undeclared defect
+- **THEN** the response status code is 500, and the response body contains no error message or stack trace
 
-### Requirement: 身份组件在两种数据库上行为一致
-同一份身份配置和数据库 schema MUST 在 D1 和 Bun SQLite 上支持管理员登录，以及 API Key 的创建、验证和撤销。
+### Requirement: Identity components behave the same on both databases
+The same identity configuration and database schema MUST support admin login and the creation, verification and revocation of API Keys on both D1 and Bun SQLite.
 
-#### Scenario: 管理员登录
-- **WHEN** 管理员分别在两种数据库上用正确密码和错误密码登录
-- **THEN** 正确密码建立 Session，错误密码被拒绝且不建立 Session
+#### Scenario: Admin login
+- **WHEN** an administrator logs in on each of the two databases, once with the correct password and once with a wrong password
+- **THEN** the correct password establishes a Session, and the wrong password is rejected without establishing a Session
 
-#### Scenario: API Key 生命周期
-- **WHEN** 分别在两种数据库上创建 API Key，用它验证，撤销后再次验证
-- **THEN** 撤销前验证通过，撤销后验证失败，数据库中不保存 Key 明文
+#### Scenario: API Key lifecycle
+- **WHEN** an API Key is created on each of the two databases, verified, revoked and then verified again
+- **THEN** verification succeeds before revocation and fails after it, and the database does not store the Key in plaintext
 
-### Requirement: 设计系统与前端框架集成
-Dashboard 的生产构建 MUST 在 SPA 模式下渲染设计系统的交互组件，运行时 MUST NOT 产生控制台错误。生产构建 SHALL 能由 Workers 静态资源和 Bun 提供。
+### Requirement: Design system and frontend framework integration
+The Dashboard production build MUST render the interactive components of the design system in SPA mode, and MUST NOT produce console errors at runtime. The production build SHALL be servable from both Workers static assets and Bun.
 
-#### Scenario: 交互组件
-- **WHEN** Playwright 打开生产构建的示例页，用键盘操作 Dialog 和 Menu
-- **THEN** 组件正常打开和关闭，焦点回到触发元素，控制台没有错误
+#### Scenario: Interactive components
+- **WHEN** Playwright opens the example page of the production build and operates a Dialog and a Menu with the keyboard
+- **THEN** the components open and close normally, focus returns to the trigger element, and the console shows no errors
 
-#### Scenario: 深层路由
-- **WHEN** 分别由本地 Workers 运行时和 Bun 提供生产构建，直接打开一个深层路由
-- **THEN** 页面正常渲染该路由
+#### Scenario: Deep routes
+- **WHEN** the production build is served separately by the local Workers runtime and by Bun, and a deep route is opened directly
+- **THEN** the page renders that route normally
 
-### Requirement: Cloud Free 限制实测
-项目 SHALL 在真实的 Workers Free 部署上测量含认证请求的资源消耗和平台限制，并把数据记入结论文档。
+### Requirement: Cloud Free limit measurements
+The project SHALL measure, on a real Workers Free deployment, resource consumption including authenticated requests and the platform limits, and record the data in the findings document.
 
-#### Scenario: 含认证请求的 CPU（需要真实部署）
-- **WHEN** 分别连续发送 100 次携带 API Key 的探测请求和 20 次管理员密码登录请求
-- **THEN** 结论文档记录两类请求的 CPU 时间分布和超限次数
+#### Scenario: CPU of authenticated requests (requires a real deployment)
+- **WHEN** 100 consecutive probe requests carrying an API Key and 20 consecutive admin password login requests are sent
+- **THEN** the findings document records the CPU time distribution of both kinds of requests and how many times they exceeded the limit
 
-#### Scenario: 启动开销（需要真实部署）
-- **WHEN** 部署探测 Worker
-- **THEN** 结论文档记录压缩后体积和启动时间
+#### Scenario: Startup overhead (requires a real deployment)
+- **WHEN** the probe Worker is deployed
+- **THEN** the findings document records the compressed size and the startup time
 
-#### Scenario: 请求体上限（需要真实部署）
-- **WHEN** 分别上传 95 MB 和 105 MB 请求体
-- **THEN** 95 MB 写入成功，105 MB 返回 413
+#### Scenario: Request body limit (requires a real deployment)
+- **WHEN** a 95 MB request body and a 105 MB request body are uploaded separately
+- **THEN** the 95 MB upload is written successfully and the 105 MB upload returns 413
 
-#### Scenario: 目录操作上限（需要真实部署）
-- **WHEN** 探测入口在一次已认证的请求内，把 Durable Object 中的对象逐个复制并删除，直到触发平台限制或达到设定的测量上限
-- **THEN** 结论文档记录单次请求完成的最大对象数、CPU 时间和写入行数，并给出目录 COPY/MOVE 的同步处理上限
+#### Scenario: Directory operation limit (requires a real deployment)
+- **WHEN** the probe entry, within one authenticated request, copies and deletes the objects in a Durable Object one by one, until it hits a platform limit or reaches the configured measurement cap
+- **THEN** the findings document records the maximum number of objects that one request completes, together with its CPU time and the number of rows written, and gives the synchronous processing limit for directory COPY/MOVE
 
-#### Scenario: 配额消耗（需要真实部署）
-- **WHEN** 发送一次携带 API Key 的目录 PROPFIND 探测请求
-- **THEN** 结论文档记录这次请求产生的 D1 读写行数和 Durable Object 读写行数
+#### Scenario: Quota consumption (requires a real deployment)
+- **WHEN** one directory PROPFIND probe request carrying an API Key is sent
+- **THEN** the findings document records the number of D1 rows read and written and the number of Durable Object rows read and written by that request
 
-#### Scenario: Durable Object 的 CPU 上限（需要真实部署）
-- **WHEN** 在 Workers Free 上的 Durable Object 内逐级增加单次请求的 CPU 负载，直到请求失败或超过文档写明的 30 秒
-- **THEN** 结论文档记录成功完成的最大 CPU 时间和超限时的表现，并判断 30 秒上限在 Free 上是否成立
+#### Scenario: Durable Object CPU limit (requires a real deployment)
+- **WHEN** the CPU load of a single request inside a Durable Object on Workers Free is increased step by step until the request fails or exceeds the 30 seconds stated in the documentation
+- **THEN** the findings document records the maximum CPU time that completed successfully and the behavior when the limit is exceeded, and judges whether the 30-second limit holds on Free
 
-### Requirement: 探测入口隔离
-兼容性测试使用的探测路由 MUST NOT 进入生产入口。云端的探测 Worker 和测试数据 MUST 在实测结束后删除。
+### Requirement: Probe entry isolation
+The probe routes used by the compatibility tests MUST NOT enter the production entry. The probe Worker and test data in the cloud MUST be deleted after the measurement ends.
 
-#### Scenario: 生产入口没有探测路由
-- **WHEN** 客户端向生产入口请求探测路由
-- **THEN** 响应状态码是 404
+#### Scenario: No probe routes in the production entry
+- **WHEN** a client requests a probe route from the production entry
+- **THEN** the response status code is 404
 
-#### Scenario: 实测后清理（需要真实部署，人工验证）
-- **WHEN** 实测结束
-- **THEN** Cloudflare 账号中不再有探测 Worker、它的 Durable Object 命名空间和 D1 测试数据库
+#### Scenario: Cleanup after the measurement (requires a real deployment, manual verification)
+- **WHEN** the measurement ends
+- **THEN** the Cloudflare account no longer contains the probe Worker, its Durable Object namespace or the D1 test database
 
-### Requirement: 验证结论可追溯
-每轮兼容性验证 MUST 产出结论文档，逐项记录验证清单的结果、数据、依赖版本和后续动作。验证未通过时 MUST 记录数据和可选方案，MUST NOT 通过降低安全参数等方式静默绕过。
+### Requirement: Traceable verification findings
+Each round of compatibility verification MUST produce a findings document that records the result, data, dependency versions and follow-up actions of each item on the verification checklist. When a verification fails, the data and the available options MUST be recorded, and the failure MUST NOT be bypassed silently, for example by lowering security parameters.
 
-#### Scenario: 清单全覆盖（人工验证）
-- **WHEN** 查看 Phase 0 结论文档
-- **THEN** PRD Phase 0 验证清单的每一项都有结果、证据和依赖版本
+#### Scenario: Checklist fully covered (manual verification)
+- **WHEN** the Phase 0 findings document is reviewed
+- **THEN** every item on the PRD Phase 0 verification checklist has a result, evidence and dependency versions
 
-#### Scenario: 验证未通过（人工验证）
-- **WHEN** 某一项验证未通过，例如管理员密码登录超过 CPU 限制
-- **THEN** 文档写明数据和可选方案，选型和安全参数在用户决定之前保持不变
+#### Scenario: Verification fails (manual verification)
+- **WHEN** a verification item fails, for example admin password login exceeds the CPU limit
+- **THEN** the document states the data and the available options, and the technology choice and the security parameters stay unchanged until the maintainer decides

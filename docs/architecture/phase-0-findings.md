@@ -1,172 +1,172 @@
-# Phase 0 兼容性结论
+# Phase 0 compatibility findings
 
-记录 PRD 第 13 节 Phase 0 验证清单的结果。OpenSpec change：`add-phase-0-foundation`。
+This document records the results of the Phase 0 verification checklist in section 13 of the PRD. OpenSpec change: `add-phase-0-foundation`.
 
-本地验证和 Cloud Free 实测都已完成。
+Local verification and the Cloud Free measurements are both complete.
 
-## 环境
+## Environment
 
-本地测试在 macOS（Apple Silicon）上运行，Bun 1.4.4，Node 26.12.0，workerd 由 `wrangler dev` 启动。浏览器用的是本机缓存的 Chromium headless shell 1243，不是 Playwright 1.64.1 对应的 1248。除非另有说明，文中的依赖版本都是 2026-11-06 npm 上 `latest` 标签的版本。Cloud Free 实测部署到 workers.dev，账号是 Workers Free。
+Local tests run on macOS (Apple Silicon) with Bun 1.4.4 and Node 26.12.0, and `wrangler dev` starts workerd. The browser is the locally cached Chromium headless shell 1243, not the 1248 that matches Playwright 1.64.1. Unless noted otherwise, the dependency versions in this document are those of the npm `latest` tag on 2026-11-06. The Cloud Free measurements deploy to workers.dev, on a Workers Free account.
 
-下面是 `bun run test:compat` 的结果。运行时把 `XDG_CONFIG_HOME` 指向空目录，Wrangler 处于未登录状态；`bun run check` 和这条命令都以状态 0 退出。
+The results below are from `bun run test:compat`. During the run, `XDG_CONFIG_HOME` pointed to an empty directory and Wrangler was logged out; `bun run check` and this command both exited with status 0.
 
-| 测试层                               | 命令               | 结果             |
-| ------------------------------------ | ------------------ | ---------------- |
-| 传输和探测（Bun、workerd）           | `test:http`        | 111 通过         |
-| 身份（D1）                           | `test:d1`          | 6 通过           |
-| 身份（Bun SQLite）                   | `test:bun-sqlite`  | 6 通过           |
-| UI（Bun 和 Workers 两种交付）        | `test:ui`          | 43 通过，1 跳过  |
-| 改品牌色后重新构建                   | `test:ui:brand`    | 4 通过           |
-| Cloud Free 流程在本地 workerd 上空跑 | `test:cloud:local` | 34 通过，1 跳过  |
-| Cloud Free 实测，未配置部署          | `test:cloud`       | 11 通过，24 跳过 |
+| Test layer                                       | Command            | Result                |
+| ------------------------------------------------ | ------------------ | --------------------- |
+| Transport and probe (Bun, workerd)               | `test:http`        | 111 passed            |
+| Identity (D1)                                    | `test:d1`          | 6 passed              |
+| Identity (Bun SQLite)                            | `test:bun-sqlite`  | 6 passed              |
+| UI (Bun and Workers delivery)                    | `test:ui`          | 43 passed, 1 skipped  |
+| Rebuild after changing the brand color           | `test:ui:brand`    | 4 passed              |
+| Cloud Free flow dry run on local workerd         | `test:cloud:local` | 34 passed, 1 skipped  |
+| Cloud Free measurement, no deployment configured | `test:cloud`       | 11 passed, 24 skipped |
 
-UI 跳过的是“缺失的静态资源返回 404”，这条只适用于 Bun。空跑跳过的是 105 MB 用例，本地没有请求体上限。
+The UI layer skips "a missing static asset returns 404", which applies only to Bun. The dry run skips the 105 MB case, since there is no request body limit locally.
 
-## 验证清单
+## Verification checklist
 
-| #   | 验证项                                          | 结果                                         | 证据                                                                                                                                                                            | 依赖版本                                                      |
-| --- | ----------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| 1   | Elysia + Effect on Cloudflare Workers           | 本地 workerd 和真实部署都通过                | `http/effect.test.ts`：成功、已声明错误和未预期缺陷的响应在 Bun 和 workerd 上一致；workers.dev 上的探测 Worker 通过全部 35 个用例                                               | `elysia` 1.4.31、`effect` 4.1.2、`wrangler` 4.158.0           |
-| 2   | Better Auth + D1 / SQLite                       | 通过                                         | `identity/d1.test.ts`、`identity/bun-sqlite.test.ts`、`http/basic-auth.test.ts`                                                                                                 | `better-auth` 1.7.18、`drizzle-orm` 0.45.4                    |
-| 3   | TanStack Start + React 19                       | 通过                                         | SPA 生产构建，`ui/delivery.spec.ts` 在两种交付方式下直接打开深层路由                                                                                                            | `@tanstack/react-start` 1.169.4、`react` 19.3.1、`vite` 8.3.6 |
-| 4   | Astryx 组件与 TanStack Start 的集成             | 通过                                         | `ui/interactions.spec.ts`：键盘操作 Dialog 和 Menu，焦点回到触发元素，控制台没有错误                                                                                            | `@astryxdesign/core` 0.7.8                                    |
-| 5   | StyleX Vite 编译                                | 通过                                         | `ui/styles.spec.ts` 在生产构建上读到自有组件的计算样式                                                                                                                          | `@stylexjs/stylex`、`@stylexjs/unplugin` 0.19.1               |
-| 6   | Astryx Theme 与 Dark Mode                       | 通过                                         | `ui/appearance.spec.ts`、`scripts/verify-brand-change.ts`。去掉 head 脚本后，首次绘制的用例会失败                                                                               | `@astryxdesign/core`、`@astryxdesign/theme-neutral` 0.7.8     |
-| 7   | Cloudflare Free 的 CPU 和请求开销，覆盖认证链路 | 通过，没有请求超限                           | workers.dev 上 100 次携带 API Key 的请求和 20 次登录全部成功，CPU 分布和行数见“Cloud Free 实测”                                                                                 | 同第 1、2 项                                                  |
-| 8   | Durable Objects 在 Free 上的 CPU 上限和文件写入 | 通过，30 秒上限成立                          | 95 MB 写入后读回，SHA-256 一致；CPU 用到 32.3 秒的请求完成，更长的请求在约 30.2 秒时被重置                                                                                      | `wrangler` 4.158.0                                            |
-| 9   | WebDAV 方法穿过 Elysia、Workers 和 Bun          | 本地和真实部署都通过                         | `http/echo.test.ts`、`http/production.test.ts`；workers.dev 上 12 个方法和 WebDAV 请求头原样到达                                                                                | `elysia` 1.4.31                                               |
-| 10  | PUT 和 GET 全程流式                             | 通过                                         | `http/streaming.test.ts`、`http/large-upload.test.ts`。故意改成缓冲后，内存增量是 1918 MiB，这两组测试都会失败。workers.dev 上 95 MB 经 Worker 写入和读回，Worker 只用 4 ms CPU | Bun 1.4.4、`elysia` 1.4.31                                    |
-| 11  | 目录 COPY/MOVE 的同步处理上限                   | 确定：Durable Objects 1000 个对象，R2 400 个 | 一次请求内复制并删除 2000 个对象，没有碰到平台限制；R2 按文档估算                                                                                                               | 同第 8 项                                                     |
-| 12  | Elysia 起步版本                                 | 确定为 1.4                                   | 见下一节                                                                                                                                                                        | `elysia` 1.4.31、`2.0.0-rc.3`                                 |
+| #   | Item                                                                   | Result                                                | Evidence                                                                                                                                                                                                                                                             | Dependency versions                                           |
+| --- | ---------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| 1   | Elysia + Effect on Cloudflare Workers                                  | Passed on local workerd and on a real deployment      | `http/effect.test.ts`: the responses for success, declared errors and unexpected defects match on Bun and workerd; the probe Worker on workers.dev passes all 35 cases                                                                                               | `elysia` 1.4.31, `effect` 4.1.2, `wrangler` 4.158.0           |
+| 2   | Better Auth + D1 / SQLite                                              | Passed                                                | `identity/d1.test.ts`, `identity/bun-sqlite.test.ts`, `http/basic-auth.test.ts`                                                                                                                                                                                      | `better-auth` 1.7.18, `drizzle-orm` 0.45.4                    |
+| 3   | TanStack Start + React 19                                              | Passed                                                | SPA production build; `ui/delivery.spec.ts` opens a deep route directly under both delivery methods                                                                                                                                                                  | `@tanstack/react-start` 1.169.4, `react` 19.3.1, `vite` 8.3.6 |
+| 4   | Astryx components integrated with TanStack Start                       | Passed                                                | `ui/interactions.spec.ts`: a Dialog and a Menu are operated from the keyboard, focus returns to the trigger element, and the console shows no errors                                                                                                                 | `@astryxdesign/core` 0.7.8                                    |
+| 5   | StyleX compilation in Vite                                             | Passed                                                | `ui/styles.spec.ts` reads the computed styles of Davloom's own components on the production build                                                                                                                                                                    | `@stylexjs/stylex`, `@stylexjs/unplugin` 0.19.1               |
+| 6   | Astryx Theme and Dark Mode                                             | Passed                                                | `ui/appearance.spec.ts`, `scripts/verify-brand-change.ts`. The first-paint case fails when the head script is removed                                                                                                                                                | `@astryxdesign/core`, `@astryxdesign/theme-neutral` 0.7.8     |
+| 7   | Cloudflare Free CPU and request cost, covering the authentication path | Passed, no request exceeded a limit                   | On workers.dev, 100 requests carrying an API Key and 20 logins all succeeded; see "Cloud Free measurements" for the CPU distribution and row counts                                                                                                                  | Same as items 1 and 2                                         |
+| 8   | Durable Objects CPU limit and file writes on Free                      | Passed, the 30-second limit holds                     | A 95 MB write was read back with a matching SHA-256; a request that used 32.3 seconds of CPU completed, and longer requests were reset at about 30.2 seconds                                                                                                         | `wrangler` 4.158.0                                            |
+| 9   | WebDAV methods through Elysia, Workers and Bun                         | Passed locally and on a real deployment               | `http/echo.test.ts`, `http/production.test.ts`; on workers.dev, 12 methods and the WebDAV request headers arrived unchanged                                                                                                                                          | `elysia` 1.4.31                                               |
+| 10  | PUT and GET stream end to end                                          | Passed                                                | `http/streaming.test.ts`, `http/large-upload.test.ts`. When the code is deliberately changed to buffer, the memory increase is 1918 MiB and both sets of tests fail. On workers.dev, 95 MB was written and read back through the Worker, which used only 4 ms of CPU | Bun 1.4.4, `elysia` 1.4.31                                    |
+| 11  | Synchronous processing limit for directory COPY/MOVE                   | Decided: 1000 objects for Durable Objects, 400 for R2 | 2000 objects were copied and deleted within one request without hitting a platform limit; the R2 figure is estimated from the documentation                                                                                                                          | Same as item 8                                                |
+| 12  | Elysia starting version                                                | Decided: 1.4                                          | See the next section                                                                                                                                                                                                                                                 | `elysia` 1.4.31, `2.0.0-rc.3`                                 |
 
-## Elysia 版本对照
+## Elysia version comparison
 
-传输层测试（`tests/integration/compat/http`，共 111 个用例）在两个版本上的结果：
+Results of the transport-layer tests (`tests/integration/compat/http`, 111 cases in all) on the two versions:
 
-| 版本                 | Bun      | Workers（本地 workerd） | 1 GiB 上传的内存增量（Bun） |
-| -------------------- | -------- | ----------------------- | --------------------------- |
-| `1.4.31`（`latest`） | 全部通过 | 全部通过                | 20–40 MiB，多次运行的范围   |
-| `2.0.0-rc.3`（`rc`） | 全部通过 | 全部通过                | 20–38 MiB，多次运行的范围   |
+| Version             | Bun        | Workers (local workerd) | Memory increase for a 1 GiB upload (Bun) |
+| ------------------- | ---------- | ----------------------- | ---------------------------------------- |
+| `1.4.31` (`latest`) | All passed | All passed              | 20-40 MiB, the range across several runs |
+| `2.0.0-rc.3` (`rc`) | All passed | All passed              | 20-38 MiB, the range across several runs |
 
-结论：按 design 的判定规则，起步版本采用 1.4。重跑命令是 `bun run test:http:elysia-rc`，它在 `tests/integration/compat` 目录下运行，结束后恢复依赖和源码。
+Finding: under the decision rule in the design, the starting version is 1.4. The rerun command is `bun run test:http:elysia-rc`. It runs in the `tests/integration/compat` directory and restores the dependencies and source when it finishes.
 
-迁移到 2.0 要改两处，脚本 `tests/integration/compat/scripts/rerun-with-elysia.ts` 里有对应的替换：
+Migrating to 2.0 takes two changes, and the script `tests/integration/compat/scripts/rerun-with-elysia.ts` contains the matching replacements:
 
-- 路由钩子的参数位置改了：`.all(path, handler, hook)` 变为 `.all(path, hook, handler)`，旧顺序在启动时直接抛错。
-- `elysia/adapter/cloudflare-worker` 不再存在，Workers 入口改用 `elysia/adapter/web-standard`。
+- The parameter position of route hooks changed: `.all(path, handler, hook)` becomes `.all(path, hook, handler)`, and the old order throws at startup.
+- `elysia/adapter/cloudflare-worker` no longer exists, so the Workers entry switches to `elysia/adapter/web-standard`.
 
-## 流式传输的内存占用（Bun）
+## Memory use when streaming (Bun)
 
-下面是用 `Bun.serve` 单独做的一次性测量，没有经过 Elysia，脚本没有进入仓库。读取方变慢时内存没有膨胀，说明 Bun 对请求体和响应体都有背压。
+The figures below come from a one-off measurement made with `Bun.serve` alone, without Elysia; the script is not in the repository. Memory did not grow when the reader slowed down, which shows that Bun applies backpressure to both request and response bodies.
 
-| 场景          | 读取方延迟        | 启动后常驻内存 | 结束时高水位 |
-| ------------- | ----------------- | -------------- | ------------ |
-| 上传 1024 MiB | 无                | 8 MiB          | 39 MiB       |
-| 上传 512 MiB  | 每次读取后等 5 ms | 8 MiB          | 32 MiB       |
-| 下载 1024 MiB | 无                | 6 MiB          | 69 MiB       |
-| 下载 256 MiB  | 每次读取后等 2 ms | 5 MiB          | 20 MiB       |
+| Scenario          | Reader delay              | Resident memory after startup | High-water mark at the end |
+| ----------------- | ------------------------- | ----------------------------- | -------------------------- |
+| Upload 1024 MiB   | None                      | 8 MiB                         | 39 MiB                     |
+| Upload 512 MiB    | 5 ms wait after each read | 8 MiB                         | 32 MiB                     |
+| Download 1024 MiB | None                      | 6 MiB                         | 69 MiB                     |
+| Download 256 MiB  | 2 ms wait after each read | 5 MiB                         | 20 MiB                     |
 
-## Cloud Free 实测
+## Cloud Free measurements
 
-2026-11-06 在 Workers Free 账号上运行，套餐由用户在 Dashboard 确认。运行命令：
+The measurements ran on 2026-11-06 on a Workers Free account, and the maintainer confirmed the plan in the Dashboard. Command:
 
 ```bash
 bun run --filter @davloom/compat-tests cloud:free all
 ```
 
-它用 Wrangler 当前登录的账号创建一个 D1 数据库，部署带一次性令牌的探测 Worker，测完后删除 Durable Object 数据、Worker 和数据库，再用列表确认。一次运行写入约 31,000 行 Durable Object 数据，约为当天配额的三分之一。CPU 数据来自 `wrangler tail`，原始结果在 [phase-0-cloud-free-results.json](phase-0-cloud-free-results.json)。
+It creates a D1 database in the account Wrangler is logged in to, deploys a probe Worker with a one-time token, deletes the Durable Object data, the Worker and the database after measuring, and then lists the resources to confirm. One run writes about 31,000 rows of Durable Object data, about a third of the daily quota. The CPU data comes from `wrangler tail`; the raw results are in [phase-0-cloud-free-results.json](phase-0-cloud-free-results.json).
 
-第一次运行在测量开始前失败，原因见“测试发现并修复的问题”。清理照常完成，几乎没有消耗配额。修复后的第二次运行 35 个用例全部通过，用时 373 秒。
+The first run failed before any measurement started; see "Problems found and fixed by the tests" for the cause. Cleanup completed as usual and consumed almost none of the quota. After the fix, the second run passed all 35 cases in 373 seconds.
 
-### 部署
+### Deployment
 
-| 项目           | 结果                                      |
-| -------------- | ----------------------------------------- |
-| 上传体积       | 3642.50 KiB，gzip 后 646.44 KiB           |
-| 启动时间       | 两次部署分别是 76 ms 和 119 ms，上限 1 秒 |
-| 没有令牌的请求 | 404                                       |
+| Item                      | Result                                                   |
+| ------------------------- | -------------------------------------------------------- |
+| Upload size               | 3642.50 KiB, 646.44 KiB after gzip                       |
+| Startup time              | 76 ms and 119 ms for the two deployments, limit 1 second |
+| Request without the token | 404                                                      |
 
-### Worker 的 CPU
+### Worker CPU
 
-| 请求                     | 次数 | 结果     | CPU（tail 收到的样本）                      |
-| ------------------------ | ---- | -------- | ------------------------------------------- |
-| 携带 API Key 的 PROPFIND | 100  | 全部 200 | 6 个样本：p50 3 ms，最大 24 ms              |
-| Worker 里的管理员登录    | 20   | 全部 200 | 12 个样本：p50 63 ms，p90 80 ms，最大 94 ms |
-| 逐级增加 CPU 负载        | 36   | 全部 200 | 最高 1134 ms                                |
+| Request                         | Count | Result  | CPU (samples received by tail)              |
+| ------------------------------- | ----- | ------- | ------------------------------------------- |
+| PROPFIND with an API Key        | 100   | All 200 | 6 samples: p50 3 ms, max 24 ms              |
+| Admin login in the Worker       | 20    | All 200 | 12 samples: p50 63 ms, p90 80 ms, max 94 ms |
+| CPU load increased step by step | 36    | All 200 | Highest 1134 ms                             |
 
-文档写的 Workers Free 上限是每个请求 10 ms，超限返回 1102。这次没有一个请求被拦截，用了 1134 ms 的请求也正常返回。这种宽松没有写进文档，设计仍按 10 ms 留余量。
+The documented Workers Free limit is 10 ms per request, and exceeding it returns 1102. No request was blocked this time; even the request that used 1134 ms returned normally. This leniency is not in the documentation, so the design still leaves headroom against 10 ms.
 
-`wrangler tail` 没有收到全部事件：100 次 API Key 请求只收到 6 条，20 次登录只收到 12 条，所以上表的 CPU 分布只代表这些样本。Durable Object 的调用也会出现在 tail 里。
+`wrangler tail` did not receive every event: only 6 of the 100 API Key requests and 12 of the 20 logins, so the CPU distribution in the table above represents only those samples. Durable Object calls also show up in the tail.
 
 ### Durable Object
 
-| 项目                     | 结果                                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 对象里的管理员登录，5 次 | 全部 200。对象 CPU p50 75 ms，最大 117 ms；负责转发的 Worker 用 0 ms                                                                              |
-| 写入 95 MB               | 200，91 个分块，写 185 行。客户端 11.8 秒，Worker CPU 4 ms，对象 CPU 937 ms                                                                       |
-| 读回 95 MB               | 200，4.4 秒，SHA-256 与写入时一致                                                                                                                 |
-| 上传 105 MB              | 413                                                                                                                                               |
-| 逐级增加 CPU 负载        | 用了 32,278 ms 的请求完成，墙钟 35.2 秒；下一个请求在 30,221 ms 时被重置，返回 502 和 `Durable Object exceeded its CPU time limit and was reset.` |
+| Item                                           | Result                                                                                                                                                                                                     |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin login inside the Durable Object, 5 times | All 200. Durable Object CPU p50 75 ms, max 117 ms; the forwarding Worker used 0 ms                                                                                                                         |
+| Write 95 MB                                    | 200, 91 chunks, 185 rows written. 11.8 seconds on the client, Worker CPU 4 ms, Durable Object CPU 937 ms                                                                                                   |
+| Read back 95 MB                                | 200, 4.4 seconds, SHA-256 matches what was written                                                                                                                                                         |
+| Upload 105 MB                                  | 413                                                                                                                                                                                                        |
+| CPU load increased step by step                | A request that used 32,278 ms completed, taking 35.2 seconds of wall-clock time; the next request was reset at 30,221 ms and returned 502 with `Durable Object exceeded its CPU time limit and was reset.` |
 
-30 秒的 CPU 上限在 Free 上成立。截断点并不精确，有一个请求到 32.3 秒才结束，所以设计按 30 秒计算。
+The 30-second CPU limit holds on Free. The cut-off point is not exact: one request ran for 32.3 seconds before it ended, so the design assumes 30 seconds.
 
-### 行数
+### Row counts
 
-真实部署上的行数和本地 workerd 的基线完全一致：
+The row counts on the real deployment match the local workerd baseline exactly:
 
-| 操作                     | D1                         | Durable Object   |
-| ------------------------ | -------------------------- | ---------------- |
-| 一次携带 API Key 的请求  | 3 次查询，读 5 行，写 2 行 | 不涉及           |
-| 列出有 100 个子项的目录  | 不涉及                     | 读 100 行        |
-| 写入 95 MB，共 91 个分块 | 不涉及                     | 写 185 行        |
-| 创建 1 个对象            | 不涉及                     | 写 5 行          |
-| 复制并删除 1 个对象      | 不涉及                     | 读 7 行，写 7 行 |
+| Operation                          | D1                                     | Durable Object              |
+| ---------------------------------- | -------------------------------------- | --------------------------- |
+| One request carrying an API Key    | 3 queries, 5 rows read, 2 rows written | Not involved                |
+| List a directory with 100 children | Not involved                           | 100 rows read               |
+| Write 95 MB in 91 chunks           | Not involved                           | 185 rows written            |
+| Create 1 object                    | Not involved                           | 5 rows written              |
+| Copy and delete 1 object           | Not involved                           | 7 rows read, 7 rows written |
 
-按这些数字，D1 每天 10 万行的写入配额只够 5 万次携带 API Key 的请求，比 Workers 每天 10 万次请求的上限先用完。Durable Object 的写入配额够每天复制并删除约 14,000 个对象。
+By these numbers, the D1 write quota of 100,000 rows per day covers only 50,000 requests carrying an API Key, so it runs out before the Workers limit of 100,000 requests per day. The Durable Object write quota covers copying and deleting about 14,000 objects per day.
 
-### 目录 COPY/MOVE 的同步处理上限
+### Synchronous processing limit for directory COPY/MOVE
 
-在一次已认证的请求里，于对象内逐个复制并删除 1 KiB 的对象：
+Within one authenticated request, 1 KiB objects were copied and deleted one by one inside the Durable Object:
 
-| 对象数 | 结果 | 对象 CPU | 写入行数 | 客户端耗时 |
-| ------ | ---- | -------- | -------- | ---------- |
-| 100    | 200  | 5 ms     | 700      | 106 ms     |
-| 400    | 200  | 14 ms    | 2,800    | 165 ms     |
-| 2,000  | 200  | 91 ms    | 14,000   | 261 ms     |
+| Objects | Result | Durable Object CPU | Rows written | Client time |
+| ------- | ------ | ------------------ | ------------ | ----------- |
+| 100     | 200    | 5 ms               | 700          | 106 ms      |
+| 400     | 200    | 14 ms              | 2,800        | 165 ms      |
+| 2,000   | 200    | 91 ms              | 14,000       | 261 ms      |
 
-到测量上限 2000 个也没有碰到平台限制。真正的约束是每天 10 万行的写入配额，一次处理 2000 个对象就用掉 14%。
+Even at the measurement cap of 2000 objects, no platform limit was hit. The real constraint is the write quota of 100,000 rows per day, and processing 2000 objects at once uses 14% of it.
 
-用户在 2026-11-06 定下的上限：
+Limits the maintainer set on 2026-11-06:
 
-- Durable Objects 一次最多 1000 个对象，约写 7000 行，占每天写入配额的 7%。
-- R2 一次最多 400 个对象。R2 要绑定支付方式才能开通，不在这轮实测内。Free 上每个请求最多 1000 次内部子请求，R2 的调用也算在内。复制一个对象要读一次、写一次，移动再加上可以批量执行的删除，剩下的次数留给认证和列目录。开通 R2 后要实测确认。
+- Durable Objects: at most 1000 objects at a time, writing about 7000 rows, which is 7% of the daily write quota.
+- R2: at most 400 objects at a time. R2 can only be enabled after a payment method is attached, so it was outside this round of measurement. Free allows at most 1000 internal subrequests per request, and R2 calls count toward that. Copying an object takes one read and one write, and a move adds a delete that can run in batches; the remaining calls are left for authentication and directory listing. Once R2 is enabled, the limit must be confirmed by measurement.
 
-### 清理
+### Cleanup
 
-两次运行都依次删除了 Durable Object 命名空间（部署带 `state: "deleted"` 的配置）、Worker 和 D1 数据库，然后用 `wrangler` 列出资源，确认 Worker 和数据库都已不存在。wrangler 没有列出 Durable Object 命名空间的命令，命名空间的删除以那次部署成功为准。
+Both runs deleted the Durable Object namespace (by deploying a configuration with `state: "deleted"`), the Worker and the D1 database, in that order, then listed the resources with `wrangler` to confirm that the Worker and the database no longer exist. Wrangler has no command that lists Durable Object namespaces, so the namespace deletion is judged by whether that deployment succeeded.
 
-## 测试发现并修复的问题
+## Problems found and fixed by the tests
 
-- Bun 上的 `GET` 和 `HEAD /dav/*` 曾经返回 404。Elysia 优先匹配具体方法的路由，`.get("/*")` 的 Dashboard 路由压过了 `.all("/dav/*")`。现在 Dashboard 路由用 `.all("/*")`。
-- Bun 上的 `/%00` 曾经返回 500，因为 `Bun.file` 遇到空字节会抛错。现在返回 404。
-- Workers 上的 `/api` 曾经落到 SPA 返回 200。现在 `run_worker_first` 包含 `/api`，返回 API 自己的 404。
-- Cloud Free 实测的 `beforeAll` 曾经调用 `expect.poll()`，Vitest 只允许在测试里调用它。这段代码只在真实部署时运行，本地空跑发现不了，第一次实测因此在测量前失败。现在改用 `cloud/tail.ts` 的 `pollUntil`，tail 连不上时带着 wrangler 的报错停止，不再消耗配额。
+- `GET` and `HEAD /dav/*` on Bun used to return 404. Elysia matches routes for a specific method first, so the Dashboard route `.get("/*")` took precedence over `.all("/dav/*")`. The Dashboard route now uses `.all("/*")`.
+- `/%00` on Bun used to return 500, because `Bun.file` throws on a null byte. It now returns 404.
+- `/api` on Workers used to fall through to the SPA and return 200. `run_worker_first` now includes `/api`, so the API's own 404 is returned.
+- The `beforeAll` of the Cloud Free measurement used to call `expect.poll()`, which Vitest allows only inside a test. That code runs only on a real deployment, so the local dry run could not catch it, and the first measurement failed before measuring anything. It now uses `pollUntil` from `cloud/tail.ts`; when tail cannot connect, it stops with Wrangler's error and no longer consumes quota.
 
-## 两种交付方式的差异
+## Differences between the two delivery methods
 
-| 请求                    | Bun | Workers 静态资源       |
-| ----------------------- | --- | ---------------------- |
-| 缺失的 `/assets/x.js`   | 404 | 200，返回 `index.html` |
-| `/design-check` 的 POST | 405 | 405                    |
+| Request                 | Bun | Workers static assets     |
+| ----------------------- | --- | ------------------------- |
+| Missing `/assets/x.js`  | 404 | 200, returns `index.html` |
+| POST to `/design-check` | 405 | 405                       |
 
-第一行来自 SPA 回退：`not_found_handling` 对所有未命中的路径都返回 `index.html`。这不影响功能，只是缺失的资源在 Workers 上不会显示成 404。
+The first row comes from the SPA fallback: `not_found_handling` returns `index.html` for every unmatched path. This does not affect functionality; it only means a missing asset does not show up as a 404 on Workers.
 
-## 后续动作
+## Follow-up actions
 
-- Phase 2：裸路径 `/dav` 现在返回 404，spec 只覆盖 `/dav/`。接入真实 WebDAV 客户端时要决定是否让它进入处理入口。
-- Phase 3：决定是否关闭 API Key 验证的写入，或者加缓存，原因见上面的配额估算。
-- Phase 3：Worker 里的管理员登录用 63–94 ms CPU，远超文档写的 10 ms。Free 这次没有拦截，但文档没有承诺。到时由用户决定把密码校验放进 Durable Object（实测 75–117 ms，在 30 秒上限内），还是留在 Worker；哈希强度不变。
-- Phase 4：示例页 `/design-check` 现在在生产构建里，要在正式页面完成前移除或隐藏。
-- Phase 4：主题没有加载 `@astryxdesign/theme-neutral` 的 `fonts.css`（它从 Google Fonts 加载字体），字体回退到系统字体。到时决定是否加载或自托管字体。
-- `bun pm untrusted` 列出 `@astryxdesign/core` 和 `@astryxdesign/cli` 的 postinstall 被拦截。没有运行它们，所有测试都通过。
-- `wrangler tail` 只收到部分事件。以后需要完整的 CPU 分布时，改用 Workers Logs 或 Tail Worker。
+- Phase 2: the bare path `/dav` now returns 404, and the spec covers only `/dav/`. When real WebDAV clients are connected, decide whether the bare path should reach the WebDAV entry point.
+- Phase 3: decide whether to disable the writes made during API Key verification, or to add a cache; the reason is in the quota estimate above.
+- Phase 3: admin login in the Worker used 63-94 ms of CPU, far above the 10 ms in the documentation. Free did not block it this time, but the documentation does not promise that. The maintainer then decides whether password verification moves into a Durable Object (measured at 75-117 ms, within the 30-second limit) or stays in the Worker; the hash strength stays the same.
+- Phase 4: the example page `/design-check` is currently in the production build; remove or hide it before the final pages are done.
+- Phase 4: the theme does not load `fonts.css` from `@astryxdesign/theme-neutral` (which loads fonts from Google Fonts), so fonts fall back to system fonts. Decide then whether to load the fonts or self-host them.
+- `bun pm untrusted` lists the postinstall scripts of `@astryxdesign/core` and `@astryxdesign/cli` as blocked. They were not run, and all tests pass.
+- `wrangler tail` received only some of the events. When a complete CPU distribution is needed later, use Workers Logs or a Tail Worker instead.

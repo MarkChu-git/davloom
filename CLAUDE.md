@@ -17,7 +17,7 @@ Use the npm `latest` tag for every dependency, declared with an exact version (`
 
 ## Spec workflow
 
-Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behaviour starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Artifacts are written in zh-CN; OpenSpec structural headings and SHALL/MUST stay in English.
+Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
 
 ## Architecture rules
 
