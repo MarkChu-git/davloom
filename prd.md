@@ -588,7 +588,7 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 |---|---|---|
 | Repository setup | GitHub Rulesets, CODEOWNERS, Renovate | After Phase 0 |
 | Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
-| Non-blocking on PR | Vitest V8 Coverage; track the trend first, with no gate | After Phase 0 |
+| Required on PR | Vitest V8 Coverage with no threshold; track the trend first | After Phase 0 |
 | Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
 | Scheduled | StrykerJS, covering only runtime-independent code such as `packages/core` and `packages/webdav` | Phase 1 |
 | Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
@@ -608,7 +608,7 @@ The Cloud Free quota check asserts the number of D1 and Durable Objects calls pe
 - **Trivy scans only images, Dockerfiles and Compose files:** OSV-Scanner handles dependencies. In March 2026, 76 tags of `trivy-action` were force-pushed to code that steals credentials, so pin its version and checksum and run it in a job that has no secrets.
 - **Gitleaks as a CLI, alongside GitHub native secret scanning:** The Gitleaks author has stated that they will only fix security issues.
 - **No Cosign for now:** Artifact Attestations are themselves signed with Sigstore and can prove which workflow built an image.
-- **CODEOWNERS without mandatory review:** There is only one maintainer at present, and an author cannot approve their own PR. The required approval count is set to 0 first and turned on once there is a second maintainer.
+- **Two approvals, which the owner can bypass:** A PR needs two approvals and every required check. The repository owner can bypass the approvals but not the checks, because an author cannot approve their own PR. CODEOWNERS names the owners without requiring code owner review.
 - **AWS S3 stays out of CI:** It costs money and is only an optional backend for users. D1, Durable Objects and R2 can all be tested in the local Workers runtime without an account.
 
 ### Workflow Security

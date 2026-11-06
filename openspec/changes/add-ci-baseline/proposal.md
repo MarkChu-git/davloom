@@ -10,8 +10,8 @@ Every check runs only on the local machine today, and nothing stops a change tha
 - Required security scans for PRs: OSV-Scanner, Gitleaks and CodeQL.
 - Security of the workflows themselves: actions pinned to a commit SHA, minimal `permissions`, no `pull_request_target`, and checks by actionlint and zizmor.
 - Dependency updates: Renovate keeps proposing updates and keeps versions exact.
-- Repository configuration: GitHub Rulesets protect `main`, and CODEOWNERS names the owners without enforcing review.
-- Coverage: Vitest V8 Coverage reports the trend only and does not block merging.
+- Repository configuration: GitHub Rulesets protect `main`. Every check must pass for everyone, and a pull request needs two approvals unless the repository owner merges it. CODEOWNERS names the owners.
+- Coverage: Vitest V8 Coverage runs as a required job with no threshold, so the coverage level never blocks merging.
 - Three supporting local changes: the `tsconfig.json` of `apps/api` and of `tests/integration/compat` changes to reference the Bun and Workers configs separately; the single check command gains a check of StyleX against the Astryx peer dependency; the Node version is written to `.node-version`.
 - Project rule: from now on, the `tasks.md` of every Phase includes a task that wires the new tests into CI.
 
@@ -24,11 +24,11 @@ Not included: Testcontainers + RustFS and StrykerJS (Phase 1), RFC tests + litmu
 - `pull-request-checks`: Quality checks and security scans that a pull request must pass before it merges.
 - `workflow-security`: Constraints on the permissions, triggers and third-party actions of the CI workflows themselves.
 - `dependency-updates`: How dependencies are updated continuously, and how new versions and known vulnerabilities are handled.
-- `branch-protection`: Which changes the `main` branch accepts, and the approval rules while there is a single maintainer.
+- `branch-protection`: Which changes the `main` branch accepts, and who needs approvals to merge.
 
 ### Modified Capabilities
 
-None. `repository-checks` comes from `add-phase-0-foundation`, which is not archived yet, so it cannot be a Modified Capability before archiving. The StyleX peer dependency check is written in `dependency-updates`, and the existing requirements of `repository-checks` do not change.
+None. `add-phase-0-foundation` was not archived when this change was proposed, so `repository-checks` could not be a Modified Capability, and the StyleX peer dependency check went into `dependency-updates`. The existing requirements of `repository-checks` do not change.
 
 ## Impact
 
