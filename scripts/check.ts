@@ -1,12 +1,13 @@
 // Runs every check, then names the ones that failed. Exits non-zero if any failed.
+// `bun --bun run` makes tools whose launchers name Node run on Bun instead.
 const STEPS: [name: string, command: string[]][] = [
-  ["lint", ["bun", "run", "lint"]],
-  ["format", ["bun", "run", "format:check"]],
+  ["lint", ["bun", "--bun", "run", "lint"]],
+  ["format", ["bun", "--bun", "run", "format:check"]],
   ["pinned dependencies", ["bun", "scripts/check-pinned-deps.ts"]],
-  ["generated theme", ["bun", "run", "--filter", "@davloom/ui", "check:theme"]],
-  ["typecheck", ["bun", "run", "typecheck"]],
-  ["unit tests", ["bun", "run", "test"]],
-  ["build", ["bun", "run", "build"]],
+  ["generated theme", ["bun", "--bun", "run", "--filter", "@davloom/ui", "check:theme"]],
+  ["typecheck", ["bun", "--bun", "run", "typecheck"]],
+  ["unit tests", ["bun", "--bun", "run", "test"]],
+  ["build", ["bun", "--bun", "run", "build"]],
 ];
 
 const failed: string[] = [];
