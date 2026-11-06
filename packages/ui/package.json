@@ -1,0 +1,27 @@
+{
+  "name": "@davloom/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./themes/davloom": "./src/themes/davloom.js",
+    "./themes/davloom.css": "./src/themes/davloom.css",
+    "./tokens/brand": "./src/tokens/brand.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build:theme": "astryx theme build src/themes/davloom-source.ts --out src/themes/davloom.css",
+    "check:theme": "astryx theme build src/themes/davloom-source.ts --out src/themes/davloom.css --check"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.8",
+    "@astryxdesign/theme-neutral": "0.7.8",
+    "@stylexjs/stylex": "0.19.1",
+    "react": "19.3.1"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "0.7.8",
+    "@types/react": "19.3.0"
+  }
+}
