@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { hashPassword } from "better-auth/crypto";
 import { Schema } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { startWorkerdServerWithDatabase, type Server } from "../http/servers";
+import { startWorkerdServer, type Server } from "../http/servers";
 import { PROBE_TOKEN_HEADER } from "../probe/token-guard";
 import { mergeHeaders } from "../shared/headers";
 import { decodeJson, readJson } from "../shared/json";
@@ -165,10 +165,9 @@ describe.skipIf(!IS_DEPLOYED && !IS_LOCAL)("Cloud Free measurements", () => {
         throw new Error(`wrangler tail did not attach within 60 s.\n${started.errorOutput()}`);
       }
     } else {
-      server = await startWorkerdServerWithDatabase(
-        "tests/integration/compat/probe/wrangler.jsonc",
-        ["--var", `PROBE_TOKEN:${LOCAL_TOKEN}`],
-      );
+      server = await startWorkerdServer("tests/integration/compat/probe/wrangler.jsonc", {
+        vars: { PROBE_TOKEN: LOCAL_TOKEN },
+      });
       baseUrl = server.url;
       token = LOCAL_TOKEN;
     }

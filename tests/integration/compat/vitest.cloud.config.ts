@@ -1,7 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-// Measures a real deployment, or local workerd with DAVLOOM_PROBE_LOCAL set. Runs on Node for the
-// same reason as the HTTP tests.
+// Measures a real deployment, or local workerd with DAVLOOM_PROBE_LOCAL set.
 export default defineConfig({
   test: {
     include: ["cloud/**/*.test.ts"],
