@@ -1,0 +1,29 @@
+{
+  "name": "@davloom/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "build": "bun run --filter @davloom/ui build:theme && vite build",
+    "dev": "vite dev"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "0.7.8",
+    "@astryxdesign/theme-neutral": "0.7.8",
+    "@davloom/ui": "workspace:*",
+    "@stylexjs/stylex": "0.19.1",
+    "@tanstack/react-router": "1.170.46",
+    "@tanstack/react-start": "1.169.4",
+    "@tanstack/react-store": "0.11.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@stylexjs/unplugin": "0.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "vite": "8.3.6"
+  }
+}

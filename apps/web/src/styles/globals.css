@@ -1,0 +1,10 @@
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@davloom/ui/themes/davloom.css";
+
+/* The document sits outside every component, so it takes its colors from the theme here. */
+body {
+  background-color: var(--color-background-body);
+  color: var(--color-text-primary);
+  min-height: 100dvh;
+}

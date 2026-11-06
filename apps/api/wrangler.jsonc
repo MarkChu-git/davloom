@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "davloom",
+  "main": "src/entry.workers.ts",
+  "compatibility_date": "2026-11-04",
+  // The API and WebDAV share an origin with the Dashboard. Everything else is a static asset.
+  "assets": {
+    "directory": "../web/dist/client",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api", "/api/*", "/dav", "/dav/*"],
+  },
+}

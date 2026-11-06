@@ -1,0 +1,24 @@
+{
+  "name": "@davloom/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./app": "./src/app.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.workers.json",
+    "build": "bun build src/entry.bun.ts --target=bun --outdir dist/bun && wrangler deploy --dry-run --outdir dist/workers",
+    "dev:workers": "wrangler dev",
+    "dev:bun": "bun --watch src/entry.bun.ts"
+  },
+  "dependencies": {
+    "@davloom/webdav": "workspace:*",
+    "effect": "4.1.2",
+    "elysia": "1.4.31"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261104.1",
+    "wrangler": "4.158.0"
+  }
+}
