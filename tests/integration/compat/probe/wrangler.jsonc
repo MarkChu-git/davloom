@@ -1,0 +1,28 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "davloom-probe",
+  "main": "entry.workers.ts",
+  "compatibility_date": "2026-11-04",
+  // Better Auth needs node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // Only for local runs. A real deployment gets its own values from scripts/cloud-free.ts.
+    "AUTH_SECRET": "compatibility-test-secret-not-used-anywhere-else",
+    "PROBE_TOKEN": "",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "davloom-probe",
+      // A placeholder for local runs. A real deployment generates its own config.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "../../../../packages/database/drizzle",
+    },
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "STORE", "class_name": "ProbeStore" }],
+  },
+  "exports": {
+    "ProbeStore": { "type": "durable-object", "storage": "sqlite" },
+  },
+}

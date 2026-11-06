@@ -1,0 +1,39 @@
+{
+  "name": "@davloom/compat-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.workers.json",
+    "build:web": "bun run --filter @davloom/web build",
+    "test:http": "bun run build:web && vitest run --config vitest.http.config.ts",
+    "test:http:elysia-rc": "bun scripts/rerun-with-elysia.ts 2.0.0-rc.3",
+    "test:d1": "vitest run --config vitest.d1.config.ts",
+    "test:bun-sqlite": "bun --bun vitest run --config vitest.bun-sqlite.config.ts",
+    "test:ui": "bun run build:web && playwright test",
+    "test:ui:brand": "bun scripts/verify-brand-change.ts",
+    "playwright:install": "playwright install chromium",
+    "test:cloud": "vitest run --config vitest.cloud.config.ts",
+    "test:cloud:local": "DAVLOOM_PROBE_LOCAL=1 vitest run --config vitest.cloud.config.ts",
+    "cloud:free": "bun scripts/cloud-free.ts",
+    "test": "bun run test:http && bun run test:d1 && bun run test:bun-sqlite && bun run test:ui && bun run test:ui:brand && bun run test:cloud:local && bun run test:cloud"
+  },
+  "dependencies": {
+    "@davloom/api": "workspace:*",
+    "@davloom/auth": "workspace:*",
+    "@davloom/core": "workspace:*",
+    "@davloom/database": "workspace:*",
+    "@davloom/ui": "workspace:*",
+    "@davloom/webdav": "workspace:*",
+    "effect": "4.1.2",
+    "elysia": "1.4.31"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.6.0",
+    "@cloudflare/workers-types": "5.20261104.1",
+    "@playwright/test": "1.64.1",
+    "better-auth": "1.7.18",
+    "vitest": "5.1.0",
+    "wrangler": "4.158.0"
+  }
+}
