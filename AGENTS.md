@@ -2,16 +2,16 @@
 
 ## Commands
 
-Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node. Start commands from the repository root, where `bunfig.toml` makes `bun run` start tools whose launchers name Node on Bun. That setting does not reach `bunx` or `bun run` inside a package directory, so give those `--bun`.
+Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node. Start commands from the repository root, where `bunfig.toml` makes `bun run` start tools whose launchers name Node on Bun. That setting does not reach `bunx` or `bun run` inside a package directory, so give those `--bun`: wherever this file or a skill gives `bunx <tool>`, run `bunx --bun <tool>`.
 
-- `bun install --frozen-lockfile`: install exactly what `bun.lock` records.
+- `bun install --frozen-lockfile`: install exactly what `bun.lock` records. It runs one dependency script, the `workerd` postinstall `node install.js`, on the first `node` on `PATH`, and on Bun when there is none.
 - `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
 - `bun run format`: rewrite files with Oxfmt.
 - `bun run test:compat`: run the compatibility tests on local Bun and workerd, including Playwright against the production build. It needs no Cloudflare account, and reports what only a real deployment can test as skipped. Run `bun run --filter @davloom/compat-tests playwright:install` once first, or set `DAVLOOM_CHROMIUM_PATH` to a Chromium you already have.
 - `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
 - `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
-- `openspec list`: show active changes.
-- `openspec validate <change> --strict`: validate a change before and after editing it.
+- `bunx --bun @fission-ai/openspec list`: show active changes.
+- `bunx --bun @fission-ai/openspec validate <change> --strict`: validate a change before and after editing it.
 
 ## Dependencies
 
@@ -19,7 +19,7 @@ Use the npm `latest` tag for every dependency, declared with an exact version (`
 
 ## Spec workflow
 
-Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
+Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Those skills call the CLI as `openspec <command>`; run it as `bunx --bun @fission-ai/openspec <command>`, because the global `openspec` launcher names Node and the npm package named `openspec` is a different project. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
 
 ## Pull requests
 
