@@ -2,41 +2,41 @@
 
 ## Purpose
 
-防止 CI 本身成为供应链攻击的入口：第三方 Action、过宽的令牌权限和不可信的 Pull Request 都不能拿到仓库的写权限或密钥。
+Prevent CI itself from becoming an entry point for supply chain attacks: third-party actions, overly broad token permissions and untrusted pull requests must not be able to get write access to the repository or its secrets.
 
 ## ADDED Requirements
 
-### Requirement: 第三方 Action 固定到提交
-每个 workflow 引用的 Action MUST 固定到完整的 commit SHA，MUST NOT 使用可变的 tag 或分支。
+### Requirement: Third-party actions pinned to a commit
+Every action that a workflow references MUST be pinned to a full commit SHA, and MUST NOT use a mutable tag or branch.
 
-#### Scenario: 使用可变 tag
-- **WHEN** Pull Request 在 workflow 里用 tag 引用一个 Action
-- **THEN** 工作流检查失败，并指出这一行
+#### Scenario: Mutable tag
+- **WHEN** a pull request references an action by tag in a workflow
+- **THEN** the workflow check fails and names that line
 
-### Requirement: 令牌权限最小
-每个 workflow MUST 显式声明 `permissions`，默认只读。需要更多权限的 job MUST 单独声明，并且只声明它用到的权限。
+### Requirement: Minimal token permissions
+Every workflow MUST declare `permissions` explicitly, read-only by default. A job that needs more permissions MUST declare them on its own, and declare only the permissions it uses.
 
-#### Scenario: 没有声明权限
-- **WHEN** Pull Request 新增一个没有声明 `permissions` 的 workflow
-- **THEN** 工作流检查失败
+#### Scenario: Permissions not declared
+- **WHEN** a pull request adds a workflow that does not declare `permissions`
+- **THEN** the workflow check fails
 
-### Requirement: 不使用特权触发器
-workflow MUST NOT 使用 `pull_request_target` 触发器。
+### Requirement: No privileged triggers
+A workflow MUST NOT use the `pull_request_target` trigger.
 
-#### Scenario: 使用特权触发器
-- **WHEN** Pull Request 新增一个由 `pull_request_target` 触发的 workflow
-- **THEN** 工作流检查失败
+#### Scenario: Privileged trigger used
+- **WHEN** a pull request adds a workflow triggered by `pull_request_target`
+- **THEN** the workflow check fails
 
-### Requirement: Pull Request 检查不接触密钥
-Pull Request 的检查 MUST NOT 读取云凭据和仓库 secrets，来自 fork 的 Pull Request MUST 能得到和仓库内分支相同的检查结果。
+### Requirement: Pull request checks do not touch secrets
+Pull request checks MUST NOT read cloud credentials or repository secrets, and a pull request from a fork MUST get the same check results as a branch inside the repository.
 
-#### Scenario: 来自 fork 的 Pull Request（需要真实仓库，人工验证）
-- **WHEN** 外部贡献者从 fork 发起 Pull Request
-- **THEN** 必过检查全部运行，结果不受缺少 secrets 的影响
+#### Scenario: Pull request from a fork (needs a real repository, manual verification)
+- **WHEN** an outside contributor opens a pull request from a fork
+- **THEN** all required checks run, and the results are not affected by the missing secrets
 
-### Requirement: 工作流文件接受检查
-每个修改 workflow 文件的 Pull Request MUST 通过语法检查和安全检查。
+### Requirement: Workflow files are checked
+Every pull request that changes a workflow file MUST pass a syntax check and a security check.
 
-#### Scenario: 工作流语法错误
-- **WHEN** Pull Request 含有语法错误的 workflow 文件
-- **THEN** 工作流检查失败，并指出错误位置
+#### Scenario: Workflow syntax error
+- **WHEN** a pull request contains a workflow file with a syntax error
+- **THEN** the workflow check fails and names the location of the error

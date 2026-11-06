@@ -1,56 +1,56 @@
 # Tasks
 
-## 1. 前置条件
+## 1. Prerequisites
 
-- [ ] 1.1 确认 `add-phase-0-foundation` 已归档，验证 `openspec list` 不再列出它，`openspec/specs/` 下有它的 4 个 capability
-- [ ] 1.2 在 GitHub 创建公开仓库，推送 `main` 前取得用户确认，验证 `git ls-remote origin main` 返回本地 `main` 的提交，仓库设置显示为 Public
+- [ ] 1.1 Confirm that `add-phase-0-foundation` is archived. Verify that `openspec list` no longer lists it and that `openspec/specs/` holds its 4 capabilities
+- [ ] 1.2 Create a public repository on GitHub and get the maintainer's confirmation before pushing `main`. Verify that `git ls-remote origin main` returns the commit of the local `main` and that the repository settings show Public
 
-## 2. 本地检查
+## 2. Local checks
 
-- [ ] 2.1 添加 `.node-version`，写入实施时 Node 的最新正式版本，验证本地 `node --version` 与它一致，并且 `bun run test:compat` 以状态 0 退出
-- [ ] 2.2 把 `apps/api` 和 `tests/integration/compat` 的 `tsconfig.json` 改成只引用 `tsconfig.bun.json` 和 `tsconfig.workers.json`，同步各自的 `typecheck` 脚本，验证 `bun run typecheck` 通过，类型感知 lint 的调试日志显示 `Unmatched files: 0`
-- [ ] 2.3 以精确版本添加 `oxlint-tsgolint`，在 `oxlint.json` 打开 `options.typeAware` 并修完现有问题，验证 `bun run lint` 通过，并且在 Bun 文件和 `*.workers.ts` 里各放一个未处理的 Promise 时 lint 都失败并指出该行
-- [ ] 2.4 在 `scripts/lib/pinned-deps.ts` 增加 StyleX 对 Astryx peer 依赖范围的检查并接入 `bun run check`，验证单元测试覆盖范围内和范围外两种情况，并让 `AGENTS.md`、`CLAUDE.md` 对这项检查的描述和实现一致
-- [ ] 2.5 以精确版本添加 `@vitest/coverage-v8` 和 `bun run test:coverage`，验证命令生成覆盖率报告，覆盖率高低不影响退出状态
+- [ ] 2.1 Add `.node-version` with the latest stable Node version at implementation time. Verify that the local `node --version` matches it and that `bun run test:compat` exits with status 0
+- [ ] 2.2 Change the `tsconfig.json` of `apps/api` and of `tests/integration/compat` to reference only `tsconfig.bun.json` and `tsconfig.workers.json`, and update the `typecheck` script of each to match. Verify that `bun run typecheck` passes and that the debug log of the type-aware lint shows `Unmatched files: 0`
+- [ ] 2.3 Add `oxlint-tsgolint` at an exact version, turn on `options.typeAware` in `oxlint.json` and fix the existing problems. Verify that `bun run lint` passes, and that lint fails and names the line when an unhandled Promise is placed in a Bun file and in a `*.workers.ts` file
+- [ ] 2.4 Add a check of StyleX against the Astryx peer dependency range to `scripts/lib/pinned-deps.ts` and wire it into `bun run check`. Verify that unit tests cover both the in-range and the out-of-range case, and make the descriptions of this check in `AGENTS.md` and `CLAUDE.md` match the implementation
+- [ ] 2.5 Add `@vitest/coverage-v8` at an exact version and add `bun run test:coverage`. Verify that the command produces a coverage report and that the coverage level does not affect the exit status
 
-## 3. Pull Request 检查
+## 3. Pull request checks
 
-- [ ] 3.1 新建 `.github/workflows/ci.yml` 的 `check` job：在 Pull Request 和推送到 `main` 时触发，workflow 级 `permissions: contents: read`，`actions/checkout` 不保留凭据，Action 固定到 SHA，Bun 读取 `packageManager`，Node 读取 `.node-version`，运行 `bun install --frozen-lockfile` 和 `bun run check`。验证测试分支上 job 通过，只改 `package.json` 不更新 `bun.lock` 时安装步骤失败
-- [ ] 3.2 增加 `compat` job，缓存 Playwright 浏览器，运行 `playwright:install` 和 `bun run test:compat`，验证 job 通过，日志里需要真实部署的用例显示为跳过
-- [ ] 3.3 增加 `coverage` job，把总覆盖率写入 job summary，验证 summary 显示覆盖率，并且这个 job 不在必过检查里
-- [ ] 3.4 新建 `docs/ci.md`，写明每个 job 对应的本地命令和哪些检查必过，并记录 3.1 和 3.2 第一次运行的耗时，验证文中每条命令在本地的结果和 CI 一致
+- [ ] 3.1 Create the `check` job in `.github/workflows/ci.yml`: trigger it on pull requests and on pushes to `main`, set `permissions: contents: read` at the workflow level, make `actions/checkout` not persist credentials, pin actions to a SHA, read Bun from `packageManager` and Node from `.node-version`, and run `bun install --frozen-lockfile` and `bun run check`. Verify that the job passes on a test branch and that the install step fails when only `package.json` is changed and `bun.lock` is not updated
+- [ ] 3.2 Add the `compat` job: cache the Playwright browsers and run `playwright:install` and `bun run test:compat`. Verify that the job passes and that the cases which need a real deployment show as skipped in the log
+- [ ] 3.3 Add the `coverage` job and write the total coverage to the job summary. Verify that the summary shows the coverage and that this job is not among the required checks
+- [ ] 3.4 Create `docs/ci.md`, stating the local command for each job and which checks are required, and record how long the first runs of 3.1 and 3.2 took. Verify that every command in the text gives the same result locally as in CI
 
-## 4. 安全扫描
+## 4. Security scans
 
-- [ ] 4.1 增加 `dependencies` job：下载固定版本的 OSV-Scanner 并校验 checksum，扫描 `bun.lock`，例外登记在 `osv-scanner.toml`。验证当前锁文件扫描通过；含已公开漏洞版本的临时锁文件扫描失败并输出漏洞编号；登记未到期的例外后通过，到期后再次失败
-- [ ] 4.2 增加 `secrets` job：下载固定版本的 Gitleaks 并校验 checksum，扫描 Pull Request 新增的提交，输出时隐去密钥，允许清单只放测试固定值。验证完整历史扫描通过；临时分支上提交伪造的云服务密钥后扫描失败，输出里没有完整密钥
-- [ ] 4.3 新建 `.github/workflows/codeql.yml`，只给它的 job `security-events: write`，验证 `main` 上出现 CodeQL 分析结果，日志里没有 TypeScript 提取错误
-- [ ] 4.4 给依赖扫描加每周定时和手动触发，验证手动触发一次成功
-- [ ] 4.5 在 `docs/ci.md` 写明如何登记漏洞例外和处理密钥误报，验证按文中步骤能在本地复现 4.1 和 4.2 的结果
+- [ ] 4.1 Add the `dependencies` job: download a pinned version of OSV-Scanner and verify its checksum, scan `bun.lock`, and record exceptions in `osv-scanner.toml`. Verify that the scan passes on the current lockfile; that it fails and prints the vulnerability ID on a throwaway lockfile that contains a version with a published vulnerability; and that it passes after an unexpired exception is registered and fails again after the exception expires
+- [ ] 4.2 Add the `secrets` job: download a pinned version of Gitleaks and verify its checksum, scan the commits that a pull request adds, redact secrets in the output, and keep only the test fixture in the allowlist. Verify that a scan of the full history passes, and that after a fake cloud service secret is committed on a throwaway branch the scan fails and the output does not contain the full secret
+- [ ] 4.3 Create `.github/workflows/codeql.yml` and grant `security-events: write` only to its job. Verify that CodeQL analysis results appear on `main` and that the log shows no TypeScript extraction errors
+- [ ] 4.4 Add a weekly scheduled run and a manual trigger to the dependency scan. Verify that one manual trigger succeeds
+- [ ] 4.5 Document in `docs/ci.md` how to register a vulnerability exception and how to handle a secret false positive. Verify that following the steps in the text reproduces the results of 4.1 and 4.2 locally
 
-## 5. 工作流安全
+## 5. Workflow security
 
-- [ ] 5.1 增加 `workflows` job：下载固定版本的 actionlint 和 zizmor 并校验 checksum，检查 `.github/workflows/`。验证仓库里的 workflow 全部通过；用 tag 引用 Action、不声明 `permissions`、由 `pull_request_target` 触发、有语法错误的四个临时 workflow 都失败
-- [ ] 5.2 确认 workflow 除 `GITHUB_TOKEN` 外不引用任何 secrets，由用户用另一个账号从 fork 发起测试 Pull Request，验证必过检查全部运行，结果和仓库内分支一致
+- [ ] 5.1 Add the `workflows` job: download pinned versions of actionlint and zizmor and verify their checksums, and check `.github/workflows/`. Verify that all workflows in the repository pass, and that the four throwaway workflows (one that references an action by tag, one that does not declare `permissions`, one triggered by `pull_request_target`, and one with a syntax error) all fail
+- [ ] 5.2 Confirm that no workflow references any secrets other than `GITHUB_TOKEN`, and have the maintainer open a test pull request from a fork with another account. Verify that all required checks run and that the results match those of a branch in the repository
 
-## 6. 依赖更新
+## 6. Dependency updates
 
-- [ ] 6.1 按 design.md 决定 3 新建 `renovate.json`，验证 `renovate-config-validator` 通过
-- [ ] 6.2 由用户在 GitHub 上安装 Renovate App，验证 Dependency Dashboard 出现并列出 OSV 漏洞摘要，第一个更新 Pull Request 的版本声明仍是精确版本且检查通过
-- [ ] 6.3 在 `docs/ci.md` 写明 Renovate 的规则和 StyleX 跟随 Astryx 升级的步骤，验证文中步骤和 `renovate.json` 一致
+- [ ] 6.1 Create `renovate.json` per Decision 3 in design.md. Verify that `renovate-config-validator` passes
+- [ ] 6.2 Have the maintainer install the Renovate App on GitHub. Verify that the Dependency Dashboard appears and lists the OSV vulnerability summary, and that the version specifier in the first update pull request is still an exact version and its checks pass
+- [ ] 6.3 Document in `docs/ci.md` the Renovate rules and the steps for upgrading StyleX along with Astryx. Verify that the steps in the text match `renovate.json`
 
-## 7. 仓库配置
+## 7. Repository configuration
 
-- [ ] 7.1 新建 `.github/CODEOWNERS`，验证 Pull Request 页面显示各目录的责任人
-- [ ] 7.2 第 3 到 6 组的检查都通过后，为 `main` 创建 Ruleset：禁止删除和强制推送，要求 Pull Request 和必过检查，CodeQL 用 Require code scanning results，审批数为 0，配置导出为 JSON 存进仓库。验证直接推送和强制推送被拒绝，检查失败的 Pull Request 不能合并，维护者在检查通过后不经审批就能合并自己的 Pull Request
-- [ ] 7.3 打开 GitHub 原生密钥扫描和推送保护，验证设置页显示两项都已开启
+- [ ] 7.1 Create `.github/CODEOWNERS`. Verify that the pull request page shows the owner of each directory
+- [ ] 7.2 Once the checks in groups 3 to 6 all pass, create a Ruleset for `main`: block deletion and force pushes, require pull requests and the required checks, use Require code scanning results for CodeQL, set the approval count to 0, and export the configuration as JSON into the repository. Verify that direct pushes and force pushes are rejected, that a pull request with failing checks cannot be merged, and that the maintainer can merge their own pull request without approval once the checks pass
+- [ ] 7.3 Turn on GitHub native secret scanning and push protection. Verify that the settings page shows both as enabled
 
-## 8. 项目规则
+## 8. Project rules
 
-- [ ] 8.1 在 `AGENTS.md`、`CLAUDE.md` 和 `openspec/config.yaml` 的 tasks 规则里加上“每个 change 的 tasks.md 都带上把新测试接入 CI 的任务”，并在 Commands 里指向 `docs/ci.md`，验证 `openspec instructions tasks` 的输出包含这条规则
+- [ ] 8.1 Add the rule "every change's tasks.md includes a task that wires the new tests into CI" to the tasks rules of `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml`, and point to `docs/ci.md` in Commands. Verify that the output of `openspec instructions tasks` contains this rule
 
 ## Workflow follow-up
 
-- 开始实施前，经用户同意后在 Linear 项目 davloom 建立和上面任务同编号的子任务。
-- 用户审阅后归档这个 change。
-- 归档后确认 `openspec/specs/` 下生成了 4 个新 capability 的 spec。
+- Before implementation starts, and with the maintainer's agreement, create sub-issues in the Linear project davloom that carry the same numbers as the tasks above.
+- Archive this change after the maintainer has reviewed it.
+- After archiving, confirm that `openspec/specs/` contains the specs of the 4 new capabilities.

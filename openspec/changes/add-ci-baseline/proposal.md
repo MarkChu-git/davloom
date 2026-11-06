@@ -2,37 +2,37 @@
 
 ## Why
 
-现在所有检查都只在本机运行，`main` 上没有任何东西能挡住未通过检查的改动。Phase 1 之后存储和协议代码会快速增长，所以要在 Phase 0 归档后先接入一条基线 CI，之后每个 Phase 只往里加自己的测试。
+Every check runs only on the local machine today, and nothing stops a change that fails the checks from reaching `main`. Storage and protocol code will grow quickly after Phase 1, so a baseline CI should go in first, once Phase 0 is archived. After that, each Phase only adds its own tests to it.
 
 ## What Changes
 
-- PR 必过的质量检查：按锁文件安装依赖、Oxlint（含类型感知规则）、Oxfmt、TypeScript、Vitest、Workers 和 Bun 兼容性测试、Playwright、生产构建。
-- PR 必过的安全扫描：OSV-Scanner、Gitleaks、CodeQL。
-- 工作流自身的安全：Action 固定到 commit SHA，最小 `permissions`，不用 `pull_request_target`，由 actionlint 和 zizmor 检查。
-- 依赖更新：Renovate 持续提出更新，保持精确版本。
-- 仓库配置：GitHub Rulesets 保护 `main`，CODEOWNERS 标明责任人但不强制审核。
-- 覆盖率：Vitest V8 Coverage 只报告趋势，不阻塞合并。
-- 本地配套改动三处：`apps/api` 和 `tests/integration/compat` 的 `tsconfig.json` 改为分别引用 Bun 和 Workers 的配置；统一检查新增 StyleX 对 Astryx peer 依赖的检查；Node 版本写进 `.node-version`。
-- 项目规则：之后每个 Phase 的 `tasks.md` 都带上把新测试接入 CI 的任务。
+- Required quality checks for PRs: installing dependencies from the lockfile, Oxlint (including type-aware rules), Oxfmt, TypeScript, Vitest, Workers and Bun compatibility tests, Playwright, and the production build.
+- Required security scans for PRs: OSV-Scanner, Gitleaks and CodeQL.
+- Security of the workflows themselves: actions pinned to a commit SHA, minimal `permissions`, no `pull_request_target`, and checks by actionlint and zizmor.
+- Dependency updates: Renovate keeps proposing updates and keeps versions exact.
+- Repository configuration: GitHub Rulesets protect `main`, and CODEOWNERS names the owners without enforcing review.
+- Coverage: Vitest V8 Coverage reports the trend only and does not block merging.
+- Three supporting local changes: the `tsconfig.json` of `apps/api` and of `tests/integration/compat` changes to reference the Bun and Workers configs separately; the single check command gains a check of StyleX against the Astryx peer dependency; the Node version is written to `.node-version`.
+- Project rule: from now on, the `tasks.md` of every Phase includes a task that wires the new tests into CI.
 
-不包含：Testcontainers + RustFS、StrykerJS（Phase 1），RFC 测试 + litmus（Phase 2），k6（Phase 5），发布流水线（Phase 6）。oasdiff、Lighthouse CI、CodSpeed、Cosign 暂不接入。这些的安排见 PRD 第 11 节。
+Not included: Testcontainers + RustFS and StrykerJS (Phase 1), RFC tests + litmus (Phase 2), k6 (Phase 5), and the release pipeline (Phase 6). oasdiff, Lighthouse CI, CodSpeed and Cosign are not added for now. The plan for these is in section 11 of the PRD.
 
 ## Capabilities
 
 ### New Capabilities
 
-- `pull-request-checks`: Pull Request 合并前必须通过的质量检查和安全扫描。
-- `workflow-security`: CI 工作流自身的权限、触发方式和第三方 Action 的约束。
-- `dependency-updates`: 依赖如何持续更新，以及新版本和已知漏洞如何处理。
-- `branch-protection`: `main` 分支接受哪些改动，以及单人维护时的审批规则。
+- `pull-request-checks`: Quality checks and security scans that a pull request must pass before it merges.
+- `workflow-security`: Constraints on the permissions, triggers and third-party actions of the CI workflows themselves.
+- `dependency-updates`: How dependencies are updated continuously, and how new versions and known vulnerabilities are handled.
+- `branch-protection`: Which changes the `main` branch accepts, and the approval rules while there is a single maintainer.
 
 ### Modified Capabilities
 
-无。`repository-checks` 来自尚未归档的 `add-phase-0-foundation`，归档前不能作为 Modified Capability。StyleX 的 peer 依赖检查写在 `dependency-updates` 里，`repository-checks` 已有的要求不变。
+None. `repository-checks` comes from `add-phase-0-foundation`, which is not archived yet, so it cannot be a Modified Capability before archiving. The StyleX peer dependency check is written in `dependency-updates`, and the existing requirements of `repository-checks` do not change.
 
 ## Impact
 
-- 代码：新增 `.github/workflows/`、`.github/CODEOWNERS`、`renovate.json`、`osv-scanner.toml`、Gitleaks 配置、`.node-version` 和 `docs/ci.md`；`oxlint.json` 打开类型感知规则；`apps/api` 和 `tests/integration/compat` 调整 tsconfig 结构；`scripts/lib/pinned-deps.ts` 增加 peer 依赖检查；新增开发依赖 `oxlint-tsgolint` 和 `@vitest/coverage-v8`。
-- 外部系统：需要一个 GitHub 仓库和 Renovate GitHub App。GitHub 免费账号下，Rulesets 只支持公开仓库，CodeQL 和原生密钥扫描也只对公开仓库免费。
-- 前置条件：`add-phase-0-foundation` 完成并归档，兼容性测试命令在没有云凭据时以状态 0 退出。
-- 文档：`AGENTS.md`、`CLAUDE.md` 和 `openspec/config.yaml` 补充 CI 规则。`AGENTS.md` 和 `CLAUDE.md` 现在说 `bun run check` 会检查 StyleX 跟随 Astryx 的 peer 依赖，实际只检查精确版本，实施后两者一致。
+- Code: adds `.github/workflows/`, `.github/CODEOWNERS`, `renovate.json`, `osv-scanner.toml`, the Gitleaks configuration, `.node-version` and `docs/ci.md`; `oxlint.json` turns on the type-aware rules; `apps/api` and `tests/integration/compat` get an adjusted tsconfig structure; `scripts/lib/pinned-deps.ts` gains a peer dependency check; new dev dependencies `oxlint-tsgolint` and `@vitest/coverage-v8`.
+- External systems: needs a GitHub repository and the Renovate GitHub App. On a free GitHub account, Rulesets support only public repositories, and CodeQL and native secret scanning are also free only for public repositories.
+- Prerequisites: `add-phase-0-foundation` is finished and archived, and the compatibility test command exits with status 0 when there are no cloud credentials.
+- Docs: `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml` gain CI rules. `AGENTS.md` and `CLAUDE.md` currently say that `bun run check` checks whether StyleX follows the Astryx peer dependency, but it only checks exact versions; after implementation the two agree.

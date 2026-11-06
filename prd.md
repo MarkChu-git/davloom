@@ -1,46 +1,46 @@
-# Davloom — 产品与技术开发总计划
+# Davloom — Product and Engineering Plan
 
-**版本：** v1.2  
-**日期：** 2026 年 11 月 4 日  
-**类型：** Open-source · Self-hosted · WebDAV · Cloud Storage  
-**产品口号：** *Your storage. Your rules.*  
-**架构原则：** Cloudflare-first, Vendor-neutral by design.
-
----
-
-## 1. 产品定位
-
-Davloom 是一个开源、现代化、可自托管的 WebDAV 文件存储平台。
-
-用户可以把 Cloudflare Durable Objects、Cloudflare R2、AWS S3、RustFS 等存储转换为标准 WebDAV 服务，同时使用现代化 Web Dashboard 进行文件、账户、凭据和存储管理。Cloudflare 免费部署默认把文件内容存进 Durable Objects，不需要绑定支付方式。
-
-### 核心原则
-
-- **Free-first：** 优先支持 Cloudflare 免费套餐。
-- **Vendor-neutral：** 不依赖单一云厂商的专有运行能力。
-- **Self-hostable：** 支持 Docker、Bun、SQLite。
-- **WebDAV-first：** 协议正确性优先。
-- **Type-safe：** TypeScript + Effect Schema + Drizzle。
-- **Secure-by-default：** 默认私有存储、最小权限。
-- **Portable：** 支持配置、数据库和文件数据迁移。
-- **Agent-friendly：** 代码结构、组件规范和文档便于 AI Coding Agent 理解。
-
-### 目标用户
-
-1. 需要使用 WebDAV 同步配置的开发者。
-2. 希望免费使用 Cloudflare、不绑定支付方式的个人用户。
-3. 拥有 NAS、Home Server 或 VPS 的自托管用户。
-4. 希望统一管理不同 S3-compatible 存储的用户。
-
-V1 不定位为 Nextcloud 的完整替代品，主要解决 WebDAV、文件管理和存储可移植性。
+**Version:** v1.2  
+**Date:** November 4, 2026  
+**Type:** Open-source · Self-hosted · WebDAV · Cloud Storage  
+**Product tagline:** *Your storage. Your rules.*  
+**Architecture principle:** Cloudflare-first, Vendor-neutral by design.
 
 ---
 
-## 2. 完整技术栈
+## 1. Product Positioning
 
-### 前端与 UI
+Davloom is an open-source, modern, self-hostable WebDAV file storage platform.
 
-| 类别 | 选型 |
+Users can turn storage such as Cloudflare Durable Objects, Cloudflare R2, AWS S3 and RustFS into a standard WebDAV service, and use a modern Web Dashboard to manage files, accounts, credentials and storage. A free Cloudflare deployment stores file content in Durable Objects by default and needs no payment method.
+
+### Core Principles
+
+- **Free-first:** Support the Cloudflare Free plan first.
+- **Vendor-neutral:** Do not depend on the proprietary runtime capabilities of any single cloud vendor.
+- **Self-hostable:** Support Docker, Bun and SQLite.
+- **WebDAV-first:** Protocol correctness comes first.
+- **Type-safe:** TypeScript + Effect Schema + Drizzle.
+- **Secure-by-default:** Private storage and least privilege by default.
+- **Portable:** Support migration of configuration, databases and file data.
+- **Agent-friendly:** Code structure, component conventions and documentation are easy for AI coding agents to understand.
+
+### Target Users
+
+1. Developers who need to sync configuration over WebDAV.
+2. Individual users who want to use Cloudflare for free, without adding a payment method.
+3. Self-hosting users who own a NAS, home server or VPS.
+4. Users who want to manage different S3-compatible storage in one place.
+
+V1 is not positioned as a full replacement for Nextcloud. It mainly addresses WebDAV, file management and storage portability.
+
+---
+
+## 2. Full Tech Stack
+
+### Frontend and UI
+
+| Category | Choice |
 |---|---|
 | Programming Language | TypeScript |
 | Frontend Framework | React 19+ |
@@ -58,17 +58,17 @@ V1 不定位为 Nextcloud 的完整替代品，主要解决 WebDAV、文件管�
 | Styling Integration | @stylexjs/unplugin |
 | UI Testing | Vitest + Playwright |
 
-**不再将 Tailwind CSS、shadcn/ui、Radix UI 列为项目基础依赖。**
+**Tailwind CSS, shadcn/ui and Radix UI are no longer listed as base project dependencies.**
 
-Astryx 提供 React 组件、布局原语、主题和交互能力；StyleX 负责 Davloom 自有组件的样式。
+Astryx provides React components, layout primitives, themes and interaction capabilities; StyleX styles Davloom's own components.
 
-对于复杂文件管理组件，可以在 Astryx 基础上组合 TanStack Table、TanStack Virtual 和自有交互逻辑。
+Complex file management components can combine TanStack Table, TanStack Virtual and the project's own interaction logic on top of Astryx.
 
-### 后端与领域逻辑
+### Backend and Domain Logic
 
-| 类别 | 选型 |
+| Category | Choice |
 |---|---|
-| HTTP Framework | ElysiaJS 1.4（Phase 0 确定的起步版本，2.0 正式发布后再评估） |
+| HTTP Framework | ElysiaJS 1.4 (starting version chosen in Phase 0; reassess once 2.0 is officially released) |
 | Business Framework | Effect v4 |
 | Dependency Injection | Effect Context / Layer |
 | Validation | Effect Schema |
@@ -80,11 +80,11 @@ Astryx 提供 React 组件、布局原语、主题和交互能力；StyleX 负�
 | Streaming | Web Streams API |
 | Cryptography | Web Crypto API |
 
-Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
+Elysia handles the HTTP entry point and Effect handles business orchestration. Their responsibilities do not overlap.
 
-### 身份与权限
+### Identity and Permissions
 
-| 类别 | 选型 |
+| Category | Choice |
 |---|---|
 | Authentication | Better Auth |
 | ORM Adapter | Drizzle |
@@ -95,34 +95,34 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 | WebDAV Authentication | Basic Auth + API Key Adapter |
 | Authorization | Effect Policy Service |
 
-统一由 Better Auth 管理身份，但文件路径和 Mount 权限由 Effect 决策。
+Better Auth manages identity centrally, while Effect decides file path and Mount permissions.
 
-### 数据与存储
+### Data and Storage
 
-| 类别 | 选型 |
+| Category | Choice |
 |---|---|
 | ORM | Drizzle ORM |
 | Migration | Drizzle Kit |
 | SQL Dialect | SQLite |
 | Cloud Database | Cloudflare D1 |
 | Self-hosted Database | Bun SQLite |
-| Cloud Storage（默认） | Cloudflare Durable Objects（SQLite 后端） |
-| Cloud Storage（可选） | Cloudflare R2 |
+| Cloud Storage (default) | Cloudflare Durable Objects (SQLite backend) |
+| Cloud Storage (optional) | Cloudflare R2 |
 | Generic Storage | S3-compatible API |
 | Storage SDK | AWS SDK S3 Client |
 | Native Optimization | R2 Binding |
 | File Locks | SQL-backed LockService |
 | Optional Coordination | Durable Objects |
 
-### 工程质量
+### Engineering Quality
 
-| 类别 | 选型 |
+| Category | Choice |
 |---|---|
 | Package Manager | Bun |
 | Monorepo | Bun Workspaces |
 | Linter | Oxlint |
 | Formatter | Oxfmt |
-| Type Check | TypeScript 7（原生 `tsc`） |
+| Type Check | TypeScript 7 (native `tsc`) |
 | Unit Tests | Vitest |
 | Workers Integration | @cloudflare/vitest-plugin |
 | E2E | Playwright |
@@ -137,27 +137,27 @@ Elysia 负责 HTTP 入口，Effect 负责业务编排。两者职责不重叠。
 
 ---
 
-## 3. Astryx + StyleX 设计规范
+## 3. Astryx + StyleX Design Guidelines
 
-### 3.1 组件策略
+### 3.1 Component Strategy
 
-Davloom 使用 Astryx 作为 UI 基础，而不是开发另一套通用组件库。
+Davloom uses Astryx as its UI foundation instead of building another general-purpose component library.
 
-优先使用：
+Prefer:
 
-- Astryx Button、Input、Dialog、Menu 等交互组件。
-- Astryx Layout、Stack、Grid 等布局能力。
-- Astryx 表单、导航和通知组件。
-- Astryx 现有设计令牌和主题系统。
-- 自定义 StyleX 样式用于 Davloom 专属组件。
+- Astryx interactive components such as Button, Input, Dialog and Menu.
+- Astryx layout features such as Layout, Stack and Grid.
+- Astryx form, navigation and notification components.
+- Astryx's existing design tokens and theme system.
+- Custom StyleX styles for Davloom-specific components.
 
-不重复实现 Astryx 已经提供的通用组件。
+Do not reimplement general-purpose components that Astryx already provides.
 
-### 3.2 主题设计
+### 3.2 Theme Design
 
-默认采用 `@astryxdesign/theme-neutral`。
+Use `@astryxdesign/theme-neutral` by default.
 
-在此基础上定义 **Davloom Theme**：
+On top of it, define the Davloom Theme:
 
 - Brand Colors
 - Typography
@@ -167,59 +167,59 @@ Davloom 使用 Astryx 作为 UI 基础，而不是开发另一套通用组件库
 - Semantic Colors
 - Light / Dark Mode
 
-通过 Astryx Theme System 和 CSS Custom Properties 管理主题。
+Manage the theme through the Astryx Theme System and CSS Custom Properties.
 
-不直接修改 Astryx 依赖中的源代码。
+Do not modify the source code of the Astryx dependency directly.
 
-### 3.3 StyleX 使用规则
+### 3.3 StyleX Usage Rules
 
-所有新开发的应用级组件优先使用 StyleX。
+Use StyleX first for all newly developed application-level components.
 
-约定：
+Conventions:
 
-- 使用 `stylex.create()` 定义组件样式。
-- 使用 `stylex.props()` 组合样式。
-- 尽量使用 Astryx Design Tokens。
-- 避免随意使用内联 Style。
-- 避免在业务组件中引入第二套 CSS-in-JS。
-- 不依赖 Astryx 内部生成的 Class Name。
+- Define component styles with `stylex.create()`.
+- Compose styles with `stylex.props()`.
+- Use Astryx design tokens wherever possible.
+- Avoid arbitrary inline styles.
+- Avoid introducing a second CSS-in-JS library in business components.
+- Do not depend on Astryx's generated class names.
 
-### 3.4 构建方式
+### 3.4 Build Method
 
-Astryx 使用官方预编译 CSS。
+Astryx uses its official precompiled CSS.
 
-Davloom 自己编写的 StyleX 由 Vite Plugin 编译。
+A Vite plugin compiles Davloom's own StyleX.
 
-保留 Astryx 官方 CSS Layer 与主题顺序，避免因为重复编译造成 CSS 冲突。
+Keep Astryx's official CSS layers and theme order to avoid CSS conflicts caused by repeated compilation.
 
-### 3.5 避免 UI Vendor Lock-in
+### 3.5 Avoiding UI Vendor Lock-in
 
-虽然 Astryx 是开源设计系统，但 UI 仍存在技术依赖。
+Astryx is an open-source design system, but the UI still has a technical dependency on it.
 
-因此：
+Therefore:
 
-- 业务状态不得与 Astryx 组件内部实现耦合。
-- 文件操作、权限、数据请求不放在通用 UI 组件中。
-- 自定义业务组件通过明确的 Props 接收数据和操作。
-- 主题基于可导出的 Design Tokens。
-- 对需要深度定制的组件，可以使用 Astryx Swizzle 获取源码并自行维护。
-- 固定经过测试的 Astryx 版本，避免 Beta API 更新破坏应用。
+- Business state must not be coupled to the internal implementation of Astryx components.
+- File operations, permissions and data requests do not belong in general-purpose UI components.
+- Custom business components receive data and operations through explicit props.
+- The theme is based on exportable design tokens.
+- For components that need deep customization, Astryx Swizzle can provide the source code, which Davloom then maintains itself.
+- Pin a tested Astryx version so that beta API updates do not break the application.
 
-不为了抽象而包装每一个 Astryx Button。仅在业务组件边界建立稳定接口。
+Do not wrap every Astryx Button just for the sake of abstraction. Create stable interfaces only at business component boundaries.
 
-### 3.6 AI Agent 开发规范
+### 3.6 AI Agent Development Guidelines
 
-使用 Astryx CLI 获取官方组件资料，并在项目 `AGENTS.md` 中纳入组件使用规范。
+Use the Astryx CLI to get official component reference material, and include the component usage guidelines in the project's `AGENTS.md`.
 
-AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创建 UI 原语。
+AI coding agents must search the existing Astryx components first and must not create duplicate UI primitives at will.
 
-项目中的设计示例、主题变量和组件用法需要有统一文档。
+The project needs a single set of documentation for design examples, theme variables and component usage.
 
 ---
 
-## 4. 系统架构
+## 4. System Architecture
 
-采用 **Hexagonal Architecture + Effect Layer**。
+Davloom follows Hexagonal Architecture and uses Effect Layers.
 
 ### Presentation Layer
 
@@ -257,56 +257,56 @@ AI Coding Agent 必须优先搜索 Astryx 现有组件，不能随意重复创�
 - Cloudflare Workers Runtime
 - Bun Runtime
 
-### 依赖规则
+### Dependency Rules
 
-1. Domain 不依赖云厂商 SDK。
-2. Elysia Router 不直接操作存储后端或 D1。
-3. TanStack Start 不直接读取数据库。
-4. Effect Services 使用 Port 访问基础设施。
-5. Adapter 必须通过统一契约测试。
-6. Cloudflare 专属能力只在 Infrastructure Layer 中出现。
+1. Domain never depends on a cloud vendor SDK.
+2. Elysia routes never touch storage backends or D1 directly.
+3. TanStack Start never reads the database directly.
+4. Effect Services reach infrastructure through Ports.
+5. Every Adapter must pass the shared contract tests.
+6. Cloudflare-only features appear only in the Infrastructure Layer.
 
 ---
 
-## 5. WebDAV 协议
+## 5. WebDAV Protocol
 
-### V1 目标支持
+### V1 Target Support
 
-| HTTP Method | 功能 |
+| HTTP Method | Function |
 |---|---|
-| OPTIONS | 协议能力声明 |
-| GET / HEAD | 文件读取和元数据 |
-| PUT | 文件上传 |
-| PROPFIND | 文件和目录属性查询 |
-| MKCOL | 创建目录 |
-| DELETE | 删除文件和目录 |
-| COPY | 复制 |
-| MOVE | 移动和重命名 |
-| PROPPATCH | 修改自定义属性 |
-| LOCK / UNLOCK | 文件锁 |
+| OPTIONS | Protocol capability advertisement |
+| GET / HEAD | File reads and metadata |
+| PUT | File upload |
+| PROPFIND | File and directory property queries |
+| MKCOL | Directory creation |
+| DELETE | File and directory deletion |
+| COPY | Copy |
+| MOVE | Move and rename |
+| PROPPATCH | Custom property modification |
+| LOCK / UNLOCK | File locks |
 
-优先完成基础 WebDAV Class 1 所需行为，再完善锁和 Class 2 兼容性。
+Deliver the behavior that basic WebDAV Class 1 requires first, then complete locks and Class 2 compatibility.
 
-Class 2（LOCK / UNLOCK）是 V1 发布门槛：服务器不支持锁时，macOS Finder 只能只读挂载。
+Class 2 (LOCK / UNLOCK) is a V1 release gate: when the server does not support locks, macOS Finder can only mount read-only.
 
-不得声明尚未正确实现的协议能力。
+Never advertise a protocol capability that is not yet implemented correctly.
 
-### 核心要求
+### Core Requirements
 
-- Unicode 文件名与 URL 编码。
-- ETag 和条件请求。
-- HTTP Range。
-- 目录 Prefix 模拟。
-- 自定义属性持久化。
-- 多对象操作失败恢复。
-- 路径规范化和路径穿越防护。
-- 流式上传、下载。
-- 并发写入冲突检查。
-- SQL-backed 锁及锁续期。
+- Unicode file names and URL encoding.
+- ETag and conditional requests.
+- HTTP Range.
+- Directory prefix emulation.
+- Custom property persistence.
+- Failure recovery for multi-object operations.
+- Path normalization and path traversal protection.
+- Streaming upload and download.
+- Conflict checks for concurrent writes.
+- SQL-backed locks and lock renewal.
 
-对象存储不具备原子目录移动，因此 COPY/MOVE 需要明确部分失败及恢复策略。
+Object storage has no atomic directory move, so COPY/MOVE needs an explicit strategy for partial failure and recovery.
 
-目录 COPY/MOVE 设同步处理上限：默认的 Durable Objects 存储一次最多处理 1000 个对象，R2 一次最多 400 个。超过上限时不做部分执行，直接返回明确错误。Durable Objects 的上限来自 Phase 0 实测：一次复制并删除 2000 个对象用了 91 ms CPU、写 14,000 行，1000 个对象约写 7000 行，占 Free 每天写入配额的 7%。R2 的上限按每个请求 1000 次内部子请求估算，开通 R2 后要实测确认。响应码和 `operation_jobs` 的执行方式在 WebDAV 协议设计中确定。
+Directory COPY/MOVE has a synchronous processing limit: the default Durable Objects storage handles at most 1000 objects at a time, and R2 at most 400. Above the limit there is no partial execution, and the server returns a clear error. The Durable Objects limit comes from Phase 0 measurements: one copy-and-delete of 2000 objects used 91 ms of CPU and wrote 14,000 rows, so 1000 objects write about 7000 rows, which is 7% of the Free plan's daily write quota. The R2 limit is estimated from 1000 internal subrequests per request and must be confirmed by measurement once R2 is enabled. The response code and how `operation_jobs` runs are decided in the WebDAV protocol design.
 
 ---
 
@@ -314,29 +314,29 @@ Class 2（LOCK / UNLOCK）是 V1 发布门槛：服务器不支持锁时，macOS
 
 ### Better Auth
 
-提供：
+Provides:
 
-- 管理员初始化
-- 用户登录
+- Admin initialization
+- User login
 - Session
 - API Key
-- 凭据过期和撤销
-- 可选 MFA
-- 管理员账户管理
+- Credential expiry and revocation
+- Optional MFA
+- Admin account management
 
-默认关闭公开注册。
+Public registration is disabled by default.
 
 ### WebDAV
 
-客户端通过 HTTPS + Basic Auth 提供用户名和专用 API Key。
+Clients supply a username and a dedicated API Key through HTTPS + Basic Auth.
 
-Elysia 负责解析认证信息，Better Auth 验证凭据，Effect 负责判断对应文件、目录和 Mount 是否允许访问。
+Elysia parses the authentication information, Better Auth verifies the credential, and Effect decides whether the corresponding file, directory and Mount may be accessed.
 
-不允许通过 WebDAV 使用管理员主账户密码作为默认方案。
+The administrator's primary account password must not be the default way to authenticate over WebDAV.
 
-### 权限模型
+### Permission Model
 
-V1 支持：
+V1 supports:
 
 - Admin
 - Read Only
@@ -344,104 +344,104 @@ V1 支持：
 - Mount Scope
 - Path Prefix Scope
 
-V1 只有一个管理员账户，配多个客户端凭据和多个 Mount，不做多用户。Read Only、Read / Write、Mount Scope 和 Path Prefix Scope 都绑定在 API Key 凭据上。多用户放到 V2.0。
+V1 has only one admin account, with multiple client credentials and multiple Mounts, and no multi-user support. Read Only, Read / Write, Mount Scope and Path Prefix Scope are all bound to the API Key credential. Multi-user support is deferred to V2.0.
 
 ---
 
-## 7. 数据库与持久化
+## 7. Database and Persistence
 
 ### Better Auth Tables
 
-由 Better Auth 和 Drizzle Adapter 维护，不自行复制认证数据模型。
+Better Auth and the Drizzle Adapter maintain these tables. Davloom does not make its own copy of the authentication data model.
 
 ### Davloom Tables
 
-| 表 | 用途 |
+| Table | Purpose |
 |---|---|
-| storage_backends | 存储后端配置 |
-| mounts | Mount 与 Prefix 映射 |
-| mount_permissions | API Key 凭据的 Mount 与路径权限 |
-| dav_properties | WebDAV 自定义属性 |
-| dav_locks | 文件锁 |
-| operation_jobs | 复制和移动任务 |
-| settings | 实例配置 |
-| audit_events | 安全和操作审计 |
+| storage_backends | Storage backend configuration |
+| mounts | Mount-to-prefix mapping |
+| mount_permissions | Mount and path permissions for API Key credentials |
+| dav_properties | WebDAV custom properties |
+| dav_locks | File locks |
+| operation_jobs | Copy and move jobs |
+| settings | Instance configuration |
+| audit_events | Security and operation auditing |
 
-默认不建立强制性的完整文件索引。
+No mandatory full file index is built by default.
 
-文件目录通过存储后端获取，需要搜索能力时再引入可重建索引。
+Directory listings come from the storage backend. A rebuildable index is introduced when search capability is needed.
 
-Durable Objects 后端把路径和文件分块分表存放在对象内部的 SQLite 中，分块单行不超过 2 MB。表结构在 Phase 1 确定。
+The Durable Objects backend stores paths and file chunks in separate tables in the SQLite database inside each object, with each chunk row at most 2 MB. The table schema is decided in Phase 1.
 
-### 数据迁移
+### Data Migration
 
-支持：
+Supports:
 
 - D1 → SQLite
 - SQLite → D1
-- Durable Objects → R2 或 S3-compatible Storage
+- Durable Objects → R2 or S3-compatible Storage
 - R2 → S3-compatible Storage
 - S3-compatible Storage → R2
 
-迁移需要包含对象、权限、元数据和完整性校验。
+Migration must cover objects, permissions, metadata and integrity checks.
 
-敏感凭据不得以明文导出。
+Sensitive credentials must not be exported in plaintext.
 
 ---
 
-## 8. Dashboard 功能
+## 8. Dashboard Features
 
 ### 8.1 Overview
 
-展示：
+Shows:
 
-- 当前存储后端
-- Mount 列表
-- 对象数量和已知容量
-- WebDAV 地址
-- 存储连接状态
-- 最近操作异常
+- Current storage backend
+- Mount list
+- Object count and known capacity
+- WebDAV address
+- Storage connection status
+- Recent operation errors
 
-使用 Astryx Dashboard Layout。
+Use the Astryx Dashboard Layout.
 
 ### 8.2 File Explorer
 
-使用 Astryx + TanStack Virtual 构建文件管理器。
+Build the file manager with Astryx + TanStack Virtual.
 
-功能：
+Features:
 
-- 文件列表
-- 目录导航
-- 拖放上传
-- 文件下载
-- 创建目录
-- 重命名
-- 移动与复制
-- 批量删除
-- 排序与搜索
-- 文件属性
-- 文本预览
-- 加载和错误状态
+- File list
+- Directory navigation
+- Drag-and-drop upload
+- File download
+- Create directories
+- Rename
+- Move and copy
+- Batch delete
+- Sort and search
+- File properties
+- Text preview
+- Loading and error states
 
-大型文件列表采用分页、虚拟化和按需读取。
+Large file lists use pagination, virtualization and on-demand reads.
 
 ### 8.3 Credentials
 
-- 创建 WebDAV API Key
-- 命名与管理凭据
-- 设置有效期
-- 设置只读权限
-- 限制 Mount 或路径
-- 撤销凭据
+- Create WebDAV API Keys
+- Name and manage credentials
+- Set a validity period
+- Set read-only permission
+- Restrict by Mount or path
+- Revoke credentials
 
 ### 8.4 Storage & Mounts
 
-- 查看后端存储
-- 管理 Bucket 和 Prefix
-- 创建 Mount
-- 编辑 Mount
-- 验证连接
-- 查看基本存储信息
+- View backend storage
+- Manage buckets and prefixes
+- Create Mounts
+- Edit Mounts
+- Verify connections
+- View basic storage information
 
 ### 8.5 Settings
 
@@ -453,57 +453,57 @@ Durable Objects 后端把路径和文件分块分表存放在对象内部的 SQL
 - Data Export
 - Instance Information
 
-支持 Light / Dark / System 三种外观模式。
+Supports three appearance modes: Light / Dark / System.
 
 ---
 
-## 9. 部署方案
+## 9. Deployment Options
 
 ### Cloudflare Free
 
-默认使用：
+Uses by default:
 
 - TanStack Start Web
 - Elysia Worker
-- D1，存元数据
-- Durable Objects（SQLite 后端），存文件内容
+- D1, for metadata
+- Durable Objects (SQLite backend), for file content
 
-Dashboard 优先使用 SPA Mode，降低 SSR 运行成本。
+The Dashboard prefers SPA Mode to reduce SSR runtime cost.
 
-R2 和 S3 兼容服务是用户可选的后端。R2 开通时要走结账流程，超额按量计费，所以默认部署不依赖它。不使用 KV。
+R2 and S3-compatible services are optional backends that users can choose. Enabling R2 goes through a checkout flow, and usage beyond the free allowance is billed, so the default deployment does not depend on it. KV is not used.
 
-Cloudflare Free 的 Worker CPU、请求次数，以及 Durable Objects 的 CPU 和写入配额必须通过实际测试。
+Worker CPU and request counts on Cloudflare Free, and CPU and write quotas for Durable Objects, must be confirmed by measurement on a real deployment.
 
-官方文档已写明的限制（2026 年 11 月核对）：
+Limits stated in the official documentation (checked in November 2026):
 
-- **请求体上限 100 MB（Free / Pro 域名）：** 超过时 WebDAV PUT 返回 413。V1 把它写入文档，作为 Cloud Free 的明确限制。Dashboard 大文件上传另行评估分片上传。
-- **每个 HTTP 请求 10 ms CPU：** 测试必须覆盖包含认证的完整请求链路。Phase 0 在 Workers Free 上实测（2026-11-06）没有触发这个上限：用了 1134 ms 的请求也成功了，Worker 里的管理员登录用了 63–94 ms。文档没有写这种宽松，设计仍按 10 ms 留余量。
-- **Durable Objects 每个请求 30 秒 CPU：** 这一行没有区分套餐，但同一页又写 Workers 的限制也适用，所以默认存储方案要靠 Phase 0 实测确认。实测确认 Free 上成立：用了 32.3 秒 CPU 的请求完成，下一个请求在约 30.2 秒时被重置，返回 502。
-- **Durable Objects Free 配额：** 只能用 SQLite 后端，单个对象 1 GB，总共 5 GB，单行 2 MB；每天 10 万次请求、13,000 GB-s、读 500 万行、写 10 万行（删除也算写入）。超额时报错，不会计费。
-- **D1 Free 配额：** 单库 500 MB，总共 5 GB，单行 2 MB；每次调用最多 50 次查询，每天读 500 万行、写 10 万行。
-- **单次调用最多 50 次外部子请求和 1000 次内部子请求：** R2 的调用算内部子请求，选用 R2 时目录 COPY/MOVE 的同步处理上限据此定为 400 个对象。
-- **R2 `ListObjects` 属于 Class A，免费额度每月 100 万次：** 选用 R2 时，目录 PROPFIND 都会消耗这一额度。
+- **Request body limit of 100 MB (Free / Pro domains):** A WebDAV PUT above the limit returns 413. V1 documents it as an explicit Cloud Free limit. Chunked upload for large files in the Dashboard will be evaluated separately.
+- **10 ms of CPU per HTTP request:** Tests must cover the full request path, including authentication. Phase 0 measured this on Workers Free (2026-11-06) and did not hit the limit: a request that used 1134 ms also succeeded, and admin login in the Worker took 63–94 ms. The documentation does not promise this leniency, so the design still leaves a margin against 10 ms.
+- **30 seconds of CPU per Durable Objects request:** This row does not distinguish between plans, but the same page also says the Workers limits apply, so the default storage choice must be confirmed by Phase 0 measurement. The measurement confirmed that it holds on Free: a request that used 32.3 seconds of CPU completed, and the next request was reset at about 30.2 seconds and returned 502.
+- **Durable Objects Free quota:** Only the SQLite backend is available. Limits are 1 GB per object, 5 GB in total and 2 MB per row; per day, 100,000 requests, 13,000 GB-s, 5 million rows read and 100,000 rows written (deletes also count as writes). Going over a quota returns an error and is not billed.
+- **D1 Free quota:** 500 MB per database, 5 GB in total and 2 MB per row; at most 50 queries per invocation, and per day 5 million rows read and 100,000 rows written.
+- **At most 50 external subrequests and 1000 internal subrequests per invocation:** R2 calls count as internal subrequests, so the synchronous processing limit for directory COPY/MOVE is set to 400 objects when R2 is used.
+- **R2 `ListObjects` is Class A, with a free allowance of 1 million operations per month:** When R2 is used, every directory PROPFIND consumes this allowance.
 
 ### Docker Self-hosted
 
-使用：
+Uses:
 
 - Bun
 - TanStack Start
 - Elysia
 - SQLite
 - S3-compatible Storage
-- 可选 RustFS
+- Optional RustFS
 
-由 Docker Compose 提供标准部署入口。
+Docker Compose provides the standard deployment entry point.
 
-完全不需要 Cloudflare 账号。
+It needs no Cloudflare account at all.
 
 ### Hybrid
 
-允许运行环境、数据库和存储后端独立替换。
+The runtime, database and storage backend can each be replaced independently.
 
-Cloudflare Service Binding 可作为平台优化，但必须提供标准 HTTP 通信路径。
+Cloudflare Service Binding can serve as a platform optimization, but a standard HTTP communication path must also be provided.
 
 ---
 
@@ -557,12 +557,12 @@ davloom/
 │   ├── deployment/
 │   └── security/
 │
-├── openspec/               # OpenSpec specs 与 changes
+├── openspec/               # OpenSpec specs and changes
 │   ├── config.yaml
 │   ├── specs/
 │   └── changes/
 │
-├── .claude/                # OpenSpec 和 GitNexus 的 Claude Code 命令与 skill
+├── .claude/                # Claude Code commands and skills for OpenSpec and GitNexus
 ├── .github/
 ├── AGENTS.md
 ├── CLAUDE.md
@@ -574,53 +574,53 @@ davloom/
 └── README.md
 ```
 
-`packages/ui` 只放共享的 Davloom 业务组件、主题和设计令牌，不复制整套 Astryx。
+`packages/ui` holds only shared Davloom business components, themes and design tokens. It does not copy all of Astryx.
 
 ---
 
 ## 11. CI/CD
 
-CI 分层接入，跟着 Phase 走，不一次上完。每个 Phase 的 `tasks.md` 都带上把新测试接入 CI 的任务。基线的具体规划在 OpenSpec change `add-ci-baseline`。仓库在接入基线 CI 时公开，因为免费账号下 Rulesets、CodeQL 和原生密钥扫描都要求公开仓库。
+CI is added in layers that follow the phases, not all at once. The `tasks.md` of each phase includes a task to wire its new tests into CI. The detailed plan for the baseline is in the OpenSpec change `add-ci-baseline`. The repository goes public when the baseline CI is added, because on a free account Rulesets, CodeQL and native secret scanning all require a public repository.
 
-### 接入计划
+### Rollout Plan
 
-| 运行时机 | 内容 | 接入时间 |
+| When It Runs | Contents | Added |
 |---|---|---|
-| 仓库配置 | GitHub Rulesets、CODEOWNERS、Renovate | Phase 0 之后 |
-| PR 必过 | Frozen Lockfile、Oxlint + tsgolint、Oxfmt、TypeScript Typecheck、Vitest、Workers 和 Bun 兼容性测试、Playwright、Build Verification、OSV-Scanner、Gitleaks、CodeQL、actionlint、zizmor | Phase 0 之后 |
-| PR 不阻塞 | Vitest V8 Coverage，先看趋势，不设门槛 | Phase 0 之后 |
-| PR 必过 | Effect Service Tests、Database Contract Tests、Storage Contract Tests（Vitest + Testcontainers + RustFS）、数据库升级测试（D1 和 SQLite） | Phase 1 |
-| 定时 | StrykerJS，只覆盖 `packages/core`、`packages/webdav` 这类不依赖运行时的代码 | Phase 1 |
-| PR 必过 | WebDAV Protocol Tests（自建 RFC 测试 + litmus）、rclone 真实客户端测试、fast-check 属性测试（路径规范化、`If` 头、XML 限制） | Phase 2 |
-| PR 必过 | UI 专项测试 | Phase 4 |
-| 定时 | Grafana k6，只打本地 Bun 或 Docker，不打 Cloud Free | Phase 5 |
-| 发布时 | Changesets、Wrangler、Docker Buildx、Trivy、Syft SBOM + 许可证检查、Artifact Attestations | Phase 6 |
-| 发布前 | Cloud Free 配额检查、macOS Finder 人工验收 | Phase 6 |
+| Repository setup | GitHub Rulesets, CODEOWNERS, Renovate | After Phase 0 |
+| Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
+| Non-blocking on PR | Vitest V8 Coverage; track the trend first, with no gate | After Phase 0 |
+| Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
+| Scheduled | StrykerJS, covering only runtime-independent code such as `packages/core` and `packages/webdav` | Phase 1 |
+| Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
+| Required on PR | UI-specific tests | Phase 4 |
+| Scheduled | Grafana k6, run only against local Bun or Docker, never against Cloud Free | Phase 5 |
+| On release | Changesets, Wrangler, Docker Buildx, Trivy, Syft SBOM + license check, Artifact Attestations | Phase 6 |
+| Before release | Cloud Free quota check, macOS Finder manual acceptance | Phase 6 |
 
-暂不接入：oasdiff、Lighthouse CI、CodSpeed、Cosign。有明确需求时再加。
+Not adopted for now: oasdiff, Lighthouse CI, CodSpeed, Cosign. They will be added when there is a clear need.
 
-Cloud Free 配额检查在 Workers 测试里断言单个请求的 D1 和 Durable Objects 调用次数，CPU 用 Phase 0 的实测值做阈值。
+The Cloud Free quota check asserts the number of D1 and Durable Objects calls per request in the Workers tests, and uses the values measured in Phase 0 as the CPU thresholds.
 
-### 工具取舍
+### Tooling Choices
 
-- **Renovate，不用 Dependabot：** GitHub 依赖图的支持列表里没有 Bun，读不到 `bun.lock`，所以基于依赖图的 Dependabot 告警看不到锁文件里的间接依赖。Renovate 能定期刷新 `bun.lock`（Lock File Maintenance），也能用 OSV 的数据为直接依赖提出安全更新。新版本一发布就提 PR，不设等待期。
-- **OSV-Scanner，不用 Dependency Review：** Dependency Review 依赖依赖图，看不到 `bun.lock`。
-- **Trivy 只扫镜像、Dockerfile 和 Compose：** 依赖交给 OSV-Scanner。2026 年 3 月 `trivy-action` 有 76 个 tag 被强推成窃取凭据的代码，所以要固定版本和校验值，放在没有 secrets 的 job 里。
-- **Gitleaks 用 CLI，配合 GitHub 原生密钥扫描：** Gitleaks 作者已声明只修安全问题。
-- **Cosign 先不上：** Artifact Attestations 本身用 Sigstore 签名，能证明镜像由哪个 workflow 构建。
-- **CODEOWNERS 不配强制审核：** 现在只有一个维护者，作者又不能批准自己的 PR。必需审批数先设为 0，有第二个维护者再打开。
-- **AWS S3 不进 CI：** 它有费用，只是用户可选的后端。D1、Durable Objects 和 R2 都能在本地 Workers 运行时测试，不需要账号。
+- **Renovate, not Dependabot:** Bun is not on the GitHub dependency graph's support list, so the graph cannot read `bun.lock`, and Dependabot alerts that rely on the graph cannot see the transitive dependencies in the lockfile. Renovate can refresh `bun.lock` on a schedule (Lock File Maintenance) and can use OSV data to propose security updates for direct dependencies. It opens a PR as soon as a new version is released, with no waiting period.
+- **OSV-Scanner, not Dependency Review:** Dependency Review relies on the dependency graph and cannot see `bun.lock`.
+- **Trivy scans only images, Dockerfiles and Compose files:** OSV-Scanner handles dependencies. In March 2026, 76 tags of `trivy-action` were force-pushed to code that steals credentials, so pin its version and checksum and run it in a job that has no secrets.
+- **Gitleaks as a CLI, alongside GitHub native secret scanning:** The Gitleaks author has stated that they will only fix security issues.
+- **No Cosign for now:** Artifact Attestations are themselves signed with Sigstore and can prove which workflow built an image.
+- **CODEOWNERS without mandatory review:** There is only one maintainer at present, and an author cannot approve their own PR. The required approval count is set to 0 first and turned on once there is a second maintainer.
+- **AWS S3 stays out of CI:** It costs money and is only an optional backend for users. D1, Durable Objects and R2 can all be tested in the local Workers runtime without an account.
 
-### 工作流安全
+### Workflow Security
 
-- Action 固定到 commit SHA。
-- 每个 workflow 声明最小 `permissions`。
-- 不使用 `pull_request_target`。
-- PR 检查不读取云凭据和仓库 secrets。
+- Pin actions to a commit SHA.
+- Each workflow declares the minimum `permissions`.
+- Do not use `pull_request_target`.
+- PR checks do not read cloud credentials or repository secrets.
 
-### UI 专项测试
+### UI-Specific Tests
 
-增加：
+Add:
 
 - Astryx Component Compatibility
 - Light / Dark Mode
@@ -628,138 +628,138 @@ Cloud Free 配额检查在 Workers 测试里断言单个请求的 D1 和 Durable
 - Accessibility
 - StyleX Production Build
 - CSS Layer / Theme Regression
-- 大目录列表性能测试
+- Large directory list performance tests
 
-关键界面进行截图回归测试。
+Run screenshot regression tests on key screens.
 
-### 发布流程
+### Release Process
 
-PR → Checks → Build → Preview → Integration Tests → Security Scan → Release → Smoke Test。
+PR → Checks → Build → Preview → Integration Tests → Security Scan → Release → Smoke Test.
 
-支持 SBOM、构建证明和版本回滚。
-
----
-
-## 12. 安全要求
-
-- Private Bucket 默认开启。
-- WebDAV 仅通过 HTTPS 暴露。
-- 所有文件访问经过授权。
-- 密钥使用平台 Secret 或加密持久化。
-- API Key 不以明文长期保存。
-- 防止 Path Traversal。
-- 限制 XML Body 大小和解析复杂度。
-- 防止递归操作耗尽资源。
-- 文件读取和写入支持条件请求。
-- 不记录敏感认证内容。
-- 默认拒绝跨 Mount 的越权操作。
+Supports SBOM, build attestations and version rollback.
 
 ---
 
-## 13. 八周开发计划
+## 12. Security Requirements
 
-| 阶段 | 周期 | 目标 |
+- Private buckets are enabled by default.
+- WebDAV is exposed over HTTPS only.
+- All file access is authorized.
+- Secrets are kept in platform Secrets or persisted with encryption.
+- API Keys are not kept in plaintext long term.
+- Prevent path traversal.
+- Limit XML body size and parsing complexity.
+- Prevent recursive operations from exhausting resources.
+- File reads and writes support conditional requests.
+- Do not log sensitive authentication content.
+- Unauthorized cross-Mount operations are denied by default.
+
+---
+
+## 13. Eight-Week Development Plan
+
+| Phase | Period | Goal |
 |---|---|---|
-| Phase 0 | Week 1 | Monorepo、框架、部署和 UI 兼容性验证 |
-| Phase 1 | Week 2 | Effect Core、D1/SQLite、Durable Objects/R2/S3 |
-| Phase 2 | Week 3 | WebDAV 基础协议 |
-| Phase 3 | Week 4 | Better Auth、API Key、权限 |
+| Phase 0 | Week 1 | Monorepo, framework, deployment and UI compatibility verification |
+| Phase 1 | Week 2 | Effect Core, D1/SQLite, Durable Objects/R2/S3 |
+| Phase 2 | Week 3 | Basic WebDAV protocol |
+| Phase 3 | Week 4 | Better Auth, API Key, permissions |
 | Phase 4 | Week 5 | Astryx + StyleX Dashboard |
-| Phase 5 | Week 6 | WebDAV 兼容性与文件锁 |
-| Phase 6 | Week 7 | Docker、Cloudflare、数据迁移 |
-| Phase 7 | Week 8 | 测试、安全、文档、发布 |
+| Phase 5 | Week 6 | WebDAV compatibility and file locks |
+| Phase 6 | Week 7 | Docker, Cloudflare, data migration |
+| Phase 7 | Week 8 | Testing, security, documentation, release |
 
-### Phase 0 必须验证
+### Phase 0 Must Verify
 
-- Elysia + Effect on Cloudflare Workers。
-- Better Auth + D1 / SQLite。
-- TanStack Start + React 19。
-- Astryx 组件与 TanStack Start 的集成。
-- StyleX Vite 编译。
-- Astryx Theme 与 Dark Mode。
-- Cloudflare Free 的 CPU 和请求开销，覆盖包含认证的完整请求链路。
-- Durable Objects 在 Cloudflare Free 上的 CPU 上限和文件写入。
-- WebDAV 方法（OPTIONS、PROPFIND、MKCOL、COPY、MOVE、PROPPATCH、LOCK、UNLOCK）穿过 Elysia、Workers 和 Bun。
-- PUT 和 GET 全程流式，不把完整文件缓冲到内存。
-- 目录 COPY/MOVE 在 Cloud Free 上的同步处理上限。
-- Elysia 起步版本（1.x 稳定版或 2.0）。
+- Elysia + Effect on Cloudflare Workers.
+- Better Auth + D1 / SQLite.
+- TanStack Start + React 19.
+- Integration of Astryx components with TanStack Start.
+- StyleX compilation with Vite.
+- Astryx Theme and Dark Mode.
+- CPU and request overhead on Cloudflare Free, covering the full request path including authentication.
+- The Durable Objects CPU limit and file writes on Cloudflare Free.
+- WebDAV methods (OPTIONS, PROPFIND, MKCOL, COPY, MOVE, PROPPATCH, LOCK, UNLOCK) passing through Elysia, Workers and Bun.
+- PUT and GET streaming end to end, without buffering the whole file in memory.
+- The synchronous processing limit for directory COPY/MOVE on Cloud Free.
+- The Elysia starting version (1.x stable or 2.0).
 
-### Phase 4 UI 交付
+### Phase 4 UI Deliverables
 
-必须完成：
+Must be completed:
 
-1. Astryx App Shell。
-2. File Explorer。
-3. Upload / Download UI。
-4. Credentials 页面。
-5. Storage / Mounts 页面。
-6. Settings 页面。
-7. Light / Dark Mode。
-8. 文件操作状态和错误反馈。
+1. Astryx App Shell.
+2. File Explorer.
+3. Upload / Download UI.
+4. Credentials page.
+5. Storage / Mounts page.
+6. Settings page.
+7. Light / Dark Mode.
+8. File operation status and error feedback.
 
-全部采用统一 Design Tokens。
+All of it uses the same design tokens.
 
 ---
 
-## 14. 关键风险
+## 14. Key Risks
 
-| 风险 | 对策 |
+| Risk | Mitigation |
 |---|---|
-| Astryx Beta API 变动 | 锁定版本、组件兼容测试 |
-| StyleX + Vite 集成问题 | Phase 0 验证生产构建 |
-| Astryx 组件功能缺口 | 组合现有原语或局部 Swizzle |
-| Workers Free CPU 超限 | SPA 优先、减少请求 CPU |
-| Elysia Workers 兼容性 | Runtime Integration Tests |
-| D1 / SQLite 差异 | Driver Contract Tests |
-| Durable Objects 在 Free 上没有 30 秒 CPU | Phase 0 实测；不成立时由用户在 base64 分块等方案中决定 |
-| Durable Objects / R2 / S3 行为差异 | Storage Capability Tests |
-| WebDAV 锁与并发 | SQL Lock Tests、保守能力声明 |
-| 大型目录操作 | 分页、虚拟化、可恢复任务 |
-| 跨平台迁移损失 | 数据校验与恢复测试 |
+| Astryx beta API changes | Pin the version, component compatibility tests |
+| StyleX + Vite integration issues | Verify the production build in Phase 0 |
+| Gaps in Astryx component features | Compose existing primitives or Swizzle selectively |
+| Workers Free CPU limit exceeded | SPA first, reduce CPU per request |
+| Elysia Workers compatibility | Runtime Integration Tests |
+| D1 / SQLite differences | Driver Contract Tests |
+| Durable Objects does not get 30 seconds of CPU on Free | Phase 0 measurement; if that does not hold, the maintainer decides among options such as base64 chunking |
+| Behavior differences between Durable Objects / R2 / S3 | Storage Capability Tests |
+| WebDAV locks and concurrency | SQL Lock Tests, conservative capability advertisement |
+| Large directory operations | Pagination, virtualization, recoverable jobs |
+| Loss during cross-platform migration | Data validation and recovery tests |
 
 ---
 
-## 15. V1 发布标准
+## 15. V1 Release Criteria
 
-- [ ] Cloudflare 免费套餐可部署。
-- [ ] Docker 可独立运行。
-- [ ] Astryx Dashboard 完整可用。
-- [ ] StyleX 生产构建通过。
-- [ ] Light / Dark Mode 正常。
-- [ ] Better Auth 登录和 API Key 可用。
-- [ ] 文件和目录基础操作可用。
-- [ ] WebDAV 基础协议通过测试。
-- [ ] WebDAV Class 2（LOCK / UNLOCK）通过测试，macOS Finder 可以读写挂载。
-- [ ] Durable Objects、R2 与通用 S3 Adapter 可用。
-- [ ] D1 与 SQLite Adapter 可用。
-- [ ] 权限控制通过测试。
-- [ ] 并发和错误恢复行为经过验证。
-- [ ] 数据导出和迁移通过测试。
-- [ ] Cloudflare / Docker Smoke Tests 通过。
-- [ ] 没有已知 Critical 安全漏洞。
-- [ ] 发布安装与架构文档。
+- [ ] Deployable on the Cloudflare Free plan.
+- [ ] Runs standalone in Docker.
+- [ ] The Astryx Dashboard is fully usable.
+- [ ] The StyleX production build passes.
+- [ ] Light / Dark Mode works.
+- [ ] Better Auth login and API Keys work.
+- [ ] Basic file and directory operations work.
+- [ ] The basic WebDAV protocol passes its tests.
+- [ ] WebDAV Class 2 (LOCK / UNLOCK) passes its tests, and macOS Finder can mount read-write.
+- [ ] The Durable Objects, R2 and generic S3 Adapters work.
+- [ ] The D1 and SQLite Adapters work.
+- [ ] Permission control passes its tests.
+- [ ] Concurrency and error recovery behavior is verified.
+- [ ] Data export and migration pass their tests.
+- [ ] Cloudflare / Docker Smoke Tests pass.
+- [ ] No known Critical security vulnerabilities.
+- [ ] Installation and architecture documentation is published.
 
 ---
 
-## 16. 后续路线
+## 16. Future Roadmap
 
 ### V1.1 — Reliability
 
-协议兼容性、性能、异常恢复和文件锁完善。
+Improvements to protocol compatibility, performance, failure recovery and file locks.
 
 ### V1.2 — Storage Expansion
 
-更多 Storage Provider、本地文件系统、存储迁移增强。
+More storage providers, the local file system and storage migration enhancements.
 
 ### V2.0 — Advanced Self-hosting
 
-多用户、团队、细粒度权限、PostgreSQL、可选分布式任务。
+Multi-user support, teams, fine-grained permissions, PostgreSQL and optional distributed jobs.
 
 ---
 
-## 17. 最终技术决策
+## 17. Final Technical Decisions
 
-**Davloom 的正式技术栈：**
+**Davloom's official tech stack:**
 
 - TypeScript + Bun
 - React 19 + TanStack Start
@@ -770,20 +770,20 @@ PR → Checks → Build → Preview → Integration Tests → Security Scan → 
 - Better Auth
 - Drizzle ORM
 - SQLite + Cloudflare D1
-- Cloudflare Durable Objects + S3-compatible Storage + Cloudflare R2（可选）
+- Cloudflare Durable Objects + S3-compatible Storage + Cloudflare R2 (optional)
 - Oxlint + Oxfmt
 - Vitest + Playwright
 - GitHub Actions
 - Cloudflare Workers + Docker
 
-**架构：** Hexagonal Architecture + Effect Layers。
+**Architecture:** Hexagonal Architecture + Effect Layers.
 
-**默认部署：** Workers + D1 + Durable Objects，R2 可选。
+**Default deployment:** Workers + D1 + Durable Objects, with R2 optional.
 
-**可移植部署：** Bun + SQLite + S3-compatible Storage。
+**Portable deployment:** Bun + SQLite + S3-compatible Storage.
 
-**设计系统：** Astryx Components + StyleX + Davloom Theme。
+**Design system:** Astryx Components + StyleX + Davloom Theme.
 
-**开发流程：** OpenSpec（proposal → specs → design → tasks）。
+**Development workflow:** OpenSpec (proposal → specs → design → tasks).
 
-**产品目标：** 一个免费套餐可用、可自行托管、没有强制云厂商绑定，并具备现代化文件管理体验的开源 WebDAV 平台。
+**Product goal:** An open-source WebDAV platform that works on a free plan, can be self-hosted, has no mandatory cloud vendor lock-in and has a modern file management experience.

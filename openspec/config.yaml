@@ -1,42 +1,41 @@
 schema: spec-driven
 
 context: |
-  Language: zh-CN
-  All artifacts must be written in zh-CN.
-  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Language: English
+  All artifacts must be written in English. Archived changes under openspec/changes/archive/ keep the language they were written in.
 
-  产品：Davloom，开源、可自托管的 WebDAV 文件存储平台，把 Durable Objects、R2、AWS S3、RustFS 等存储转换为标准 WebDAV 服务。需求来源是仓库根目录的 prd.md。spec 与 PRD 冲突时先提出来，不要静默选择。
+  Product: Davloom, an open-source, self-hostable WebDAV file storage platform that turns storage such as Durable Objects, R2, AWS S3 and RustFS into a standard WebDAV service. Requirements come from prd.md at the repository root. When a spec conflicts with the PRD, raise the conflict first instead of choosing one silently.
 
-  技术栈：
-  - 语言和工具：TypeScript 7（原生 tsc）、Bun Workspaces、Oxlint、Oxfmt、Vitest、@cloudflare/vitest-plugin、Playwright、GitHub Actions、Changesets
-  - 前端：React 19、TanStack Start / Router / Query / Store / Virtual、Meta Astryx、StyleX（@stylexjs/unplugin）、Lucide。不使用 Tailwind、shadcn/ui、Radix 作为基础依赖
-  - 后端：ElysiaJS 只做 HTTP 入口，Effect v4 负责业务编排，校验用 Effect Schema，错误用 Effect Typed Errors，XML 解析用 saxes，流用 Web Streams，加密用 Web Crypto
-  - 身份：Better Auth 管理身份、Session 和 API Key；文件、Mount 和路径权限由 Effect Policy Service 决策
-  - 数据：Drizzle ORM + SQLite 方言；云上 D1 + Durable Objects（SQLite 后端，存文件内容），R2 可选，不使用 KV；自托管 Bun SQLite + S3-compatible（AWS SDK S3 Client），开源选项是 RustFS，不使用 MinIO
+  Stack:
+  - Languages and tools: TypeScript 7 (native tsc), Bun Workspaces, Oxlint, Oxfmt, Vitest, @cloudflare/vitest-plugin, Playwright, GitHub Actions, Changesets
+  - Frontend: React 19, TanStack Start / Router / Query / Store / Virtual, Meta Astryx, StyleX (@stylexjs/unplugin), Lucide. Tailwind, shadcn/ui and Radix are not base dependencies
+  - Backend: ElysiaJS is only the HTTP entry point. Effect v4 orchestrates the business logic, with Effect Schema for validation, Effect Typed Errors for errors, saxes for XML parsing, Web Streams for streams and Web Crypto for cryptography
+  - Identity: Better Auth manages identity, sessions and API Keys; the Effect Policy Service decides file, Mount and path permissions
+  - Data: Drizzle ORM with the SQLite dialect. In the cloud, D1 plus Durable Objects (SQLite backend, holding file contents), with R2 optional and no KV. Self-hosted, Bun SQLite plus S3-compatible storage (AWS SDK S3 Client), with RustFS as the open-source option and no MinIO
 
-  架构约束（Hexagonal + Effect Layers）：
-  - Domain 不依赖云厂商 SDK
-  - Elysia Router 不直接操作存储后端或 D1，TanStack Start 不直接读取数据库
-  - Effect Services 通过 Port 访问基础设施，Adapter 必须通过统一契约测试
-  - Cloudflare 专属能力只出现在 Infrastructure Layer
+  Architecture constraints (Hexagonal + Effect Layers):
+  - Domain code does not depend on cloud vendor SDKs
+  - The Elysia Router never touches storage backends or D1 directly, and TanStack Start never reads the database directly
+  - Effect Services reach infrastructure through Ports, and every Adapter must pass the shared contract tests
+  - Cloudflare-only features appear only in the Infrastructure Layer
 
-  UI 约束：
-  - 优先使用 Astryx 现有组件和设计令牌，不重复实现通用组件，不修改依赖源码
-  - Astryx 用官方预编译 CSS，Davloom 自己的样式用 StyleX，不引入第二套 CSS-in-JS
-  - 锁定经过测试的 Astryx 版本，StyleX 版本跟随 Astryx 的 peer 依赖
+  UI constraints:
+  - Use existing Astryx components and design tokens first; do not reimplement generic components or modify dependency source
+  - Astryx ships as its official precompiled CSS and Davloom's own styles use StyleX; do not add a second CSS-in-JS library
+  - Pin the tested Astryx version; the StyleX version follows the Astryx peer dependency
 
-  协议与安全约束：
-  - 不声明尚未正确实现的协议能力
-  - 默认私有存储、最小权限，默认拒绝跨 Mount 操作
-  - 防止路径穿越，限制 XML 大小和解析复杂度，防止递归操作耗尽资源
-  - API Key 不明文长期保存，日志不记录敏感认证内容
-  - WebDAV 不把管理员主账户密码作为默认认证方案
+  Protocol and security constraints:
+  - Never advertise a protocol capability that is not implemented correctly
+  - Storage is private by default with least privilege, and cross-Mount operations are denied by default
+  - Prevent path traversal, limit XML size and parsing complexity, and keep recursive operations from exhausting resources
+  - API Keys are never stored in plaintext long-term, and logs never record sensitive authentication data
+  - WebDAV does not use the administrator's primary account password as its default authentication scheme
 
-  V1 范围决策：
-  - WebDAV Class 2（LOCK / UNLOCK）是 V1 发布门槛
-  - V1 只有一个管理员账户和多个 API Key，Mount 与路径权限绑定在凭据上，不做多用户
-  - Cloud Free 的请求体上限 100 MB 是明确的产品限制，写入文档
-  - 目录 COPY/MOVE 设同步处理上限，超限时不做部分执行，直接返回明确错误
+  V1 scope decisions:
+  - WebDAV Class 2 (LOCK / UNLOCK) is a V1 release gate
+  - V1 has one administrator account and multiple API Keys. Mounts and path permissions are bound to credentials, and there is no multi-user support
+  - The 100 MB request body limit on Cloud Free is an explicit product limit and is documented
+  - Directory COPY/MOVE has a synchronous processing limit. A request over the limit is not partially executed; it returns a clear error
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
@@ -49,11 +48,11 @@ context: |
 #       - Break tasks into chunks of max 2 hours
 rules:
   specs:
-    - Scenario 要能转成自动化测试；需要真实部署或人工验证的，直接写明
+    - Each scenario must be convertible into an automated test; when it needs a real deployment or manual verification, say so explicitly
   design:
-    - 说明 Cloudflare Workers 和 Bun 两种运行环境的差异，没有差异也写明
+    - Describe how Cloudflare Workers and Bun differ for the change, and say so when they do not
   tasks:
-    - 每个任务写明验证方式
+    - Each task states how it is verified
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.
@@ -69,7 +68,7 @@ rules:
 operations:
   apply:
     guidance:
-      - 任务开始和完成时，同步 Linear 项目 davloom（P-MAR-3）中同编号的 issue，状态分别设为 In Progress 和 Done
+      - When a task starts or finishes, set the issue with the same number in the Linear project davloom (P-MAR-3) to In Progress or Done
   archive:
     guidance:
-      - 归档前确认 Linear 中这个 change 对应的 issue 都已关闭
+      - Before archiving, confirm that every Linear issue for the change is closed
