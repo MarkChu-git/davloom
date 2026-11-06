@@ -11,14 +11,14 @@
 - [x] 2.2 Change the `tsconfig.json` of `apps/api` and of `tests/integration/compat` to reference only `tsconfig.bun.json` and `tsconfig.workers.json`, and update the `typecheck` script of each to match. Verify that `bun run typecheck` passes and that the debug log of the type-aware lint shows `Unmatched files: 0`
 - [x] 2.3 Add `oxlint-tsgolint` at an exact version, turn on `options.typeAware` in `oxlint.json` and fix the existing problems. Verify that `bun run lint` passes, and that lint fails and names the line when an unhandled Promise is placed in a Bun file and in a `*.workers.ts` file
 - [ ] 2.4 Add a check of StyleX against the Astryx peer dependency range to `scripts/lib/pinned-deps.ts` and wire it into `bun run check`. Verify that unit tests cover both the in-range and the out-of-range case, and make the descriptions of this check in `AGENTS.md` and `CLAUDE.md` match the implementation
-- [ ] 2.5 Add `@vitest/coverage-v8` at an exact version and add `bun run test:coverage`. Verify that the command produces a coverage report and that the coverage level does not affect the exit status
+- [ ] 2.5 Add `@vitest/coverage-istanbul` at the exact version of Vitest, add `bun run test:coverage` running `bun --bun vitest run --coverage` with `coverage.include` set to every package, measure each package's coverage, and set its thresholds in the Vitest config to the measured values (Decision 9). Verify that the command writes a report listing every package, one without tests included, that it fails and names the package when a threshold is set one point above its measured value, and that it passes at the measured values
 
 ## 3. Pull request checks
 
 - [ ] 3.1 Create the `check` job in `.github/workflows/ci.yml`: trigger it on pull requests and on pushes to `main`, set `permissions: contents: read` at the workflow level, make `actions/checkout` not persist credentials, pin actions to a SHA, read Bun from `packageManager` and install no Node, and run `bun install --frozen-lockfile` and `bun run check`. Verify that the job passes on a test branch and that the install step fails when only `package.json` is changed and `bun.lock` is not updated
 - [ ] 3.2 Add the `compat` job: cache the Playwright browsers and run `playwright:install` and `bun run test:compat`. Verify that the job passes and that the cases which need a real deployment show as skipped in the log
-- [ ] 3.3 Add the `coverage` job and write the total coverage to the job summary. Verify that the summary shows the coverage and that the job still passes when coverage drops
-- [ ] 3.4 Create `docs/ci.md`, stating the local command for each job and which checks are required, and record how long the first runs of 3.1 and 3.2 took. Verify that every command in the text gives the same result locally as in CI
+- [ ] 3.3 Add the `coverage` job: run `bun run test:coverage` and write every package's coverage to the job summary. Verify that the summary lists each package, and that the job fails on a throwaway branch that lowers a package below its threshold
+- [ ] 3.4 Create `docs/ci.md`, stating the local command for each job, which checks are required, the test budget from section 11 of the PRD and the target job layout from Decision 10. Record how long the first runs of 3.1 and 3.2 took and use them to correct the scaling factor in Decision 10. Verify that every command in the text gives the same result locally as in CI
 
 ## 4. Security scans
 

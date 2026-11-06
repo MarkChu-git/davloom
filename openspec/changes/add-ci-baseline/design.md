@@ -14,6 +14,7 @@ Current state relevant to CI (checked on 2026-11-06):
 - `scripts/lib/pinned-deps.ts` only checks that Astryx and StyleX are declared with exact versions; it does not compare StyleX with the Astryx peer dependency. Astryx 0.7.8 requires `@stylexjs/stylex` at `^0.19.0`, and 0.19.1 is installed now.
 - The test fixture `compatibility-test-secret-not-used-anywhere-else` appears in 4 files.
 - `bun outdated --filter '*'` lists no dependencies that are behind.
+- Under Bun 1.4.4, `bun --bun vitest run --coverage` works with both the V8 and the Istanbul provider, but Cloudflare's Vitest integration supports only Istanbul (checked on 2026-11-07).
 
 ## Goals / Non-Goals
 
@@ -26,7 +27,8 @@ Current state relevant to CI (checked on 2026-11-06):
 
 - Do not implement deployment or release. Wrangler, Buildx, Changesets and Trivy are left for Phase 6.
 - Do not run the Cloud Free real-deployment measurement on pull requests. It needs an account and consumes that day's quota. It is rerun by hand after a dependency upgrade.
-- Do not set a coverage threshold. The `coverage` job is required like the others, but the coverage level never fails it. Watch the trend first and decide on a threshold after Phase 2.
+- Do not add the requirement coverage check or StrykerJS. Phase 0 tests carry no scenario IDs, so both start in Phase 1 with the code they measure, as section 11 of the PRD says.
+- Do not build the whole V1 job layout. The baseline adds the jobs in Decision 1, and later phases add the rest of Decision 10.
 
 ## Decisions
 
@@ -39,7 +41,7 @@ Current state relevant to CI (checked on 2026-11-06):
 | `workflows` | actionlint, zizmor | Yes |
 | `secrets` | Gitleaks | Yes |
 | `dependencies` | OSV-Scanner scans `bun.lock` | Yes |
-| `coverage` | Vitest V8 Coverage, results written to the job summary | Yes, with no threshold |
+| `coverage` | Vitest with Istanbul coverage, per-package gates, results written to the job summary | Yes |
 
 Pull requests trigger the workflow whatever their base branch, because stacked pull requests target each other's branches before they are retargeted to `main`.
 
@@ -128,6 +130,45 @@ Checked on 2026-11-07 with a logging `node` first on `PATH`: with `[run] bun = t
 
 From now on, the `tasks.md` of every change includes a task that wires the new tests into CI. This rule goes into the tasks rules of `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml`, so `/opsx:propose` can see it when it generates tasks.
 
+### 9. Coverage gates that only go up
+
+The maintainer decided on 2026-11-07 to gate coverage, which replaces the earlier plan to report it without a threshold. Section 11 of the PRD sets the V1 targets per package and a test budget of at least 8,000 unique cases.
+
+- `bun run test:coverage` runs `bun --bun vitest run --coverage` with `@vitest/coverage-istanbul`. Cloudflare's Vitest integration supports only Istanbul, so Istanbul is the one provider that measures tests on both Bun and workerd.
+- `coverage.include` names every package. Vitest leaves a package with no loaded files out of the report, and its threshold then passes without measuring anything.
+- Each package's thresholds start at the coverage that task 2.5 measures and live in the Vitest config, keyed by package path. Each phase raises them toward the V1 targets in section 11 of the PRD, and a change that raises coverage may raise its package's thresholds sooner. Lowering one needs a reason in the `design.md` of that change.
+- The `coverage` job fails when any package falls below a threshold, and it writes every package's coverage to the job summary.
+- Thresholds are per package, so a pull request fails only for the package whose coverage it lowers.
+
+### 10. Target job layout
+
+The baseline adds the jobs in Decision 1. By V1 a pull request runs about 20 jobs. The estimates scale measurements on an M4 Pro by a factor of 2 to 2.5 and have not run on a GitHub runner yet; task 3.4 corrects the factor with the first-run times.
+
+| Jobs | Contents | Estimate per job |
+| --- | --- | --- |
+| `check` | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 5–6 min, more once the Bend proofs land |
+| `coverage` | Unit tests with the coverage gates | 3–4 min |
+| 2 contract jobs | Storage and database contracts | 3–4 min |
+| 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus | 8–10 min |
+| Migration | Data migration | About 4 min |
+| 6 browser shards | Playwright, 2 workers per shard | 8–9 min |
+| `compat` | Phase 0 compatibility tests | 4–5 min |
+| CodeQL | Static analysis | 8–10 min |
+| `dependencies`, `secrets`, `workflows` | Scans | About 2 min |
+
+A pull request takes about 13 to 16 minutes of wall-clock time, because the browser shards and the deployment jobs wait for the web build from `check`, and about 2 hours of runner time, and each push to `main` costs the same again. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same time, such as one from Renovate, queues part of its jobs and finishes 8 to 10 minutes later. If queueing becomes a problem, the scans and `coverage` can fold into fewer jobs.
+
+To reach these times:
+
+- Each workflow sets per-branch `concurrency` with `cancel-in-progress`.
+- `check` builds the web app once and passes it on as an artifact.
+- Jobs cache Bun's install cache and the Playwright browsers. The Playwright container image is not used, because it ships Node.
+- Every job sets `timeout-minutes: 20`.
+- HTTP tests start their servers once per job in `globalSetup` and keep cases apart by Mount and path. Today almost all of their time goes into restarting Bun and `wrangler dev` for each `describe` block.
+- Workers tests stay serial within a job. `vitest.http.config.ts` turns off file parallelism because `wrangler dev` sessions share a build directory.
+
+Measured on the M4 Pro on 2026-11-07: 23 unit tests took 0.63 s, with a median of 0.13 ms; 110 HTTP tests took 16.4 s, with under 1 s spent in test bodies and medians of 0.5 ms on Bun, 1.5 ms on workerd and 6 ms on workerd with D1 and Durable Objects; and 22 Chromium tests took 6.7 s with one worker, with a median of 164 ms. The largest unknown is the browser average on CI, assumed to be 2 to 3 s per test.
+
 ## Differences between Cloudflare Workers and Bun
 
 CI runs on Linux, and both runtimes start locally, with no account needed.
@@ -147,6 +188,7 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 - [A version that is withdrawn or poisoned soon after release goes into a PR right away] → The maintainer chose no waiting period and accepts this risk. Mitigation: automerge stays off and every check must pass before merging; OSV carries malicious package records (`MAL-` IDs), and OSV-Scanner blocks the registered packages among them.
 - [Renovate opens too many PRs] → Group similar dependencies and limit how many are open at once with `prConcurrentLimit`.
 - [PRs come from untrusted forks once the repository is public] → This is exactly why `pull_request_target` is not used and the checks do not read secrets.
+- [The test suite outgrows the CI time budget as the phases add tests] → Follow the rules in Decision 10, and compare each phase's run times with its estimates in `docs/ci.md`.
 
 ## Migration Plan
 
@@ -154,4 +196,4 @@ There is no existing CI. The two Rulesets have protected `main` since 2026-11-07
 
 ## Open Questions
 
-None. The maintainer decided on 2026-11-06 when the repository goes public and whether to set a waiting period for updates, and on 2026-11-07 the approval rules and that every check is required; see Decision 3 and Decision 6.
+None. The maintainer decided on 2026-11-06 when the repository goes public and whether to set a waiting period for updates, and on 2026-11-07 the approval rules, that every check is required, and that coverage is gated; see Decisions 3, 6 and 9.
