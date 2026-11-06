@@ -139,7 +139,7 @@ export const startTail = (workerName: string, config: string, cwd: string): Tail
   });
   const child = spawn(
     "bunx",
-    ["wrangler", "tail", workerName, "--format", "json", "--config", config],
+    ["--bun", "wrangler", "tail", workerName, "--format", "json", "--config", config],
     {
       cwd,
       env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
