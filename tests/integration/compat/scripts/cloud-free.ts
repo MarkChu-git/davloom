@@ -11,7 +11,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
+import { Schema } from "effect";
 import { PROBE_TOKEN_HEADER } from "../probe/token-guard";
+import { decodeJson } from "../shared/json";
 
 const WORKER_NAME = "davloom-probe";
 const HEALTH_PATH = "/api/health";
@@ -28,11 +30,20 @@ const BASE_CONFIG = resolve(COMPAT_DIRECTORY, "probe/wrangler.jsonc");
 // Next to the base config, because Wrangler resolves relative paths from the config's directory.
 const CLOUD_CONFIG = resolve(COMPAT_DIRECTORY, "probe/wrangler.cloud.generated.jsonc");
 
-interface State {
-  readonly databaseName: string;
-  readonly token?: string;
-  readonly url?: string;
-}
+const State = Schema.Struct({
+  databaseName: Schema.String,
+  token: Schema.optional(Schema.String),
+  url: Schema.optional(Schema.String),
+});
+type State = typeof State.Type;
+
+const D1DatabaseList = Schema.Array(Schema.Struct({ name: Schema.String, uuid: Schema.String }));
+
+// The rest signature keeps every other key of wrangler.jsonc, which deploy copies over.
+const ProbeConfig = Schema.StructWithRest(
+  Schema.Struct({ d1_databases: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) }),
+  [Schema.Record(Schema.String, Schema.Unknown)],
+);
 
 interface WranglerResult {
   readonly ok: boolean;
@@ -60,16 +71,17 @@ const required = (description: string, result: WranglerResult): WranglerResult =
 };
 
 const readState = async (): Promise<State | null> =>
-  existsSync(STATE_FILE) ? ((await Bun.file(STATE_FILE).json()) as State) : null;
+  existsSync(STATE_FILE) ? decodeJson(State, await Bun.file(STATE_FILE).json()) : null;
 
 const writeState = (state: State) => Bun.write(STATE_FILE, JSON.stringify(state, null, 2));
 
 const workerExists = () => wrangler("deployments", "list", "--name", WORKER_NAME).ok;
 
 const listDatabaseIds = (): Map<string, string> => {
-  const databases = JSON.parse(
-    required("List D1 databases", wrangler("d1", "list", "--json")).stdout,
-  ) as { name: string; uuid: string }[];
+  const databases = decodeJson(
+    D1DatabaseList,
+    JSON.parse(required("List D1 databases", wrangler("d1", "list", "--json")).stdout),
+  );
   return new Map(databases.map(({ name, uuid }) => [name, uuid]));
 };
 
@@ -109,9 +121,7 @@ const deploy = async () => {
     throw new Error(`The new database ${databaseName} is not in the account's list`);
   }
 
-  const base = Bun.JSONC.parse(await Bun.file(BASE_CONFIG).text()) as {
-    d1_databases: Record<string, unknown>[];
-  };
+  const base = decodeJson(ProbeConfig, Bun.JSONC.parse(await Bun.file(BASE_CONFIG).text()));
   await Bun.write(
     CLOUD_CONFIG,
     JSON.stringify(

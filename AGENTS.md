@@ -2,6 +2,8 @@
 
 ## Commands
 
+Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node (task 2.1 of `add-ci-baseline` finishes the switch).
+
 - `bun install --frozen-lockfile`: install exactly what `bun.lock` records.
 - `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
 - `bun run format`: rewrite files with Oxfmt.

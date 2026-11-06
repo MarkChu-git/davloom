@@ -1,5 +1,7 @@
 import { createAdmin, parseBasicCredentials, type Auth } from "@davloom/auth";
+import { Schema } from "effect";
 import { Elysia } from "elysia";
+import { decodeJson } from "../shared/json";
 
 // A fixed account is fine here: the probe's database is thrown away after each run.
 const TEST_ADMIN = {
@@ -63,18 +65,19 @@ const respondToIdentity = async (auth: Auth, request: Request): Promise<Response
     : unauthorized();
 };
 
+/** The body of a sign-in request. */
+export const Credentials = Schema.Struct({ email: Schema.String, password: Schema.String });
+const PasswordHash = Schema.Struct({ passwordHash: Schema.String });
+
 export const identityRoutes = (getAuth: () => Auth) =>
   new Elysia()
     .post("/api/__probe/auth/setup", async () => ({ adminId: await ensureAdmin(getAuth()) }))
     .post("/api/__probe/auth/setup-with-hash", async ({ body }) => ({
-      adminId: await ensureAdminWithHash(
-        getAuth(),
-        (body as { passwordHash: string }).passwordHash,
-      ),
+      adminId: await ensureAdminWithHash(getAuth(), decodeJson(PasswordHash, body).passwordHash),
     }))
     .post("/api/__probe/auth/login", ({ body }) =>
       getAuth().api.signInEmail({
-        body: body as { email: string; password: string },
+        body: decodeJson(Credentials, body),
         asResponse: true,
       }),
     )

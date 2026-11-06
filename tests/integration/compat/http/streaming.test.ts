@@ -1,9 +1,12 @@
+import { Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readJson } from "../shared/json";
 import { probeRuntimes, type Server } from "./servers";
 
 const PART_BYTES = 64 * 1024;
 const part = (fill: number) => new Uint8Array(PART_BYTES).fill(fill);
 const WAIT_LIMIT_MS = 10_000;
+const UploadProgress = Schema.Struct({ firstPartBytes: Schema.Number });
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -19,7 +22,7 @@ const withinLimit = <T>(promise: Promise<T>, what: string): Promise<T> =>
 const untilFirstPartArrives = async (server: Server, id: string) => {
   for (;;) {
     const response = await server.fetch(`/api/__probe/stream/upload/${id}`);
-    const { firstPartBytes } = (await response.json()) as { firstPartBytes: number };
+    const { firstPartBytes } = await readJson(response, UploadProgress);
     if (firstPartBytes > 0) {
       return firstPartBytes;
     }
@@ -62,7 +65,10 @@ describe.each(probeRuntimes)("streaming on $name", ({ start }) => {
       server.fetch(`/dav/__stream/download/${id}?partBytes=${PART_BYTES}`),
       "the download response",
     );
-    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    if (!response.body) {
+      throw new Error("The download response has no body");
+    }
+    const reader = response.body.getReader();
 
     const first = await withinLimit(reader.read(), "the first part");
     expect(first.done).toBe(false);

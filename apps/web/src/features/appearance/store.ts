@@ -3,6 +3,11 @@ import { APPEARANCE_STORAGE_KEY } from "./script";
 
 export type AppearanceMode = "light" | "dark" | "system";
 
+const APPEARANCE_MODES: readonly AppearanceMode[] = ["light", "dark", "system"];
+
+export const isAppearanceMode = (value: string): value is AppearanceMode =>
+  APPEARANCE_MODES.some((mode) => mode === value);
+
 const readStoredMode = (): AppearanceMode => {
   try {
     const stored = localStorage.getItem(APPEARANCE_STORAGE_KEY);

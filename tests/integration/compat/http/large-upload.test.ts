@@ -1,4 +1,6 @@
+import { Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readJson } from "../shared/json";
 import { startBunServer, type Server } from "./servers";
 
 const MIB = 1024 * 1024;
@@ -6,10 +8,8 @@ const UPLOAD_BYTES = 1024 * MIB;
 const CHUNK = new Uint8Array(MIB).fill(7);
 const RSS_GROWTH_LIMIT_BYTES = 128 * MIB;
 
-interface Memory {
-  readonly residentBytes: number;
-  readonly peakResidentBytes: number;
-}
+const Memory = Schema.Struct({ residentBytes: Schema.Number, peakResidentBytes: Schema.Number });
+type Memory = typeof Memory.Type;
 
 const oneGibibyteBody = () => {
   let sent = 0;
@@ -30,7 +30,7 @@ describe("large upload on Bun", () => {
 
   const memory = async (): Promise<Memory> => {
     const response = await server.fetch("/api/__probe/memory");
-    return (await response.json()) as Memory;
+    return readJson(response, Memory);
   };
 
   beforeAll(async () => {

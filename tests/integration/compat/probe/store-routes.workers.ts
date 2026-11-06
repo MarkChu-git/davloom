@@ -1,5 +1,7 @@
 import type { Auth } from "@davloom/auth";
+import { Schema } from "effect";
 import { Elysia } from "elysia";
+import { readJson } from "../shared/json";
 import { burnCpu } from "./burn";
 import type { D1UsageCounter } from "./d1-usage.workers";
 import { authenticate, unauthorized } from "./identity-routes";
@@ -15,11 +17,11 @@ const STORE_PREFIX = "/api/__probe/store";
 const OBJECT_PREFIX = "/api/__probe/object";
 const QUOTA_PREFIX = "/api/__probe/quota/dav";
 
-interface Listing {
-  readonly children: readonly unknown[];
-  readonly rowsRead: number;
-  readonly rowsWritten: number;
-}
+const Listing = Schema.Struct({
+  children: Schema.Array(Schema.Unknown),
+  rowsRead: Schema.Number,
+  rowsWritten: Schema.Number,
+});
 
 /** The Cloud Free route chain: authenticate in the Worker, then do the storage work in the object. */
 export const storeRoutes = ({ d1Usage, getAuth, store }: StoreRoutesOptions) => {
@@ -51,7 +53,7 @@ export const storeRoutes = ({ d1Usage, getAuth, store }: StoreRoutesOptions) => 
     const response = await object().fetch(
       `${OBJECT_ORIGIN}/directories?parent=${encodeURIComponent(parent)}`,
     );
-    const { children, rowsRead, rowsWritten } = (await response.json()) as Listing;
+    const { children, rowsRead, rowsWritten } = await readJson(response, Listing);
     return Response.json({
       children: children.length,
       d1,

@@ -4,11 +4,21 @@ import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { hashPassword } from "better-auth/crypto";
+import { Schema } from "effect";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { startWorkerdServerWithDatabase, type Server } from "../http/servers";
 import { PROBE_TOKEN_HEADER } from "../probe/token-guard";
+import { mergeHeaders } from "../shared/headers";
+import { decodeJson, readJson } from "../shared/json";
 import { countBy, distributionOf } from "./stats";
 import { pollUntil, startTail, type Tail, type TailEvent } from "./tail";
+
+const ApiKey = Schema.Struct({ key: Schema.String });
+const Echo = Schema.Struct({
+  method: Schema.String,
+  path: Schema.String,
+  headers: Schema.Record(Schema.String, Schema.String),
+});
 
 // Set by scripts/cloud-free.ts for a real deployment.
 const DEPLOYED_URL = process.env.DAVLOOM_PROBE_URL;
@@ -116,11 +126,11 @@ describe.skipIf(!IS_DEPLOYED && !IS_LOCAL)("Cloud Free measurements", () => {
   const probe = (path: string, init: RequestInit = {}) =>
     fetch(`${baseUrl}${path}`, {
       ...init,
-      headers: { [PROBE_TOKEN_HEADER]: token, ...init.headers },
+      headers: mergeHeaders({ [PROBE_TOKEN_HEADER]: token }, init.headers),
     });
 
   const authenticated = (path: string, init: RequestInit = {}) =>
-    probe(path, { ...init, headers: { ...authorization, ...init.headers } });
+    probe(path, { ...init, headers: mergeHeaders(authorization, init.headers) });
 
   const postJson = (send: typeof probe, path: string, body: unknown) =>
     send(path, {
@@ -198,7 +208,7 @@ describe.skipIf(!IS_DEPLOYED && !IS_LOCAL)("Cloud Free measurements", () => {
       const keys = setup.ok ? await probe("/api/__probe/auth/api-keys", { method: "POST" }) : setup;
       attempts.push(keys.status);
       if (keys.status === 200) {
-        ({ key } = (await keys.json()) as { key: string });
+        ({ key } = await readJson(keys, ApiKey));
       }
     }
     authorization = { authorization: `Basic ${btoa(`client:${key}`)}` };
@@ -212,11 +222,7 @@ describe.skipIf(!IS_DEPLOYED && !IS_LOCAL)("Cloud Free measurements", () => {
       method,
       headers: WEBDAV_HEADERS,
     });
-    const echo = JSON.parse(response.headers.get("x-probe-echo") ?? "{}") as {
-      method: string;
-      path: string;
-      headers: Record<string, string>;
-    };
+    const echo = decodeJson(Echo, JSON.parse(response.headers.get("x-probe-echo") ?? "{}"));
 
     expect(echo.method).toBe(method);
     expect(echo.path).toBe("/dav/%E6%96%87%E4%BB%B6%20a%2Fb.txt");

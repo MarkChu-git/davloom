@@ -1,8 +1,11 @@
+import { Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { readJson } from "../shared/json";
 import { probeRuntimes, type Server } from "./servers";
 
 const ADMIN = { email: "admin@davloom.test", password: "correct horse battery staple" };
 const PROTECTED_PATH = "/api/__probe/auth/dav/a.txt";
+const CreatedKey = Schema.Struct({ id: Schema.String, key: Schema.String });
 
 const basic = (username: string, password: string) => ({
   authorization: `Basic ${btoa(`${username}:${password}`)}`,
@@ -13,7 +16,7 @@ describe.each(probeRuntimes)("Basic Auth with an API key on $name", ({ start }) 
 
   const createKey = async (): Promise<{ id: string; key: string }> => {
     const response = await server.fetch("/api/__probe/auth/api-keys", { method: "POST" });
-    return (await response.json()) as { id: string; key: string };
+    return readJson(response, CreatedKey);
   };
 
   beforeAll(async () => {

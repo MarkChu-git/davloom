@@ -1,7 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Auth } from "@davloom/auth";
+import { Schema } from "effect";
+import { decodeJson } from "../shared/json";
 import { createProbeAuth, type ProbeEnv } from "./auth.workers";
 import { burnCpu } from "./burn";
+import { Credentials } from "./identity-routes";
 
 /** One row per MiB keeps every row under SQLite's 2 MB limit on Durable Objects. */
 const CHUNK_BYTES = 1024 * 1024;
@@ -23,23 +26,26 @@ const SCHEMA = `
   );
 `;
 
-interface SeedRequest {
-  readonly parent: string;
-  readonly count: number;
-  readonly bytes: number;
-}
+const SeedRequest = Schema.Struct({
+  parent: Schema.String,
+  count: Schema.Number,
+  bytes: Schema.Number,
+});
+type SeedRequest = typeof SeedRequest.Type;
 
-interface ChurnRequest {
-  readonly from: string;
-  readonly to: string;
-  readonly count: number;
-}
+const ChurnRequest = Schema.Struct({
+  from: Schema.String,
+  to: Schema.String,
+  count: Schema.Number,
+});
+type ChurnRequest = typeof ChurnRequest.Type;
 
-interface EntryRow {
+// A type alias rather than an interface, so it meets the row constraint of `sql.exec`.
+type EntryRow = {
   readonly path: string;
   readonly content_id: number;
   readonly size: number;
-}
+};
 
 const parentOf = (path: string): string => path.slice(0, Math.max(path.lastIndexOf("/"), 1));
 const nameOf = (path: string): string => path.slice(path.lastIndexOf("/") + 1);
@@ -49,8 +55,11 @@ const createQueryRunner = (sql: SqlStorage) => {
   const usage = { rowsRead: 0, rowsWritten: 0 };
   return {
     usage,
-    run: (query: string, ...bindings: SqlStorageValue[]) => {
-      const cursor = sql.exec(query, ...bindings);
+    run: <Row extends Record<string, SqlStorageValue> = Record<string, SqlStorageValue>>(
+      query: string,
+      ...bindings: SqlStorageValue[]
+    ) => {
+      const cursor = sql.exec<Row>(query, ...bindings);
       const rows = cursor.toArray();
       usage.rowsRead += cursor.rowsRead;
       usage.rowsWritten += cursor.rowsWritten;
@@ -79,14 +88,14 @@ export class ProbeStore extends DurableObject<ProbeEnv> {
       return this.listDirectory(url.searchParams.get("parent") ?? "/");
     }
     if (pathname === "/directories/seed") {
-      return this.seedDirectory((await request.json()) as SeedRequest);
+      return this.seedDirectory(decodeJson(SeedRequest, await request.json()));
     }
     if (pathname === "/directories/churn") {
-      return this.churnDirectory((await request.json()) as ChurnRequest);
+      return this.churnDirectory(decodeJson(ChurnRequest, await request.json()));
     }
     if (pathname === "/login") {
       this.auth ??= createProbeAuth(this.env.DB, this.env.AUTH_SECRET);
-      const body = (await request.json()) as { email: string; password: string };
+      const body = decodeJson(Credentials, await request.json());
       return this.auth.api.signInEmail({ body, asResponse: true });
     }
     const iterations = pathname.match(/^\/burn\/(\d+)$/)?.[1];
@@ -97,8 +106,13 @@ export class ProbeStore extends DurableObject<ProbeEnv> {
   }
 
   private nextContentId(run: ReturnType<typeof createQueryRunner>["run"]): number {
-    const [row] = run("SELECT COALESCE(MAX(content_id), 0) + 1 AS next FROM chunks");
-    return row?.next as number;
+    const [row] = run<{ next: number }>(
+      "SELECT COALESCE(MAX(content_id), 0) + 1 AS next FROM chunks",
+    );
+    if (!row) {
+      throw new Error("The next content id query returned no row");
+    }
+    return row.next;
   }
 
   private async writeFile(path: string, request: Request): Promise<Response> {
@@ -164,7 +178,7 @@ export class ProbeStore extends DurableObject<ProbeEnv> {
     const body = new ReadableStream<Uint8Array>({
       pull: (controller) => {
         const [chunk] = sql
-          .exec(
+          .exec<{ data: ArrayBuffer }>(
             "SELECT data FROM chunks WHERE content_id = ? AND position = ?",
             entry.content_id,
             position,
@@ -172,7 +186,7 @@ export class ProbeStore extends DurableObject<ProbeEnv> {
           .toArray();
         position += 1;
         if (chunk) {
-          controller.enqueue(new Uint8Array(chunk.data as ArrayBuffer));
+          controller.enqueue(new Uint8Array(chunk.data));
         } else {
           controller.close();
         }
@@ -211,11 +225,11 @@ export class ProbeStore extends DurableObject<ProbeEnv> {
    */
   private churnDirectory({ from, to, count }: ChurnRequest): Response {
     const { run, usage } = createQueryRunner(this.ctx.storage.sql);
-    const sources = run(
+    const sources = run<EntryRow>(
       "SELECT path, content_id, size FROM entries WHERE parent = ? LIMIT ?",
       from,
       count,
-    ) as unknown as EntryRow[];
+    );
     let contentId = this.nextContentId(run);
     for (const source of sources) {
       run(

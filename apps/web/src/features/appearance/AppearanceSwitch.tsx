@@ -1,11 +1,15 @@
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { setAppearanceMode, useAppearanceMode, type AppearanceMode } from "./store";
+import { isAppearanceMode, setAppearanceMode, useAppearanceMode } from "./store";
 
 export const AppearanceSwitch = () => (
   <SegmentedControl
     label="Appearance"
     value={useAppearanceMode()}
-    onChange={(mode) => setAppearanceMode(mode as AppearanceMode)}
+    onChange={(mode) => {
+      if (isAppearanceMode(mode)) {
+        setAppearanceMode(mode);
+      }
+    }}
   >
     <SegmentedControlItem value="light" label="Light" />
     <SegmentedControlItem value="dark" label="Dark" />

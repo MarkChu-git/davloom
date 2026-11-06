@@ -8,8 +8,8 @@ Phase 0 left two entry points: `bun run check` runs lint, format, exact versions
 
 Current state relevant to CI (checked on 2026-11-06):
 
-- HTTP tests run on Node and start real Bun and `wrangler dev` processes, and the Bun SQLite tests run on Bun with `bun --bun vitest`, so CI has to install both Bun and Node.
-- The Bun version is set in `packageManager` of the root `package.json` (`bun@1.4.4`), and `oven-sh/setup-bun` reads this field by default. The Node version is not written anywhere.
+- HTTP tests run Vitest on Node and start real Bun and `wrangler dev` processes, and the Bun SQLite tests run on Bun with `bun --bun vitest`. The maintainer ruled out Node on 2026-11-07, so these move to Bun first (Decision 7).
+- The Bun version is set in `packageManager` of the root `package.json` (`bun@1.4.4`), and `oven-sh/setup-bun` reads this field by default.
 - `apps/api` and `tests/integration/compat` each have two tsconfig files: `tsconfig.json` for Bun and `tsconfig.workers.json` for Workers. Each excludes the entry files of the other.
 - `scripts/lib/pinned-deps.ts` only checks that Astryx and StyleX are declared with exact versions; it does not compare StyleX with the Astryx peer dependency. Astryx 0.7.8 requires `@stylexjs/stylex` at `^0.19.0`, and 0.19.1 is installed now.
 - The test fixture `compatibility-test-secret-not-used-anywhere-else` appears in 4 files.
@@ -58,6 +58,11 @@ CodeQL gets its own workflow because it needs `security-events: write`, which ke
 - With one unhandled Promise in a Bun file and one in a `*.workers.ts` file, `no-floating-promises` reports both.
 
 At implementation time, fix these 43 first and then turn the rules on, without disabling any rule. If a rule really has to be disabled, record the reason here. `tsc` stays the basis for type checking.
+
+Implemented on 2026-11-07 without turning any rule off in `oxlint.json`. JSON bodies are now checked with Effect Schema through `tests/integration/compat/shared/json.ts`, and the Workers bindings come from `Cloudflare.Env` declarations instead of casts. Two lines keep an assertion behind `oxlint-disable-next-line typescript/no-unsafe-type-assertion`, because there the assertion is the point:
+
+- The D1 usage counter in the probe stands in for `D1Database` but implements only `prepare` and `batch`, the two methods Drizzle calls.
+- A test in `packages/core` passes `responseFromExit` an error outside the declared union, to check that it becomes a defect.
 
 ### 3. Use Renovate, not Dependabot
 
@@ -113,9 +118,11 @@ The repository has been public since it was created, ahead of the baseline CI, s
 
 Task 7.2 makes the `main` Ruleset require `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies` to pass. CodeQL uses its Require code scanning results rule, with Security alerts set to High or higher and Alerts set to Errors.
 
-### 7. Runtime versions
+### 7. Bun only
 
-For Bun, `oven-sh/setup-bun` reads `packageManager`. For Node, a new `.node-version` is added; `actions/setup-node` reads it through `node-version-file`, and Renovate also updates it.
+The maintainer ruled out Node on 2026-11-07: every script, test, tool and CI job runs on Bun. `oven-sh/setup-bun` reads `packageManager`, and no job installs Node. Tools whose launchers start with `#!/usr/bin/env node` run on Bun under `bun --bun run`, which puts a `node` that points to Bun first on `PATH`.
+
+Checked on 2026-11-07 with a logging `node` first on `PATH`: with `[run] bun = true`, `bun run check` passes without calling Node, so `bun run check` now starts each step with `bun --bun run`. With the same setting `bun run test:compat` fails, because `wrangler dev` answers every request with 503 under Bun. Miniflare runs on Bun when it is called directly, so task 2.1 moves the compatibility servers to Miniflare and then sets `[run] bun = true` in `bunfig.toml`.
 
 ### 8. Each Phase brings its own CI tasks
 
@@ -127,7 +134,7 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 
 | Aspect | Workers | Bun |
 | --- | --- | --- |
-| How it runs | Vitest on Node starts `wrangler dev` (workerd), and D1 uses `@cloudflare/vitest-plugin` | Vitest on Node starts a Bun process, and Bun SQLite uses `bun --bun vitest` |
+| How it runs | Vitest on Node starts `wrangler dev` (workerd) until task 2.1 moves it to Miniflare on Bun, and D1 uses `@cloudflare/vitest-plugin` | Vitest on Node starts a Bun process until task 2.1, and Bun SQLite uses `bun --bun vitest` |
 | Type environment | `tsconfig.workers.json` | `tsconfig.bun.json` |
 | Browser tests | `wrangler dev` serves the static assets | The Bun process serves them |
 | What only a real deployment can verify | CPU and request body limits, shown as skipped in CI | Nothing |

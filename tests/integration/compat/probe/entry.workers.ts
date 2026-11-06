@@ -9,7 +9,14 @@ import { guardWithToken } from "./token-guard";
 
 export { ProbeStore } from "./store-object.workers";
 
-const { AUTH_SECRET, DB, PROBE_TOKEN, STORE } = env as unknown as ProbeEnv;
+declare global {
+  namespace Cloudflare {
+    /** The probe Worker's bindings, from wrangler.jsonc and the cloud script. */
+    interface Env extends ProbeEnv {}
+  }
+}
+
+const { AUTH_SECRET, DB, PROBE_TOKEN, STORE } = env;
 
 const d1Usage = countD1Usage(DB);
 
