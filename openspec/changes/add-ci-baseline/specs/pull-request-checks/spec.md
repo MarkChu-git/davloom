@@ -83,7 +83,7 @@ Every pull request MUST run static security analysis on the TypeScript code. Hig
 CI SHALL measure test coverage in a required job, and that job MUST fail when any package's coverage falls below its threshold. A threshold MUST NOT be lowered without a reason recorded in the design of the change that lowers it.
 
 #### Scenario: Coverage falls below a threshold
-- **WHEN** a change lowers a package's line or branch coverage below its threshold
+- **WHEN** a change lowers a package's line, branch or function coverage below its threshold
 - **THEN** `bun run test:coverage` exits with a non-zero status and names the package
 
 #### Scenario: Coverage meets every threshold

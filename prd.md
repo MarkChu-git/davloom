@@ -626,7 +626,7 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 | Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
 | Required on PR | Coverage gates per package (Vitest with Istanbul coverage), starting at the measured coverage | After Phase 0 |
 | Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
-| Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module, and fast-check property tests of the laws against the compiled modules | Phase 1 |
+| Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module, fast-check property tests of the laws against the compiled modules, and the `LAWS.bend` approval check | Phase 1 |
 | Weekly, and required before release | StrykerJS on `packages/core` and `packages/webdav`, with a mutation score of at least 80% | Phase 1 |
 | Required on PR | Requirement coverage: every OpenSpec scenario maps to at least one test | Phase 1 |
 | Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
@@ -641,9 +641,9 @@ The Cloud Free quota check asserts the number of D1 and Durable Objects calls pe
 
 ### Test Budget
 
-Davloom has at least 8,000 unique test cases at V1, and the plan holds about 9,500. One `it` or `test` is one case, and each row of an `it.each` table is one case. A case runs once for every runtime, backend or browser in its matrix, so a full CI run executes about 18,300 cases.
+Davloom has at least 8,000 unique test cases at V1, and the plan holds about 9,500. One `it` or `test` is one case, and each row of an `it.each` table is one case. A case runs once for every runtime, backend or browser in its matrix, so a full CI run executes about 18,000 cases.
 
-The black-box layers run on four deployment combinations: Workers + D1 + Durable Objects (the Cloud Free default), Workers + D1 + R2, Workers + D1 + S3 (Hybrid), and Bun + SQLite + S3 or RustFS (the Docker default).
+The black-box layers run on four deployment combinations: Workers + D1 + Durable Objects (the Cloud Free default), Workers + D1 + R2, Workers + D1 + S3 (Hybrid), and Bun + SQLite + S3 (the Docker default). CI runs both S3 combinations against RustFS.
 
 | Layer | Unique cases | Matrix | Executions |
 |---|---|---|---|
@@ -657,18 +657,18 @@ The black-box layers run on four deployment combinations: Workers + D1 + Durable
 | WebDAV protocol, black-box | 1,240 | 4 deployments | 4,960 |
 | Permissions and security, black-box | 1,190 | 2 runtimes | 2,380 |
 | Concurrency and fault recovery | 200 | 4 deployments | 800 |
-| Management API and quota | 340 | API on 2 runtimes, quota on 3 deployments | 720 |
-| Real clients: rclone, cadaver and davfs2 | 130 | rclone on 4 deployments, the others on 2 | 420 |
+| Management API and quota | 340 | 300 API cases on 2 runtimes, 40 quota cases on 3 deployments | 720 |
+| Real clients: rclone, cadaver and davfs2 | 130 | 80 rclone cases on 4 deployments, 50 others on 2 | 420 |
 | Data migration, in 5 directions | 300 | 1 | 300 |
-| Browser E2E | about 410 | Up to 3 browsers × 3 viewports | about 2,040 |
+| Browser E2E | 366 | 170 flows on 3 browsers × 3 viewports, 30 screenshots at 3 viewports, the rest once | 1,786 |
 | Runtime compatibility and release smoke tests | 110 | 1 | 110 |
-| **Total** | **about 9,500** | | **about 18,300** |
+| **Total** | **about 9,500** | | **about 18,000** |
 
-The policy table is the product of 2 permissions, 4 scopes, 12 methods, 5 target relations and 3 Mount states. The security layer covers the whole 480-cell permission table, 80 path traversal payloads at each of the 6 entry points that take a path, XML attacks, authentication headers, resource exhaustion and log redaction. In the browser layer, 170 core flows run in Chromium, WebKit and Firefox at desktop, tablet and phone sizes; 130 other states run in desktop Chromium; screenshot tests cover 15 screens in both themes; and 36 more cases cover accessibility and large-list performance. litmus reports its results separately and does not count toward the budget.
+The policy table is the product of 2 permissions, 4 scopes, 12 methods, 5 target relations and 3 Mount states. The security layer covers the whole 480-cell permission table, 80 path traversal payloads at each of the 6 entry points that take a path, XML attacks, authentication headers, resource exhaustion and log redaction. In the browser layer, 170 core flows run in Chromium, WebKit and Firefox at desktop, tablet and phone sizes; 130 other states run in desktop Chromium; 30 screenshot cases cover 15 screens in both themes, each at the three sizes in Chromium; and 36 more cases cover accessibility and large-list performance in desktop Chromium. litmus reports its results separately and does not count toward the budget.
 
 Rules for tests at this size:
 
-- Expected values come from an independent oracle: a small reference model, such as the one behind the policy table, or the text of RFC 4918 for the protocol tables. Tests never compare against snapshots of what the implementation returns.
+- Expected values come from an independent oracle: a small reference model, such as the one behind the policy table, or the text of RFC 4918 for the protocol tables. Tests never compare against snapshots of what the implementation returns. Screenshot tests are the one exception: they compare against baseline images that were reviewed when they were added, and a baseline changes only in a pull request that shows the old and the new image.
 - Cases come from data tables run with `it.each`, so reviews cover the tables and the models instead of thousands of functions.
 - Modules that Bend proves are tested too: their tables run against the compiled JavaScript.
 - HTTP and browser tests start their servers once per job and keep cases apart by Mount and path.
@@ -683,7 +683,7 @@ Rules for tests at this size:
 
 - The table holds the V1 targets. Each package starts at the coverage measured when its gate is added, its thresholds rise every phase, and they reach the targets before V1.
 - Thresholds only go up. Lowering one needs a reason in the `design.md` of the change that lowers it.
-- Coverage comes from Istanbul instrumentation through `@vitest/coverage-istanbul`. Bun runs JavaScriptCore and workerd supports only instrumented coverage, so V8 coverage cannot measure Davloom's tests.
+- Coverage comes from Istanbul instrumentation through `@vitest/coverage-istanbul`, with Vitest running on Bun. Cloudflare's Vitest integration supports only Istanbul, so one provider measures the tests on both Bun and workerd.
 - StrykerJS keeps a mutation score of at least 80% on `packages/core` and `packages/webdav`. It runs weekly and must pass before a release.
 - From Phase 1, requirement coverage is a required check: every OpenSpec scenario maps to at least one test whose name carries the scenario's ID, and the check fails when a scenario has none. Scenarios that need a real deployment or manual verification are listed with how they were verified.
 

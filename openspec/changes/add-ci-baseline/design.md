@@ -14,7 +14,7 @@ Current state relevant to CI (checked on 2026-11-06):
 - `scripts/lib/pinned-deps.ts` only checks that Astryx and StyleX are declared with exact versions; it does not compare StyleX with the Astryx peer dependency. Astryx 0.7.8 requires `@stylexjs/stylex` at `^0.19.0`, and 0.19.1 is installed now.
 - The test fixture `compatibility-test-secret-not-used-anywhere-else` appears in 4 files.
 - `bun outdated --filter '*'` lists no dependencies that are behind.
-- Bun runs JavaScriptCore, and Cloudflare's Vitest integration supports only Istanbul coverage, not V8 (checked on 2026-11-07).
+- Under Bun 1.4.4, `bun --bun vitest run --coverage` works with both the V8 and the Istanbul provider, but Cloudflare's Vitest integration supports only Istanbul (checked on 2026-11-07).
 
 ## Goals / Non-Goals
 
@@ -134,8 +134,9 @@ From now on, the `tasks.md` of every change includes a task that wires the new t
 
 The maintainer decided on 2026-11-07 to gate coverage, which replaces the earlier plan to report it without a threshold. Section 11 of the PRD sets the V1 targets per package and a test budget of at least 8,000 unique cases.
 
-- `bun run test:coverage` measures the unit tests with `@vitest/coverage-istanbul`. Bun runs JavaScriptCore, and Cloudflare's Vitest integration supports only Istanbul, so V8 coverage is not an option.
-- Each package's thresholds start at the coverage that task 2.5 measures and live in the Vitest config, keyed by package path. A change that raises coverage may raise a threshold. Lowering one needs a reason in the `design.md` of that change.
+- `bun run test:coverage` runs `bun --bun vitest run --coverage` with `@vitest/coverage-istanbul`. Cloudflare's Vitest integration supports only Istanbul, so Istanbul is the one provider that measures tests on both Bun and workerd.
+- `coverage.include` names every package. Vitest leaves a package with no loaded files out of the report, and its threshold then passes without measuring anything.
+- Each package's thresholds start at the coverage that task 2.5 measures and live in the Vitest config, keyed by package path. Each phase raises them toward the V1 targets in section 11 of the PRD, and a change that raises coverage may raise its package's thresholds sooner. Lowering one needs a reason in the `design.md` of that change.
 - The `coverage` job fails when any package falls below a threshold, and it writes every package's coverage to the job summary.
 - Thresholds are per package, so a pull request fails only for the package whose coverage it lowers.
 
@@ -145,17 +146,17 @@ The baseline adds the jobs in Decision 1. By V1 a pull request runs about 20 job
 
 | Jobs | Contents | Estimate per job |
 | --- | --- | --- |
-| `check` | Lint, format, types, unit tests and build; uploads the web build for the other jobs | 5–6 min |
+| `check` | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 5–6 min, more once the Bend proofs land |
 | `coverage` | Unit tests with the coverage gates | 3–4 min |
 | 2 contract jobs | Storage and database contracts | 3–4 min |
 | 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus | 8–10 min |
 | Migration | Data migration | About 4 min |
-| 6 browser shards | Playwright | 8–9 min |
+| 6 browser shards | Playwright, 2 workers per shard | 8–9 min |
 | `compat` | Phase 0 compatibility tests | 4–5 min |
 | CodeQL | Static analysis | 8–10 min |
 | `dependencies`, `secrets`, `workflows` | Scans | About 2 min |
 
-A pull request takes about 10 to 12 minutes of wall-clock time and about 2 hours of runner time, and each push to `main` costs the same again. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same time, such as one from Renovate, queues part of its jobs and finishes 8 to 10 minutes later. If queueing becomes a problem, the scans and `coverage` can fold into fewer jobs.
+A pull request takes about 13 to 16 minutes of wall-clock time, because the browser shards and the deployment jobs wait for the web build from `check`, and about 2 hours of runner time, and each push to `main` costs the same again. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same time, such as one from Renovate, queues part of its jobs and finishes 8 to 10 minutes later. If queueing becomes a problem, the scans and `coverage` can fold into fewer jobs.
 
 To reach these times:
 
