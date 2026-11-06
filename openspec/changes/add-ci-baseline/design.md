@@ -4,7 +4,7 @@
 
 See proposal.md for the motivation and the specs for the behavior requirements.
 
-Phase 0 left two entry points: `bun run check` runs lint, format, exact versions, generated theme, types, unit tests and builds; `bun run test:compat` runs the Workers, Bun and Playwright compatibility tests and exits with status 0 when there are no Cloudflare credentials. The repository has no `.github/` yet and no remote.
+Phase 0 left two entry points: `bun run check` runs lint, format, exact versions, generated theme, types, unit tests and builds; `bun run test:compat` runs the Workers, Bun and Playwright compatibility tests and exits with status 0 when there are no Cloudflare credentials. The repository is on GitHub but has no `.github/` yet.
 
 Current state relevant to CI (checked on 2026-11-06):
 
@@ -109,9 +109,9 @@ GitHub does not let an author approve their own PR, so the owner bypasses `main 
 
 Both Rulesets were created on 2026-11-07 without required checks, because a required check that has never run blocks every pull request. Task 7.2 adds the checks once the workflows have run on `main`, and exports both Rulesets as JSON into the repository.
 
-The repository goes public when the baseline CI is added (the maintainer decided this on 2026-11-06), so Rulesets, CodeQL and native secret scanning are all available on a free account.
+The repository has been public since it was created, ahead of the baseline CI, so Rulesets, CodeQL and native secret scanning are all available on a free account.
 
-The `main` Ruleset requires `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies` to pass. CodeQL uses its Require code scanning results rule, with Security alerts set to High or higher and Alerts set to Errors.
+Task 7.2 makes the `main` Ruleset require `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies` to pass. CodeQL uses its Require code scanning results rule, with Security alerts set to High or higher and Alerts set to Errors.
 
 ### 7. Runtime versions
 
@@ -143,7 +143,7 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 
 ## Migration Plan
 
-There is no existing CI. The two Rulesets have protected `main` since 2026-11-07, without required checks. Add the workflows first, then add each job to the required checks of the `main` Ruleset once it has run on `main`. To roll back, set a Ruleset's enforcement to Disabled or delete the workflow files.
+There is no existing CI. The two Rulesets have protected `main` since 2026-11-07, without required checks. Add the workflows first; once all of them have run on `main`, task 7.2 adds their jobs to the required checks of the `main` Ruleset. To roll back, set a Ruleset's enforcement to Disabled or delete the workflow files.
 
 ## Open Questions
 

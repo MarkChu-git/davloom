@@ -580,7 +580,7 @@ davloom/
 
 ## 11. CI/CD
 
-CI is added in layers that follow the phases, not all at once. The `tasks.md` of each phase includes a task to wire its new tests into CI. The detailed plan for the baseline is in the OpenSpec change `add-ci-baseline`. The repository goes public when the baseline CI is added, because on a free account Rulesets, CodeQL and native secret scanning all require a public repository.
+CI is added in layers that follow the phases, not all at once. The `tasks.md` of each phase includes a task to wire its new tests into CI. The detailed plan for the baseline is in the OpenSpec change `add-ci-baseline`. The repository has been public since it was created, because on a free account Rulesets, CodeQL and native secret scanning all require a public repository.
 
 ### Rollout Plan
 

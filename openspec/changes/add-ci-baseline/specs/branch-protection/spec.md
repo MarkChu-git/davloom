@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Protect the `main` branch so that every change goes through a pull request and passes every required check, and so that a change from anyone other than the repository owner gets two approvals.
+Protect the `main` branch so that every change goes through a pull request and passes every required check, and so that anyone other than the repository owner needs two approvals to merge.
 
 ## ADDED Requirements
 
@@ -22,15 +22,15 @@ Protect the `main` branch so that every change goes through a pull request and p
 - **THEN** the owner cannot merge it
 
 ### Requirement: Two approvals unless the owner merges
-A pull request into `main` MUST have two approvals before it can be merged, and pushing new commits MUST dismiss the approvals given before. The repository owner SHALL be able to merge their own pull request without approvals once all required checks pass. The project SHALL name the owner of each directory.
+Anyone other than the repository owner MUST NOT be able to merge a pull request into `main` until it has two approvals, and pushing new commits MUST dismiss the approvals given before. The owner SHALL be able to merge any pull request without approvals once all required checks pass. The project SHALL name the owner of each directory.
 
-#### Scenario: Owner merges their own pull request (needs a real repository, manual verification)
-- **WHEN** the repository owner opens a pull request and all required checks pass
-- **THEN** the owner can merge it without approvals
+#### Scenario: Owner merges without approvals (needs a real repository, manual verification)
+- **WHEN** all required checks pass on a pull request, whether the owner, a fork or Renovate opened it
+- **THEN** the repository owner can merge it without approvals
 
-#### Scenario: Another author needs two approvals (needs a real repository, manual verification)
-- **WHEN** someone other than the owner opens a pull request and all required checks pass
-- **THEN** it cannot be merged until two reviewers approve it
+#### Scenario: Anyone else needs two approvals (needs a real repository, manual verification)
+- **WHEN** someone other than the owner tries to merge a pull request that has fewer than two approvals
+- **THEN** the merge is blocked until two reviewers approve it
 
 #### Scenario: New commits dismiss approvals (needs a real repository, manual verification)
 - **WHEN** new commits are pushed to a pull request that has two approvals

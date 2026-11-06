@@ -42,7 +42,7 @@
 ## 7. Repository configuration
 
 - [ ] 7.1 Create `.github/CODEOWNERS`. Verify that the pull request page shows the owner of each directory
-- [ ] 7.2 The `main` and `main reviews` Rulesets have existed since 2026-11-07 (Decision 6). Once the checks in groups 3 to 6 have run on `main`, add every job to the required checks of `main` and use Require code scanning results for CodeQL, then export both Rulesets as JSON into the repository. Verify that direct pushes and force pushes are rejected, that a pull request with a failing check cannot be merged even by the owner, that the owner can merge their own pull request without approval once the checks pass, and that the fork pull request from 5.2 shows two required approvals
+- [ ] 7.2 The `main` and `main reviews` Rulesets have existed since 2026-11-07 (Decision 6). Once the checks in groups 3 to 6 have run on `main`, add the jobs that Decision 6 lists to the required checks of `main` and use Require code scanning results for CodeQL, then export both Rulesets as JSON into the repository. Verify that direct pushes and force pushes are rejected, that a pull request with a failing check cannot be merged even by the owner, that the owner can merge a pull request without approvals once the checks pass, and that the fork pull request from 5.2, viewed from the second account, shows two required approvals
 - [ ] 7.3 Turn on GitHub native secret scanning and push protection. Verify that the settings page shows both as enabled
 
 ## 8. Project rules
