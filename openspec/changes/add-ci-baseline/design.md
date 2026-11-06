@@ -4,7 +4,7 @@
 
 See proposal.md for the motivation and the specs for the behavior requirements.
 
-Phase 0 left two entry points: `bun run check` runs lint, format, exact versions, generated theme, types, unit tests and builds; `bun run test:compat` runs the Workers, Bun and Playwright compatibility tests and exits with status 0 when there are no Cloudflare credentials. The repository has no `.github/` yet and no remote.
+Phase 0 left two entry points: `bun run check` runs lint, format, exact versions, generated theme, types, unit tests and builds; `bun run test:compat` runs the Workers, Bun and Playwright compatibility tests and exits with status 0 when there are no Cloudflare credentials. The repository is on GitHub but has no `.github/` yet.
 
 Current state relevant to CI (checked on 2026-11-06):
 
@@ -26,7 +26,7 @@ Current state relevant to CI (checked on 2026-11-06):
 
 - Do not implement deployment or release. Wrangler, Buildx, Changesets and Trivy are left for Phase 6.
 - Do not run the Cloud Free real-deployment measurement on pull requests. It needs an account and consumes that day's quota. It is rerun by hand after a dependency upgrade.
-- Do not make coverage a gate. Watch the trend first and decide after Phase 2.
+- Do not set a coverage threshold. The `coverage` job is required like the others, but the coverage level never fails it. Watch the trend first and decide on a threshold after Phase 2.
 
 ## Decisions
 
@@ -39,7 +39,9 @@ Current state relevant to CI (checked on 2026-11-06):
 | `workflows` | actionlint, zizmor | Yes |
 | `secrets` | Gitleaks | Yes |
 | `dependencies` | OSV-Scanner scans `bun.lock` | Yes |
-| `coverage` | Vitest V8 Coverage, results written to the job summary | No |
+| `coverage` | Vitest V8 Coverage, results written to the job summary | Yes, with no threshold |
+
+Pull requests trigger the workflow whatever their base branch, because stacked pull requests target each other's branches before they are retargeted to `main`.
 
 CodeQL gets its own workflow because it needs `security-events: write`, which keeps it separate from the other read-only jobs. The scheduled dependency vulnerability scan reuses the steps of `dependencies` and runs once a week.
 
@@ -94,13 +96,22 @@ The default rules of zizmor 1.32.0 already cover the requirements of `workflow-s
 
 The Gitleaks author has [declared that only security issues will be fixed](https://github.com/gitleaks/gitleaks), so GitHub native secret scanning is turned on as well. The test fixture `compatibility-test-secret-not-used-anywhere-else` goes into the Gitleaks allowlist.
 
-### 6. Do not require approval with a single maintainer
+### 6. Two approvals, which the owner can bypass
 
-GitHub does not let an author approve their own PR, so the required approval count is set to 0 and CODEOWNERS only names owners. Turn approval on once there is a second maintainer.
+The maintainer decided on 2026-11-07 that every CI check must pass for everyone, that the repository owner can merge once the checks pass, and that everyone else needs two approvals. A bypass applies to a whole Ruleset, so `main` gets two:
 
-The repository goes public when the baseline CI is added (the maintainer decided this on 2026-11-06), so Rulesets, CodeQL and native secret scanning are all available on a free account.
+| Ruleset | Rules | Bypass |
+| --- | --- | --- |
+| `main` | Block deletion and force pushes, require a pull request, require every job in Decision 1 and the CodeQL results | None, the owner included |
+| `main reviews` | Require 2 approvals, dismiss approvals when new commits are pushed | Repository admin role, on pull requests only |
 
-The Ruleset requires `check`, `compat`, `workflows`, `secrets` and `dependencies` to pass; `coverage` is not among them. CodeQL uses the Require code scanning results rule of the Ruleset, with Security alerts set to High or higher and Alerts set to Errors.
+GitHub does not let an author approve their own PR, so the owner bypasses `main reviews` instead of approving. CODEOWNERS names the owners, and code owner review is not required.
+
+Both Rulesets were created on 2026-11-07 without required checks, because a required check that has never run blocks every pull request. Task 7.2 adds the checks once the workflows have run on `main`, and exports both Rulesets as JSON into the repository.
+
+The repository has been public since it was created, ahead of the baseline CI, so Rulesets, CodeQL and native secret scanning are all available on a free account.
+
+Task 7.2 makes the `main` Ruleset require `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies` to pass. CodeQL uses its Require code scanning results rule, with Security alerts set to High or higher and Alerts set to Errors.
 
 ### 7. Runtime versions
 
@@ -132,8 +143,8 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 
 ## Migration Plan
 
-There is no existing CI. Add it in this order: first get the workflows running without making them required, then turn on Rulesets once the existing problems are fixed. To roll back, switch off the Ruleset or delete the workflow files.
+There is no existing CI. The two Rulesets have protected `main` since 2026-11-07, without required checks. Add the workflows first; once all of them have run on `main`, task 7.2 adds their jobs to the required checks of the `main` Ruleset. To roll back, set a Ruleset's enforcement to Disabled or delete the workflow files.
 
 ## Open Questions
 
-None. The maintainer decided on 2026-11-06 when the repository goes public and whether to set a waiting period for updates; see Decision 6 and Decision 3.
+None. The maintainer decided on 2026-11-06 when the repository goes public and whether to set a waiting period for updates, and on 2026-11-07 the approval rules and that every check is required; see Decision 3 and Decision 6.

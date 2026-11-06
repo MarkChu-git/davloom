@@ -2,8 +2,8 @@
 
 ## 1. Prerequisites
 
-- [ ] 1.1 Confirm that `add-phase-0-foundation` is archived. Verify that `openspec list` no longer lists it and that `openspec/specs/` holds its 4 capabilities
-- [ ] 1.2 Create a public repository on GitHub and get the maintainer's confirmation before pushing `main`. Verify that `git ls-remote origin main` returns the commit of the local `main` and that the repository settings show Public
+- [x] 1.1 Confirm that `add-phase-0-foundation` is archived. Verify that `openspec list` no longer lists it and that `openspec/specs/` holds its 4 capabilities
+- [x] 1.2 Create a public repository on GitHub and get the maintainer's confirmation before pushing `main`. Verify that `git ls-remote origin main` returns the commit of the local `main` and that the repository settings show Public
 
 ## 2. Local checks
 
@@ -17,7 +17,7 @@
 
 - [ ] 3.1 Create the `check` job in `.github/workflows/ci.yml`: trigger it on pull requests and on pushes to `main`, set `permissions: contents: read` at the workflow level, make `actions/checkout` not persist credentials, pin actions to a SHA, read Bun from `packageManager` and Node from `.node-version`, and run `bun install --frozen-lockfile` and `bun run check`. Verify that the job passes on a test branch and that the install step fails when only `package.json` is changed and `bun.lock` is not updated
 - [ ] 3.2 Add the `compat` job: cache the Playwright browsers and run `playwright:install` and `bun run test:compat`. Verify that the job passes and that the cases which need a real deployment show as skipped in the log
-- [ ] 3.3 Add the `coverage` job and write the total coverage to the job summary. Verify that the summary shows the coverage and that this job is not among the required checks
+- [ ] 3.3 Add the `coverage` job and write the total coverage to the job summary. Verify that the summary shows the coverage and that the job still passes when coverage drops
 - [ ] 3.4 Create `docs/ci.md`, stating the local command for each job and which checks are required, and record how long the first runs of 3.1 and 3.2 took. Verify that every command in the text gives the same result locally as in CI
 
 ## 4. Security scans
@@ -42,7 +42,7 @@
 ## 7. Repository configuration
 
 - [ ] 7.1 Create `.github/CODEOWNERS`. Verify that the pull request page shows the owner of each directory
-- [ ] 7.2 Once the checks in groups 3 to 6 all pass, create a Ruleset for `main`: block deletion and force pushes, require pull requests and the required checks, use Require code scanning results for CodeQL, set the approval count to 0, and export the configuration as JSON into the repository. Verify that direct pushes and force pushes are rejected, that a pull request with failing checks cannot be merged, and that the maintainer can merge their own pull request without approval once the checks pass
+- [ ] 7.2 The `main` and `main reviews` Rulesets have existed since 2026-11-07 (Decision 6). Once the checks in groups 3 to 6 have run on `main`, add the jobs that Decision 6 lists to the required checks of `main` and use Require code scanning results for CodeQL, then export both Rulesets as JSON into the repository. Verify that direct pushes and force pushes are rejected, that a pull request with a failing check cannot be merged even by the owner, that the owner can merge a pull request without approvals once the checks pass, and that the fork pull request from 5.2, viewed from the second account, shows two required approvals
 - [ ] 7.3 Turn on GitHub native secret scanning and push protection. Verify that the settings page shows both as enabled
 
 ## 8. Project rules
