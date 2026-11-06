@@ -1,5 +1,42 @@
 # Davloom
 
+## Commands
+
+- `bun install --frozen-lockfile`: install exactly what `bun.lock` records.
+- `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
+- `bun run format`: rewrite files with Oxfmt.
+- `bun run test:compat`: run the compatibility tests on local Bun and workerd, including Playwright against the production build. It needs no Cloudflare account, and reports what only a real deployment can test as skipped. Run `bun run --filter @davloom/compat-tests playwright:install` once first, or set `DAVLOOM_CHROMIUM_PATH` to a Chromium you already have.
+- `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
+- `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
+- `openspec list`: show active changes.
+- `openspec validate <change> --strict`: validate a change before and after editing it.
+
+## Dependencies
+
+Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. Pre-release tags such as `rc`, `beta` and `canary` do not count. When a peer range blocks the newest version, use the newest one allowed and record why in the change's `design.md`.
+
+## Spec workflow
+
+Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behaviour starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Artifacts are written in zh-CN; OpenSpec structural headings and SHALL/MUST stay in English.
+
+## Architecture rules
+
+Davloom follows Hexagonal architecture with Effect Layers.
+
+- Domain code never imports a cloud vendor SDK. Cloudflare-only features appear only in the infrastructure layer.
+- Elysia routes never touch storage backends or D1 directly, and TanStack Start never reads the database. Effect Services reach infrastructure through Ports, and every Adapter must pass the shared contract tests.
+- The WebDAV entry point takes a Web standard `Request` and returns a `Response`, so the protocol engine can be tested without an HTTP framework.
+- Production entries never import from `tests/integration/compat/probe`.
+- Never advertise a protocol capability that is not implemented correctly.
+
+## UI rules
+
+- Use an existing Astryx component or design token before writing your own. Never patch or copy dependency source; `packages/ui` holds only Davloom business components, themes and tokens.
+- Astryx ships as its official precompiled CSS, and Davloom's own styles use StyleX. Do not add a second CSS-in-JS library, Tailwind, shadcn/ui or Radix.
+- Astryx and StyleX stay on exact versions, and StyleX follows the Astryx peer dependency. `bun run check` enforces this.
+- Search before writing UI: `bunx astryx search "<query>"` finds components, hooks, docs and templates, and `bunx astryx component <Name>` prints a component's API.
+- The generated Astryx block below says there is no StyleX compiler. Davloom has one (`@stylexjs/unplugin`), so Davloom's own components use `stylex.create()` and `stylex.props()` with Astryx tokens. Astryx components themselves stay on props and tokens, and never depend on Astryx's generated class names.
+
 ## Issue tracker
 
 Issues live in Linear team Mark's Workplace, project davloom (P-MAR-3). Each PRD phase has a milestone, and Phase 0 sub-issues carry the `tasks.md` number in their title. `tasks.md` is the source of truth for progress, so update the matching Linear issue when a task starts or finishes.
@@ -60,3 +97,35 @@ This project is indexed by GitNexus as **davloom** (170 symbols, 168 relationshi
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+<!-- ASTRYX:START -->
+Astryx v0.7.8 · 90+ components
+CLI: run every command as `bunx astryx <cmd>` (shown below as `astryx ...`).
+
+SETUP (once, in app entry e.g. main.tsx) — without these, components render unstyled:
+  import "@astryxdesign/core/reset.css";
+  import "@astryxdesign/core/astryx.css";
+
+WORKFLOW — start every page from a template, never from scratch:
+1. `astryx build "<idea>"` — names the template to scaffold from and the parts it lacks.
+2. `astryx template <name> <path>` — scaffold it; keep its frame, gap and padding; replace the content.
+3. `astryx template <Block>` for parts it lacks; `astryx component <Name>` to read props before using one.
+Changing an existing page? Keep it: skip step 2 and add blocks/components inside its sections.
+Before you deliver a build, run `astryx doctor --built <dir>`; don't deliver it if it fails.
+
+RULES:
+- No <div> — components handle all layout and spacing.
+- Read `astryx docs layout` before changing a template's frame.
+- Dense data = rows (Table, List/Item), not Card-wrapped lists. Badge = counts only.
+- Style with component props first, then tokens (var(--color-*|--spacing-*|--radius-*)). No raw hex/px. No StyleX/Tailwind compiler here — don't use xstyle/utility classes directly. Some templates use StyleX and need a compiler plugin; see `astryx docs styling-overview`.
+- Palettes and custom colors go through the theme, never :root overrides. Run `astryx theme add <slug>` to import; `theme eject <slug>` only forks source. See `astryx docs theme`.
+- SELF-CHECK: re-read the file; replace any raw <div>/<span>, imported .css/@apply, or hardcoded #hex/px with the component or a token.
+
+`astryx help` lists every command. Key ones beyond the workflow:
+  search "<query>"   find any component / hook / doc / template
+  discover <words>   integrations you could add
+  docs <topic>       getting-started, principles, tokens, theme … (`astryx docs` lists all)
+  docs cli           commands and API reference
+  docs authoring     build an integration package, and every field it holds
+  upgrade --from <old version> --apply   run after a dependency bump
+<!-- ASTRYX:END -->
