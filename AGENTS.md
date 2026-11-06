@@ -21,6 +21,18 @@ Use the npm `latest` tag for every dependency, declared with an exact version (`
 
 Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
 
+## Pull requests
+
+The owner does not review routine pull requests. Merge one yourself, without asking, once all of these hold:
+
+- Every check on the pull request passes. Until CI runs the project checks, `bun run check` and `bun run test:compat` must also pass locally on its head.
+- A subagent that did not write the change has reviewed its diff against this file, `openspec/config.yaml` and `prd.md`, and found nothing blocking. Give the reviewer the diff and the rules, not your own conclusions.
+- Every blocking finding is fixed, and the fix has passed the same review.
+
+Merge a stack from the bottom up. This replaces any rule that asks the owner before every merge.
+
+Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries such a decision waits for the owner's approval. The approvals this file already names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, and runs of `cloud:free`.
+
 ## Architecture rules
 
 Davloom follows Hexagonal architecture with Effect Layers.
