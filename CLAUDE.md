@@ -2,7 +2,7 @@
 
 ## Commands
 
-Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node (task 2.1 of `add-ci-baseline` finishes the switch).
+Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node. Start commands from the repository root, where `bunfig.toml` makes `bun run` start tools whose launchers name Node on Bun. That setting does not reach `bunx` or `bun run` inside a package directory, so give those `--bun`.
 
 - `bun install --frozen-lockfile`: install exactly what `bun.lock` records.
 - `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
@@ -67,7 +67,7 @@ Issues live in Linear team Mark's Workplace, project davloom (P-MAR-3). Each PRD
 
 ## Code intelligence
 
-Use GitNexus (section below), not graphify.
+Use GitNexus (section below), not graphify. Run its CLI on Bun as `bunx --bun gitnexus <command>` wherever the generated section or a GitNexus skill gives `node .gitnexus/run.cjs`, `npx` or a `bunx` without `--bun`. `bun .gitnexus/run.cjs` is not enough, because it starts the global `gitnexus` launcher, whose shebang names Node.
 
 ## Judging many files
 
