@@ -59,6 +59,11 @@ CodeQL gets its own workflow because it needs `security-events: write`, which ke
 
 At implementation time, fix these 43 first and then turn the rules on, without disabling any rule. If a rule really has to be disabled, record the reason here. `tsc` stays the basis for type checking.
 
+Implemented on 2026-11-07 with no rule disabled. JSON bodies are now checked with Effect Schema through `tests/integration/compat/shared/json.ts`, and the Workers bindings come from `Cloudflare.Env` declarations instead of casts. Two lines keep an assertion behind `oxlint-disable-next-line typescript/no-unsafe-type-assertion`, because there the assertion is the point:
+
+- The D1 usage counter in the probe stands in for `D1Database` but implements only `prepare` and `batch`, the two methods Drizzle calls.
+- A test in `packages/core` passes `responseFromExit` an error outside the declared union, to check that it becomes a defect.
+
 ### 3. Use Renovate, not Dependabot
 
 Bun is not in the [supported list](https://docs.github.com/en/code-security/reference/supply-chain-security/dependency-graph-supported-package-ecosystems) of the GitHub dependency graph, so the graph cannot read `bun.lock`, and Dependabot alerts and Dependency Review, which build on it, cannot see the transitive dependencies in the lockfile. The Renovate option `vulnerabilityAlerts`, which reads GitHub vulnerability alerts, also requires the dependency graph to be on, so `osvVulnerabilityAlerts` is used instead. It uses OSV data and covers only direct dependencies.

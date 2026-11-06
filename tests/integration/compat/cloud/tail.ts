@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { Schema } from "effect";
+import { decodeJson } from "../shared/json";
 
 /** What `wrangler tail --format json` reports about one invocation, in milliseconds. */
 export interface TailEvent {
@@ -43,17 +45,41 @@ export const pollUntil = async (
   }
 };
 
-interface RawTailEvent {
-  readonly outcome?: string;
-  readonly cpuTime?: number;
-  readonly wallTime?: number;
-  readonly executionModel?: string;
-  readonly exceptions?: readonly { readonly name?: string; readonly message?: string }[];
-  readonly event?: {
-    readonly request?: { readonly url?: string; readonly method?: string };
-    readonly response?: { readonly status?: number };
-  };
-}
+// Every field may be missing or null, so an event of an unexpected kind still parses.
+const RawTailEvent = Schema.Struct({
+  outcome: Schema.optional(Schema.NullOr(Schema.String)),
+  cpuTime: Schema.optional(Schema.NullOr(Schema.Number)),
+  wallTime: Schema.optional(Schema.NullOr(Schema.Number)),
+  executionModel: Schema.optional(Schema.NullOr(Schema.String)),
+  exceptions: Schema.optional(
+    Schema.NullOr(
+      Schema.Array(
+        Schema.Struct({
+          name: Schema.optional(Schema.NullOr(Schema.String)),
+          message: Schema.optional(Schema.NullOr(Schema.String)),
+        }),
+      ),
+    ),
+  ),
+  event: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        request: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              url: Schema.optional(Schema.NullOr(Schema.String)),
+              method: Schema.optional(Schema.NullOr(Schema.String)),
+            }),
+          ),
+        ),
+        response: Schema.optional(
+          Schema.NullOr(Schema.Struct({ status: Schema.optional(Schema.NullOr(Schema.Number)) })),
+        ),
+      }),
+    ),
+  ),
+});
+type RawTailEvent = typeof RawTailEvent.Type;
 
 const toTailEvent = (raw: RawTailEvent): TailEvent => ({
   method: raw.event?.request?.method ?? "",
@@ -109,7 +135,7 @@ export const startTail = (workerName: string, config: string, cwd: string): Tail
   const events: TailEvent[] = [];
   let errorOutput = "";
   const split = createJsonObjectSplitter((text) => {
-    events.push(toTailEvent(JSON.parse(text) as RawTailEvent));
+    events.push(toTailEvent(decodeJson(RawTailEvent, JSON.parse(text))));
   });
   const child = spawn(
     "bunx",

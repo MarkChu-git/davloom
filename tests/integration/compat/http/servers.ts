@@ -139,7 +139,7 @@ export const startWorkerdServerWithDatabase = async (
 
 export interface Runtime {
   readonly name: string;
-  start(): Promise<Server>;
+  readonly start: () => Promise<Server>;
 }
 
 export const productionRuntimes: readonly Runtime[] = [

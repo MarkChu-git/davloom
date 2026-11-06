@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import { Schema } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PROBE_TOKEN_HEADER } from "../probe/token-guard";
+import { mergeHeaders } from "../shared/headers";
+import { readJson } from "../shared/json";
 import { startWorkerdServerWithDatabase, type Server } from "./servers";
 
 const PROBE_CONFIG = "tests/integration/compat/probe/wrangler.jsonc";
@@ -9,6 +12,16 @@ const MEBIBYTE = 1024 * 1024;
 
 const sha256 = (data: Uint8Array) => createHash("sha256").update(data).digest("hex");
 
+const ApiKey = Schema.Struct({ key: Schema.String });
+const WriteSummary = Schema.Struct({ size: Schema.Number, chunks: Schema.Number });
+const ChurnSummary = Schema.Struct({ moved: Schema.Number, rowsWritten: Schema.Number });
+const Listing = Schema.Struct({ children: Schema.Array(Schema.Unknown) });
+const ListingUsage = Schema.Struct({
+  children: Schema.Number,
+  d1: Schema.Struct({ queries: Schema.Number, rowsRead: Schema.Number }),
+  durableObject: Schema.Struct({ rowsRead: Schema.Number }),
+});
+
 describe("the Cloud Free route chain on local workerd", () => {
   let server: Server;
   let authorization: { authorization: string };
@@ -16,7 +29,7 @@ describe("the Cloud Free route chain on local workerd", () => {
   const store = (path: string, init: RequestInit = {}) =>
     server.fetch(`/api/__probe/store${path}`, {
       ...init,
-      headers: { ...authorization, ...init.headers },
+      headers: mergeHeaders(authorization, init.headers),
     });
 
   const postJson = (path: string, body: unknown) =>
@@ -30,7 +43,7 @@ describe("the Cloud Free route chain on local workerd", () => {
     server = await startWorkerdServerWithDatabase(PROBE_CONFIG);
     await server.fetch("/api/__probe/auth/setup", { method: "POST" });
     const response = await server.fetch("/api/__probe/auth/api-keys", { method: "POST" });
-    const { key } = (await response.json()) as { key: string };
+    const { key } = await readJson(response, ApiKey);
     authorization = { authorization: `Basic ${btoa(`client:${key}`)}` };
   });
   afterAll(() => server?.stop());
@@ -45,7 +58,7 @@ describe("the Cloud Free route chain on local workerd", () => {
     const content = randomBytes(3 * MEBIBYTE + 17);
 
     const written = await store("/files/round-trip.bin", { method: "PUT", body: content });
-    const summary = (await written.json()) as { size: number; chunks: number };
+    const summary = await readJson(written, WriteSummary);
     const read = await store("/files/round-trip.bin");
 
     expect(summary).toMatchObject({ size: content.byteLength, chunks: 4 });
@@ -74,14 +87,14 @@ describe("the Cloud Free route chain on local workerd", () => {
       to: "/churn/b",
       count: 4,
     });
-    const churn = (await response.json()) as { moved: number; rowsWritten: number };
+    const churn = await readJson(response, ChurnSummary);
     const source = await store("/directories?parent=%2Fchurn%2Fa");
     const target = await store("/directories?parent=%2Fchurn%2Fb");
 
     expect(churn.moved).toBe(4);
     expect(churn.rowsWritten).toBeGreaterThanOrEqual(4 * 4);
-    expect(((await source.json()) as { children: unknown[] }).children).toHaveLength(6);
-    expect(((await target.json()) as { children: unknown[] }).children).toHaveLength(4);
+    expect((await readJson(source, Listing)).children).toHaveLength(6);
+    expect((await readJson(target, Listing)).children).toHaveLength(4);
   });
 
   it("reports what an authenticated directory listing read and wrote", async () => {
@@ -91,11 +104,7 @@ describe("the Cloud Free route chain on local workerd", () => {
       method: "PROPFIND",
       headers: authorization,
     });
-    const usage = (await response.json()) as {
-      children: number;
-      d1: { queries: number; rowsRead: number };
-      durableObject: { rowsRead: number };
-    };
+    const usage = await readJson(response, ListingUsage);
 
     expect(usage.children).toBe(5);
     expect(usage.d1.queries).toBeGreaterThan(0);

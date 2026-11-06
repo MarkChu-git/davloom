@@ -50,6 +50,8 @@ describe("responseFromExit", () => {
   });
 
   it("treats an error with no declared mapping as a defect", async () => {
+    // The error is outside the declared union on purpose, which only an assertion can express.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     const exit = Exit.fail({ _tag: "Unmapped" }) as unknown as Exit.Exit<never, FileNotFound>;
     const response = responseFromExit(exit, { errors });
 

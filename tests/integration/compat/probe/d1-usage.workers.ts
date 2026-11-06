@@ -40,12 +40,12 @@ class CountingStatement {
   }
 
   async first(column?: string) {
-    const [row] = (await this.all()).results as Record<string, unknown>[];
+    const [row] = (await this.all()).results;
     return (column ? row?.[column] : row) ?? null;
   }
 
   async raw(options?: { columnNames?: boolean }) {
-    const rows = (await this.all()).results as Record<string, unknown>[];
+    const rows = (await this.all()).results;
     const values = rows.map((row) => Object.values(row));
     return options?.columnNames ? [Object.keys(rows[0] ?? {}), ...values] : values;
   }
@@ -74,6 +74,8 @@ export const countD1Usage = (binding: D1Database): D1UsageCounter => {
   };
 
   return {
+    // Drizzle calls only prepare and batch, so this stand-in implements just those two methods.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
     database: database as unknown as D1Database,
     read: () => usage,
     reset: () => {

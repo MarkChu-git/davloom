@@ -1,19 +1,6 @@
 {
   "extends": "../../../tsconfig.json",
-  "compilerOptions": { "types": ["bun"] },
-  "include": [
-    "shared/**/*.ts",
-    "http/**/*.ts",
-    "cloud/**/*.ts",
-    "identity/suite.ts",
-    "identity/bun-sqlite.test.ts",
-    "probe/**/*.ts",
-    "scripts/**/*.ts",
-    "ui/**/*.ts",
-    "playwright.config.ts",
-    "vitest.bun-sqlite.config.ts",
-    "vitest.cloud.config.ts",
-    "vitest.http.config.ts"
-  ],
-  "exclude": ["probe/*.workers.ts"]
+  "files": [],
+  "include": [],
+  "references": [{ "path": "./tsconfig.bun.json" }, { "path": "./tsconfig.workers.json" }]
 }

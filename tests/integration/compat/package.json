@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.workers.json",
+    "typecheck": "tsc -p tsconfig.bun.json && tsc -p tsconfig.workers.json",
     "build:web": "bun run --filter @davloom/web build",
     "test:http": "bun run build:web && vitest run --config vitest.http.config.ts",
     "test:http:elysia-rc": "bun scripts/rerun-with-elysia.ts 2.0.0-rc.3",

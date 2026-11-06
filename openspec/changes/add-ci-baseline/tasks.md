@@ -7,9 +7,9 @@
 
 ## 2. Local checks
 
-- [ ] 2.1 Add `.node-version` with the latest stable Node version at implementation time. Verify that the local `node --version` matches it and that `bun run test:compat` exits with status 0
-- [ ] 2.2 Change the `tsconfig.json` of `apps/api` and of `tests/integration/compat` to reference only `tsconfig.bun.json` and `tsconfig.workers.json`, and update the `typecheck` script of each to match. Verify that `bun run typecheck` passes and that the debug log of the type-aware lint shows `Unmatched files: 0`
-- [ ] 2.3 Add `oxlint-tsgolint` at an exact version, turn on `options.typeAware` in `oxlint.json` and fix the existing problems. Verify that `bun run lint` passes, and that lint fails and names the line when an unhandled Promise is placed in a Bun file and in a `*.workers.ts` file
+- [x] 2.1 Add `.node-version` with the latest stable Node version at implementation time. Verify that the local `node --version` matches it and that `bun run test:compat` exits with status 0
+- [x] 2.2 Change the `tsconfig.json` of `apps/api` and of `tests/integration/compat` to reference only `tsconfig.bun.json` and `tsconfig.workers.json`, and update the `typecheck` script of each to match. Verify that `bun run typecheck` passes and that the debug log of the type-aware lint shows `Unmatched files: 0`
+- [x] 2.3 Add `oxlint-tsgolint` at an exact version, turn on `options.typeAware` in `oxlint.json` and fix the existing problems. Verify that `bun run lint` passes, and that lint fails and names the line when an unhandled Promise is placed in a Bun file and in a `*.workers.ts` file
 - [ ] 2.4 Add a check of StyleX against the Astryx peer dependency range to `scripts/lib/pinned-deps.ts` and wire it into `bun run check`. Verify that unit tests cover both the in-range and the out-of-range case, and make the descriptions of this check in `AGENTS.md` and `CLAUDE.md` match the implementation
 - [ ] 2.5 Add `@vitest/coverage-v8` at an exact version and add `bun run test:coverage`. Verify that the command produces a coverage report and that the coverage level does not affect the exit status
 
