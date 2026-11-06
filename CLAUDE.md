@@ -21,6 +21,25 @@ Use the npm `latest` tag for every dependency, declared with an exact version (`
 
 Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
 
+## Pull requests
+
+Agents merge the pull requests they open from the owner's account without the owner's review. This replaces any rule that asks the owner before every merge. Agents never merge a pull request from anyone else, Renovate included: it needs two approvals or the owner's own merge.
+
+Merge a pull request once all of these hold:
+
+- Every check on it passes. Until CI runs the project checks, `bun run check` and `bun run test:compat` must also pass locally on code identical to its head.
+- A subagent that did not write the change has reviewed it for correctness and against this file, `openspec/config.yaml`, `prd.md`, `.gitmessage` and the OpenSpec change it implements, and found nothing blocking. Give the reviewer the diff and the rules, not your own conclusions.
+- Every blocking finding is fixed, and the fix has passed the same review.
+
+Merge every pull request with GitHub's asynchronous merge API, because `gh pr merge` refuses a stacked pull request and `gh stack merge` cannot bypass the two approvals. Merge a stack from the bottom up, one pull request at a time:
+
+1. Check that `gh pr view <n> --json baseRefName` shows `main`. Called higher in a stack, the API would also merge every open pull request below `<n>`. A pull request that has left GitHub's stack (`gh api repos/MarkChu-git/davloom/pulls/<n> --jq .stack` prints `null`) is neither rebased nor retargeted when the one below it merges, so it keeps a base that has already merged: rebase it with `but pull`, push it and run `gh pr edit <n> --base main` first.
+2. Run `gh api -X PUT repos/MarkChu-git/davloom/pulls/<n>/merge-async -f sha=<head> -f merge_method=merge -f merge_action=direct_merge -F bypass_rules=true`. It returns a UUID before the merge runs.
+3. Poll `gh api repos/MarkChu-git/davloom/pulls/<n>/merge-async/<uuid>` until its status is `merged`. Stop if it is `failed`; the response says why.
+4. GitHub then rebases the pull requests still in its stack, so run `but pull` before changing them.
+
+Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval this file names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries one waits until the owner approves it in chat, and then an agent merges it. A pull request comment does not count, because agents also comment from the owner's account. For the same reason, never add the `laws-approved` label yourself: only the owner adds it (PRD §4). The other approvals this file names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, runs of `cloud:free`, and the owner's review before `/opsx:archive`.
+
 ## Architecture rules
 
 Davloom follows Hexagonal architecture with Effect Layers.
