@@ -9,12 +9,24 @@ const DEPENDENCY_FIELDS = [
   "optionalDependencies",
 ] as const;
 const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
-// One version in an npm version range, such as 0.19.0, 1.2, 1.x or *.
-const VERSION = String.raw`v?(?:\*|x|X|\d+)(?:\.(?:\*|x|X|\d+)){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`;
+// The parts of a version as npm's grammar defines them. A number has no leading zero, and at most
+// 15 digits keep it a safe integer.
+const NUMBER = String.raw`(?:0|[1-9]\d{0,14})`;
+const WILDCARD = "[xX*]";
+const IDENTIFIER = String.raw`(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)`;
+const PRERELEASE = String.raw`${IDENTIFIER}(?:\.${IDENTIFIER})*`;
+const BUILD = String.raw`[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*`;
+// One version in a range: three numbers with an optional pre-release or build suffix, such as
+// 0.19.0-beta.1, or a shorter version that has only wildcards after its first one, such as 0.19,
+// 0.19.x or *.
+const FULL_VERSION = String.raw`${NUMBER}\.${NUMBER}\.${NUMBER}(?:-${PRERELEASE})?(?:\+${BUILD})?`;
+const PARTIAL_VERSION = String.raw`${NUMBER}(?:\.${NUMBER}(?:\.${WILDCARD})?|\.${WILDCARD}(?:\.${WILDCARD})?)?|${WILDCARD}(?:\.${WILDCARD}){0,2}`;
+const VERSION = String.raw`v?(?:${FULL_VERSION}|${PARTIAL_VERSION})`;
 // One comparator: a version with an optional operator, such as ^0.19.0 or >=1.2.
 const COMPARATOR = new RegExp(String.raw`^(?:[~^]|[<>]=?|=)?${VERSION}$`);
-// A hyphen range: two versions without operators around " - ", such as 0.19.0 - 0.19.5.
-const HYPHEN_RANGE = new RegExp(String.raw`^${VERSION}\s+-\s+${VERSION}$`);
+// A hyphen range: two versions without operators around " - ", such as 0.19.0 - 0.19.5. Bun
+// reads a hyphen between tabs differently from npm, so only spaces separate it.
+const HYPHEN_RANGE = new RegExp(String.raw`^${VERSION} +- +${VERSION}$`);
 
 export type Manifest = Partial<Record<(typeof DEPENDENCY_FIELDS)[number], Record<string, string>>>;
 
@@ -22,8 +34,8 @@ const isDesignPackage = (name: string): boolean =>
   PINNED_SCOPES.some((scope) => name.startsWith(scope));
 
 // Bun.semver.satisfies accepts strings it cannot parse, such as "latest" or "workspace:^1.0.0",
-// and reads a hyphen loosely wherever it sits, so a range counts as readable only when each set
-// between "||" is a hyphen range or a list of comparators.
+// and reads some forms npm rejects, such as "- 0.19.0" or "*-beta", as any version. A range
+// counts as readable only when each set between "||" is a hyphen range or a list of comparators.
 const isReadableRange = (range: string): boolean =>
   range.split("||").every((set) => {
     const trimmed = set.trim();

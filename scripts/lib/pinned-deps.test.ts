@@ -114,7 +114,9 @@ describe("findStyleXRangeViolations", () => {
   });
 
   // The check reads a subset of npm range syntax, so npm forms outside it, such as a space after
-  // the operator, `~>` or an empty range, fail like ranges npm cannot read either.
+  // the operator, `~>` or an empty range, fail like ranges npm cannot read either. Versions follow
+  // npm's grammar, where Bun is looser: a suffix needs three numbers, nothing but wildcards follows
+  // a wildcard, numbers have no leading zero and stay safe integers, and identifiers are not empty.
   it.each([
     "latest",
     "workspace:^0.19.0",
@@ -126,6 +128,14 @@ describe("findStyleXRangeViolations", () => {
     "- 0.19.0",
     "0.19.0 -",
     ">=0.19.0 - <0.20.0",
+    "*-beta",
+    "x+1",
+    "0.19-beta",
+    "*.19.0",
+    "00.19.0",
+    "<999999999999999999.0.0",
+    "0.19.0-beta..1",
+    "0.19.0\t-\t0.19.5",
   ])(
     "rejects the range %j, which this check does not read, once for all StyleX packages",
     (range) => {
@@ -145,6 +155,7 @@ describe("findStyleXRangeViolations", () => {
     ">=0.19.0 <0.20.0",
     "0.19.0 - 0.19.5",
     "0.19.x - 0.20.x",
+    ">=0.19.0-0 <0.20.0",
     "^0.18.0 || ^0.19.0",
     "~0.19",
     "0.19.x",
