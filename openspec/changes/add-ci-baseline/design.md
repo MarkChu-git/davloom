@@ -80,6 +80,8 @@ Key settings, based on the Renovate [configuration options documentation](https:
 - The Astryx packages form one group. `@stylexjs/*` is limited by `allowedVersions` to the Astryx peer dependency range. When an Astryx upgrade changes that range, upgrade StyleX and update `allowedVersions` in the same PR. The single check command gains one check: the installed StyleX must satisfy the Astryx peer range, or the check fails.
 - The github-actions manager updates both the SHA of an action and the version comment after it, so pinned versions do not slowly go stale.
 
+Implemented on 2026-11-11. For each Astryx or StyleX package that a workspace declares, `scripts/check-pinned-deps.ts` reads the installed `package.json` through `node_modules`, starting from that workspace, and fails when a StyleX package is outside the range an Astryx package declares for it. StyleX publishes all its packages under one version, so a StyleX package that Astryx does not name, such as `@stylexjs/unplugin`, is held to the range for `@stylexjs/stylex`. A declared package that is not installed also fails the check, so a skipped `bun install` cannot hide a version.
+
 ### 4. Use OSV-Scanner for dependency vulnerabilities, not Dependency Review
 
 Dependency Review relies on the dependency graph and so cannot see `bun.lock` either. [OSV-Scanner](https://google.github.io/osv-scanner/supported-languages-and-lockfiles/) reads `bun.lock` directly, including transitive dependencies.
