@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 // Coverage thresholds per package, starting at the coverage measured when the gate was added
 // (task 2.5 of add-ci-baseline). They only go up: lowering one needs a reason in the design.md
 // of the change that lowers it (PRD §11). Functions are gated where PRD §11 gates them.
-// scripts/coverage-thresholds.test.ts fails when a package with sources has no entry here.
+// scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
 export const thresholds = {
   "apps/api/src/**": { lines: 0, branches: 0 },
   "apps/web/src/**": { lines: 0, branches: 0 },
