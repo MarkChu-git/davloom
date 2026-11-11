@@ -9,9 +9,12 @@ const DEPENDENCY_FIELDS = [
   "optionalDependencies",
 ] as const;
 const EXACT_VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
-// One comparator of an npm version range, such as ^0.19.0, >=1.2, 1.x or *.
-const COMPARATOR =
-  /^(?:[~^]|[<>]=?|=)?v?(?:\*|x|X|\d+)(?:\.(?:\*|x|X|\d+)){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+// One version in an npm version range, such as 0.19.0, 1.2, 1.x or *.
+const VERSION = String.raw`v?(?:\*|x|X|\d+)(?:\.(?:\*|x|X|\d+)){0,2}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`;
+// One comparator: a version with an optional operator, such as ^0.19.0 or >=1.2.
+const COMPARATOR = new RegExp(String.raw`^(?:[~^]|[<>]=?|=)?${VERSION}$`);
+// A hyphen range: two versions without operators around " - ", such as 0.19.0 - 0.19.5.
+const HYPHEN_RANGE = new RegExp(String.raw`^${VERSION}\s+-\s+${VERSION}$`);
 
 export type Manifest = Partial<Record<(typeof DEPENDENCY_FIELDS)[number], Record<string, string>>>;
 
@@ -19,14 +22,14 @@ const isDesignPackage = (name: string): boolean =>
   PINNED_SCOPES.some((scope) => name.startsWith(scope));
 
 // Bun.semver.satisfies accepts strings it cannot parse, such as "latest" or "workspace:^1.0.0",
-// so a range counts as readable only when every comparator in it uses npm range syntax.
+// and reads a hyphen loosely wherever it sits, so a range counts as readable only when each set
+// between "||" is a hyphen range or a list of comparators.
 const isReadableRange = (range: string): boolean =>
   range.split("||").every((set) => {
-    const comparators = set
-      .trim()
-      .split(/\s+/)
-      .filter((part) => part !== "-");
-    return comparators.length > 0 && comparators.every((part) => COMPARATOR.test(part));
+    const trimmed = set.trim();
+    return (
+      HYPHEN_RANGE.test(trimmed) || trimmed.split(/\s+/).every((part) => COMPARATOR.test(part))
+    );
   });
 
 /** Gives the version a manifest declares for each design-system or style-compiler package, from the first field that names it. */

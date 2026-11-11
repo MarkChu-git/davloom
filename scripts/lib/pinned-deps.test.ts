@@ -123,6 +123,9 @@ describe("findStyleXRangeViolations", () => {
     "",
     ">= 0.19.0",
     "~>0.19.0",
+    "- 0.19.0",
+    "0.19.0 -",
+    ">=0.19.0 - <0.20.0",
   ])(
     "rejects the range %j, which this check does not read, once for all StyleX packages",
     (range) => {
@@ -138,15 +141,20 @@ describe("findStyleXRangeViolations", () => {
     },
   );
 
-  it.each([">=0.19.0 <0.20.0", "0.19.0 - 0.19.5", "^0.18.0 || ^0.19.0", "~0.19", "0.19.x", "*"])(
-    "reads the range %s",
-    (range) => {
-      const astryx = { ...core, peerDependencies: { "@stylexjs/stylex": range } };
-      expect(
-        findStyleXRangeViolations([astryx, { name: "@stylexjs/stylex", version: "0.19.1" }]),
-      ).toEqual([]);
-    },
-  );
+  it.each([
+    ">=0.19.0 <0.20.0",
+    "0.19.0 - 0.19.5",
+    "0.19.x - 0.20.x",
+    "^0.18.0 || ^0.19.0",
+    "~0.19",
+    "0.19.x",
+    "*",
+  ])("reads the range %s", (range) => {
+    const astryx = { ...core, peerDependencies: { "@stylexjs/stylex": range } };
+    expect(
+      findStyleXRangeViolations([astryx, { name: "@stylexjs/stylex", version: "0.19.1" }]),
+    ).toEqual([]);
+  });
 
   it("ignores Astryx packages that declare no StyleX range", () => {
     const theme = {
