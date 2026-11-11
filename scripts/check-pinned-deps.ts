@@ -1,11 +1,14 @@
 // Fails when the design system or its style compiler is declared with anything but an exact
-// version, or when an installed StyleX package is outside the range Astryx declares for it.
+// version, is not installed at that version, or when an installed StyleX package is outside
+// the range Astryx declares for it.
 import { dirname, join } from "node:path";
 import { Glob } from "bun";
 import {
   findDesignDependencies,
+  findInstallViolations,
   findPinViolations,
   findStyleXRangeViolations,
+  type DesignInstall,
   type InstalledPackage,
   type Manifest,
 } from "./lib/pinned-deps";
@@ -34,19 +37,24 @@ for (const pattern of root.workspaces ?? []) {
   }
 }
 
-const violations = findPinViolations(manifests);
-const installed = new Map<string, InstalledPackage>();
+const installs: DesignInstall[] = [];
 for (const [path, manifest] of Object.entries(manifests)) {
-  for (const name of findDesignDependencies(manifest)) {
-    const found = await readInstalled(name, dirname(path));
-    if (found === undefined) {
-      violations.push(`${path}: ${name} is not installed; run bun install`);
-    } else {
-      installed.set(`${found.name}@${found.version}`, found);
-    }
+  for (const [name, declared] of Object.entries(findDesignDependencies(manifest))) {
+    installs.push({ path, name, declared, installed: await readInstalled(name, dirname(path)) });
   }
 }
-violations.push(...findStyleXRangeViolations([...installed.values()]));
+const installed = new Map<string, InstalledPackage>();
+for (const { installed: found } of installs) {
+  if (found !== undefined) {
+    installed.set(`${found.name}@${found.version}`, found);
+  }
+}
+
+const violations = [
+  ...findPinViolations(manifests),
+  ...findInstallViolations(installs),
+  ...findStyleXRangeViolations([...installed.values()]),
+];
 
 if (violations.length > 0) {
   console.error(violations.join("\n"));

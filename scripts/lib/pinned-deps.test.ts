@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   findDesignDependencies,
+  findInstallViolations,
   findPinViolations,
   findStyleXRangeViolations,
 } from "./pinned-deps";
@@ -23,7 +24,7 @@ describe("findPinViolations", () => {
 });
 
 describe("findDesignDependencies", () => {
-  it("lists each Astryx and StyleX package once, whichever field declares it", () => {
+  it("gives the declared version of each Astryx and StyleX package once, whichever field declares it", () => {
     const manifest = {
       dependencies: {
         "@astryxdesign/core": "0.7.8",
@@ -33,11 +34,38 @@ describe("findDesignDependencies", () => {
       devDependencies: { "@stylexjs/unplugin": "0.19.1" },
       peerDependencies: { "@astryxdesign/core": "0.7.8" },
     };
-    expect(findDesignDependencies(manifest)).toEqual([
-      "@astryxdesign/core",
-      "@stylexjs/stylex",
-      "@stylexjs/unplugin",
+    expect(findDesignDependencies(manifest)).toEqual({
+      "@astryxdesign/core": "0.7.8",
+      "@stylexjs/stylex": "0.19.1",
+      "@stylexjs/unplugin": "0.19.1",
+    });
+  });
+});
+
+describe("findInstallViolations", () => {
+  const install = { path: "apps/web/package.json", name: "@stylexjs/stylex", declared: "0.20.0" };
+
+  it("accepts a package installed at the version its manifest declares", () => {
+    const installed = { name: "@stylexjs/stylex", version: "0.20.0" };
+    expect(findInstallViolations([{ ...install, installed }])).toEqual([]);
+  });
+
+  it("rejects a declared package that is not installed", () => {
+    expect(findInstallViolations([{ ...install, installed: undefined }])).toEqual([
+      "apps/web/package.json: @stylexjs/stylex is not installed; run bun install",
     ]);
+  });
+
+  it("rejects a package installed at another version than its manifest declares", () => {
+    const installed = { name: "@stylexjs/stylex", version: "0.19.1" };
+    expect(findInstallViolations([{ ...install, installed }])).toEqual([
+      "apps/web/package.json: @stylexjs/stylex is declared as 0.20.0 but 0.19.1 is installed; run bun install",
+    ]);
+  });
+
+  it("leaves a declared range to the pin check", () => {
+    const installed = { name: "@stylexjs/stylex", version: "0.19.1" };
+    expect(findInstallViolations([{ ...install, declared: "^0.19.0", installed }])).toEqual([]);
   });
 });
 
@@ -84,6 +112,31 @@ describe("findStyleXRangeViolations", () => {
     const installed = [core, { name: "@stylexjs/stylex", version: "0.19.2-beta.0" }];
     expect(findStyleXRangeViolations(installed)).toHaveLength(1);
   });
+
+  it.each(["latest", "workspace:^0.19.0", "npm:@stylexjs/stylex@^0.19.0", "garbage!!", ""])(
+    "rejects the range %j, which is not npm range syntax, once for all StyleX packages",
+    (range) => {
+      const astryx = { ...core, peerDependencies: { "@stylexjs/stylex": range } };
+      const installed = [
+        astryx,
+        { name: "@stylexjs/stylex", version: "0.19.1" },
+        { name: "@stylexjs/unplugin", version: "0.19.1" },
+      ];
+      expect(findStyleXRangeViolations(installed)).toEqual([
+        `@astryxdesign/core 0.7.8 declares ${JSON.stringify(range)} for @stylexjs/stylex, which is not a version range this check can read`,
+      ]);
+    },
+  );
+
+  it.each([">=0.19.0 <0.20.0", "0.19.0 - 0.19.5", "^0.18.0 || ^0.19.0", "~0.19", "0.19.x", "*"])(
+    "reads the range %s",
+    (range) => {
+      const astryx = { ...core, peerDependencies: { "@stylexjs/stylex": range } };
+      expect(
+        findStyleXRangeViolations([astryx, { name: "@stylexjs/stylex", version: "0.19.1" }]),
+      ).toEqual([]);
+    },
+  );
 
   it("ignores Astryx packages that declare no StyleX range", () => {
     const theme = {
