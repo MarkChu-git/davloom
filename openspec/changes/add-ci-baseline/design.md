@@ -142,6 +142,8 @@ The maintainer decided on 2026-11-07 to gate coverage, which replaces the earlie
 - The `coverage` job fails when any package falls below a threshold, and it writes every package's coverage to the job summary.
 - Thresholds are per package, so a pull request fails only for the package whose coverage it lowers.
 
+Implemented on 2026-11-11. `vitest.config.ts` keys each threshold by the package's source path, such as `packages/core/src/**`. Only `packages/auth` and `packages/core` have unit tests so far: `packages/core` starts at 100% on all three metrics, `packages/auth` at 63.15% of lines and 100% of branches, and every other package at 0% of lines. Istanbul counts a package without branches as fully covered, so `packages/database`, `packages/ui` and `packages/webdav` also start at 100% of branches, and the first branch added to one of them needs a test or a recorded reason to lower the threshold. Functions are gated only in `packages/core` and `packages/webdav`, the two packages whose functions section 11 of the PRD gates. The text report sets `skipFull: false`, because Vitest hides fully covered files when it detects an AI agent, and the report has to list every package. Istanbul records nothing for the `index.ts` files that only re-export or for `apps/api/src/entry.workers.ts`, so the report leaves those files out.
+
 ### 10. Target job layout
 
 The baseline adds the jobs in Decision 1. By V1 a pull request runs about 20 jobs. The estimates scale measurements on an M4 Pro by a factor of 2 to 2.5 and have not run on a GitHub runner yet; task 3.4 corrects the factor with the first-run times.
