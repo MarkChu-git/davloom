@@ -52,7 +52,7 @@ interface WranglerResult {
 }
 
 const wrangler = (...args: string[]): WranglerResult => {
-  const { exitCode, stdout, stderr } = Bun.spawnSync(["bunx", "wrangler", ...args], {
+  const { exitCode, stdout, stderr } = Bun.spawnSync(["bunx", "--bun", "wrangler", ...args], {
     cwd: COMPAT_DIRECTORY,
     // CI keeps Wrangler from asking questions, since nobody can answer them here.
     env: { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "true" },
@@ -181,7 +181,7 @@ const measure = async () => {
   if (!state?.url || !state.token) {
     throw new Error("Nothing is deployed. Run deploy first.");
   }
-  const { exitCode } = Bun.spawnSync(["bun", "run", "test:cloud"], {
+  const { exitCode } = Bun.spawnSync(["bun", "--bun", "run", "test:cloud"], {
     cwd: COMPAT_DIRECTORY,
     env: {
       ...process.env,
