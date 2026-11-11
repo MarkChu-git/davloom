@@ -14,6 +14,7 @@
     "format:check": "oxfmt --check",
     "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/integration/compat' typecheck",
     "test": "bun --bun vitest run",
+    "test:coverage": "bun --bun vitest run --coverage",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test"
   },
@@ -21,6 +22,7 @@
     "@astryxdesign/cli": "0.7.8",
     "@astryxdesign/core": "0.7.8",
     "@types/bun": "1.4.4",
+    "@vitest/coverage-istanbul": "5.1.0",
     "oxfmt": "0.76.0",
     "oxlint": "1.91.0",
     "oxlint-tsgolint": "7.0.2006",

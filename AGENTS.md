@@ -8,6 +8,7 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 - `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
 - `bun run format`: rewrite files with Oxfmt.
 - `bun run test:compat`: run the compatibility tests on local Bun and workerd, including Playwright against the production build. It needs no Cloudflare account, and reports what only a real deployment can test as skipped. Run `bun run --filter @davloom/compat-tests playwright:install` once first, or set `DAVLOOM_CHROMIUM_PATH` to a Chromium you already have.
+- `bun run test:coverage`: run the unit tests with Istanbul coverage, print each package's coverage, and fail when a package falls below its thresholds in `vitest.config.ts`.
 - `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
 - `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
 - `openspec list`: show active changes.
