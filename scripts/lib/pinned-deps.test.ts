@@ -113,8 +113,18 @@ describe("findStyleXRangeViolations", () => {
     expect(findStyleXRangeViolations(installed)).toHaveLength(1);
   });
 
-  it.each(["latest", "workspace:^0.19.0", "npm:@stylexjs/stylex@^0.19.0", "garbage!!", ""])(
-    "rejects the range %j, which is not npm range syntax, once for all StyleX packages",
+  // The check reads a subset of npm range syntax, so npm forms outside it, such as a space after
+  // the operator, `~>` or an empty range, fail like ranges npm cannot read either.
+  it.each([
+    "latest",
+    "workspace:^0.19.0",
+    "npm:@stylexjs/stylex@^0.19.0",
+    "garbage!!",
+    "",
+    ">= 0.19.0",
+    "~>0.19.0",
+  ])(
+    "rejects the range %j, which this check does not read, once for all StyleX packages",
     (range) => {
       const astryx = { ...core, peerDependencies: { "@stylexjs/stylex": range } };
       const installed = [
