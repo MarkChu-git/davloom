@@ -33,6 +33,9 @@ export default defineConfig({
       command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${WORKERS_PORT}`,
       cwd: REPO_ROOT,
       url: `http://127.0.0.1:${WORKERS_PORT}/api/health`,
+      // Longer than the 60 s that `servers.ts` gives bundling, so that a bundle step that hangs
+      // fails with the harness's message rather than with Playwright's timeout.
+      timeout: 90_000,
       // Without it Playwright sends SIGKILL, and the script cannot remove its bundle.
       gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
     },
