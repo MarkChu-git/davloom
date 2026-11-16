@@ -35,17 +35,24 @@ jobs:
           persist-credentials: false
       - name: Set up Bun and install dependencies
         uses: ./.github/actions/setup
-      # The browsers depend only on the Playwright version, not on the rest of bun.lock.
-      - name: Read the Playwright version
+      # The key names what decides the browser builds: the Ubuntu release, the CPU, the Playwright
+      # version and the arguments of playwright:install, not the rest of bun.lock. actions/cache
+      # saves nothing after a hit, so a key that missed a change would download on every run.
+      - name: Compute the Playwright browser cache key
         id: playwright
         working-directory: tests/integration/compat
-        run: >-
-          bun -e 'console.log("version=" + (await Bun.file("node_modules/@playwright/test/package.json").json()).version)'
-          >> "$GITHUB_OUTPUT"
+        run: |
+          bun -e '
+            const { scripts } = await Bun.file("package.json").json();
+            const { version } = await Bun.file("node_modules/@playwright/test/package.json").json();
+            if (!process.env.ImageOS) throw new Error("ImageOS is not set");
+            const install = scripts["playwright:install"].replace(/[^A-Za-z0-9.]+/g, "-");
+            console.log(`key=browsers-${process.env.ImageOS}-${process.arch}-${version}-${install}`);
+          ' >> "$GITHUB_OUTPUT"
       - name: Cache the Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+          key: ${{ steps.playwright.outputs.key }}
       - run: bun run --filter @davloom/compat-tests playwright:install
       - run: bun run test:compat
