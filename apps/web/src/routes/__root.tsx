@@ -6,7 +6,7 @@ import globals from "../styles/globals.css?url";
 
 // Prerendered into index.html. The appearance script changes <html> before React hydrates it.
 const Document = ({ children }: { children: ReactNode }) => (
-  <html lang="zh-CN" data-astryx-theme={davloomTheme.name} suppressHydrationWarning>
+  <html lang="en" data-astryx-theme={davloomTheme.name} suppressHydrationWarning>
     <head>
       <HeadContent />
     </head>

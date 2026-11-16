@@ -10,7 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppDashboardRouteImport } from './routes/_app/_dashboard'
+import { Route as AppDashboardIndexRouteImport } from './routes/_app/_dashboard/index'
+import { Route as AppDashboardCredentialsRouteImport } from './routes/_app/_dashboard/credentials'
+import { Route as AppDashboardFilesRouteImport } from './routes/_app/_dashboard/files'
+import { Route as AppDashboardSettingsRouteImport } from './routes/_app/_dashboard/settings'
+import { Route as AppDashboardStorageRouteImport } from './routes/_app/_dashboard/storage'
 import { Route as AppDesignCheckIndexRouteImport } from './routes/_app/design-check/index'
 import { Route as AppDesignCheckDeepPageRouteImport } from './routes/_app/design-check/deep/page'
 
@@ -18,10 +23,34 @@ const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppIndexRoute = AppIndexRouteImport.update({
+const AppDashboardRoute = AppDashboardRouteImport.update({
+  id: '/_dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDashboardIndexRoute = AppDashboardIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AppRoute,
+  getParentRoute: () => AppDashboardRoute,
+} as any)
+const AppDashboardCredentialsRoute = AppDashboardCredentialsRouteImport.update({
+  id: '/credentials',
+  path: '/credentials',
+  getParentRoute: () => AppDashboardRoute,
+} as any)
+const AppDashboardFilesRoute = AppDashboardFilesRouteImport.update({
+  id: '/files',
+  path: '/files',
+  getParentRoute: () => AppDashboardRoute,
+} as any)
+const AppDashboardSettingsRoute = AppDashboardSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppDashboardRoute,
+} as any)
+const AppDashboardStorageRoute = AppDashboardStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => AppDashboardRoute,
 } as any)
 const AppDesignCheckIndexRoute = AppDesignCheckIndexRouteImport.update({
   id: '/design-check/',
@@ -35,31 +64,63 @@ const AppDesignCheckDeepPageRoute = AppDesignCheckDeepPageRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof AppIndexRoute
+  '/': typeof AppDashboardIndexRoute
+  '/credentials': typeof AppDashboardCredentialsRoute
+  '/files': typeof AppDashboardFilesRoute
+  '/settings': typeof AppDashboardSettingsRoute
+  '/storage': typeof AppDashboardStorageRoute
   '/design-check/': typeof AppDesignCheckIndexRoute
   '/design-check/deep/page': typeof AppDesignCheckDeepPageRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof AppIndexRoute
+  '/': typeof AppDashboardIndexRoute
+  '/credentials': typeof AppDashboardCredentialsRoute
+  '/files': typeof AppDashboardFilesRoute
+  '/settings': typeof AppDashboardSettingsRoute
+  '/storage': typeof AppDashboardStorageRoute
   '/design-check': typeof AppDesignCheckIndexRoute
   '/design-check/deep/page': typeof AppDesignCheckDeepPageRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
-  '/_app/': typeof AppIndexRoute
+  '/_app/_dashboard': typeof AppDashboardRouteWithChildren
+  '/_app/_dashboard/credentials': typeof AppDashboardCredentialsRoute
+  '/_app/_dashboard/files': typeof AppDashboardFilesRoute
+  '/_app/_dashboard/settings': typeof AppDashboardSettingsRoute
+  '/_app/_dashboard/storage': typeof AppDashboardStorageRoute
+  '/_app/_dashboard/': typeof AppDashboardIndexRoute
   '/_app/design-check/': typeof AppDesignCheckIndexRoute
   '/_app/design-check/deep/page': typeof AppDesignCheckDeepPageRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/design-check/' | '/design-check/deep/page'
+  fullPaths:
+    | '/'
+    | '/credentials'
+    | '/files'
+    | '/settings'
+    | '/storage'
+    | '/design-check/'
+    | '/design-check/deep/page'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/design-check' | '/design-check/deep/page'
+  to:
+    | '/'
+    | '/credentials'
+    | '/files'
+    | '/settings'
+    | '/storage'
+    | '/design-check'
+    | '/design-check/deep/page'
   id:
     | '__root__'
     | '/_app'
-    | '/_app/'
+    | '/_app/_dashboard'
+    | '/_app/_dashboard/credentials'
+    | '/_app/_dashboard/files'
+    | '/_app/_dashboard/settings'
+    | '/_app/_dashboard/storage'
+    | '/_app/_dashboard/'
     | '/_app/design-check/'
     | '/_app/design-check/deep/page'
   fileRoutesById: FileRoutesById
@@ -77,12 +138,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/': {
-      id: '/_app/'
+    '/_app/_dashboard': {
+      id: '/_app/_dashboard'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/_dashboard/': {
+      id: '/_app/_dashboard/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof AppIndexRouteImport
-      parentRoute: typeof AppRoute
+      preLoaderRoute: typeof AppDashboardIndexRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
+    '/_app/_dashboard/credentials': {
+      id: '/_app/_dashboard/credentials'
+      path: '/credentials'
+      fullPath: '/credentials'
+      preLoaderRoute: typeof AppDashboardCredentialsRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
+    '/_app/_dashboard/files': {
+      id: '/_app/_dashboard/files'
+      path: '/files'
+      fullPath: '/files'
+      preLoaderRoute: typeof AppDashboardFilesRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
+    '/_app/_dashboard/settings': {
+      id: '/_app/_dashboard/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AppDashboardSettingsRouteImport
+      parentRoute: typeof AppDashboardRoute
+    }
+    '/_app/_dashboard/storage': {
+      id: '/_app/_dashboard/storage'
+      path: '/storage'
+      fullPath: '/storage'
+      preLoaderRoute: typeof AppDashboardStorageRouteImport
+      parentRoute: typeof AppDashboardRoute
     }
     '/_app/design-check/': {
       id: '/_app/design-check/'
@@ -101,14 +197,34 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface AppDashboardRouteChildren {
+  AppDashboardCredentialsRoute: typeof AppDashboardCredentialsRoute
+  AppDashboardFilesRoute: typeof AppDashboardFilesRoute
+  AppDashboardSettingsRoute: typeof AppDashboardSettingsRoute
+  AppDashboardStorageRoute: typeof AppDashboardStorageRoute
+  AppDashboardIndexRoute: typeof AppDashboardIndexRoute
+}
+
+const AppDashboardRouteChildren: AppDashboardRouteChildren = {
+  AppDashboardCredentialsRoute: AppDashboardCredentialsRoute,
+  AppDashboardFilesRoute: AppDashboardFilesRoute,
+  AppDashboardSettingsRoute: AppDashboardSettingsRoute,
+  AppDashboardStorageRoute: AppDashboardStorageRoute,
+  AppDashboardIndexRoute: AppDashboardIndexRoute,
+}
+
+const AppDashboardRouteWithChildren = AppDashboardRoute._addFileChildren(
+  AppDashboardRouteChildren,
+)
+
 interface AppRouteChildren {
-  AppIndexRoute: typeof AppIndexRoute
+  AppDashboardRoute: typeof AppDashboardRouteWithChildren
   AppDesignCheckIndexRoute: typeof AppDesignCheckIndexRoute
   AppDesignCheckDeepPageRoute: typeof AppDesignCheckDeepPageRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppIndexRoute: AppIndexRoute,
+  AppDashboardRoute: AppDashboardRouteWithChildren,
   AppDesignCheckIndexRoute: AppDesignCheckIndexRoute,
   AppDesignCheckDeepPageRoute: AppDesignCheckDeepPageRoute,
 }

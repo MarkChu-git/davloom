@@ -16,6 +16,8 @@ export default defineConfig({
   reporter: "list",
   use: {
     ...devices["Desktop Chrome"],
+    // Dates on the pages show in the browser's time zone, so every machine sees the same text.
+    timezoneId: "UTC",
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
