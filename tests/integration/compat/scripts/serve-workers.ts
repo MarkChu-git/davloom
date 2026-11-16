@@ -3,8 +3,9 @@
 // starts it for development. It bundles the Worker once, so restart it after changing the code.
 // Usage: bun scripts/serve-workers.ts <Wrangler config, relative to the repository root> <port>
 //
-// It installs no signal handlers: Miniflare stops workerd and exits on those signals itself, and
-// `servers.ts` removes the bundle when the process exits.
+// It installs no signal handlers of its own. On SIGINT, SIGTERM and SIGHUP, `servers.ts` exits the
+// process, also while the Worker is still bundling. On exit, Miniflare stops workerd, and
+// `servers.ts` stops the bundler and removes the bundle.
 import { startWorkerdServer } from "../http/servers";
 
 const [configPath, port] = process.argv.slice(2);

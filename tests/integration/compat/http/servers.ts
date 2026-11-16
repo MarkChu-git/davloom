@@ -1,6 +1,6 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { constants, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import {
@@ -81,36 +81,128 @@ export const startBunServer = (entry: string): Promise<Server> =>
     env: { PORT: "0", HOST: "127.0.0.1" },
   });
 
-// Bundle directories that still exist. Miniflare exits the process on SIGINT, SIGTERM and SIGHUP
-// without returning to `stop`, so they are also removed when the process exits.
+/** Kills a bundler and every process it started, which share its process group. */
+const killBundler = (bundler: ChildProcess) => {
+  // Once the bundler has been reaped, its process group ID may belong to someone else.
+  if (bundler.pid === undefined || bundler.exitCode !== null || bundler.signalCode !== null) {
+    return;
+  }
+  try {
+    process.kill(-bundler.pid, "SIGKILL");
+  } catch {
+    // Every process in the group has already exited.
+  }
+};
+
+// Bundle directories that still exist, and the bundlers still writing into them. Miniflare exits
+// the process on SIGINT, SIGTERM and SIGHUP without returning to `stop`, so the directories are
+// also removed when the process exits, after the bundlers are killed so that none can write a
+// bundle back.
 const bundleDirectories = new Set<string>();
+const bundlers = new Set<ChildProcess>();
 process.on("exit", () => {
+  for (const bundler of bundlers) {
+    killBundler(bundler);
+  }
   for (const directory of bundleDirectories) {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-/** Bundles a Worker the way `wrangler deploy` does, and returns the path of its one module. */
-const bundleWorker = (configPath: string, outdir: string): string => {
-  // The compat package holds the Wrangler that `bun.lock` records; the repository root has none.
-  const { status, stdout, stderr } = spawnSync(
-    "bunx",
-    ["--bun", "wrangler", "deploy", "--dry-run", "--outdir", outdir, "--config", configPath],
-    {
-      cwd: COMPAT_DIRECTORY,
-      env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
-      encoding: "utf8",
-    },
-  );
-  if (status !== 0) {
-    throw new Error(`Bundling ${configPath} failed:\n${stdout}${stderr}`);
+// While a bundle directory exists, these signals exit the process the way Miniflare's exit hook
+// does, so that the exit event removes the directory. Miniflare's hook only exists from
+// `new Miniflare()` until `dispose()`. The signal-exit listeners that Wrangler loads do nothing
+// while another listener exists, and otherwise re-raise the signal, which ends the process without
+// the exit event.
+const EXIT_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+const exitOnSignal = (signal: NodeJS.Signals) => {
+  process.exit(128 + constants.signals[signal]);
+};
+
+const createBundleDirectory = (): string => {
+  const directory = mkdtempSync(join(tmpdir(), "davloom-worker-"));
+  if (bundleDirectories.size === 0) {
+    for (const signal of EXIT_SIGNALS) {
+      process.on(signal, exitOnSignal);
+    }
   }
+  bundleDirectories.add(directory);
+  return directory;
+};
+
+const removeBundleDirectory = (directory: string) => {
+  rmSync(directory, { recursive: true, force: true });
+  bundleDirectories.delete(directory);
+  if (bundleDirectories.size === 0) {
+    for (const signal of EXIT_SIGNALS) {
+      process.off(signal, exitOnSignal);
+    }
+  }
+};
+
+/** Returns the path of the one module that a bundle directory holds. */
+const findModule = (outdir: string): string => {
   const modules = readdirSync(outdir).filter((file) => file.endsWith(".js"));
   if (modules.length !== 1 || !modules[0]) {
     throw new Error(`Expected one module in ${outdir}, found: ${modules.join(", ")}`);
   }
   return join(outdir, modules[0]);
 };
+
+/**
+ * Bundles a Worker the way `wrangler deploy` does, and returns the path of its one module.
+ * It runs Wrangler asynchronously, because `spawnSync` blocks the event loop, which keeps both
+ * `timeoutMs` and a test's hook timeout from firing. Wrangler runs in a process group of its own,
+ * so that stopping it also stops esbuild, which writes the bundle, and any custom build.
+ */
+const bundleWorker = (configPath: string, outdir: string, timeoutMs: number): Promise<string> =>
+  new Promise((done, fail) => {
+    // The compat package holds the Wrangler that `bun.lock` records; the repository root has none.
+    const bundler = spawn(
+      "bunx",
+      ["--bun", "wrangler", "deploy", "--dry-run", "--outdir", outdir, "--config", configPath],
+      {
+        cwd: COMPAT_DIRECTORY,
+        env: { ...process.env, WRANGLER_SEND_METRICS: "false" },
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      },
+    );
+    bundlers.add(bundler);
+    bundler.once("exit", () => bundlers.delete(bundler));
+    let output = "";
+    const collect = (chunk: Buffer) => {
+      output += chunk.toString();
+    };
+    bundler.stdout.on("data", collect);
+    bundler.stderr.on("data", collect);
+    const timer = setTimeout(() => {
+      killBundler(bundler);
+      fail(
+        new Error(
+          `Bundling ${configPath} did not finish in ${timeoutMs / 1000} s, so it was stopped. Output:\n${output}`,
+        ),
+      );
+    }, timeoutMs);
+    bundler.once("error", (error) => {
+      clearTimeout(timer);
+      bundlers.delete(bundler);
+      fail(new Error(`Bundling ${configPath} could not start`, { cause: error }));
+    });
+    bundler.once("close", (code, signal) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const reason = signal ? `was stopped by ${signal}` : `failed with exit code ${code}`;
+        fail(new Error(`Bundling ${configPath} ${reason}. Output:\n${output}`));
+        return;
+      }
+      try {
+        done(findModule(outdir));
+      } catch (error) {
+        fail(error);
+      }
+    });
+  });
 
 /**
  * Applies each D1 database's migrations, the files that `wrangler d1 migrations apply` reads.
@@ -139,6 +231,11 @@ export interface WorkerdOptions {
   readonly vars?: Readonly<Record<string, string>>;
   /** Listens on this port instead of one the system picks. */
   readonly port?: number;
+  /**
+   * Stops bundling and fails after this many milliseconds. The default is the 60 s that a server
+   * gets to start.
+   */
+  readonly bundleTimeoutMs?: number;
 }
 
 /**
@@ -151,22 +248,20 @@ export interface WorkerdOptions {
  */
 export const startWorkerdServer = async (
   configPath: string,
-  { vars = {}, port = 0 }: WorkerdOptions = {},
+  { vars = {}, port = 0, bundleTimeoutMs = STARTUP_TIMEOUT_MS }: WorkerdOptions = {},
 ): Promise<Server> => {
   const configFile = resolve(REPO_ROOT, configPath);
-  const outdir = mkdtempSync(join(tmpdir(), "davloom-worker-"));
-  bundleDirectories.add(outdir);
+  const outdir = createBundleDirectory();
   let miniflare: Miniflare | undefined;
   const stop = async () => {
     try {
       await miniflare?.dispose();
     } finally {
-      rmSync(outdir, { recursive: true, force: true });
-      bundleDirectories.delete(outdir);
+      removeBundleDirectory(outdir);
     }
   };
   try {
-    const scriptPath = bundleWorker(configFile, outdir);
+    const scriptPath = await bundleWorker(configFile, outdir, bundleTimeoutMs);
     const config = unstable_readConfig({ config: configFile });
     const { workerOptions, externalWorkers } = unstable_getMiniflareWorkerOptions({
       ...config,
