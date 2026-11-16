@@ -36,7 +36,7 @@ Current state relevant to CI (checked on 2026-11-06):
 
 | Job | Content | Required |
 | --- | --- | --- |
-| `check` | `bun install --frozen-lockfile`, `bun run check` | Yes |
+| `check` | `bun install --frozen-lockfile --ignore-scripts`, `bun run check` | Yes |
 | `compat` | Install Chromium, `bun run test:compat` | Yes |
 | `workflows` | actionlint, zizmor | Yes |
 | `secrets` | Gitleaks | Yes |
@@ -138,6 +138,14 @@ Implemented on 2026-11-07:
 - Three CLIs that agents start outside `bun run` call Node in their usual form. The GitNexus CLI runs on Bun as `bunx --bun gitnexus <command>`; `bun .gitnexus/run.cjs` is not enough, because it starts the global `gitnexus` launcher, whose shebang names Node. The OpenSpec CLI runs as `bunx --bun @fission-ai/openspec <command>`, because the global `openspec` launcher names Node and the npm package named `openspec` is a different project. `bunx astryx` calls Node once and `bunx --bun astryx` does not. `AGENTS.md` and `CLAUDE.md` give these forms outside their generated sections.
 - `dev:workers` in `apps/api` starts `scripts/serve-workers.ts` on port 8787 instead of `wrangler dev`. It bundles the Worker once, so unlike `wrangler dev` it does not rebuild after a change.
 - One gap remains: `cloud:free` needs the maintainer's approval and was not run, so Wrangler's remote commands and `wrangler tail` are untested on Bun.
+
+Implemented for task 3.1 on 2026-11-16:
+
+- The `check` job in `.github/workflows/ci.yml` runs on `ubuntu-24.04` rather than `ubuntu-latest`, so the move to the next Ubuntu release comes as a reviewed change instead of on GitHub's schedule. After `actions/checkout` it runs the local action `.github/actions/setup`, and every later job that installs dependencies uses the same action.
+- The action's first step puts its `no-node` directory first on `PATH`. The `node` in it fails the step with an error that names the call and the calling process, so a step that calls `node`, or starts a launcher whose shebang names Node such as `npx`, fails instead of running the Node that the image ships at `/usr/local/bin/node`. Under `bun run`, Bun still puts its own `node` that points to Bun ahead of the guard for package scripts and their children, as it does locally.
+- The action then installs Bun with `oven-sh/setup-bun`, which reads the version from `packageManager` in `package.json`, restores `~/.bun/install/cache` with `actions/cache` under a key made from `bun.lock`, and runs `bun install --frozen-lockfile --ignore-scripts`. Without `--ignore-scripts` the workerd postinstall calls the guard and the install fails, as a local run with the guard first on `PATH` showed (`error: postinstall script from "workerd" exited with 1`). Nothing needs that script, so CI skips it. Taking every `node` off `PATH` would also keep the image's Node out, because Bun would then run the script on its temporary `node`, but CI would have nothing left on `PATH` to catch the next call to Node. Setting `trustedDependencies` to an empty list would skip the script in local installs too; it changes how every contributor installs, so it is not part of this task.
+- `actions/checkout`, `oven-sh/setup-bun` and `actions/cache` are JavaScript actions. The Actions runner starts them on the Node it bundles, by absolute path and not through `PATH`, so neither the guard nor a logging `node` sees them. No workflow that uses a JavaScript action avoids that runtime, and it runs only the actions' own code.
+- Checked on GitHub on 2026-11-16, with the run links in the description of PR #16. On the pull request the job passed in 31 s: 4 s for the setup action with a cold cache, of which `bun install` took 1.5 s for 315 packages, 12 s for `bun run check` and 5 s for saving the caches. On a throwaway branch, a `node` that logs every call was first on `PATH` from the job's first step, the guard logged to the same file, and the log was still empty after `bun run check`; `which -a node` listed the guard, the logging `node` and then `/usr/local/bin/node`. A second job on that branch showed `npx --version` and `node --version` each failing on the guard. On another throwaway branch, changing `oxfmt` in `package.json` from 0.76.0 to 0.79.0 without updating `bun.lock` failed the install step with `lockfile had changes, but lockfile is frozen`, and `bun run check` did not run.
 
 ### 8. Each Phase brings its own CI tasks
 
