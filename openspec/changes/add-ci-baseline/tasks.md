@@ -15,9 +15,9 @@
 
 ## 3. Pull request checks
 
-- [ ] 3.1 Create the `check` job in `.github/workflows/ci.yml`: trigger it on pull requests and on pushes to `main`, set `permissions: contents: read` at the workflow level, make `actions/checkout` not persist credentials, pin actions to a SHA, read Bun from `packageManager`, install no Node and keep the runner's preinstalled Node from running any step (Decision 7), and run `bun install --frozen-lockfile` and `bun run check`. Verify that the job passes on a test branch, that a logging `node` first on `PATH` records no call in any step, and that the install step fails when only `package.json` is changed and `bun.lock` is not updated
-- [ ] 3.2 Add the `compat` job: cache the Playwright browsers and run `playwright:install` and `bun run test:compat`. Verify that the job passes and that the cases which need a real deployment show as skipped in the log
-- [ ] 3.3 Add the `coverage` job: run `bun run test:coverage` and write every package's coverage to the job summary. Verify that the summary lists each package, and that the job fails on a throwaway branch that lowers a package below its threshold
+- [x] 3.1 Create the `check` job in `.github/workflows/ci.yml`: trigger it on pull requests and on pushes to `main`, set `permissions: contents: read` at the workflow level, make `actions/checkout` not persist credentials, and pin actions to a SHA. Put the setup that the later jobs share in the local action `.github/actions/setup`: read Bun from `packageManager`, install no Node, keep the runner's preinstalled Node from running any step (Decision 7) and run `bun install --frozen-lockfile --ignore-scripts`. Then run `bun run check`. Verify that the job passes on a test branch, that a logging `node` first on `PATH` records no call in any step, and that the install step fails when only `package.json` is changed and `bun.lock` is not updated
+- [ ] 3.2 Add the `compat` job, set up by the local action from 3.1 so that no step can run the Node that the runner image ships: cache the Playwright browsers and run `playwright:install` and `bun run test:compat`. Verify that the job passes and that the cases which need a real deployment show as skipped in the log
+- [ ] 3.3 Add the `coverage` job, set up by the local action from 3.1 so that no step can run the Node that the runner image ships: run `bun run test:coverage` and write every package's coverage to the job summary. Verify that the summary lists each package, and that the job fails on a throwaway branch that lowers a package below its threshold
 - [ ] 3.4 Create `docs/ci.md`, stating the local command for each job, which checks are required, the test budget from section 11 of the PRD and the target job layout from Decision 10. Record how long the first runs of 3.1 and 3.2 took and use them to correct the scaling factor in Decision 10. Verify that every command in the text gives the same result locally as in CI
 
 ## 4. Security scans
@@ -30,7 +30,7 @@
 
 ## 5. Workflow security
 
-- [ ] 5.1 Add the `workflows` job: download pinned versions of actionlint and zizmor and verify their checksums, and check `.github/workflows/`. Verify that all workflows in the repository pass, and that the four throwaway workflows (one that references an action by tag, one that does not declare `permissions`, one triggered by `pull_request_target`, and one with a syntax error) all fail
+- [ ] 5.1 Add the `workflows` job: download pinned versions of actionlint and zizmor and verify their checksums, run both on `.github/workflows/`, and run zizmor on `.github/actions/` as well, since actionlint does not check the steps of a composite action. Verify that all workflows and local actions in the repository pass, and that the four throwaway workflows (one that references an action by tag, one that does not declare `permissions`, one triggered by `pull_request_target`, and one with a syntax error) all fail
 - [ ] 5.2 Confirm that no workflow references any secrets other than `GITHUB_TOKEN`, and have the maintainer open a test pull request from a fork with another account. Verify that all required checks run and that the results match those of a branch in the repository
 
 ## 6. Dependency updates
