@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { constants, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFailed, vi } from "vitest";
 import { startWorkerdServer } from "./servers";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../../..");
@@ -109,16 +109,29 @@ const isRunning = (pid: number): boolean => {
     return false;
   }
   // `kill` also reaches zombies, which stay where PID 1 does not reap orphans, as in some
-  // containers. Without `ps`, a zombie counts as running.
+  // containers. `ps` prints nothing once the process has been reaped. Without `ps`, a zombie
+  // counts as running.
   const ps = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" });
-  return ps.error !== undefined || !ps.stdout.trim().startsWith("Z");
+  if (ps.error !== undefined) {
+    return true;
+  }
+  const state = ps.stdout.trim();
+  return state !== "" && !state.startsWith("Z");
 };
 
-/** Kills HANGING_BUILD if it still runs, for a test that failed before the harness stopped it. */
+/**
+ * Kills HANGING_BUILD if it still runs. Only a test that failed calls it: a test that passed has
+ * seen the build stop, and by then its process ID may belong to another process.
+ */
 const killBuild = (configPath: string) => {
   const pid = readBuildPid(configPath);
-  if (pid !== undefined && isRunning(pid)) {
+  if (pid === undefined || !isRunning(pid)) {
+    return;
+  }
+  try {
     process.kill(pid, "SIGKILL");
+  } catch {
+    // It stopped after the check.
   }
 };
 
@@ -144,28 +157,26 @@ describe("startWorkerdServer", () => {
   it("stops a bundle step that hangs and its build, fails and removes the bundle", async () => {
     const tmp = useEmptyTmpdir();
     const config = writeWorker("hanging-build", { build: HANGING_BUILD });
+    onTestFailed(() => killBuild(config));
 
     // Long enough for the build to start first, which takes about 0.4 s here.
     const starting = startWorkerdServer(config, { bundleTimeoutMs: 5000 });
     const failure = expect(starting).rejects.toThrow(
       `Bundling ${config} did not finish in 5 s, so it was stopped.`,
     );
-    try {
-      expect(bundlesIn(tmp)).toHaveLength(1);
-      const build = await waitForBuild(config, { timeout: 4000 });
+    expect(bundlesIn(tmp)).toHaveLength(1);
+    const build = await waitForBuild(config, { timeout: 4000 });
 
-      await failure;
-      expect(bundlesIn(tmp)).toEqual([]);
-      await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
-    } finally {
-      killBuild(config);
-    }
+    await failure;
+    expect(bundlesIn(tmp)).toEqual([]);
+    await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
   });
 
   // Vitest's workers make `process.exit` throw while tests run.
   it("cleans up on a signal when process.exit throws, and runs the listeners after its own", async () => {
     const tmp = useEmptyTmpdir();
     const config = writeWorker("signal-without-exit", { build: HANGING_BUILD });
+    onTestFailed(() => killBuild(config));
     const exit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit is not allowed here");
     });
@@ -188,7 +199,6 @@ describe("startWorkerdServer", () => {
     } finally {
       process.off("SIGTERM", nextListener);
       exit.mockRestore();
-      killBuild(config);
     }
   });
 });
@@ -233,6 +243,7 @@ describe.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)(
         env: { ...process.env, TMPDIR: tmp },
         stdio: ["ignore", "pipe", "pipe"],
       });
+      onTestFailed(() => stopLeftovers(server, config));
       let output = "";
       const collect = (chunk: Buffer) => {
         output += chunk.toString();
@@ -242,24 +253,20 @@ describe.each(["SIGINT", "SIGTERM", "SIGHUP"] as const)(
       const exitCode = new Promise<number | null>((done) => {
         server.once("exit", (code) => done(code));
       });
-      try {
-        const build = await waitForBuild(config, {
-          check: () => {
-            if (hasExited(server)) {
-              throw new Error(`serve-workers.ts exited before the build started:\n${output}`);
-            }
-          },
-        });
-        expect(bundlesIn(tmp)).toHaveLength(1);
+      const build = await waitForBuild(config, {
+        check: () => {
+          if (hasExited(server)) {
+            throw new Error(`serve-workers.ts exited before the build started:\n${output}`);
+          }
+        },
+      });
+      expect(bundlesIn(tmp)).toHaveLength(1);
 
-        server.kill(signal);
+      server.kill(signal);
 
-        expect(await exitCode).toBe(128 + constants.signals[signal]);
-        expect(bundlesIn(tmp)).toEqual([]);
-        await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
-      } finally {
-        await stopLeftovers(server, config);
-      }
+      expect(await exitCode).toBe(128 + constants.signals[signal]);
+      expect(bundlesIn(tmp)).toEqual([]);
+      await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
     });
   },
 );
