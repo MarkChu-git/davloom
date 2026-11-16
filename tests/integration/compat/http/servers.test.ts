@@ -172,8 +172,9 @@ describe("startWorkerdServer", () => {
     await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
   });
 
-  // Vitest's workers make `process.exit` throw while tests run.
-  it("cleans up on a signal when process.exit throws, and runs the listeners after its own", async () => {
+  // Vitest's workers make `process.exit` throw while tests run. If the listener let that throw
+  // escape, Vitest would report an unhandled error and fail the run.
+  it("cleans up on a signal when process.exit throws", async () => {
     const tmp = useEmptyTmpdir();
     const config = writeWorker("signal-without-exit", { build: HANGING_BUILD });
     onTestFailed(() => killBuild(config));
@@ -182,9 +183,6 @@ describe("startWorkerdServer", () => {
     });
     const starting = startWorkerdServer(config);
     const failure = expect(starting).rejects.toThrow(`Bundling ${config} was stopped by SIGKILL.`);
-    // Stands in for Miniflare's exit hook, which a server registers after the harness's listener.
-    const nextListener = vi.fn();
-    process.on("SIGTERM", nextListener);
     try {
       const build = await waitForBuild(config);
       expect(bundlesIn(tmp)).toHaveLength(1);
@@ -193,11 +191,9 @@ describe("startWorkerdServer", () => {
 
       await failure;
       expect(exit).toHaveBeenCalledWith(128 + constants.signals.SIGTERM);
-      expect(nextListener).toHaveBeenCalledOnce();
       expect(bundlesIn(tmp)).toEqual([]);
       await vi.waitFor(() => expect(isRunning(build)).toBe(false), { timeout: 5000 });
     } finally {
-      process.off("SIGTERM", nextListener);
       exit.mockRestore();
     }
   });

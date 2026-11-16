@@ -125,9 +125,9 @@ const exitOnSignal = (signal: NodeJS.Signals) => {
   try {
     process.exit(128 + constants.signals[signal]);
   } catch {
-    // Vitest's workers make `process.exit` throw while tests run, and Vitest ends them itself. A
-    // throw from here would also skip the listeners after this one, such as Miniflare's hook,
-    // which stops workerd.
+    // Vitest's workers make `process.exit` throw while tests run, and Vitest would report the
+    // throw as an unhandled error and fail the run. Such a worker exits when Vitest stops it, or
+    // when its next message to Vitest fails because Vitest has exited.
   }
 };
 
