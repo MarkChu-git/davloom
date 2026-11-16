@@ -1,0 +1,169 @@
+# Design
+
+## Context
+
+See proposal.md for the motivation and the specs for the behavior.
+
+Phase 0 left `apps/web` as a TanStack Start SPA with the Davloom Theme built on `@astryxdesign/theme-neutral`, a placeholder root page, and `/design-check`, the page with the appearance switch that the UI compatibility tests open. `main` now has Astryx 0.7.16 and StyleX 0.19.2. No management API exists: storage, the WebDAV protocol, Better Auth and API keys arrive in Phases 1 to 3.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- Every page in PRD §8 works end to end on sample data, so the owner can judge layouts and flows before the API exists.
+- Pages use Astryx components and tokens. Davloom's own styles use StyleX.
+- Sample data and the rules that stand in for the server sit in their own modules, so that connecting the API replaces them module by module.
+
+**Non-Goals:**
+
+- No API contract, no network calls, and nothing kept after a reload.
+- No Bend code and no laws in `LAWS.bend`. The stand-in rules stay in TypeScript until the API replaces them, an exception to PRD §4 that the owner decides (Decision 2).
+- No TanStack Virtual and no screenshot baselines. Both need the real listings and the reviewed pages.
+
+## Decisions
+
+### 1. Sample data in the browser, not a mocked API
+
+`features/sample-data` holds the instance, three backends, four mounts, the file trees, five keys and four recent errors. Times are relative to a fixed clock (2026-11-16 15:30 UTC), so "2 minutes ago" reads the same on every run. Module-level TanStack Store instances keep the visit's changes to mounts, files, keys, uploads and settings (the profile, the sessions and the default backend), and the pages share them: a mount added on Storage & Mounts shows in Files and on the Overview, and the default backend chosen in Settings is where a new mount starts.
+
+Alternative: Mock Service Worker in front of a draft management API. Rejected, because it would fix request and response shapes before Phase 3 defines them, and a public API contract needs the owner's approval.
+
+### 2. Stand-in rules in TypeScript until the API replaces them
+
+The pages must refuse what the server will refuse, so the prototype has logic that decides an outcome without IO. PRD §4 asks for such logic to be written in Bend, and keeps pure logic in TypeScript only when Bend cannot express it or cannot meet the Workers CPU budget. Neither is the case here. These rules stay in TypeScript for another reason: `packages/laws`, the pinned Bend release and the CI checks arrive in Phase 1, and the stand-ins live only until the Dashboard calls the API, whose answers then replace them. That is an exception to PRD §4, so the owner decides it, and the pull request waits for that approval in chat.
+
+The stand-ins meet the rest of the rule: fast-check property tests in `apps/web` check the laws they share with the server's rules. Each property also failed, in runs made by hand, when the rule it covers was broken on purpose. The move and copy properties generate transfers from the folders and items of the generated trees, and fail when too few of them succeed with a folder that has contents, so a run cannot pass without checking the law. A further transfer property also draws folders and names that the trees do not hold, and fails unless each way a transfer can be refused comes up in its run. Examples cover what generated trees rarely hold: a name a sibling already has, a folder whose name starts with another's, and mounts named after a property every JavaScript object has, such as `constructor`.
+
+| Stand-in in `apps/web` | Law its tests check | Rule that replaces it |
+| --- | --- | --- |
+| `nameProblem` | An accepted name is one segment, not empty, `.` or `..`, that no sibling has | Phase 2 name validation |
+| `folderIn`, `createFolderIn`, `renameIn`, `removeIn` and `putFileIn` | Nothing exists outside the mounts; names stay unique within every folder after any sequence of changes; removing takes away the named items and nothing else; a stored file replaces a file of its name and never a folder | Phase 1 namespace model |
+| `transferIn` and `destinationsFor` | A folder never goes inside itself and is never offered as its own destination; a move keeps every item and a copy adds exactly what it copies; a transfer brings every named item, or refuses when the destination holds one of them; a transfer succeeds exactly when its folder holds every name, the destination holds none of them and no folder would go inside itself | Phase 2 COPY and MOVE, with `Overwrite: F` |
+| `normalizePath` | Normalizing a normalized path changes nothing | Phase 2 path normalization |
+| `mountNameProblem` and `mountFolderOf` | A typed name is accepted exactly when its folder, the name without the spaces and slashes around it, is one segment, not `.` or `..`, that no other mount uses | Phase 2 Mount resolution |
+| `keyStateOf` | A revoked key stays revoked, and any other key is expired exactly from its expiry time | Better Auth's API key expiry and revocation (PRD §6), which stays in TypeScript |
+| `scopeOf` | A key's scope never reaches outside its mount and has no segment that starts or ends with a space, and a folder of plain names is kept as it is | Phase 3 permission decisions in the Policy Service: a credential never reaches outside its mount and path prefix |
+| `uploadProblem` | A file over 100 MB is refused | The Cloud Free request body limit, which the platform enforces |
+
+When the Dashboard calls the API, the stand-ins are deleted and the pages show the server's answers. The specs describe the outcomes the server's rules will give, so the pages need no redesign when the stand-ins go. They never ship: PRD §13 lets a feature ship only once the laws it needs are proven, and the Dashboard calls the API before it ships.
+
+Some checks stay in the page components, because they are UI code, which PRD §4 leaves in TypeScript. A key needs a name, a mount needs a bucket, and a profile needs a display name and an email address with an @ before their forms submit, and the Files page offers no change on, and no move or copy into, a mount whose backend does not answer. These check that a field is filled in, and that the email address has an @, or turn controls off from a status the server reports.
+
+Move and Copy offer the folders of every mount whose backend answers, as if the administrator may reach every mount. Whether the administrator may is for the owner to decide (Open Questions).
+
+Alternative: write the stand-ins in Bend now. Rejected for this change: it would bring the Bend toolchain, `packages/laws` and laws that each need the owner's approval into a prototype whose rules are deleted once the API exists.
+
+### 3. A black, white and gray theme through tokens
+
+The theme still extends `@astryxdesign/theme-neutral` and changes only tokens:
+
+- The accent is near-black in light mode and near-white in dark mode (`#111111` and `#f1f1f1`), with the inverse for text on it.
+- Status colors are ranked by how loud they need to be. In light mode the error fill is `#111111`, warning `#474747`, and success and info share `#6a6a6a`; dark mode mirrors this, and status text and rings follow the same order. Statuses keep their icons and words, and error text is semibold.
+- The nine categorical hues share one set of grays for background, border, icon and text. Code syntax, inset rings, inverted backgrounds and the progress track are gray too.
+- Astryx 0.7.16 keeps chart series colors in a separate token set. The theme leaves them alone, because no page has a chart.
+
+`packages/ui/src/tokens/monochrome.ts` holds the grays and `davloom-source.ts` assigns them to tokens. `brand.ts` still writes the light accent as a six-digit hex literal, the form that `verify-brand-change.ts` looks for when it swaps the brand color.
+
+Astryx styles neither text selection, spelling marks, the controls the browser draws nor autofilled inputs, so the browser would paint them blue, red and yellow. `apps/web/src/styles/globals.css` paints selection in the accent, gives native checkboxes and radio buttons the accent as their `accent-color`, draws spelling and grammar marks as a gray wavy underline where the browser allows it (Chromium does), and keeps the autofill tint off. Fields whose text is not prose turn spell check off, since most of it would be marked: the names of files, folders, keys and mounts, the display name, the email address, a key's folder, a mount's bucket and prefix, the search field and the values offered for copying. The "Selected text and spelling marks" test checks the selection and the spelling and grammar marks. The autofill rule has no test, because only the browser's own autofill applies it.
+
+Alternative: keep a red for errors only. Rejected, because the owner asked for no color, and the icon, the words and the weight already mark an error.
+
+### 4. A pathless layout route for the shell
+
+`_app/_dashboard.tsx` renders the Astryx AppShell, and Overview (`/`), Files, Credentials, Storage & Mounts and Settings sit under it. `/design-check` stays under `_app` outside the shell, so the UI compatibility tests keep their page.
+
+Page state lives in search parameters (`path` and `file` for Files, `section` for Settings), so links, reloads and Back work. The router reads and writes every search parameter as plain text (`parseSearch` and `stringifySearch` in `router.tsx`), because its default JSON parsing would turn a folder named `1` into a number, and the Files route normalizes `path`. Route definitions load with the entry chunk even though page components are split out, so search validation imports only modules without dependencies. Importing the Settings page module from its route had put the page and its components into the entry chunk, `assets/index-*.js` in `apps/web/dist/client`: 538 kB as Vite prints it, minified and before gzip, against 382 kB on `main`. With `features/settings/sections.ts` it is 320 kB, which includes the path normalization that the Files route validates with.
+
+### 5. A responsive contract per region
+
+PRD §8.1 asks for the Astryx Dashboard Layout. The Overview keeps the frame of the Astryx `dashboard` page template, with its padding and gaps: a row of headline tiles, then tables in cards. It leaves out the template's charts and filter bar, because the sample data has no series over time and nothing to filter.
+
+Following the Astryx layout guide, each region states what it does as the width changes:
+
+- The AppShell side navigation moves behind a menu button below 768 px, the theme's `md` breakpoint.
+- The Files details panel is 360 px wide beside the list above 1024 px. At 1024 px and below the details open in a dialog.
+- The Settings section list is 280 px wide above 1024 px. At 1024 px and below it becomes a selector above the section, because between 768 and 908 px the list beside the side navigation left the section too narrow, and its content spilled sideways.
+- Card grids reflow with a minimum column width and a maximum column count, which lets the last column shrink on a phone instead of overflowing.
+
+### 6. Automated tests now, most page flows after the review
+
+Automated now:
+
+- Unit tests read the built theme stylesheet and theme module, check that the status grays keep their ranking in both modes (Decision 3), and check the stand-in rules with fast-check (Decision 2).
+- Playwright checks the appearance requirements on Bun and on Workers. It scans 40 page states in both modes: every page and Settings section; the dialogs, menus, option lists and confirmations the pages open; the details dialog of a window 1024 px wide and the navigation menu of one 375 px wide; and keyboard focus, a tooltip, notifications, warnings, field errors, a checked switch, empty states, a loading listing, a busy button, upload progress, finished and refused uploads, and row selection. States that pass, such as a busy button, pause the page's timers with Playwright's clock, which `clock.install()` alone leaves running, and check after the scan that the page still shows the state the scan read. The scan reads every element and nine pseudo-elements, among them `::selection` and the spelling marks, in the 30 properties that paint colors, including shadows, filters and gradients, and the hex values, color functions and color names inside SVG data URLs. It allows a difference of 1 in 255 between channels, the rounding that color mixing leaves, counts a notation it does not parse as a hue, and reports an element whose `accent-color` is left to the browser. Two tests put hues on a page on purpose, in each kind of place and notation that task 1.3 lists and in a notation the scan does not parse, and check that the scan reports every one of them and none of the grays beside them. Other tests cover the color scheme, the first paint and a change made in another tab.
+- Playwright checks the navigation requirements: titles, headings, the document language, focus after a change, that no request goes to `/api/` or `/dav/`, and that nothing is wider than a 375 px window. The page scrolls inside its main landmark rather than the document, so that test measures the landmark and every element around it.
+- Scenarios that guard a fix made after review have their tests now: "The name a screen reader hears", "Opening the name dialog again", "Opening the form again", "A folder outside the mount" and "A profile without a name".
+
+Playwright runs in UTC, so the dates on the pages read the same on every machine.
+
+The other page-flow scenarios of Overview, Files, Credentials, Storage & Mounts and Settings wait for the owner's review of the prototype, because the review may change those flows. They were verified by hand in the browser for this change (tasks.md), each one is written so that it converts to a Playwright test, and the change is archived only after those tests exist.
+
+"A dropped folder" cannot drop a real folder through Playwright, so its test will send the drop through the Chrome DevTools Protocol, which the hand check of this change also used.
+
+Alternative: write every page-flow test now. Rejected for now: that is about 50 browser tests against sample data that the review may change, and PRD §11 schedules UI-specific tests for Phase 4.
+
+### 7. Appearance control, color scheme and tabs
+
+The Dashboard's appearance switch lives in Settings, where users look for it, and `/design-check` keeps its own switch for the tests.
+
+The page declares `<meta name="color-scheme" content="light dark">` and never changes it. The scheme in use is set on the root element instead: the stylesheet gives it `light dark` and narrows it under `html[data-theme]`, and the first-paint script and the appearance store write the chosen scheme into the root's inline style. An earlier version narrowed the meta element, which left a second copy of it after hydration, because React 19 adopts a server-rendered `<meta>` only when its `content` matches what React renders.
+
+React writes the stylesheet first in `<head>`, ahead of the inline script, so the script runs once the stylesheet has loaded. That is still before `<body>` is parsed, and a stylesheet in `<head>` holds back rendering, so the first paint shows the stored mode. The trade-off: while the stylesheet loads, before anything is painted, the browser may show an empty page in the operating system's scheme, because the meta element names both. Narrowing the meta element would avoid that and bring back the duplicate.
+
+The store also listens for `storage` events, which the browser fires only in the other tabs, and applies the mode they carry. The store writes the scheme into the root's inline style on every change, because the stylesheet's own `html[data-theme]` rules lose to the value the first-paint script wrote there. "Choosing a mode" and "Two open tabs" each change the mode after a page has loaded with Dark stored, so they fail without that write.
+
+### 8. Dependencies and language
+
+Icons come from `lucide-react`, the icon set PRD §2 names. `bun.lock` already held one `lucide-react` entry, 1.69.0, for `@astryxdesign/theme-neutral` (`^1.66.0`). `apps/web` declares the npm `latest` version, 1.73.0, and that entry moved to 1.73.0, which the theme's range allows, so both use one copy.
+
+`fast-check` 4.10.2, the npm `latest` version, is a dev dependency of `apps/web` for the property tests of Decision 2. It brings `pure-rand` 8.4.2 into `bun.lock`.
+
+`<html lang="en">` matches the interface text, which is English.
+
+### 9. Where the pages leave Astryx props
+
+`astryx doctor` reports three places in the source, and each needs what no Astryx prop gives:
+
+- `FileName` uses StyleX so that a file name's stem can shrink to an ellipsis while its extension keeps its width. `StackItem` only offers a size that grows or one that stays put.
+- `FileExplorerPage` uses StyleX to make the name link fill its table cell, because the Link root is sized to its content and its `display` prop styles only the inner text.
+- `RouterLink` renders a plain `<a>`: it is the component that Astryx `LinkProvider` renders for every link, and it hands in-app clicks to the router.
+
+Both StyleX uses follow PRD §3.3 and the UI rules in `CLAUDE.md`. `FileName` also hides the two parts from assistive technology and gives it the whole name in `VisuallyHidden`, since two boxes on screen would read as two words.
+
+### 10. Focus after a change
+
+When a change removes the control that had focus, `refocusIfLost` in `features/shell/focus.ts` moves focus to the control that takes its place: the row after a deleted one, the checkbox of the first selected row after Unselect All, the upload area's button after Clear finished, and, after a session is signed out, the Sign out button of the session after it, or of the one before it when it was the last, or Set up above the sessions when no other session is left. When a search hides the folder or file a dialog has just created or renamed, focus goes to the search field. It cannot do so at once. An Astryx dialog keeps focus until its exit transition ends and returns it to its opener only if the opener is still there, and the Files table renders its rows again when the details panel closes and the table's width changes. So the helper watches each frame for up to a second, moves focus whenever it has fallen to the page body, and stops once something else takes it. It looks for its targets inside `[role="main"]`, because Astryx renders the main landmark as an element with that role, not as `<main>`.
+
+A closing dialog needs the same help. Astryx Dialog takes as its opener whatever has focus once its content has mounted, and a form's first field focuses itself in that same commit, so the dialog returns focus to that field inside the closed dialog, and focus falls to the page body after Cancel, Escape or the close button alike. `features/shell/useFormDialog.tsx` remembers the control that opened a form dialog and sends focus back to it however the dialog closes, or to the menu's button when the opener was an item of a menu that has since closed. Credentials does the same for its key dialog. Each form shown also gets a new React `key`, because a dialog keeps its content while it closes, and the next form would otherwise start with the last one's values.
+
+Errors are announced assertively: an error notification, a folder that cannot be listed, a try that fails again, a connection that still does not answer, and a copy the browser blocked. A missing folder needs no announcement of its own, because Astryx `EmptyState` announces its title and description when they appear. Files announces the match count of a search and its errors through two announcers, as Astryx advises, so an error never cancels a count, and a try, a connection check or an export that is still running when the user leaves the page is cancelled rather than announced on the next one.
+
+## Cloudflare Workers and Bun
+
+They do not differ for this change. Everything runs in the browser, both runtimes serve the same `apps/web/dist/client` build, and no server code changes.
+
+## Risks / Trade-offs
+
+- [Sample data taken for real state] → The navigation says "Prototype, sample data", no request leaves the page, and a reload restores the samples.
+- [Stand-in rules drift from the server's rules] → Decision 2 names the rule that replaces each one, property tests check the laws they share, and connecting the API deletes them.
+- [The owner declines the PRD §4 exception] → The stand-ins sit in their own modules, so they can move to Bend in Phase 1, or the pages can wait for the API, without a redesign.
+- [Gray statuses are harder to tell apart] → Every status has an icon and words, errors are semibold and have the strongest contrast, and errors are announced assertively (Decision 10).
+- [Destructive buttons look much like secondary ones] → Every destructive action opens a confirmation that names the action and its consequence.
+- [Page flows have no automated tests until the review] → Their tasks stay open in tasks.md, and the change is not archived before they are done.
+
+## Open Questions
+
+The reviews of this change found these. The owner's review of the prototype decides them, or the phase an item names:
+
+- Move and Copy work between any two mounts. The Dashboard acts for the administrator, the only account V1 has (PRD §6), while PRD §12 and `openspec/config.yaml` deny cross-Mount operations by default unless they are authorized. The owner decides whether the administrator is authorized for every mount, and the Policy Service then enforces that answer.
+- Opening a folder rebuilds the Files page, so keyboard focus starts again from the top of the page. A file manager would keep it in the list.
+- Keys scoped to a mount stay Active after the mount is removed, and the confirmation does not mention them. Adding the mount again on another bucket would give those keys its files.
+- At 375 px the Credentials table shows only Name and Access, and its status and actions are reached by scrolling the table sideways, with no cue that it scrolls. The Mounts table's actions are also off screen.
+- At 900 px the Overview tiles wrap three and one.
+- Above 1024 px the Settings heading sits inside the section navigation landmark.
+- The specs keep details that Phases 1 and 3 may settle differently: a key covers one mount or all of them, while PRD §7's `mount_permissions` could hold several, and every mount names a bucket, Durable Objects included.
+- A key's folder drops the spaces around each segment, because the Dashboard never names a folder that way. A WebDAV client could name one ` public`, and a key meant for it would then cover `public` instead. Phase 3 decides whether the Policy Service keeps, refuses or trims such a segment.
+
+## Migration Plan
+
+Nothing to migrate. The root page changes from the Phase 0 placeholder to Overview. To roll back, revert the merge.
