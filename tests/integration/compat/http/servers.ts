@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { constants, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { convertV4MiniflareOptions, Miniflare } from "miniflare";
+import { convertV4MiniflareOptions, Miniflare, type Json } from "miniflare";
 import {
   unstable_getMiniflareWorkerOptions,
   unstable_readConfig,
@@ -226,8 +226,15 @@ const applyD1Migrations = async (
   }
 };
 
+/** Wrangler's types leave the vars it derives for Miniflare unknown. */
+const isVarRecord = (value: unknown): value is Readonly<Record<string, Json>> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
 export interface WorkerdOptions {
-  /** Replaces vars from the Wrangler config, like `wrangler dev --var`. */
+  /**
+   * Replaces vars from the Wrangler config and from a `.dev.vars` or `.env` file beside it, like
+   * `wrangler dev --var`.
+   */
   readonly vars?: Readonly<Record<string, string>>;
   /** Listens on this port instead of one the system picks. */
   readonly port?: number;
@@ -263,18 +270,22 @@ export const startWorkerdServer = async (
   try {
     const scriptPath = await bundleWorker(configFile, outdir, bundleTimeoutMs);
     const config = unstable_readConfig({ config: configFile });
-    const { workerOptions, externalWorkers } = unstable_getMiniflareWorkerOptions({
-      ...config,
-      vars: { ...config.vars, ...vars },
-    });
+    const { workerOptions, externalWorkers } = unstable_getMiniflareWorkerOptions(config);
     if (externalWorkers.length > 0) {
       throw new Error(
         `${configPath} needs Workers beside its own, which this harness cannot start`,
       );
     }
+    // The config's vars, some of which a `.dev.vars` or `.env` beside the config may have replaced.
+    const { bindings: configVars = {} } = workerOptions;
+    if (!isVarRecord(configVars)) {
+      throw new Error(`Wrangler did not derive a record of vars from ${configPath}`);
+    }
     miniflare = new Miniflare(
       convertV4MiniflareOptions({
         ...workerOptions,
+        // The vars passed in go over those, where `wrangler dev --var` puts them.
+        bindings: { ...configVars, ...vars },
         // The bundle is a single module, which needs no rules, and Miniflare 5 cannot convert them.
         modulesRules: undefined,
         modules: true,

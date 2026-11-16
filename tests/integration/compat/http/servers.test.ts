@@ -40,20 +40,28 @@ const bundlesIn = (directory: string) =>
 interface WorkerFixture {
   /** A custom build command, which runs in the Worker's directory. */
   readonly build?: string;
+  /** The vars in its Wrangler config. */
+  readonly vars?: Readonly<Record<string, string>>;
+  /** More files for its directory, by name. */
+  readonly files?: Readonly<Record<string, string>>;
 }
 
 /** Writes a Worker that answers with its vars, and returns the path of its Wrangler config. */
-const writeWorker = (name: string, { build }: WorkerFixture = {}): string => {
+const writeWorker = (name: string, { build, vars, files = {} }: WorkerFixture = {}): string => {
   const directory = join(root, name);
   mkdirSync(directory);
   writeFileSync(
     join(directory, "worker.js"),
     "export default { fetch: (_request, env) => Response.json(env) };\n",
   );
+  for (const [file, content] of Object.entries(files)) {
+    writeFileSync(join(directory, file), content);
+  }
   const config = {
     name,
     main: "worker.js",
     compatibility_date: "2026-11-04",
+    ...(vars === undefined ? {} : { vars }),
     // Without `cwd`, Wrangler runs the build in its own working directory.
     ...(build === undefined ? {} : { build: { command: build, cwd: directory } }),
   };
@@ -94,6 +102,32 @@ describe("startWorkerdServer", () => {
     expect(bundlesIn(tmp)).toEqual([]);
   });
 });
+
+// Wrangler reads `.env` only when there is no `.dev.vars`.
+describe.each([".dev.vars", ".env"])(
+  "startWorkerdServer with a %s file beside the config",
+  (file) => {
+    it("puts the vars it is given over the file, and the file over the config", async () => {
+      const config = writeWorker(`vars${file.replaceAll(".", "-")}`, {
+        vars: { FROM_CONFIG: "config", FROM_FILE: "config", FROM_TEST: "config" },
+        files: { [file]: "FROM_FILE=file\nFROM_TEST=file\n" },
+      });
+
+      const server = await startWorkerdServer(config, { vars: { FROM_TEST: "test" } });
+      try {
+        const response = await server.fetch("/");
+
+        expect(await response.json()).toEqual({
+          FROM_CONFIG: "config",
+          FROM_FILE: "file",
+          FROM_TEST: "test",
+        });
+      } finally {
+        await server.stop();
+      }
+    });
+  },
+);
 
 // Playwright stops serve-workers.ts with SIGTERM, also when it does not start in time, and Ctrl-C
 // sends SIGINT. Each test sends the signal to serve-workers.ts alone, not to the bundler.
