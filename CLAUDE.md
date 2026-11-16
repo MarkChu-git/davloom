@@ -16,7 +16,9 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 
 ## Dependencies
 
-Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. Pre-release tags such as `rc`, `beta` and `canary` do not count. When a peer range blocks the newest version, use the newest one allowed and record why in the change's `design.md`.
+Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. A pre-release version counts when the `latest` tag points to it. Pre-release tags such as `rc`, `beta` and `canary` do not count, so a version that only they point to needs the owner's approval. When a peer range blocks the newest version, use the newest one allowed and record why in the change's `design.md`.
+
+The owner approved one standing exception on 2026-11-16: the direct `miniflare` dependency of `@davloom/compat-tests` takes the exact version that the `latest` Wrangler pins, because Miniflare's own `latest` tag (4.20260730.0 that day) lags months behind the Miniflare that Wrangler uses. Move `wrangler`, `@cloudflare/vitest-plugin`, `@cloudflare/workers-types` and `miniflare` together.
 
 ## Spec workflow
 
