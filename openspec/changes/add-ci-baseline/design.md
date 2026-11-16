@@ -194,6 +194,14 @@ To reach these times:
 
 Measured on the M4 Pro on 2026-11-07: 23 unit tests took 0.63 s, with a median of 0.13 ms; 110 HTTP tests took 16.4 s, with under 1 s spent in test bodies and medians of 0.5 ms on Bun, 1.5 ms on workerd and 6 ms on workerd with D1 and Durable Objects; and 22 Chromium tests took 6.7 s with one worker, with a median of 164 ms. The largest unknown is the browser average on CI, assumed to be 2 to 3 s per test.
 
+Implemented for task 3.2 on 2026-11-16:
+
+- The `compat` job runs the setup action from task 3.1. It then caches `~/.cache/ms-playwright` under a key made from the version of `@playwright/test` in `node_modules` rather than from `bun.lock`, because the browsers change only when Playwright does. `playwright:install` downloads only what the cache lacks, and `bun run test:compat` runs last.
+- `playwright install chromium` runs under `bun run`, which gives the Playwright launcher Bun's `node`, and the guard saw no call. The `ubuntu-24.04` image already has the libraries that Chromium needs, so the job does not pass `--with-deps`, which would install them with `apt` under `sudo`.
+- The first run, on PR #18, took 86 s against the 4–5 minutes estimated above. The setup action took 3 s with a hit on Bun's install cache. With no browser cache, `playwright:install` took 8 s to download Chrome for Testing 156.0.8078.4 (191.1 MiB), Chrome Headless Shell (120 MiB) and FFmpeg (2.2 MiB); `bun run test:compat` took 61 s, and saving the 280 MiB browser cache took 4 s. A rerun with that cache took 91 s. Restoring the browsers took 3 s and `playwright:install` 1 s, but `bun run test:compat` took 76 s, because the HTTP tests took 27.5 s instead of 20.8 s. The cache saves about 4 s a run, less than the test time varies between runs.
+- Playwright starts Chrome Headless Shell for headless runs unless a `channel` is set, so CI never uses the full browser. `playwright install --only-shell chromium` would skip its download, but a local run with `--headed` needs it, and the script still installs both.
+- Both runs listed 111 HTTP tests, 6 D1 tests and 6 Bun SQLite tests; 43 Playwright tests with 1 skipped; the brand change check with its 4 Playwright tests; and 34 local Cloud Free tests with 1 skipped. The deployment run listed the 24 cases that need a real deployment as skipped (`Tests 11 passed | 24 skipped`).
+
 ## Differences between Cloudflare Workers and Bun
 
 CI runs on Linux, and both runtimes start locally, with no account needed.
