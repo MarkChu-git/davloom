@@ -18,7 +18,7 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 
 Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. A pre-release version counts when the `latest` tag points to it. Pre-release tags such as `rc`, `beta` and `canary` do not count, so a version that only they point to needs the owner's approval. When a peer range blocks the newest version, use the newest one allowed and record why in the change's `design.md`.
 
-The owner approved one standing exception on 2026-11-16: the direct `miniflare` dependency of `@davloom/compat-tests` takes the exact version that the `latest` Wrangler pins, because Miniflare's own `latest` tag (4.20260730.0 that day) lags months behind the Miniflare that Wrangler uses. Move `wrangler`, `@cloudflare/vitest-plugin`, `@cloudflare/workers-types` and `miniflare` together.
+The owner approved one standing exception on 2026-11-16: a direct `miniflare` dependency takes the exact version that the `latest` Wrangler pins, because Miniflare's own `latest` tag (4.20260730.0 that day) lags months behind the Miniflare that Wrangler uses.
 
 ## Spec workflow
 
@@ -43,7 +43,7 @@ Merge every pull request with GitHub's asynchronous merge API, because `gh pr me
 5. Poll `gh api repos/MarkChu-git/davloom/pulls/<n>/merge-async/<uuid>` until its status is `merged`. Stop if it is `failed`; the response says why.
 6. GitHub then rebases the pull requests still in its stack, so run `but pull` before changing them.
 
-Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval this file names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries one waits until the owner approves it in chat, and then an agent merges it. A pull request comment does not count, because agents also comment from the owner's account. For the same reason, never add the `laws-approved` label yourself: only the owner adds it (PRD §4). The other approvals this file names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, runs of `cloud:free`, and the owner's review before `/opsx:archive`.
+Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval this file names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries one waits until the owner approves it in chat, and then an agent merges it. A pull request comment does not count, because agents also comment from the owner's account. For the same reason, never add the `laws-approved` label yourself: only the owner adds it (PRD §4). The other approvals this file names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, dependency versions that only a pre-release tag points to, runs of `cloud:free`, and the owner's review before `/opsx:archive`.
 
 ## Architecture rules
 
