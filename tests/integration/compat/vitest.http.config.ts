@@ -1,12 +1,11 @@
 import { defineConfig } from "vitest/config";
 
-// Talks HTTP to real server processes: Bun, and workerd through wrangler dev. This has to run on
-// Node: under `bun --bun`, child processes get Bun as `node`, and wrangler dev cannot forward requests.
+// Talks HTTP to real servers: a Bun process, and local workerd that Miniflare starts in the test process.
 export default defineConfig({
   test: {
     include: ["http/**/*.test.ts"],
     pool: "forks",
-    // Concurrent wrangler dev sessions share a build directory and can break each other.
+    // One file at a time, so the streaming and memory limits are measured with one server running.
     fileParallelism: false,
     hookTimeout: 90_000,
     testTimeout: 30_000,

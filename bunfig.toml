@@ -1,2 +1,6 @@
 [install]
 exact = true
+
+[run]
+# Runs tools whose launchers name Node on Bun, like `bun --bun run`.
+bun = true

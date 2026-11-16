@@ -9,7 +9,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.bun.json && tsc -p tsconfig.workers.json",
     "build": "bun build src/entry.bun.ts --target=bun --outdir dist/bun && wrangler deploy --dry-run --outdir dist/workers",
-    "dev:workers": "wrangler dev",
+    "dev:workers": "bun ../../tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc 8787",
     "dev:bun": "bun --watch src/entry.bun.ts"
   },
   "dependencies": {

@@ -57,7 +57,10 @@ try {
     }
   }
   if (run(["bun", "install"]) === 0) {
-    exitCode = run(["bun", "run", "test:http", "--silent=false"], path("tests/integration/compat"));
+    exitCode = run(
+      ["bun", "--bun", "run", "test:http", "--silent=false"],
+      path("tests/integration/compat"),
+    );
   }
 } finally {
   for (const [file, content] of saved) {

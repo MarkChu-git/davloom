@@ -32,7 +32,7 @@ None. `add-phase-0-foundation` was not archived when this change was proposed, s
 
 ## Impact
 
-- Code: adds `.github/workflows/`, `.github/CODEOWNERS`, `renovate.json`, `osv-scanner.toml`, the Gitleaks configuration and `docs/ci.md`; `bunfig.toml` sets `[run] bun = true`; `oxlint.json` turns on the type-aware rules; `apps/api` and `tests/integration/compat` get an adjusted tsconfig structure; `scripts/lib/pinned-deps.ts` gains a peer dependency check; new dev dependencies `oxlint-tsgolint` and `@vitest/coverage-istanbul`.
+- Code: adds `.github/workflows/`, `.github/CODEOWNERS`, `renovate.json`, `osv-scanner.toml`, the Gitleaks configuration and `docs/ci.md`; `bunfig.toml` sets `[run] bun = true`, and the compatibility tests start workerd through Miniflare; `oxlint.json` turns on the type-aware rules; `apps/api` and `tests/integration/compat` get an adjusted tsconfig structure; `scripts/lib/pinned-deps.ts` gains a peer dependency check; new dev dependencies `oxlint-tsgolint`, `@vitest/coverage-istanbul` and `miniflare`.
 - External systems: needs a GitHub repository and the Renovate GitHub App. On a free GitHub account, Rulesets support only public repositories, and CodeQL and native secret scanning are also free only for public repositories.
 - Prerequisites: `add-phase-0-foundation` is finished and archived, and the compatibility test command exits with status 0 when there are no cloud credentials.
 - Docs: `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml` gain CI rules. `AGENTS.md` and `CLAUDE.md` currently say that `bun run check` checks whether StyleX follows the Astryx peer dependency, but it only checks exact versions; after implementation the two agree.

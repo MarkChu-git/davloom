@@ -61,7 +61,7 @@ try {
     savedBrand.replace(`accent: ["${currentAccent}"`, `accent: ["${NEW_ACCENT}"`),
   );
   if (rebuild() === 0) {
-    exitCode = run(["bunx", "playwright", "test", "ui/styles.spec.ts"], COMPAT_DIRECTORY, {
+    exitCode = run(["bunx", "--bun", "playwright", "test", "ui/styles.spec.ts"], COMPAT_DIRECTORY, {
       DAVLOOM_EXPECTED_BRAND_LIGHT: NEW_ACCENT,
     });
   }

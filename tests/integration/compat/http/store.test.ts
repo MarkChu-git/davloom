@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PROBE_TOKEN_HEADER } from "../probe/token-guard";
 import { mergeHeaders } from "../shared/headers";
 import { readJson } from "../shared/json";
-import { startWorkerdServerWithDatabase, type Server } from "./servers";
+import { startWorkerdServer, type Server } from "./servers";
 
 const PROBE_CONFIG = "tests/integration/compat/probe/wrangler.jsonc";
 const ADMIN = { email: "admin@davloom.test", password: "correct horse battery staple" };
@@ -40,7 +40,7 @@ describe("the Cloud Free route chain on local workerd", () => {
     });
 
   beforeAll(async () => {
-    server = await startWorkerdServerWithDatabase(PROBE_CONFIG);
+    server = await startWorkerdServer(PROBE_CONFIG);
     await server.fetch("/api/__probe/auth/setup", { method: "POST" });
     const response = await server.fetch("/api/__probe/auth/api-keys", { method: "POST" });
     const { key } = await readJson(response, ApiKey);
@@ -138,7 +138,7 @@ describe("the token guard on local workerd", () => {
   let server: Server;
 
   beforeAll(async () => {
-    server = await startWorkerdServerWithDatabase(PROBE_CONFIG, ["--var", `PROBE_TOKEN:${TOKEN}`]);
+    server = await startWorkerdServer(PROBE_CONFIG, { vars: { PROBE_TOKEN: TOKEN } });
   });
   afterAll(() => server?.stop());
 
