@@ -1,0 +1,7 @@
+#!/bin/sh
+# The setup action puts this directory first on PATH, so a step that calls node
+# fails here instead of running the Node that the runner image ships. Davloom
+# runs every command on Bun (CLAUDE.md, Commands).
+echo "::error title=node called::Davloom runs on Bun only, but a step called: node $*" >&2
+echo "Caller: $(ps -o args= -p "$PPID" 2>/dev/null)" >&2
+exit 1

@@ -1,0 +1,27 @@
+name: Set up Bun
+description: >-
+  Makes every call to node fail, installs the Bun that packageManager names, and
+  installs the dependencies in bun.lock without running their lifecycle scripts.
+
+runs:
+  using: composite
+  steps:
+    # First, so that no later step can run the Node that the runner image ships.
+    - name: Make every call to node fail
+      shell: bash
+      run: echo "$GITHUB_ACTION_PATH/no-node" >> "$GITHUB_PATH"
+    - name: Install Bun from packageManager
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: package.json
+    - name: Cache Bun's install cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        restore-keys: bun-${{ runner.os }}-${{ runner.arch }}-
+    # --ignore-scripts skips the workerd postinstall, the one dependency script
+    # Bun would run. It calls node, and nothing in the repository needs it.
+    - name: Install dependencies from bun.lock
+      shell: bash
+      run: bun install --frozen-lockfile --ignore-scripts
