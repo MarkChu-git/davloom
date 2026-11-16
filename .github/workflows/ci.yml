@@ -25,3 +25,27 @@ jobs:
       - name: Set up Bun and install dependencies
         uses: ./.github/actions/setup
       - run: bun run check
+
+  compat:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      # The browsers depend only on the Playwright version, not on the rest of bun.lock.
+      - name: Read the Playwright version
+        id: playwright
+        working-directory: tests/integration/compat
+        run: >-
+          bun -e 'console.log("version=" + (await Bun.file("node_modules/@playwright/test/package.json").json()).version)'
+          >> "$GITHUB_OUTPUT"
+      - name: Cache the Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - run: bun run --filter @davloom/compat-tests playwright:install
+      - run: bun run test:compat
