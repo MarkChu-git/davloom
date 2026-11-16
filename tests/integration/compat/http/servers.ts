@@ -81,9 +81,12 @@ export const startBunServer = (entry: string): Promise<Server> =>
     env: { PORT: "0", HOST: "127.0.0.1" },
   });
 
-/** Kills a bundler and every process it started, which share its process group. */
+/**
+ * Kills a bundler and every process it started, which share its process group. Once Wrangler has
+ * exited, its process group ID may belong to someone else, so nothing is killed then. Wrangler
+ * waits for a custom build, and esbuild stops when Wrangler exits.
+ */
 const killBundler = (bundler: ChildProcess) => {
-  // Once the bundler has been reaped, its process group ID may belong to someone else.
   if (bundler.pid === undefined || bundler.exitCode !== null || bundler.signalCode !== null) {
     return;
   }
@@ -94,29 +97,38 @@ const killBundler = (bundler: ChildProcess) => {
   }
 };
 
-// Bundle directories that still exist, and the bundlers still writing into them. Miniflare exits
-// the process on SIGINT, SIGTERM and SIGHUP without returning to `stop`, so the directories are
-// also removed when the process exits, after the bundlers are killed so that none can write a
-// bundle back.
+// Bundle directories that still exist, and the bundlers still writing into them.
 const bundleDirectories = new Set<string>();
 const bundlers = new Set<ChildProcess>();
-process.on("exit", () => {
+
+/** Kills the bundlers, so that none can write a bundle back, and then removes the bundles. */
+const removeBundles = () => {
   for (const bundler of bundlers) {
     killBundler(bundler);
   }
   for (const directory of bundleDirectories) {
     rmSync(directory, { recursive: true, force: true });
   }
-});
+};
 
-// While a bundle directory exists, these signals exit the process the way Miniflare's exit hook
-// does, so that the exit event removes the directory. Miniflare's hook only exists from
-// `new Miniflare()` until `dispose()`. The signal-exit listeners that Wrangler loads do nothing
-// while another listener exists, and otherwise re-raise the signal, which ends the process without
-// the exit event.
+// Also for a process that exits without returning to `stop`.
+process.on("exit", removeBundles);
+
+// While a bundle directory exists, SIGINT, SIGTERM and SIGHUP remove the bundles and exit the
+// process with 128 plus the signal number, as Miniflare's exit hook does. Miniflare's hook only
+// exists from `new Miniflare()` until `dispose()`. The signal-exit listeners that Wrangler loads do
+// nothing while another listener exists, and otherwise re-raise the signal, which ends the process
+// without the exit event.
 const EXIT_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 const exitOnSignal = (signal: NodeJS.Signals) => {
-  process.exit(128 + constants.signals[signal]);
+  removeBundles();
+  try {
+    process.exit(128 + constants.signals[signal]);
+  } catch {
+    // Vitest's workers make `process.exit` throw while tests run, and Vitest ends them itself. A
+    // throw from here would also skip the listeners after this one, such as Miniflare's hook,
+    // which stops workerd.
+  }
 };
 
 const createBundleDirectory = (): string => {
