@@ -8,3 +8,36 @@ body {
   color: var(--color-text-primary);
   min-height: 100dvh;
 }
+
+/* Checkboxes, radio buttons and sliders that the browser draws use the theme's gray, not blue. */
+:root {
+  accent-color: var(--color-accent);
+}
+
+/* Browsers highlight selected text in their own blue; the theme's inverse keeps it gray. */
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/*
+ * Browsers paint autofilled fields blue or yellow with rules a page cannot override. A transition
+ * that never starts keeps the field's own background, and Firefox's tint is a filter.
+ */
+input:-webkit-autofill {
+  transition: background-color 0s 31536000s;
+}
+
+input:autofill {
+  transition: background-color 0s 31536000s;
+  filter: none;
+}
+
+/*
+ * Browsers underline misspelled words in red. Chromium lets a page style the marks, so they are
+ * gray there; other browsers keep their own, and the fields that hold names turn spell check off.
+ */
+::spelling-error,
+::grammar-error {
+  text-decoration: underline wavy var(--color-text-secondary);
+}

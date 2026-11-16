@@ -421,7 +421,8 @@ const bodyIsDark = (): boolean => {
 // It reads colors inside shadows, filters, gradients and SVG data URLs too, including the color
 // names an SVG uses. An RGB color is a gray when its channels differ by at most 1 in 255, the
 // rounding that color mixing leaves; a Lab or LCH color when its chroma is as small. A notation it
-// does not parse, such as XYZ, counts as a hue.
+// does not parse, such as XYZ, counts as a hue, and so does `accent-color: auto`, which leaves
+// checkboxes and radio buttons to the browser's own blue.
 const huesOnPage = (): string[] => {
   const properties = [
     "color",
@@ -464,6 +465,8 @@ const huesOnPage = (): string[] => {
     "::selection",
     "::backdrop",
     "::file-selector-button",
+    "::spelling-error",
+    "::grammar-error",
   ];
   // The names of grays, and words an SVG paints with that are not colors of their own.
   const grayNames = new Set([
@@ -528,6 +531,10 @@ const huesOnPage = (): string[] => {
       for (const property of properties) {
         const raw = style.getPropertyValue(property);
         const where = `${property}${pseudoElement ?? ""}: `;
+        // Only elements draw controls, and highlight pseudo-elements never inherit the property.
+        if (property === "accent-color" && pseudoElement === null && raw === "auto") {
+          found.add(`${where}auto`);
+        }
         // A data URL may percent-encode what it holds, such as # as %23. Each escape is read on
         // its own, so a percentage elsewhere in the value leaves the rest readable.
         const value = raw.replaceAll(/%([\da-f]{2})/gi, (_escape, hex: string) =>
@@ -920,6 +927,51 @@ test("Signing out a session: focus moves to Set up, the control above the sessio
 
   await expect(page.getByRole("button", { name: "Sign out Firefox on Windows" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Set up" })).toBeFocused();
+});
+
+/** Whether a computed `rgb()` or `rgba()` color is a visible gray: its channels differ by 1 at most. */
+const isGray = (color: string): boolean => {
+  // Other notations put other numbers first, such as color(srgb 0.5 0 0.5).
+  if (!/^rgba?\(/.test(color)) {
+    return false;
+  }
+  const [red = -1, green = -2, blue = -3, alpha = 1] = (color.match(/[\d.]+/g) ?? []).map(Number);
+  return alpha > 0 && Math.max(red, green, blue) - Math.min(red, green, blue) <= 1;
+};
+
+test("Selected text and spelling marks: the page paints them gray", async ({ page }) => {
+  await page.goto("/");
+  await expect(levelOne(page)).toHaveText("Overview");
+
+  // Without the page's own rules, the selection reads as transparent, which the browser paints
+  // blue, and each mark reads as the browser's own line, which it paints red or green.
+  const marks = await page.evaluate(() => ({
+    selection: getComputedStyle(document.body, "::selection").backgroundColor,
+    lines: ["::spelling-error", "::grammar-error"].map((pseudoElement) => {
+      const style = getComputedStyle(document.body, pseudoElement);
+      return {
+        shape: `${style.textDecorationLine} ${style.textDecorationStyle}`,
+        color: style.textDecorationColor,
+      };
+    }),
+  }));
+  expect(isGray(marks.selection), marks.selection).toBe(true);
+  for (const line of marks.lines) {
+    expect(line.shape).toBe("underline wavy");
+    expect(isGray(line.color), line.color).toBe(true);
+  }
+});
+
+test("Rendered pages: the scan reports a red spelling mark and a checkbox left to the browser", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(levelOne(page)).toHaveText("Overview");
+
+  const css = "h1::spelling-error { text-decoration-color: rgb(255 0 0); }";
+  expect(await scanWith(page, { css })).not.toEqual([]);
+  const html = "<input type='checkbox' checked style='accent-color: auto'>";
+  expect(await scanWith(page, { html })).not.toEqual([]);
 });
 
 test("The name a screen reader hears: a file's link is named with the whole file name", async ({
