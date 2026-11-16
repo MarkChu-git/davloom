@@ -15,13 +15,13 @@
     "check:theme": "astryx theme build src/themes/davloom-source.ts --out src/themes/davloom.css --check"
   },
   "dependencies": {
-    "@astryxdesign/core": "0.7.8",
-    "@astryxdesign/theme-neutral": "0.7.8",
-    "@stylexjs/stylex": "0.19.1",
+    "@astryxdesign/core": "0.7.16",
+    "@astryxdesign/theme-neutral": "0.7.16",
+    "@stylexjs/stylex": "0.19.2",
     "react": "19.3.1"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.7.8",
+    "@astryxdesign/cli": "0.7.16",
     "@types/react": "19.3.0"
   }
 }
