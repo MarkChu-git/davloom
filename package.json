@@ -19,8 +19,8 @@
     "test:compat": "bun run --filter @davloom/compat-tests test"
   },
   "devDependencies": {
-    "@astryxdesign/cli": "0.7.8",
-    "@astryxdesign/core": "0.7.8",
+    "@astryxdesign/cli": "0.7.16",
+    "@astryxdesign/core": "0.7.16",
     "@types/bun": "1.4.4",
     "@vitest/coverage-istanbul": "5.1.0",
     "oxfmt": "0.79.0",
