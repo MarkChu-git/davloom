@@ -67,6 +67,13 @@ A tap anywhere on such a row, or on its chevron, SHALL open the row in place, an
 - **WHEN** a user on a touch screen 375 px wide taps the name of "Old tablet", the chevron of "Conference laptop", and the name of "Old tablet" again, revokes "Conference laptop" from its details, and then on Storage & Mounts opens `/photos`, closes Edit's dialog after a tap that left Edit unfocused, as Safari leaves it, cancels Edit, removes the mount, presses Shift+Tab and Enter, and adds a mount named `photos` again
 - **THEN** "Old tablet" shows Read only, All mounts, 2 months ago, and Expired Sep 30, 2026 with no action, under its row, in a group named Details for key Old tablet, the two rows stay open together and fit a window 320 px wide, the second tap closes "Old tablet" alone, "Conference laptop" is then marked Revoked with no action left and focus is on its chevron, `/photos` shows the bucket `davloom-photos`, the prefix None on the line under it, Edit and Remove, focus goes to the chevron of `/photos` after the unfocused tap and back to Edit after Cancel, moves to the chevron of `/archive` once `/photos` is removed, Enter opens `/shared`, and the new `/photos` starts closed
 
+### Requirement: Moving rows
+When a row opens or closes, the rows under it SHALL move to their new places rather than jump there, and SHALL move there at once when the user asks for reduced motion.
+
+#### Scenario: Rows that glide
+- **WHEN** a user on a touch screen 375 px wide opens and then closes "Old tablet", once as usual and once with reduced motion
+- **THEN** each time, the row of "Conference laptop" under it passes through places between where it was and where it comes to rest, and with reduced motion it moves there at once
+
 ### Requirement: Pressed rows
 A pressed row that opens SHALL show a background with rounded corners inside its card, not a band across it.
 
