@@ -50,6 +50,23 @@ const markerCenters = async (page: Page) =>
     }),
   );
 
+/**
+ * The markers' centers once the timeline has drawn again for a new width, read when they stay
+ * where they are from one frame to the next.
+ */
+const settledMarkerCenters = async (page: Page) => {
+  let centers = await markerCenters(page);
+  await expect
+    .poll(async () => {
+      const before = JSON.stringify(centers);
+      await nextFrame(page);
+      centers = await markerCenters(page);
+      return JSON.stringify(centers) === before;
+    })
+    .toBe(true);
+  return centers;
+};
+
 /** Opens a Selector, in the dialog unless `scope` says where. One with a search field is a button. */
 const openList = async (
   page: Page,
@@ -2697,14 +2714,44 @@ test("Reading the timeline: the errors lie along the last day, the last hour ove
   });
   await expectAxisOnGrid(page);
   // Every stem is drawn before every marker, so a stem rising to the upper lane passes behind a
-  // marker on the lower one.
+  // marker on the lower one. Each marker lies on a disc of the card's color that reaches as far as
+  // the marker and its ring, which hides that stem where the error color's muted shade is
+  // translucent, as in dark mode.
   const layers = await chart.evaluate((svg) =>
-    [...svg.querySelectorAll('line[data-ts-key$=":stem"], circle[r="20"]')].map(
-      (node) => node.tagName,
-    ),
+    [
+      ...svg.querySelectorAll(
+        'line[data-ts-key$=":stem"], circle[data-ts-key$=":base"], circle[r="20"]',
+      ),
+    ].map((node) => {
+      if (node.tagName === "line") {
+        return "stem";
+      }
+      return node.getAttribute("r") === "20" ? "marker" : "base";
+    }),
   );
-  expect(layers.filter((tag) => tag === "line")).toHaveLength(4);
-  expect(layers.lastIndexOf("line")).toBeLessThan(layers.indexOf("circle"));
+  expect(layers).toEqual([
+    ...Array.from({ length: 4 }, () => "stem"),
+    ...Array.from({ length: 4 }, () => ["base", "marker"]).flat(),
+  ]);
+  const card = await tokenColor(page, "--color-background-card");
+  for (const marker of await errorMarkers(page).all()) {
+    const key = await marker.getAttribute("data-ts-key");
+    const base = chart.locator(`circle[data-ts-key="${key}:base"]`);
+    const [under, over] = await Promise.all(
+      [base, marker].map((circle) =>
+        circle.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const ring = style.stroke === "none" ? 0 : Number.parseFloat(style.strokeWidth) / 2;
+          return {
+            center: `${node.getAttribute("cx")},${node.getAttribute("cy")}`,
+            reach: Number(node.getAttribute("r")) + ring,
+          };
+        }),
+      ),
+    );
+    expect(under, `the base under ${key}`).toEqual(over);
+    expect(await computed(base, "fill"), `the base under ${key}`).toBe(card);
+  }
 
   // Pointing at a marker shows its error's name and details.
   await page.mouse.move(budget.x, budget.y);
@@ -2745,19 +2792,30 @@ test("Reading the timeline: the errors lie along the last day, the last hour ove
     await expect(page.getByRole("status", { name })).toBeVisible();
   }
 
-  // In the narrowest window the markers stack rather than cover each other. The chart draws again
-  // for its new width, so the markers are read once they stay where they are.
+  // In a window 375 px wide the two oldest errors fall between 40 and 46 px apart. Their discs
+  // would not touch, but they come within 46 px, a marker's width and a gap, so the later one
+  // takes the second lane. The chart draws again for its new width, so the markers are read once
+  // they stay where they are.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(375);
+  const [, , budgetAt375, holidayAt375] = await settledMarkerCenters(page);
+  if (budgetAt375 === undefined || holidayAt375 === undefined) {
+    throw new Error("The timeline has fewer than four markers at 375 px.");
+  }
+  const apart = budgetAt375.x - holidayAt375.x;
+  expect(apart, "the oldest errors' distance at 375 px").toBeGreaterThan(
+    budgetAt375.radius + holidayAt375.radius,
+  );
+  expect(apart, "the oldest errors' distance at 375 px").toBeLessThan(46);
+  // A whole marker higher, as markers on one lane differ by a fraction of a pixel.
+  expect(holidayAt375.y - budgetAt375.y, "the later of them a lane higher").toBeGreaterThan(
+    budgetAt375.radius + holidayAt375.radius,
+  );
+
+  // In the narrowest window the markers stack rather than cover each other.
   await page.setViewportSize({ width: PHONE_WIDTH, height: 812 });
   await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(PHONE_WIDTH);
-  let narrow = await markerCenters(page);
-  await expect
-    .poll(async () => {
-      const before = JSON.stringify(narrow);
-      await nextFrame(page);
-      narrow = await markerCenters(page);
-      return JSON.stringify(narrow) === before;
-    })
-    .toBe(true);
+  const narrow = await settledMarkerCenters(page);
   expect(narrow).toHaveLength(4);
   narrow.forEach((one, first) => {
     for (const other of narrow.slice(first + 1)) {

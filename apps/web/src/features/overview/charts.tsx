@@ -369,6 +369,8 @@ export const StorageChart = () => {
 
 /** A marker's radius: a disc 40 px wide, with room around the 24 px picture of its cause. */
 const MARKER = 20;
+/** The ring of the card's color around each marker. */
+const RING = 2;
 /** Lucide draws its icons in a box 24 units wide, which the timeline draws at 24 px. */
 const GLYPH_BOX = 24;
 /** The stem between the axis and the lowest marker. */
@@ -464,6 +466,17 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
         };
         return [
           {
+            // The card's color under the marker and its ring hides a stem behind it, which the
+            // error color's muted shade lets through where it is translucent, as in dark mode.
+            kind: "dot",
+            key: `${key}:base`,
+            x: cx,
+            y: cy,
+            radius: MARKER + RING / 2,
+            ariaHidden: true,
+            style: { fill: SURFACE },
+          },
+          {
             kind: "dot",
             key,
             x: cx,
@@ -471,7 +484,7 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
             radius: MARKER,
             interaction: { point },
             // A ring of the card's color keeps markers apart where they come close.
-            style: { fill: DISC, stroke: SURFACE, strokeWidth: 2 },
+            style: { fill: DISC, stroke: SURFACE, strokeWidth: RING },
           },
           {
             kind: "group",
