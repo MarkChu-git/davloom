@@ -166,7 +166,6 @@ const MountForm = ({
       header={
         <DialogHeader
           title={mount === undefined ? "Add a mount" : `Edit ${mount.path}`}
-          subtitle="A mount publishes a bucket and prefix as a top-level WebDAV folder."
           onOpenChange={onCancel}
         />
       }

@@ -123,13 +123,7 @@ const CreateKeyForm = ({
 
   return (
     <Layout
-      header={
-        <DialogHeader
-          title="Create a key"
-          subtitle="Each device or person gets its own key, so you can revoke one without the others."
-          onOpenChange={onCancel}
-        />
-      }
+      header={<DialogHeader title="Create a key" onOpenChange={onCancel} />}
       content={
         <LayoutContent>
           <VStack gap={4}>
@@ -227,7 +221,7 @@ export const CredentialsPage = () => {
   const openRevoke = (credential: Credential) =>
     confirm.show({
       title: `Revoke “${credential.name}”?`,
-      description: "Clients signed in with it lose access. This cannot be undone.",
+      description: "Clients signed in with it lose access, and this cannot be undone.",
       actionLabel: "Revoke",
       onAction: () => {
         credentialStore.setState((items) =>

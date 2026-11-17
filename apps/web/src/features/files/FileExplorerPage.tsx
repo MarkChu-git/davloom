@@ -281,7 +281,7 @@ export const FileExplorerPage = ({
     } else {
       toast({
         type: "error",
-        body: `${failed} of ${uploads.length} ${uploads.length === 1 ? "upload" : "uploads"} failed. The upload list says why.`,
+        body: `${failed} of ${uploads.length} ${uploads.length === 1 ? "upload" : "uploads"} failed.`,
       });
     }
   };

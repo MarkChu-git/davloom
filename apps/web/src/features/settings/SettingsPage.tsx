@@ -143,26 +143,12 @@ const SecuritySection = () => {
         <Row
           label="Password"
           value="Changed 3 months ago"
-          action={
-            <Button
-              label="Change password"
-              variant="secondary"
-              size="sm"
-              onClick={() => toast({ body: "Password change opens here." })}
-            />
-          }
+          action={<Button label="Change password" variant="secondary" size="sm" />}
         />
         <Row
           label="Two-step verification"
           value="Off"
-          action={
-            <Button
-              label="Set up"
-              variant="secondary"
-              size="sm"
-              onClick={() => toast({ body: "Two-step setup opens here." })}
-            />
-          }
+          action={<Button label="Set up" variant="secondary" size="sm" />}
         />
       </VStack>
       <VStack gap={2}>
