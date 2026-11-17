@@ -128,7 +128,7 @@ export const OverviewPage = () => {
                   isLabelHidden
                   value={instance.webdavUrl}
                   copyLabel="Copy address"
-                  width="min(20rem, 100%)"
+                  width="28rem"
                 />
               }
             />
