@@ -8,6 +8,7 @@ import {
   FileArchive,
   FileSpreadsheet,
   FileText,
+  FileVideoCamera,
   Folder,
   Image,
   type LucideIcon,
@@ -27,6 +28,8 @@ const ICONS: Record<string, LucideIcon> = {
   pdf: FileText,
   xlsx: FileSpreadsheet,
   heic: Image,
+  mov: FileVideoCamera,
+  mp4: FileVideoCamera,
   zst: FileArchive,
 };
 
@@ -46,23 +49,41 @@ export const iconFor = (name: string, kind: EntryKind): LucideIcon =>
 /**
  * A file name on one line. A long stem ends in an ellipsis and shows itself whole on hover, while
  * the extension stays visible, so "Quarterly report … .pdf" still says what kind of file it is.
+ * Where another picture already leads the name, as a failed operation's cause does, the name can
+ * leave out the picture of its kind.
  */
-export const FileName = ({ name, kind }: { name: string; kind: EntryKind }) => {
+export const FileName = ({
+  name,
+  kind,
+  weight,
+  hasIcon = true,
+}: {
+  name: string;
+  kind: EntryKind;
+  weight?: "semibold";
+  hasIcon?: boolean;
+}) => {
   const [stem, extension] = kind === "folder" ? [name, ""] : splitExtension(name);
   return (
     <HStack gap={2} vAlign="center" xstyle={styles.row}>
-      <Icon
-        icon={iconFor(name, kind)}
-        size="sm"
-        color={kind === "folder" ? "primary" : "secondary"}
-      />
+      {hasIcon ? (
+        <Icon
+          icon={iconFor(name, kind)}
+          size="sm"
+          color={kind === "folder" ? "primary" : "secondary"}
+        />
+      ) : null}
       {/* Two boxes on screen would read as two words, "report .pdf", so assistive technology
           gets the whole name once instead. */}
       <HStack vAlign="center" xstyle={styles.row} aria-hidden>
-        <Text maxLines={1} xstyle={styles.stem}>
+        <Text weight={weight} maxLines={1} xstyle={styles.stem}>
           {stem}
         </Text>
-        {extension === "" ? null : <Text xstyle={styles.extension}>{extension}</Text>}
+        {extension === "" ? null : (
+          <Text weight={weight} xstyle={styles.extension}>
+            {extension}
+          </Text>
+        )}
       </HStack>
       <VisuallyHidden>{name}</VisuallyHidden>
     </HStack>
