@@ -32,12 +32,6 @@ const STATUS_ORDER = [
 const countIn = (status: BackendStatus): number =>
   backends.filter((backend) => backend.status === status).length;
 
-/** How many backends are in each status, such as "2 connected, 1 unreachable". */
-export const connectionSummary = STATUS_ORDER.map((status) => [countIn(status), status] as const)
-  .filter(([count]) => count > 0)
-  .map(([count, status]) => `${count} ${BACKEND_STATUS[status].label.toLowerCase()}`)
-  .join(", ");
-
 /** The most severe status a backend is in, and how many backends are in it. */
 export const worstStatus = ((): { status: BackendStatus; count: number } => {
   const status = STATUS_ORDER.findLast((candidate) => countIn(candidate) > 0) ?? "connected";
