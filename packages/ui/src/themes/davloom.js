@@ -114,10 +114,10 @@ export const davloomTheme = {
     "--color-syntax-diff-header": "transparent",
     "--color-syntax-added-marker": "var(--color-syntax-punctuation)",
     "--color-syntax-removed-marker": "var(--color-syntax-punctuation)",
-    "--color-background-surface": "light-dark(#ffffff, #262626)",
-    "--color-background-body": "light-dark(#f1f1f1, #1b1b1b)",
-    "--color-background-card": "light-dark(#ffffff, #1b1b1b)",
-    "--color-background-popover": "light-dark(#ffffff, #1b1b1b)",
+    "--color-background-surface": "light-dark(#fcfcfc, #171717)",
+    "--color-background-body": "light-dark(#f1f1f1, #121212)",
+    "--color-background-card": "light-dark(#ffffff, #1e1e1e)",
+    "--color-background-popover": "light-dark(#ffffff, #262626)",
     "--color-background-muted": "light-dark(#f1f1f1, #1b1b1b)",
     "--color-accent": "light-dark(#111111, #f1f1f1)",
     "--color-accent-muted": "light-dark(#e2e2e2, #303030)",
@@ -207,9 +207,9 @@ export const davloomTheme = {
     "--radius-container": "0.75rem",
     "--radius-page": "1.75rem",
     "--radius-full": "9999px",
-    "--shadow-low": "0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 25%)), 0 4px 8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 8%))",
-    "--shadow-med": "0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 35%)), 0 4px 12px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 12%))",
-    "--shadow-high": "0 4px 6px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)), 0 12px 24px light-dark(oklch(0 0 0 / 15%), oklch(0 0 0 / 70%)), inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 15%))",
+    "--shadow-low": "0px 1px 2px light-dark(#0000000f, #0000004d)",
+    "--shadow-med": "0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066)",
+    "--shadow-high": "0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080)",
     "--shadow-inset-hover": "inset 0px 0px 0px 2px light-dark(#0000004d, #ffffff4d)",
     "--shadow-inset-selected": "inset 0px 0px 0px 2px light-dark(#00000080, #ffffff80)",
     "--shadow-inset-success": "inset 0px 0px 0px 2px light-dark(#6a6a6a4d, #9e9e9e4d)",
@@ -429,11 +429,40 @@ export const davloomTheme = {
     "card": {
       "base": {
         "padding": "var(--spacing-3)"
+      },
+      "elevation:none": {
+        "boxShadow": "var(--shadow-low)"
       }
     },
     "section": {
       "base": {
         "padding": "var(--spacing-3)"
+      }
+    },
+    "side-nav": {
+      "base": {
+        "borderInlineEndWidth": "1px",
+        "borderInlineEndStyle": "solid",
+        "borderInlineEndColor": "var(--color-border)"
+      },
+      "mode:topbar": {
+        "borderInlineEndWidth": "0"
+      },
+      "mode:drawer": {
+        "borderInlineEndWidth": "0"
+      },
+      "mode:drawer-content": {
+        "borderInlineEndWidth": "0"
+      }
+    },
+    "side-nav-item": {
+      "base": {
+        "--color-text-primary": "var(--color-text-secondary)",
+        "fontWeight": "var(--font-weight-medium)"
+      },
+      "selected": {
+        "--color-text-primary": "inherit",
+        "fontWeight": "var(--font-weight-semibold)"
       }
     }
   },

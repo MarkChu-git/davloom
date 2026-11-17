@@ -23,6 +23,25 @@ export const invertedTones = {
   errorBackground: ["#000000", "#ffffff"],
 } as const satisfies Record<string, Pair>;
 
+/**
+ * The layers a page is built from, from the bottom up: the frame with the side navigation, the
+ * page, the cards on it, and the popovers above them. Each layer is lighter than the one below,
+ * and the shadows below lift it further.
+ */
+export const layerTones = {
+  body: ["#f1f1f1", "#121212"],
+  surface: ["#fcfcfc", "#171717"],
+  card: ["#ffffff", "#1e1e1e"],
+  popover: ["#ffffff", "#262626"],
+} as const satisfies Record<string, Pair>;
+
+/** The shadows under cards, menus and dialogs, in black at low opacity. */
+export const elevationShadows = {
+  low: "0px 1px 2px light-dark(#0000000f, #0000004d)",
+  med: "0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066)",
+  high: "0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080)",
+} as const;
+
 /** The empty part of tracks, such as a progress bar's. */
 export const trackTone = ["#d4d4d4", "#525252"] as const satisfies Pair;
 
