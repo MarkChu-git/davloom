@@ -14,8 +14,8 @@ Credentials SHALL list every key with its name, the first characters of the key,
 - **THEN** the list shows five keys, among them "Phone photo backup" scoped to `/photos`, "Old tablet" marked Revoked and "Conference laptop" marked Expired
 
 #### Scenario: A revoked key past its expiry
-- **WHEN** a user on a phone opens the rows of "Old tablet" and "Conference laptop"
-- **THEN** both say Expired, Sep 30, 2026 and Oct 31, 2026, though "Old tablet" is marked Revoked
+- **WHEN** a user on a phone opens the rows of "Old tablet", "Conference laptop" and "Phone photo backup"
+- **THEN** the first two say Expired, Sep 30, 2026 and Oct 31, 2026, though "Old tablet" is marked Revoked, and "Phone photo backup" says Expires, May 1, 2027
 
 ### Requirement: Creating a key
 Creating a key SHALL require a name and SHALL let the user limit the key to a mount or to a folder inside it, make it read only, and choose when it expires: in 30, 90 or 365 days, or never. The folder can be set only once a mount is chosen, and a folder whose path has a `.` or `..` segment SHALL be refused, so that a key never reaches outside its mount. Spaces around a segment of the folder are dropped, since the Dashboard never names a folder that way.
