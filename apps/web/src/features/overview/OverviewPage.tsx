@@ -9,7 +9,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
-import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
+import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -35,6 +35,10 @@ const styles = stylex.create({
   // all of it.
   tiles: {
     gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 10rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
+  },
+  // A failed operation's status code takes the error color, as the failed count above it does.
+  errorCode: {
+    color: colorVars["--color-text-error"],
   },
 });
 
@@ -221,7 +225,7 @@ export const OverviewPage = () => {
                   <ListItem
                     key={error.id}
                     startContent={
-                      <Text hasTabularNumbers weight="semibold">
+                      <Text hasTabularNumbers weight="semibold" xstyle={styles.errorCode}>
                         {error.status}
                       </Text>
                     }

@@ -562,7 +562,11 @@ export const FileExplorerPage = ({
                   variant="ghost"
                   onClick={() => openTransfer("copy", [...selected])}
                 />
-                <Button label="Delete" variant="ghost" onClick={() => openDelete([...selected])} />
+                <Button
+                  label="Delete"
+                  variant="destructive"
+                  onClick={() => openDelete([...selected])}
+                />
               </>
             }
           />
@@ -752,7 +756,7 @@ const EntryDetails = ({
       <HStack gap={2} wrap="wrap">
         <Button label="Download" variant="secondary" size="sm" onClick={onDownload} />
         <Button label="Rename" variant="ghost" size="sm" onClick={onRename} />
-        <Button label="Delete" variant="ghost" size="sm" onClick={onDelete} />
+        <Button label="Delete" variant="destructive" size="sm" onClick={onDelete} />
       </HStack>
       <MetadataList>
         <MetadataListItem label="Location">{path}</MetadataListItem>

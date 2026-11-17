@@ -10,7 +10,10 @@ export const STATUSES = ["error", "warning", "success", "info"] as const;
 
 export type Status = (typeof STATUSES)[number];
 
-/** Surfaces drawn in reverse, such as toasts. An error toast keeps the theme's red. */
+/**
+ * Surfaces drawn in reverse, such as toasts. An error toast keeps Astryx's own red, which neither
+ * the neutral theme nor Davloom sets.
+ */
 export const invertedTones = {
   background: ["#111111", "#f1f1f1"],
 } as const satisfies Record<string, Pair>;

@@ -218,10 +218,11 @@ describe("the hue check", () => {
   });
 });
 
-// The tokens that may hold a hue: each status's fill, its text and border, its muted background
-// and the text on that, and its ring. Everything else in the theme is black, white or a gray.
+// The tokens that may hold a hue: each status's fill, its text, icon and border, its muted
+// background and the text on that, its inverted background, such as the error notification's, and
+// its ring. Everything else in the theme is black, white or a gray.
 const STATUS_TOKEN =
-  /^--(?:color-(?:(?:text|on|border)-)?(?:error|warning|success|info)(?:-muted)?|shadow-inset-(?:error|warning|success|info))$/;
+  /^--(?:color-(?:(?:text|on|border|icon)-)?(?:error|warning|success|info)(?:-muted)?|color-background-(?:error|warning|success|info)-inverted|shadow-inset-(?:error|warning|success|info))$/;
 
 const lastKey = (path: string): string => path.slice(path.lastIndexOf(".") + 1);
 

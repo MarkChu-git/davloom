@@ -1243,7 +1243,37 @@ test("Selected text and spelling marks: the selection is gray, misspellings take
   expect(grammar?.color).toBe(await tokenColor(page, "--color-text-info"));
 });
 
-test("Status colors: statuses, failed hours and a destructive action take their status colors", async ({
+/** The WCAG 2 relative luminance of an opaque color in the rgb() notation a computed style uses. */
+const luminanceOf = (color: string): number => {
+  const [red = 0, green = 0, blue = 0] = (color.match(/[\d.]+/g) ?? []).slice(0, 3).map((part) => {
+    const channel = Number(part) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+};
+
+/** The WCAG 2 contrast ratio of two such colors. */
+const contrastOf = (one: string, other: string): number => {
+  const [lighter = 0, darker = 0] = [luminanceOf(one), luminanceOf(other)].toSorted(
+    (a, b) => b - a,
+  );
+  return (lighter + 0.05) / (darker + 0.05);
+};
+
+/** A text's color and the background it is drawn on, the nearest one an ancestor paints. */
+const textOnBackground = (text: Locator) =>
+  text.evaluate((node) => {
+    let element: Element | null = node;
+    while (element !== null && getComputedStyle(element).backgroundColor === "rgba(0, 0, 0, 0)") {
+      element = element.parentElement;
+    }
+    return {
+      color: getComputedStyle(node).color,
+      background: element === null ? "" : getComputedStyle(element).backgroundColor,
+    };
+  });
+
+test("Status colors: statuses, failed hours and destructive actions take their status colors", async ({
   page,
 }) => {
   await page.goto("/");
@@ -1274,15 +1304,42 @@ test("Status colors: statuses, failed hours and a destructive action take their 
     expect(await computed(ring, "stroke")).toBe(await tokenColor(page, "--color-error"));
   }
 
+  // The status code of each recent operation error.
+  expect(await computed(main.getByText("413", { exact: true }), "color")).toBe(
+    await tokenColor(page, "--color-text-error"),
+  );
+
+  // Astryx fills a destructive button with the error color's muted shade, under its own text:
+  // the Delete of a selection, the Delete in a file's details and a confirmation's action.
+  const destructive = async (button: Locator) => {
+    expect(await computed(button, "background-color")).toBe(
+      await tokenColor(page, "--color-error-muted"),
+    );
+    expect(await computed(button, "color")).toBe(await tokenColor(page, "--color-on-error-muted"));
+  };
+  await page.goto("/files?path=%2Fshared");
+  await selectFirstRow(page);
+  await destructive(main.getByRole("button", { name: "Delete", exact: true }));
+  await page.goto(PREVIEW);
+  await shown(page.getByRole("heading", { name: "Preview" }));
+  await destructive(main.getByRole("button", { name: "Delete", exact: true }));
+
   await page.goto("/storage");
   await page.getByRole("button", { name: "Actions for mount /photos" }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
-  // Astryx fills a destructive button with the error color's muted shade, under its own text.
-  const remove = page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" });
-  expect(await computed(remove, "background-color")).toBe(
-    await tokenColor(page, "--color-error-muted"),
-  );
-  expect(await computed(remove, "color")).toBe(await tokenColor(page, "--color-on-error-muted"));
+  await destructive(page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" }));
+
+  // The error notification draws on Astryx's own red, whose text reaches 4.5:1 in either mode.
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Check connections" }).click();
+    const { color, background } = await textOnBackground(onScreen(page, /still unreachable/));
+    expect(background, colorScheme).toBe(
+      await tokenColor(page, "--color-background-error-inverted"),
+    );
+    expect(contrastOf(color, background), colorScheme).toBeGreaterThanOrEqual(4.5);
+  }
 });
 
 test("Rendered pages: the scan reports a red spelling mark and a checkbox left to the browser", async ({
