@@ -52,8 +52,11 @@ export const CopyField = ({
         isLabelHidden={isLabelHidden}
         status={isBlocked ? { type: "warning", message: BLOCKED } : undefined}
       >
+        {/* InputGroup names its field with the group's label and then the field's own, so the
+            field's own stays empty: a screen reader hears "WebDAV address", not "WebDAV address
+            Value". The field is the group's only one, so no word would tell it apart. */}
         <TextInput
-          label="Value"
+          label=""
           isLabelHidden
           value={value}
           isReadOnly
