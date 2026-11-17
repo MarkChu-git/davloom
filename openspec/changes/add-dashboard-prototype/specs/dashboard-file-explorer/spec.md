@@ -40,8 +40,8 @@ The list SHALL sort by name, size or modification time in either direction, and 
 - **THEN** both times every folder comes before every file, and the files are in size order
 
 #### Scenario: Sorting a narrow listing
-- **WHEN** a user in a window 375 px wide sorts `/documents` by size from the menu in place of the Name header, then largest first, then by modification time, and then widens the window to 1280 px
-- **THEN** the menu names each order, every folder comes before every file, the files follow their size both ways and then their modification time, newest first, and the wide listing keeps that order and marks it on its Modified header
+- **WHEN** a user in a window 375 px wide sorts `/documents` from the menu in place of the Name header by name from Z to A, then by size both ways and by modification time both ways, and then widens the window to 1280 px
+- **THEN** the menu names each order, every folder comes before every file in each, the files follow each order, and the wide listing keeps the last one, newest first, and marks it on its Modified header
 
 ### Requirement: Search
 Searching SHALL filter the current folder by name without regard to case, tell assistive technology how many items match, and say so when nothing matches.

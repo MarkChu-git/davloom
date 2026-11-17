@@ -69,7 +69,7 @@ The Overview SHALL list each backend with its status in an icon and words and th
 - **THEN** the button shows that the check is running, and an error notification then says that 3 backends were checked and RustFS archive is still unreachable
 
 ### Requirement: WebDAV address
-The Overview SHALL show the WebDAV address in a read-only field the user can select, and SHALL offer a control that copies it, joined to the field. Where the row is too narrow for the control's words beside the whole address, the control SHALL show only its icon and keep its name. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves.
+The Overview SHALL show the WebDAV address in a read-only field the user can select, and SHALL offer a control that copies it, joined to the field. Where the row is too narrow for the control's words beside the whole address, the control SHALL show only its icon and keep its name. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves. Assistive technology SHALL hear the field named by its label alone.
 
 #### Scenario: Copying the address
 - **WHEN** a user selects Copy address
@@ -78,6 +78,10 @@ The Overview SHALL show the WebDAV address in a read-only field the user can sel
 #### Scenario: Copying is blocked
 - **WHEN** the browser refuses access to the clipboard and a user selects Copy address
 - **THEN** the field says that this browser blocked copying and asks the user to select the text and copy it
+
+#### Scenario: The address field's name
+- **WHEN** assistive technology reads the address field on the Overview, and the one in the WebDAV section of Settings
+- **THEN** it hears them named "WebDAV address" and "Address", their labels alone
 
 ### Requirement: Recent operation errors
 The Overview SHALL list recent failed operations with when they happened, the method and path, the status code in the error color, and the reason in words.
