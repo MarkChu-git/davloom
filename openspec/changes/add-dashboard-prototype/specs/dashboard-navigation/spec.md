@@ -7,11 +7,15 @@ Defines how users reach the Dashboard's pages and tell them apart, where keyboar
 ## ADDED Requirements
 
 ### Requirement: Side navigation
-The Dashboard SHALL list Overview, Files, Credentials, Storage & Mounts and Settings in a side navigation, mark the current page in it, and change pages without reloading the document.
+The Dashboard SHALL list Overview, Files, Credentials, Storage & Mounts and Settings in a side navigation, mark the current page in it, mark Storage & Mounts while a storage backend is slow or unreachable, and change pages without reloading the document.
 
 #### Scenario: Moving between pages
 - **WHEN** a user on Overview selects Credentials in the side navigation
 - **THEN** the Credentials page shows, the navigation marks Credentials as the current page, and the document was not reloaded
+
+#### Scenario: Storage status in the navigation
+- **WHEN** a user opens each page while one backend is unreachable
+- **THEN** the side navigation marks Storage & Mounts with an error glyph named "1 backend unreachable", which is part of the link's name
 
 #### Scenario: Narrow screens
 - **WHEN** a user opens each page, and a file's details, in a window 375 px wide

@@ -55,9 +55,10 @@ Alternative: write the stand-ins in Bend now. Rejected for this change: it would
 
 ### 3. A black, white and gray theme through tokens
 
-The theme still extends `@astryxdesign/theme-neutral` and changes only tokens:
+The theme still extends `@astryxdesign/theme-neutral`. It changes tokens, and the styles of cards and the side navigation (Decision 11):
 
 - The accent is near-black in light mode and near-white in dark mode (`#111111` and `#f1f1f1`), with the inverse for text on it.
+- The page is built in layers of gray, each lighter than the one below: the frame with the side navigation (`#f1f1f1`, dark `#121212`), the page (`#fcfcfc`, `#171717`), cards (`#ffffff`, `#1e1e1e`) and popovers (`#ffffff`, `#262626`). Low, medium and high shadows in black at low opacity lift cards, menus and dialogs, and a card without an elevation rests on the low one. Before the owner's review, dark mode drew cards in the frame's gray, darker than the page under them.
 - Status colors are ranked by how loud they need to be. In light mode the error fill is `#111111`, warning `#474747`, and success and info share `#6a6a6a`; dark mode mirrors this, and status text and rings follow the same order. Statuses keep their icons and words, and error text is semibold.
 - The nine categorical hues share one set of grays for background, border, icon and text. Code syntax, inset rings, inverted backgrounds and the progress track are gray too.
 - Astryx 0.7.16 keeps chart series colors in a separate token set. The theme leaves them alone, because no page has a chart.
@@ -138,6 +139,25 @@ A closing dialog needs the same help. Astryx Dialog takes as its opener whatever
 
 Errors are announced assertively: an error notification, a folder that cannot be listed, a try that fails again, a connection that still does not answer, and a copy the browser blocked. A missing folder needs no announcement of its own, because Astryx `EmptyState` announces its title and description when they appear. Files announces the match count of a search and its errors through two announcers, as Astryx advises, so an error never cancels a count, and a try, a connection check or an export that is still running when the user leaves the page is cancelled rather than announced on the next one.
 
+### 11. A side navigation after Linear
+
+The owner reviewed the prototype on 2026-11-17, asked for a side navigation after Linear's, and asked for components with more depth than black on white (Decision 3). The side navigation now:
+
+- shows the Davloom mark beside the product name, which links to the Overview: four rounded squares, each a step lighter and turned 12 degrees past the one around it, with no letter in it, as the owner asked;
+- lists Overview and Files at the top without a heading, and Credentials and Storage & Mounts under a Manage heading, in rows 28 px tall with medium-weight secondary text;
+- marks the current page with the design system's fill and primary text, in semibold, with its icon drawn in a heavier stroke, so the page differs in weight and shape as well as in shade (WCAG 1.4.1);
+- shows a status glyph after Storage & Mounts while a backend is slow or unreachable, and the glyph's label, such as "1 backend unreachable", joins the link's name;
+- keeps Settings, the "Prototype, sample data" note and the collapse button at its foot;
+- meets the page at a hairline, which the top bar and drawer of narrow windows leave out.
+
+The Overview and the glyph read their totals from `features/storage/summary.ts`, so the two always agree. The mark's grays run from `--color-accent` at the tile to `--color-on-accent` at the core through two translucent squares, so the mark inverts with the mode, as the accent buttons do.
+
+Alternative: a letter on an ink tile, such as a D. Rejected, because the owner asked for a mark without letters. Sketches drawn on a canvas also set aside a trefoil knot, which the owner found too close to Stash's mark, and a woven lattice or a tartan, which come close to Plaid's.
+
+Alternative: an ink bar at the start of the current row, which would give the marker the 3:1 contrast against the rail that the `navbar` guide of modern-web-guidance asks for. Rejected for this review, because Linear marks the current page with a fill, and the weight and the stroke already tell it apart without color.
+
+Alternative: a storage card at the foot of the navigation, with a capacity bar. Rejected, because Linear keeps its navigation to rows, and the Overview already shows the capacity.
+
 ## Cloudflare Workers and Bun
 
 They do not differ for this change. Everything runs in the browser, both runtimes serve the same `apps/web/dist/client` build, and no server code changes.
@@ -162,6 +182,7 @@ The reviews of this change found these. The owner's review of the prototype deci
 - At 900 px the Overview tiles wrap three and one.
 - Above 1024 px the Settings heading sits inside the section navigation landmark.
 - The specs keep details that Phases 1 and 3 may settle differently: a key covers one mount or all of them, while PRD §7's `mount_permissions` could hold several, and every mount names a bucket, Durable Objects included.
+- Whether a few elements may take a hue. On 2026-11-17 the owner asked for more than two colors, with black and white, or gray and white, as the main ones. The theme answers with more steps of gray (Decisions 3 and 11) and still has no hue, so the owner decides whether statuses or the accent may take one.
 - A key's folder drops the spaces around each segment, because the Dashboard never names a folder that way. A WebDAV client could name one ` public`, and a key meant for it would then cover `public` instead. Phase 3 decides whether the Policy Service keeps, refuses or trims such a segment.
 
 ## Migration Plan
