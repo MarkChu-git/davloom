@@ -1948,6 +1948,37 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   );
 });
 
+test("Focusing a chart: a click draws no ring, and the keyboard draws the theme's", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const chart = page.getByRole("img", { name: "Bytes stored on each backend" });
+  const ringOf = () =>
+    chart.evaluate((element) => {
+      const { outlineStyle, outlineColor } = getComputedStyle(element);
+      // The theme's focus color, as this element would resolve it.
+      const probe = document.createElement("span");
+      probe.style.color = "var(--focus-outline-color)";
+      element.parentElement?.append(probe);
+      const theme = getComputedStyle(probe).color;
+      probe.remove();
+      return { style: outlineStyle, isTheme: outlineColor === theme };
+    });
+
+  // Chromium rings an SVG that a click focused, in the system's blue, unless the page stops it.
+  await chart.click();
+  await expect(chart).toBeFocused();
+  expect((await ringOf()).style).toBe("none");
+
+  // Tab from the control before it rings the chart as it rings every Astryx control.
+  await page.getByRole("link", { name: "Manage storage" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(chart).toBeFocused();
+  const ring = await ringOf();
+  expect(ring.style).not.toMatch(/^(none|auto)$/);
+  expect(ring.isTheme).toBe(true);
+});
+
 test("Opening the form again: the mount form starts from its own mount or the defaults", async ({
   page,
 }) => {
