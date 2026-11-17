@@ -20,9 +20,15 @@ export interface ExpandableRecord {
   toggleLabel: string;
 }
 
-const Row = ({ record }: { record: ExpandableRecord }) => {
-  // Each row keeps its own state, so a record that is removed and added again starts closed.
-  const [isOpen, setIsOpen] = useState(false);
+const Row = ({
+  record,
+  isOpen,
+  onToggle,
+}: {
+  record: ExpandableRecord;
+  isOpen: boolean;
+  onToggle: () => void;
+}) => {
   // The chevron is the row's one control, so it tells assistive technology whether the details
   // are open. A tap anywhere on the row presses it (ListItem interactiveRef).
   const toggle = useRef<HTMLButtonElement>(null);
@@ -47,7 +53,7 @@ const Row = ({ record }: { record: ExpandableRecord }) => {
             icon={<Icon icon={isOpen ? ChevronUp : ChevronDown} size="sm" />}
             aria-expanded={isOpen}
             aria-controls={isOpen ? detailsId : undefined}
-            onClick={() => setIsOpen((open) => !open)}
+            onClick={onToggle}
           />
         }
         interactiveRef={toggle}
@@ -86,13 +92,34 @@ export const ExpandableList = ({
 }) => {
   const card = useRef<HTMLElement>(null);
   const cardRef = useMergedRefs(card, ref);
-  // Opening and closing a row moves the rows under it into place rather than at once.
+  // Opening and closing a row moves the rows under it into place rather than at once. The list
+  // holds which rows are open, so that it renders again, and animates, when one opens or closes.
   const animatedLayout = useAnimatedLayout({ containerRef: card });
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  // A record that leaves the list forgets that its row was open, so a mount removed and added
+  // again under the same folder name, which is its id, starts closed.
+  const kept = [...open].filter((id) => records.some((record) => record.id === id));
+  if (kept.length !== open.size) {
+    setOpen(new Set(kept));
+  }
+  const toggle = (id: string) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (!next.delete(id)) {
+        next.add(id);
+      }
+      return next;
+    });
   return (
     <Card ref={cardRef} elevation="low">
       <List edge="padded" animatedLayout={animatedLayout}>
         {records.map((record) => (
-          <Row key={record.id} record={record} />
+          <Row
+            key={record.id}
+            record={record}
+            isOpen={open.has(record.id)}
+            onToggle={() => toggle(record.id)}
+          />
         ))}
       </List>
     </Card>

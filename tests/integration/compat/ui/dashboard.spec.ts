@@ -1220,6 +1220,43 @@ const detailsOf = async (toggle: Locator): Promise<Locator> => {
   return toggle.page().locator(`[id="${id}"]`);
 };
 
+/** Waits two frames for a change to start its animations, then for every animation that ends. */
+const settle = (page: Page): Promise<void> =>
+  page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const ending = document
+      .getAnimations()
+      .filter(
+        (animation) => animation.effect?.getComputedTiming().endTime !== Number.POSITIVE_INFINITY,
+      );
+    await Promise.all(ending.map((animation) => animation.finished.catch(() => undefined)));
+  });
+
+/**
+ * Runs in the page: where the row of "Conference laptop" is on each frame, from before a tap on
+ * the chevron of "Old tablet" above it, which opens or closes that row, until a second later.
+ */
+const placesWhileToggling = async (): Promise<number[]> => {
+  const main = document.querySelector('[role="main"]');
+  const chevron = [...(main?.querySelectorAll("button") ?? [])].find(
+    (button) => button.getAttribute("aria-label") === "Details for key Old tablet",
+  );
+  const row = [...(main?.querySelectorAll("li") ?? [])].find((item) =>
+    (item.textContent ?? "").startsWith("Conference laptop"),
+  );
+  if (chevron === undefined || row === undefined) {
+    return [];
+  }
+  const places = [row.getBoundingClientRect().y];
+  chevron.click();
+  const until = performance.now() + 1000;
+  while (performance.now() < until) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    places.push(row.getBoundingClientRect().y);
+  }
+  return places;
+};
+
 /** Runs in the page: the lines of visible text in each element, such as the rows of a list. */
 const linesOf = (elements: Element[]): string[][] =>
   elements.map((element) => (element instanceof HTMLElement ? element.innerText.split("\n") : []));
@@ -1673,6 +1710,8 @@ test.describe("on a touch screen", () => {
     await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
     const tablet = await detailsOf(key("Old tablet"));
     await expect(tablet).toBeVisible();
+    // The rows glide into place, so where they rest is measured once they stop.
+    await settle(page);
     const tabletRow = await boxOf(main.getByRole("listitem").filter({ hasText: "Old tablet" }));
     expect((await boxOf(tablet)).y, "the details under their row").toBeGreaterThanOrEqual(
       tabletRow.y + tabletRow.height - 1,
@@ -1723,6 +1762,7 @@ test.describe("on a touch screen", () => {
       main.getByRole("button", { name: `Details for mount ${path}`, exact: true });
     await main.getByText("/photos", { exact: true }).tap();
     const photos = await detailsOf(mount("/photos"));
+    await settle(page);
     const bucket = await boxOf(photos.getByText("davloom-photos", { exact: true }));
     const prefix = await boxOf(photos.getByText("None", { exact: true }));
     expect(prefix.y, "the prefix on a line under the bucket").toBeGreaterThanOrEqual(
@@ -1788,6 +1828,33 @@ test.describe("on a touch screen", () => {
     await expect(main.getByRole("listitem").filter({ hasText: "Old tablet" })).toContainText(
       "Revoked",
     );
+  });
+
+  test("Rows that glide: the rows under a row that opens or closes move to their places, at once with reduced motion", async ({
+    page,
+  }) => {
+    for (const motion of ["no-preference", "reduce"] as const) {
+      await page.emulateMedia({ reducedMotion: motion });
+      await page.goto("/credentials");
+      await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(5);
+      // The first tap opens "Old tablet", which moves the row under it down, and the second
+      // closes it, which moves that row back up.
+      for (const tap of ["opening", "closing"] as const) {
+        const places = await page.evaluate(placesWhileToggling);
+        const [first = 0] = places;
+        const last = places.at(-1) ?? first;
+        const moved = tap === "opening" ? last - first : first - last;
+        expect(moved, `how far the row moved, ${tap}, ${motion}`).toBeGreaterThan(50);
+        const top = Math.min(first, last);
+        const bottom = Math.max(first, last);
+        const between = places.filter((place) => place > top + 1 && place < bottom - 1);
+        if (motion === "reduce") {
+          expect(between, `the places between, ${tap} with reduced motion`).toEqual([]);
+        } else {
+          expect(between.length, `the frames between its places, ${tap}`).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 
   test("Holding a row: its background is rounded and stays inside the card", async ({ page }) => {
