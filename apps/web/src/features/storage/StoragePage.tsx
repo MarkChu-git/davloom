@@ -175,7 +175,6 @@ const MountForm = ({
           <VStack gap={4}>
             <TextInput
               label="Folder name"
-              description="Clients see it at the top level, for example /music."
               value={name}
               onChange={(value) => {
                 setName(value);
@@ -218,11 +217,9 @@ const MountForm = ({
             />
             <TextInput
               label="Prefix"
-              description="Only keys under this prefix appear in the mount."
               value={prefix}
               onChange={setPrefix}
               onEnter={submit}
-              placeholder="music/"
               isOptional
               {...identifier}
             />
@@ -275,8 +272,7 @@ export const StoragePage = () => {
   const openRemove = (mount: Mount) =>
     confirm.show({
       title: `Remove ${mount.path}?`,
-      description:
-        "WebDAV clients can no longer reach this folder. The files stay in the bucket, and adding the mount again brings them back.",
+      description: "Its files stay in the bucket.",
       actionLabel: "Remove mount",
       onAction: () => {
         const index = mounts.findIndex((item) => item.id === mount.id);

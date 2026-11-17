@@ -87,7 +87,6 @@ export const UploadPanel = ({
             }
           }}
           placeholder="Drop files here or choose them"
-          description={`Files go to ${path}. One file can be up to 100\u00a0MB on Cloudflare Free.`}
         />
         {uploads.map((upload) => (
           <UploadRow key={upload.id} upload={upload} />

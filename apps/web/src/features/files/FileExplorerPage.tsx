@@ -381,7 +381,7 @@ export const FileExplorerPage = ({
   const openDelete = (names: readonly string[]) =>
     confirm.show({
       title: `Delete ${describe(names)}?`,
-      description: `${names.length === 1 ? "It is" : "They are"} removed from ${path}. WebDAV has no trash, so this cannot be undone.`,
+      description: "This cannot be undone.",
       actionLabel: "Delete",
       onAction: () => {
         const problem = removeEntries(path, new Set(names));
@@ -490,7 +490,7 @@ export const FileExplorerPage = ({
         <Banner
           status="error"
           title={`Cannot list ${path}`}
-          description={`${backend.name} gave ${backend.statusDetail}. Nothing on this mount can be read until it answers.`}
+          description={`${backend.name} gave ${backend.statusDetail}.`}
           endContent={
             <Button
               label="Try again"
@@ -507,7 +507,6 @@ export const FileExplorerPage = ({
       return (
         <EmptyState
           title="This folder does not exist"
-          description="It may have been moved or deleted."
           actions={<Button label="Go to Files" variant="secondary" href="/files" />}
         />
       );
@@ -516,7 +515,6 @@ export const FileExplorerPage = ({
       return (
         <EmptyState
           title={`Nothing here matches “${query.trim()}”`}
-          description="Check the spelling, or clear the search to see everything in this folder."
           actions={
             <Button
               label="Clear search"
@@ -534,9 +532,6 @@ export const FileExplorerPage = ({
       return (
         <EmptyState
           title={isRoot ? "No mounts yet" : "This folder is empty"}
-          description={
-            isRoot ? "Add a mount on Storage & Mounts." : "Upload files or create a folder."
-          }
           actions={
             isRoot ? (
               <Button label="Manage mounts" variant="secondary" href="/storage" />

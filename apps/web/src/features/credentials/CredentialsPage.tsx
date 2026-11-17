@@ -1,5 +1,4 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
@@ -62,15 +61,7 @@ const ShowOnce = ({
     content={
       <LayoutContent>
         <VStack gap={4}>
-          <Banner
-            status="warning"
-            title="Copy the key now"
-            description="Davloom keeps only a hash of it, so this is the one time it can be shown."
-          />
           <CopyField label="API key" value={secret} copyLabel="Copy key" />
-          <Text type="supporting" color="secondary">
-            In a WebDAV client, use this key as the password.
-          </Text>
         </VStack>
       </LayoutContent>
     }
@@ -150,7 +141,6 @@ const CreateKeyForm = ({
                 setProblem(undefined);
               }}
               onEnter={submit}
-              placeholder="Laptop, phone backup, accountant"
               hasAutoFocus
               isRequired
               // Keys are named after devices and people, which spell check would mark as mistakes.
@@ -168,14 +158,12 @@ const CreateKeyForm = ({
             />
             <TextInput
               label="Folder inside the mount"
-              description="Leave empty to allow the whole mount."
               value={folder}
               onChange={(value) => {
                 setFolder(value);
                 setFolderProblem(undefined);
               }}
               onEnter={submit}
-              placeholder="Invoices 2026"
               isOptional
               isDisabled={mount === "all"}
               // The field is off while the key covers every mount, and then shows no error.
@@ -188,12 +176,7 @@ const CreateKeyForm = ({
               hasAutoCorrect={false}
               hasSpellCheck={false}
             />
-            <Switch
-              label="Read only"
-              description="The key can list and download, but cannot change anything."
-              value={isReadOnly}
-              onChange={setIsReadOnly}
-            />
+            <Switch label="Read only" value={isReadOnly} onChange={setIsReadOnly} />
             <Selector
               label="Expires"
               value={expiry}
@@ -244,8 +227,7 @@ export const CredentialsPage = () => {
   const openRevoke = (credential: Credential) =>
     confirm.show({
       title: `Revoke “${credential.name}”?`,
-      description:
-        "Clients that sign in with this key lose access at once. A revoked key cannot be restored.",
+      description: "Clients signed in with it lose access. This cannot be undone.",
       actionLabel: "Revoke",
       onAction: () => {
         credentialStore.setState((items) =>

@@ -378,7 +378,7 @@ const STATES: readonly PageState[] = [
   {
     name: "WebDAV settings",
     path: "/settings?section=webdav",
-    show: (page) => shown(page.getByText(/Clients connect over HTTPS/)),
+    show: (page) => shown(page.getByRole("button", { name: "Copy address" })),
   },
   {
     name: "Appearance settings",

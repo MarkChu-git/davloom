@@ -5,7 +5,6 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Selector } from "@astryxdesign/core/Selector";
@@ -25,7 +24,6 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
-import { useAppearanceMode } from "../appearance/store";
 import { backends, instance } from "../sample-data/data";
 import { CopyField } from "../shell/CopyField";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
@@ -49,22 +47,9 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   about: Info,
 };
 
-const SectionFrame = ({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) => (
+const SectionFrame = ({ title, children }: { title: string; children: ReactNode }) => (
   <VStack gap={5}>
-    <VStack gap={1}>
-      <Heading level={2}>{title}</Heading>
-      <Text type="supporting" color="secondary">
-        {description}
-      </Text>
-    </VStack>
+    <Heading level={2}>{title}</Heading>
     {children}
   </VStack>
 );
@@ -107,10 +92,7 @@ const ProfileSection = () => {
     }
   };
   return (
-    <SectionFrame
-      title="Profile"
-      description="How Davloom addresses you, and where it sends account mail."
-    >
+    <SectionFrame title="Profile">
       <FormLayout>
         <TextInput
           label="Display name"
@@ -155,10 +137,7 @@ const SecuritySection = () => {
   const toast = useToast();
   const sessions = useSessions();
   return (
-    <SectionFrame
-      title="Sign-in and security"
-      description="How you sign in to the Dashboard. WebDAV clients sign in with keys from Credentials."
-    >
+    <SectionFrame title="Sign-in and security">
       <VStack gap={0}>
         <Divider />
         <Row
@@ -229,34 +208,15 @@ const SecuritySection = () => {
   );
 };
 
-const AppearanceSection = () => {
-  const isSystemDark = useMediaQuery("(prefers-color-scheme: dark)");
-  const mode = useAppearanceMode();
-  return (
-    <SectionFrame
-      title="Appearance"
-      description="Davloom is black, white and grays. Choose which way round, or follow the system."
-    >
-      <AppearanceSwitch />
-      <Text type="supporting" color="secondary">
-        {mode === "system"
-          ? `Following the system, which is ${isSystemDark ? "dark" : "light"} right now.`
-          : `Always ${mode}, whatever the system uses. This browser remembers the choice.`}
-      </Text>
-    </SectionFrame>
-  );
-};
+const AppearanceSection = () => (
+  <SectionFrame title="Appearance">
+    <AppearanceSwitch />
+  </SectionFrame>
+);
 
 const WebDavSection = () => (
-  <SectionFrame title="WebDAV" description="How clients reach your files.">
+  <SectionFrame title="WebDAV">
     <CopyField label="Address" value={instance.webdavUrl} copyLabel="Copy address" />
-    <Text type="supporting" color="secondary">
-      Clients connect over HTTPS and sign in with a key from{" "}
-      <Link href="/credentials" hasUnderline>
-        Credentials
-      </Link>
-      , not with your account password.
-    </Text>
   </SectionFrame>
 );
 
@@ -265,10 +225,9 @@ const StorageSection = () => {
   const saved = useDefaultBackendId();
   const [defaultBackendId, setDefaultBackendId] = useState(saved);
   return (
-    <SectionFrame title="Storage" description="Defaults for storage you add later.">
+    <SectionFrame title="Storage">
       <Selector
         label="Default backend for new mounts"
-        description="Add a mount on Storage & Mounts and this backend is chosen for it."
         value={defaultBackendId}
         onChange={setDefaultBackendId}
         options={backends.map((backend) => ({ value: backend.id, label: backend.name }))}
@@ -295,10 +254,7 @@ const ExportSection = () => {
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   return (
-    <SectionFrame
-      title="Data export"
-      description="Saves this instance's data to a file. Keys and other secrets are never exported in plaintext."
-    >
+    <SectionFrame title="Data export">
       <HStack>
         <Button
           label="Export"
@@ -320,7 +276,7 @@ const ExportSection = () => {
 };
 
 const AboutSection = () => (
-  <SectionFrame title="About this instance" description="What this Davloom runs on.">
+  <SectionFrame title="About this instance">
     <MetadataList>
       <MetadataListItem label="Name">{instance.name}</MetadataListItem>
       <MetadataListItem label="Version">{instance.version}</MetadataListItem>
