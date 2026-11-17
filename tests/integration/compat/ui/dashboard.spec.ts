@@ -1996,6 +1996,19 @@ test("Focusing a chart: a click draws no ring, and the keyboard draws the theme'
   expect(ring.isTheme).toBe(true);
 });
 
+test("The address field's name: a screen reader hears the field's label alone", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("textbox", { name: "WebDAV address", exact: true })).toHaveValue(
+    /^https:\/\//,
+  );
+  await page.goto("/settings?section=webdav");
+  await expect(page.getByRole("textbox", { name: "Address", exact: true })).toHaveValue(
+    /^https:\/\//,
+  );
+});
+
 test("Opening the form again: the mount form starts from its own mount or the defaults", async ({
   page,
 }) => {
