@@ -1497,15 +1497,26 @@ test.describe("in a window 375 px wide", () => {
             (button.getAttribute("aria-label") ?? "").replace("Actions for ", ""),
           ),
         );
+    // The menu stands where the Name header stood, and its button names the order in use.
+    const menu = (named: string) =>
+      main.getByRole("columnheader", { name: named }).getByRole("button", { name: named });
     const sortBy = async (current: string, choice: string, next: string) => {
-      await main.getByRole("button", { name: current }).click();
+      await expect(menu(current), "the sort menu in the Name header's place").toBeVisible();
+      await menu(current).click();
       await page.getByRole("menuitemradio", { name: choice }).click();
-      await expect(main.getByRole("button", { name: next })).toBeVisible();
+      await expect(menu(next)).toBeVisible();
     };
     const FOLDERS = ["Contracts", "Drafts", "Invoices 2026", "Scans"];
     const EXPORT =
       "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
     const REPORT = "Quarterly report — Q3 2026, final version (signed by both parties).pdf";
+    const BY_NAME = [
+      EXPORT,
+      "budget-2027.xlsx",
+      "meeting-notes-2026-11-14.md",
+      REPORT,
+      "README.txt",
+    ];
     const BY_SIZE = [
       "README.txt",
       "meeting-notes-2026-11-14.md",
@@ -1513,30 +1524,35 @@ test.describe("in a window 375 px wide", () => {
       EXPORT,
       REPORT,
     ];
+    const BY_TIME = [
+      "README.txt",
+      REPORT,
+      "meeting-notes-2026-11-14.md",
+      "budget-2027.xlsx",
+      EXPORT,
+    ];
+    const FOLDERS_BY_TIME = ["Scans", "Contracts", "Invoices 2026", "Drafts"];
+    // Folders of one size keep no order of their own among themselves.
     const foldersThenFiles = async (files: string[]) => {
       const names = await order();
       expect(names.slice(0, FOLDERS.length).toSorted()).toEqual(FOLDERS);
       expect(names.slice(FOLDERS.length)).toEqual(files);
     };
 
-    await sortBy("Name, A to Z", "Size", "Size, smallest first");
-    await foldersThenFiles(BY_SIZE);
-    await sortBy("Size, smallest first", "Largest first", "Size, largest first");
-    await foldersThenFiles(BY_SIZE.toReversed());
+    await expect(menu("Name, A to Z"), "the sort menu in the Name header's place").toBeVisible();
+    expect(await order()).toEqual([...FOLDERS, ...BY_NAME]);
+    await sortBy("Name, A to Z", "Z to A", "Name, Z to A");
+    expect(await order()).toEqual([...FOLDERS.toReversed(), ...BY_NAME.toReversed()]);
     // A new key keeps the order's direction.
-    await sortBy("Size, largest first", "Modified", "Modified, newest first");
-    const BY_TIME = [
-      "Drafts",
-      "Invoices 2026",
-      "Contracts",
-      "Scans",
-      EXPORT,
-      "budget-2027.xlsx",
-      "meeting-notes-2026-11-14.md",
-      REPORT,
-      "README.txt",
-    ];
-    expect(await order()).toEqual(BY_TIME);
+    await sortBy("Name, Z to A", "Size", "Size, largest first");
+    await foldersThenFiles(BY_SIZE.toReversed());
+    await sortBy("Size, largest first", "Smallest first", "Size, smallest first");
+    await foldersThenFiles(BY_SIZE);
+    await sortBy("Size, smallest first", "Modified", "Modified, oldest first");
+    expect(await order()).toEqual([...FOLDERS_BY_TIME, ...BY_TIME]);
+    await sortBy("Modified, oldest first", "Newest first", "Modified, newest first");
+    const NEWEST_FIRST = [...FOLDERS_BY_TIME.toReversed(), ...BY_TIME.toReversed()];
+    expect(await order()).toEqual(NEWEST_FIRST);
 
     // A wider window brings the columns back in the same order, which the Modified header shows.
     await page.setViewportSize({ width: 1280, height: 812 });
@@ -1544,7 +1560,7 @@ test.describe("in a window 375 px wide", () => {
       "aria-sort",
       "descending",
     );
-    expect(await order()).toEqual(BY_TIME);
+    expect(await order()).toEqual(NEWEST_FIRST);
   });
 });
 
