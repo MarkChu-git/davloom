@@ -2,7 +2,7 @@
 
 ## Why
 
-On 2026-11-16 the owner asked to see the Dashboard before the API it will call exists, so that the pages in PRD §8 can be judged early, and asked for a black-and-white look in place of the colored neutral theme. Phases 1 to 3 have not built storage, the WebDAV protocol or credentials yet, so the pages run on sample data in the browser. On 2026-11-17 the owner reviewed the prototype and asked for a side navigation after Linear's that can be resized and folded, an Overview that shows its figures as charts, and no explanatory or defensive text.
+On 2026-11-16 the owner asked to see the Dashboard before the API it will call exists, so that the pages in PRD §8 can be judged early, and asked for a black-and-white look in place of the colored neutral theme. Phases 1 to 3 have not built storage, the WebDAV protocol or credentials yet, so the pages run on sample data in the browser. On 2026-11-17 the owner reviewed the prototype and asked for a side navigation after Linear's that can be resized and folded, an Overview that shows its figures as charts, no explanatory or defensive text, and color wherever it belongs, with gray and white as the main colors.
 
 ## What Changes
 
@@ -16,7 +16,7 @@ On 2026-11-16 the owner asked to see the Dashboard before the API it will call e
 - Keep the rules that stand in for the server's answers in their own TypeScript modules, and check their laws with fast-check property tests.
 - Move keyboard focus to the control that takes the place of one that a change removes, and back to the control that opened a dialog once the dialog closes.
 - Leave out explanatory and defensive text, such as page and field descriptions, placeholders, notes and warnings, and keep labels, values, statuses, errors with their reasons and one sentence of consequence in each confirmation.
-- Make the Davloom Theme black, white and grays in light and dark mode. Statuses differ by icon and words instead of hue, and their lightness ranks them. Selected text, spelling marks and the controls the browser draws are gray too.
+- Make the Davloom Theme gray and white in light and dark mode, with hues only for statuses: errors red, warnings amber, success green and information blue, which destructive actions and the chart's failed hours share. Statuses keep their icons and words. Selected text and the controls the browser draws are gray, and spelling and grammar marks take the error and information colors.
 - Declare light and dark to the browser, set the scheme in use on the root element before the first paint, apply an appearance change to every open tab, and move the appearance control into Settings.
 - Replace the placeholder root page with Overview. `/design-check` stays outside the shell for the compatibility tests.
 - Add `lucide-react` as a direct dependency of `apps/web` for icons, `@tanstack/charts` and `d3-shape` for the Overview's charts, and `fast-check` as a dev dependency for the property tests.
@@ -36,11 +36,11 @@ Out of scope: calls to the management API or to WebDAV, which wait for Phases 1 
 
 ### Modified Capabilities
 
-- `dashboard-appearance`: adds the black, white and gray palette, the color schemes the page declares and the one its root uses, and appearance changes that reach every open tab.
+- `dashboard-appearance`: adds the gray and white palette with its status colors, the color schemes the page declares and the one its root uses, and appearance changes that reach every open tab.
 
 ## Impact
 
 - Code: `apps/web/src/routes` (a pathless `_dashboard` layout and five routes; the old root page is removed), `apps/web/src/features`, `apps/web/src/router.tsx`, `packages/ui/src/tokens` and the regenerated `packages/ui/src/themes`, plus unit tests for the theme and the stand-in rules and browser tests for appearance and navigation.
 - Dependencies: `lucide-react` 1.73.0 and `fast-check` 4.10.2, the npm `latest` versions. `bun.lock` already held `lucide-react` 1.69.0 for `@astryxdesign/theme-neutral` (`^1.66.0`), and that entry moves to 1.73.0, so both use one copy. `@tanstack/charts` 1.5.0 and `d3-shape` 3.2.1, with `@types/d3-shape` 3.2.0 as a dev dependency, are npm `latest` too, and `bun.lock` gains the D3 modules they pin (design.md, Decision 8).
 - APIs and servers: none change. Workers and Bun serve the same static build.
-- Approvals: the owner asked in chat for the prototype and the black-and-white theme, and after the review for the side navigation, the charts, TanStack Charts by name, and the removal of explanatory text. The phases and scope in `prd.md` do not change, and no law is added to `LAWS.bend`. Keeping the stand-in rules in TypeScript is an exception to PRD §4 that the owner decides (design.md, Decision 2); the pull request waits for that decision in chat.
+- Approvals: the owner asked in chat for the prototype and the black-and-white theme, and after the review for the side navigation, the charts, TanStack Charts by name, the removal of explanatory text, and color for statuses. The phases and scope in `prd.md` do not change, and no law is added to `LAWS.bend`. Keeping the stand-in rules in TypeScript is an exception to PRD §4 that the owner decides (design.md, Decision 2); the pull request waits for that decision in chat.
