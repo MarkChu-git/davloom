@@ -85,7 +85,11 @@ const ABOVE_THE_PLOT = {
   portal,
 } as const;
 
-/** Chart text in pixels, as charts measure it: the theme's extra-small size at a 16 px root. */
+/**
+ * Axis and bar labels in pixels, as TanStack Charts measures them: the theme's small size at a
+ * 16 px root. The tooltip takes the theme's extra-small size instead, 10 px with a mouse and 12 px
+ * where a touch screen's type scale is a step larger.
+ */
 const TEXT_SIZE = 12;
 
 const narrowHours = new Intl.RelativeTimeFormat("en", { numeric: "auto", style: "narrow" });
