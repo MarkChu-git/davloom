@@ -809,7 +809,7 @@ const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue
   },
   {
     name: "a color two steps apart in color()",
-    css: "h1 { color: color(srgb 0.5 0.5 0.5079); }",
+    css: "h1 { color: color(srgb 0.5 0.5 0.5078); }",
     hasHue: true,
   },
   { name: "the error color", css: "h1 { color: var(--color-text-error); }", hasHue: false },
@@ -1401,7 +1401,7 @@ test.describe("in a window 1024 px wide", () => {
     await expect(laptop).toContainText("Read and write · All mounts");
     await expect(
       laptop.getByRole("button", { name: "Actions for key Laptop (Finder)" }),
-    ).toBeInViewport();
+    ).toBeInViewport({ ratio: 1 });
     await expect(page.getByRole("table")).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 768 });
     await expect(page.getByRole("columnheader", { name: "Scope" })).toBeVisible();
