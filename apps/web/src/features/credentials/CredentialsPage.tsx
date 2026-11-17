@@ -362,6 +362,7 @@ export const CredentialsPage = () => {
                     <SummaryRow
                       key={credential.id}
                       title={credential.name}
+                      code={`${credential.prefix}…`}
                       status={<KeyStatus credential={credential} />}
                       details={[
                         `${accessOf(credential)} · ${credential.scope}`,

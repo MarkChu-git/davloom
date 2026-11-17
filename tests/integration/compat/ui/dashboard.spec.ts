@@ -1379,6 +1379,7 @@ test.describe("in a window 375 px wide", () => {
     const keys = main.getByRole("listitem");
     await expect(keys).toHaveCount(5);
     const laptop = keys.filter({ hasText: "Laptop (Finder)" });
+    await expect(laptop).toContainText("dvl_7Q2M…");
     await expect(laptop).toContainText("Active");
     await expect(laptop).toContainText("Read and write · All mounts");
     await expect(laptop).toContainText("Used 2 minutes ago · Never expires");
@@ -1391,6 +1392,42 @@ test.describe("in a window 375 px wide", () => {
         true,
       );
     }
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+
+    // Each name has a line of its own, so even the narrowest phone shows it whole. Under it, a
+    // key's first characters share a line with its status, and the statuses end in one column.
+    const KEYS = [
+      ["Laptop (Finder)", "Active"],
+      ["Phone photo backup", "Active"],
+      ["Accountant, invoices only", "Active"],
+      ["Old tablet", "Revoked"],
+      ["Conference laptop", "Expired"],
+    ] as const;
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 });
+      const ends = new Set<number>();
+      for (const [name, state] of KEYS) {
+        const key = keys.filter({ hasText: name });
+        const title = key.getByText(name, { exact: true });
+        const where = `${name} at ${width} px`;
+        expect(
+          await title.evaluate((element) => element.scrollWidth <= element.clientWidth),
+          where,
+        ).toBe(true);
+        const titleBox = await boxOf(title);
+        const prefix = await boxOf(key.getByText(/^dvl_\w{4}…$/));
+        const status = await boxOf(key.getByText(state, { exact: true }));
+        expect(prefix.y, where).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
+        expect(
+          Math.abs(prefix.y + prefix.height / 2 - (status.y + status.height / 2)),
+          where,
+        ).toBeLessThanOrEqual(2);
+        expect(status.x, where).toBeGreaterThan(prefix.x + prefix.width);
+        ends.add(Math.round(status.x + status.width));
+      }
+      expect([...ends], `the statuses' ends at ${width} px`).toHaveLength(1);
+    }
+    await page.setViewportSize({ width: 375, height: 812 });
 
     await page.goto("/storage");
     await expect(page.getByRole("table")).toHaveCount(0);
