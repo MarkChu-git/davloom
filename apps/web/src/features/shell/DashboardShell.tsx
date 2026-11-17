@@ -65,8 +65,9 @@ const MANAGE_ITEMS: NavEntry[] = [
 const SETTINGS: NavEntry = { label: "Settings", href: "/settings", ...navIcons(Settings) };
 
 /**
- * Width of the side navigation in pixels. Dragging its edge below the minimum folds it to the icon
- * rail, and the browser keeps the chosen width and state between visits.
+ * Width of the side navigation in pixels. Astryx SideNav folds it to the icon rail when its edge is
+ * let go narrower than 160 px, and springs it back to the minimum from between 160 px and the
+ * minimum. The browser keeps the chosen width and state between visits.
  */
 const NAV_WIDTH = { defaultWidth: 248, minWidth: 200, maxWidth: 400 } as const;
 

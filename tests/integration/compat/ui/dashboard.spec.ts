@@ -822,6 +822,9 @@ test("Moving between pages: the side navigation changes the page without a reloa
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 });
 
+/** The icon of the Storage & Mounts row, a drive, as Lucide names it. */
+const driveIcon = (scope: Locator) => scope.locator("svg.lucide-hard-drive");
+
 test("Storage status in the navigation: an unreachable backend marks Storage & Mounts on every page", async ({
   page,
 }) => {
@@ -841,20 +844,45 @@ test("Storage status in the navigation: an unreachable backend marks Storage & M
   }
 
   // The rail draws only icons, so the glyph takes the row's icon and the status joins its name.
+  await expect(
+    driveIcon(navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ })),
+  ).toHaveCount(1);
   await navigation.getByRole("button", { name: "Collapse sidebar" }).click();
   const link = navigation.getByRole("link", { name: "Storage & Mounts, 1 backend unreachable" });
   await expect(link).toBeVisible();
   await expect(link.locator('[data-color="error"]')).toBeVisible();
+  await expect(driveIcon(link)).toHaveCount(0);
   await link.hover();
   await expect(page.getByRole("tooltip")).toHaveText("Storage & Mounts, 1 backend unreachable");
 });
 
-test("Resizing the side navigation: its edge drags wider and folds it to the rail past the minimum", async ({
+/**
+ * Drags the side navigation's edge by `by` pixels and lets it go at rest. Astryx reads a pointer
+ * that stood still for 40 ms before it lifted as one without velocity, so the edge settles where
+ * it was let go instead of being flung on.
+ */
+const dragNavigationEdge = async (page: Page, by: number) => {
+  const box = await page.getByRole("separator", { name: "Resize sidebar" }).boundingBox();
+  if (box === null) {
+    throw new Error("The resize handle has no box.");
+  }
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + by, y, { steps: 8 });
+  await page.waitForTimeout(100);
+  await page.mouse.up();
+};
+
+test("Resizing the side navigation: its edge resizes it between 200 and 400 px and folds it to the rail under 160 px", async ({
   page,
 }) => {
   await page.goto("/");
   const navigation = sideNavigation(page);
   const handle = page.getByRole("separator", { name: "Resize sidebar" });
+  const expand = navigation.getByRole("button", { name: "Expand sidebar" });
+  const size = async () => Number(await handle.getAttribute("aria-valuenow"));
   const width = async () => (await navigation.boundingBox())?.width ?? 0;
   await expect(handle).toHaveAttribute("aria-valuenow", "248");
   expect(await width()).toBe(248);
@@ -862,35 +890,40 @@ test("Resizing the side navigation: its edge drags wider and folds it to the rai
   // The edge also moves from the keyboard, as a separator does.
   await handle.focus();
   await page.keyboard.press("ArrowRight");
-  const stepped = Number(await handle.getAttribute("aria-valuenow"));
+  const stepped = await size();
   expect(stepped).toBeGreaterThan(248);
 
-  const drag = async (by: number) => {
-    const box = await handle.boundingBox();
-    if (box === null) {
-      throw new Error("The resize handle has no box.");
-    }
-    const y = box.y + box.height / 2;
-    await page.mouse.move(box.x + box.width / 2, y);
-    await page.mouse.down();
-    await page.mouse.move(box.x + box.width / 2 + by, y, { steps: 8 });
-    await page.mouse.up();
-  };
+  const drag = (by: number) => dragNavigationEdge(page, by);
+  /** Lets the edge go where the navigation would be `target` pixels wide. */
+  const dragTo = async (target: number) => drag(target - (await size()));
 
   await drag(80);
   await expect(handle).toHaveAttribute("aria-valuenow", String(stepped + 80));
   expect(await width()).toBe(stepped + 80);
 
-  // Narrower than the minimum, the navigation folds to its rail, and stays folded after a reload.
-  await drag(-400);
-  await expect(navigation.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  // The edge stops at the maximum.
+  await drag(200);
+  await expect(handle).toHaveAttribute("aria-valuenow", "400");
+  expect(await width()).toBe(400);
+
+  // Let go between 160 px and the minimum, the navigation comes back to the minimum.
+  await dragTo(180);
+  await expect(handle).toHaveAttribute("aria-valuenow", "200");
+  expect(await width()).toBe(200);
+
+  // Let go narrower than 160 px, it folds to its rail, and stays folded after a reload.
+  await dragTo(150);
+  await expect(expand).toBeVisible();
   await expect(handle).toBeHidden();
   await page.reload();
-  await expect(navigation.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  await expect(expand).toBeVisible();
 
-  // Opening it again restores the width it had.
-  await navigation.getByRole("button", { name: "Expand sidebar" }).click();
-  await expect(handle).toHaveAttribute("aria-valuenow", String(stepped + 80));
+  // Opening it again restores the width it had before folding, and Enter on the edge folds it.
+  await expand.click();
+  await expect(handle).toHaveAttribute("aria-valuenow", "200");
+  await handle.focus();
+  await page.keyboard.press("Enter");
+  await expect(expand).toBeVisible();
 });
 
 const left = async (target: Locator): Promise<number> => {
