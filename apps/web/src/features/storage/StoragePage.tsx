@@ -313,8 +313,13 @@ export const StoragePage = () => {
           toast({ body: mount === undefined ? `Added ${saved.path}.` : `Saved ${saved.path}.` });
         }}
       />,
-      // Edit opens from the mount's menu, which is gone once the dialog is open.
-      mount === undefined ? undefined : () => buttonLabelled(`Actions for mount ${mount.path}`),
+      // Edit opens from the mount's menu, which is gone once the dialog is open, or on a phone from
+      // the mount's details, whose button a tap does not focus in every browser.
+      mount === undefined
+        ? undefined
+        : () =>
+            buttonLabelled(`Actions for mount ${mount.path}`) ??
+            buttonLabelled(`Details for mount ${mount.path}`),
     );
 
   const openRemove = (mount: Mount) =>

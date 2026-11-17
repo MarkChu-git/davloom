@@ -1212,6 +1212,7 @@ const insideWindow = async (target: Locator, width: number): Promise<boolean> =>
 
 /** The details a row's toggle opens, found by the id its `aria-controls` names. */
 const detailsOf = async (toggle: Locator): Promise<Locator> => {
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
   const id = await toggle.getAttribute("aria-controls");
   if (id === null) {
     throw new Error("The row is closed.");
@@ -1454,7 +1455,7 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
 test.describe("in a window 1024 px wide", () => {
   test.use({ viewport: { width: 1024, height: 768 } });
 
-  test("Tables beside the navigation: no page scrolls sideways, so every row's actions are in view", async ({
+  test("Tables beside the navigation: no page scrolls sideways, so every row's actions or chevron are in view", async ({
     page,
   }) => {
     for (const { path, name } of [...PAGES, { path: "/files?path=%2Fdocuments", name: "Files" }]) {
@@ -1468,9 +1469,13 @@ test.describe("in a window 1024 px wide", () => {
 
     // Credentials lists each key as a row here, and gives each detail a column where there is room.
     await page.goto("/credentials");
-    await expect(
-      page.getByRole("main").getByRole("button", { name: "Details for key Laptop (Finder)" }),
-    ).toBeInViewport({ ratio: 1 });
+    const chevrons = page.getByRole("main").getByRole("button", { name: /^Details for key / });
+    await expect(chevrons).toHaveCount(5);
+    for (const chevron of await chevrons.all()) {
+      await expect(chevron).toBeInViewport({ ratio: 1 });
+    }
+    await chevrons.first().hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Details for key Laptop (Finder)");
     await expect(page.getByRole("table")).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 768 });
     await expect(page.getByRole("columnheader", { name: "Scope" })).toBeVisible();
@@ -1668,6 +1673,12 @@ test.describe("on a touch screen", () => {
     await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
     const tablet = await detailsOf(key("Old tablet"));
     await expect(tablet).toBeVisible();
+    const tabletRow = await boxOf(main.getByRole("listitem").filter({ hasText: "Old tablet" }));
+    expect((await boxOf(tablet)).y, "the details under their row").toBeGreaterThanOrEqual(
+      tabletRow.y + tabletRow.height - 1,
+    );
+    // The details are a group named for their key, so a screen reader says whose they are.
+    await expect(main.getByRole("group", { name: "Details for key Old tablet" })).toBeVisible();
     for (const words of ["Read only", "All mounts", "2 months ago"]) {
       await expect(tablet.getByText(words, { exact: true })).toBeVisible();
     }
@@ -1712,10 +1723,26 @@ test.describe("on a touch screen", () => {
       main.getByRole("button", { name: `Details for mount ${path}`, exact: true });
     await main.getByText("/photos", { exact: true }).tap();
     const photos = await detailsOf(mount("/photos"));
-    await expect(photos.getByText("davloom-photos", { exact: true })).toBeVisible();
-    await expect(photos.getByText("None", { exact: true })).toBeVisible();
-    await photos.getByRole("button", { name: "Edit" }).tap();
+    const bucket = await boxOf(photos.getByText("davloom-photos", { exact: true }));
+    const prefix = await boxOf(photos.getByText("None", { exact: true }));
+    expect(prefix.y, "the prefix on a line under the bucket").toBeGreaterThanOrEqual(
+      bucket.y + bucket.height - 1,
+    );
     const form = page.getByRole("dialog");
+    // Safari does not focus a button it taps, so Edit's dialog then returns focus to the chevron.
+    // This runs first, while nothing else on the page is still watching where focus goes.
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    });
+    await photos.getByRole("button", { name: "Edit" }).dispatchEvent("click");
+    await expect(form).toContainText("Edit /photos");
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
+    await expect(mount("/photos")).toBeFocused();
+    // A browser that focuses the button it taps gets focus back on Edit.
+    await photos.getByRole("button", { name: "Edit" }).tap();
     await expect(form).toContainText("Edit /photos");
     await form.getByRole("button", { name: "Cancel" }).tap();
     await expect(form).toHaveCount(0);
@@ -1731,6 +1758,36 @@ test.describe("on a touch screen", () => {
     await expect(mount("/shared")).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(mount("/shared")).toHaveAttribute("aria-expanded", "true");
+
+    // A mount added again under the removed one's name starts closed.
+    await page.getByRole("button", { name: "Add mount", exact: true }).tap();
+    const added = page.getByRole("dialog");
+    await added.getByLabel("Folder name").fill("photos");
+    await added.getByRole("button", { name: "Add mount" }).tap();
+    await expect(added).toHaveCount(0);
+    await expect(mount("/photos")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("A revoked key past its expiry: its row says Expired with the date, as an expired key's does", async ({
+    page,
+  }) => {
+    await page.goto("/credentials");
+    const main = page.getByRole("main");
+    // Before its expiry time a key says Expires instead.
+    for (const [name, label, date] of [
+      ["Old tablet", "Expired", "Sep 30, 2026"],
+      ["Conference laptop", "Expired", "Oct 31, 2026"],
+      ["Phone photo backup", "Expires", "May 1, 2027"],
+    ] as const) {
+      const toggle = main.getByRole("button", { name: `Details for key ${name}`, exact: true });
+      await toggle.tap();
+      const details = await detailsOf(toggle);
+      await expect(details.getByText(label, { exact: true }), name).toBeVisible();
+      await expect(details.getByText(date, { exact: true }), name).toBeVisible();
+    }
+    await expect(main.getByRole("listitem").filter({ hasText: "Old tablet" })).toContainText(
+      "Revoked",
+    );
   });
 
   test("Holding a row: its background is rounded and stays inside the card", async ({ page }) => {

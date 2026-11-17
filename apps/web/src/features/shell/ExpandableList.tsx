@@ -16,19 +16,13 @@ export interface ExpandableRecord {
   summary: ReactNode;
   /** What opening the row shows under it: the record's other details, then its actions. */
   details: ReactNode;
-  /** The name of the row's toggle, such as "Details for key Laptop", for assistive technology. */
+  /** The name of the row's chevron and of its details, such as "Details for key Laptop". */
   toggleLabel: string;
 }
 
-const Row = ({
-  record,
-  isOpen,
-  onToggle,
-}: {
-  record: ExpandableRecord;
-  isOpen: boolean;
-  onToggle: () => void;
-}) => {
+const Row = ({ record }: { record: ExpandableRecord }) => {
+  // Each row keeps its own state, so a record that is removed and added again starts closed.
+  const [isOpen, setIsOpen] = useState(false);
   // The chevron is the row's one control, so it tells assistive technology whether the details
   // are open. A tap anywhere on the row presses it (ListItem interactiveRef).
   const toggle = useRef<HTMLButtonElement>(null);
@@ -47,21 +41,24 @@ const Row = ({
           <IconButton
             ref={toggle}
             label={record.toggleLabel}
+            tooltip={record.toggleLabel}
             variant="ghost"
             size="sm"
             icon={<Icon icon={isOpen ? ChevronUp : ChevronDown} size="sm" />}
             aria-expanded={isOpen}
             aria-controls={isOpen ? detailsId : undefined}
-            onClick={onToggle}
+            onClick={() => setIsOpen((open) => !open)}
           />
         }
         interactiveRef={toggle}
       />
       {isOpen ? (
+        // The ids of keys and mounts never hold a slash, so this key cannot be another row's.
         <ListItem
-          itemKey={`${record.id} details`}
+          itemKey={`${record.id}/details`}
           label={
-            <VStack id={detailsId} gap={4}>
+            // Named like the chevron, so a screen reader says whose details these are.
+            <VStack id={detailsId} role="group" aria-label={record.toggleLabel} gap={4}>
               {record.details}
             </VStack>
           }
@@ -91,25 +88,11 @@ export const ExpandableList = ({
   const cardRef = useMergedRefs(card, ref);
   // Opening and closing a row moves the rows under it into place rather than at once.
   const animatedLayout = useAnimatedLayout({ containerRef: card });
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const toggle = (id: string) =>
-    setOpen((current) => {
-      const next = new Set(current);
-      if (!next.delete(id)) {
-        next.add(id);
-      }
-      return next;
-    });
   return (
     <Card ref={cardRef} elevation="low">
       <List edge="padded" animatedLayout={animatedLayout}>
         {records.map((record) => (
-          <Row
-            key={record.id}
-            record={record}
-            isOpen={open.has(record.id)}
-            onToggle={() => toggle(record.id)}
-          />
+          <Row key={record.id} record={record} />
         ))}
       </List>
     </Card>
