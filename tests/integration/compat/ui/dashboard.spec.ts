@@ -2696,6 +2696,15 @@ test("Reading the timeline: the errors lie along the last day, the last hour ove
     }
   });
   await expectAxisOnGrid(page);
+  // Every stem is drawn before every marker, so a stem rising to the upper lane passes behind a
+  // marker on the lower one.
+  const layers = await chart.evaluate((svg) =>
+    [...svg.querySelectorAll('line[data-ts-key$=":stem"], circle[r="20"]')].map(
+      (node) => node.tagName,
+    ),
+  );
+  expect(layers.filter((tag) => tag === "line")).toHaveLength(4);
+  expect(layers.lastIndexOf("line")).toBeLessThan(layers.indexOf("circle"));
 
   // Pointing at a marker shows its error's name and details.
   await page.mouse.move(budget.x, budget.y);

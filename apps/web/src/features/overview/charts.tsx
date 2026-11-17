@@ -431,9 +431,23 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
       const axis = chart.y + chart.height;
       const centers = lastDay.map((error) => x.map(agePosition(error)));
       const lanes = lanesFor(centers, LANE_STEP, LANES);
+      const heightOf = (index: number): number =>
+        axis - STEM - MARKER - (lanes[index] ?? 0) * LANE_STEP;
+      // Every stem lies under every marker, so a stem rising to the upper lane passes behind a
+      // marker on the lower one rather than across its picture.
+      const stems = lastDay.map((error, index): SceneNode => ({
+        kind: "rule",
+        key: `${id}:${error.id}:stem`,
+        x1: centers[index] ?? 0,
+        y1: axis,
+        x2: centers[index] ?? 0,
+        y2: heightOf(index) + MARKER,
+        ariaHidden: true,
+        style: { stroke: AXIS_LINE, strokeWidth: 1 },
+      }));
       const markers: SceneNode[] = lastDay.flatMap((error, index): SceneNode[] => {
         const cx = centers[index] ?? 0;
-        const cy = axis - STEM - MARKER - (lanes[index] ?? 0) * LANE_STEP;
+        const cy = heightOf(index);
         const key = `${id}:${error.id}`;
         const point: ChartPoint<OperationError, number, number> = {
           key,
@@ -449,16 +463,6 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
           color: GLYPH,
         };
         return [
-          {
-            kind: "rule",
-            key: `${key}:stem`,
-            x1: cx,
-            y1: axis,
-            x2: cx,
-            y2: cy + MARKER,
-            ariaHidden: true,
-            style: { stroke: AXIS_LINE, strokeWidth: 1 },
-          },
           {
             kind: "dot",
             key,
@@ -510,6 +514,7 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
                 y2: axis,
                 style: { stroke: AXIS_LINE, strokeWidth: 1 },
               },
+              ...stems,
               ...markers,
             ],
           },

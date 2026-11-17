@@ -40,8 +40,10 @@ const FAILED = cause("Failed", CircleX);
 
 /**
  * Why an operation failed. A MOVE or COPY with `Overwrite: F` onto a name that exists fails with
- * 412. Another request fails with 412 when a precondition of its own no longer holds, such as an
- * `If-Match` on a file changed since, so only those two read as a name that already exists.
+ * 412, so a 412 from those two reads as a name that already exists. Any request, those two
+ * included, also fails with 412 when a precondition of its own no longer holds, such as an
+ * `If-Match` on a file changed since. Telling the two apart needs the request's headers, which the
+ * sample errors do not hold (design.md, Open Questions).
  */
 export const causeOf = (error: OperationError): Cause => {
   if (error.status === 412) {
