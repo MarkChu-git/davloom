@@ -84,8 +84,44 @@ The Overview SHALL show the WebDAV address in a read-only field the user can sel
 - **THEN** it hears it named "WebDAV address", its label alone
 
 ### Requirement: Recent operation errors
-The Overview SHALL list recent failed operations with when they happened, the method and path, the status code in the error color, and the reason in words.
+The Overview SHALL show each recent failed operation as a picture of its cause, named for assistive technology, the name of the file or folder it failed on, shortened from its start so that its extension stays whole, and how long ago it failed. Its details SHALL show the status code in the error color with the cause in words, the method and path, the reason in words, and when it failed.
 
 #### Scenario: A rejected upload
-- **WHEN** a user opens the Overview
-- **THEN** the list of recent operation errors includes a PUT that failed with status 413 because uploads over 100 MB do not fit one request on Cloudflare Free
+- **WHEN** a user opens the Overview and opens the details of `holiday.mov`
+- **THEN** the recent operation errors show `holiday.mov` with a picture named Too large and 5h, and its details show 413 in the error color with Too large, PUT `/photos/2026/holiday.mov`, that uploads over 100 MB do not fit one request on Cloudflare Free, and 5 hours ago
+
+### Requirement: Views of recent errors
+The recent operation errors SHALL offer three views, a list, a timeline and tiles, through a control beside their title whose choices are pictures named for assistive technology and in a tooltip. A tooltip SHALL repeat its choice's name without also describing the choice, so that assistive technology reads the name once. The list SHALL show first, and the view chosen SHALL last for the visit.
+
+#### Scenario: Choosing a view
+- **WHEN** a user on the Overview points at each choice beside Recent operation errors, chooses Timeline, opens Files, comes back to the Overview, and reloads the page
+- **THEN** each choice is a picture with its name in a tooltip, which assistive technology hears as the choice's name and not again as its description, the list shows first, the timeline shows once Timeline is chosen and again after the return, and the list shows after the reload
+
+### Requirement: Errors as a list
+The list SHALL give each error one line, starting where the panel's title does, with a chevron at its end. A tap anywhere on the line, or on its chevron, SHALL open the error's details under it in place, and another SHALL close them. Several SHALL stay open at once, and the chevron SHALL name its error and say whether its details are open.
+
+#### Scenario: Opening an error in the list
+- **WHEN** a user on a touch screen 320 px wide taps the line of `2026-11-16.tar.zst`, taps the line of `holiday.mov`, taps the line of `2026-11-16.tar.zst` again, and holds a finger on the line of `budget-2027.xlsx`
+- **THEN** every line fits the window on one line, starts where the title does and keeps `.zst` whole, the first tap shows 504, Timed out, PUT `/archive/2026-11-16.tar.zst` and the reason under its line, both stay open after the second tap, the third closes `2026-11-16.tar.zst` alone, and the held line draws a rounded background inside the card
+
+### Requirement: Errors on a timeline
+The timeline SHALL place each error of the last 24 hours as a marker of its cause on a scale that gives the last hour more than half of its width, with no marker covering another. Pointing at a marker, moving to it with the arrow keys or holding a finger on it SHALL show the error's name and details. The timeline SHALL also say in words when each error happened and why.
+
+#### Scenario: Reading the timeline
+- **WHEN** a user in a window 1280 px wide chooses Timeline, points at the marker of `budget-2027.xlsx`, moves through the markers with the arrow keys, and then narrows the window to 320 px
+- **THEN** the markers run from `holiday.mov` to `2026-11-16.tar.zst` from left to right, the tick marked 1h lies left of the middle with the two errors of the last hour after it, no two markers overlap at either width, pointing shows `budget-2027.xlsx` with 423 and Locked above the timeline, and each arrow key shows the next marker's details
+
+#### Scenario: Holding a marker
+- **WHEN** a user on a touch screen 375 px wide chooses Timeline, holds a finger on the marker of `holiday.mov`, and lifts it
+- **THEN** while the finger holds, the details of `holiday.mov` with 413 show above the timeline, and they hide when the finger lifts
+
+#### Scenario: The timeline in words
+- **WHEN** assistive technology reads the timeline
+- **THEN** its description names each error's file, cause and age, among them `holiday.mov`, too large, 5 hours ago
+
+### Requirement: Errors as tiles
+The tiles SHALL give each error a tile with a large picture of its cause, its age, and its file's name with a picture of its kind, at least two side by side on a phone. A tap on a tile SHALL show the error's details beside it until they are dismissed, and dismissing them SHALL return focus to the tile.
+
+#### Scenario: Opening a tile
+- **WHEN** a user on a touch screen 375 px wide chooses Tiles, taps the tile of `Drafts`, and dismisses its details with Escape
+- **THEN** the tiles sit two side by side with every extension whole, the tap shows 412, Already exists, MOVE `/documents/Drafts → /shared/Drafts` and the reason beside the tile, and after Escape the details are gone and focus is on the tile of `Drafts`
