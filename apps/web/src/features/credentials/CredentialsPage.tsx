@@ -351,7 +351,7 @@ export const CredentialsPage = () => {
                 />
               }
             />
-            <Card padding={0}>
+            <Card padding={0} elevation="low">
               <Table<Credential>
                 data={rows}
                 columns={columns}

@@ -35,11 +35,18 @@ export const layerTones = {
   popover: ["#ffffff", "#262626"],
 } as const satisfies Record<string, Pair>;
 
+/**
+ * In dark mode a shadow barely shows against a dark page, so each raised layer also draws a
+ * white hairline just inside its edge, as the neutral theme does.
+ */
+const darkEdge = (opacity: string) =>
+  `inset 0px 0px 0px 1px light-dark(transparent, #ffffff${opacity})`;
+
 /** The shadows under cards, menus and dialogs, in black at low opacity. */
 export const elevationShadows = {
-  low: "0px 1px 2px light-dark(#0000000f, #0000004d)",
-  med: "0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066)",
-  high: "0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080)",
+  low: `0px 1px 2px light-dark(#0000000f, #0000004d), ${darkEdge("14")}`,
+  med: `0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066), ${darkEdge("1f")}`,
+  high: `0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080), ${darkEdge("26")}`,
 } as const;
 
 /** The empty part of tracks, such as a progress bar's. */

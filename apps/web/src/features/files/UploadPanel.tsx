@@ -56,7 +56,7 @@ export const UploadPanel = ({
   const hasFinished = uploads.some((upload) => upload.state !== "uploading");
 
   return (
-    <Card>
+    <Card elevation="low">
       <VStack gap={4}>
         <HStack hAlign="between" vAlign="center">
           <Heading level={2}>Upload</Heading>

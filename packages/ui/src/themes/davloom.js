@@ -207,9 +207,9 @@ export const davloomTheme = {
     "--radius-container": "0.75rem",
     "--radius-page": "1.75rem",
     "--radius-full": "9999px",
-    "--shadow-low": "0px 1px 2px light-dark(#0000000f, #0000004d)",
-    "--shadow-med": "0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066)",
-    "--shadow-high": "0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080)",
+    "--shadow-low": "0px 1px 2px light-dark(#0000000f, #0000004d), inset 0px 0px 0px 1px light-dark(transparent, #ffffff14)",
+    "--shadow-med": "0px 1px 2px light-dark(#0000000f, #0000004d), 0px 4px 12px light-dark(#00000014, #00000066), inset 0px 0px 0px 1px light-dark(transparent, #ffffff1f)",
+    "--shadow-high": "0px 2px 4px light-dark(#00000014, #0000004d), 0px 12px 32px light-dark(#0000001f, #00000080), inset 0px 0px 0px 1px light-dark(transparent, #ffffff26)",
     "--shadow-inset-hover": "inset 0px 0px 0px 2px light-dark(#0000004d, #ffffff4d)",
     "--shadow-inset-selected": "inset 0px 0px 0px 2px light-dark(#00000080, #ffffff80)",
     "--shadow-inset-success": "inset 0px 0px 0px 2px light-dark(#6a6a6a4d, #9e9e9e4d)",
@@ -429,9 +429,6 @@ export const davloomTheme = {
     "card": {
       "base": {
         "padding": "var(--spacing-3)"
-      },
-      "elevation:none": {
-        "boxShadow": "var(--shadow-low)"
       }
     },
     "section": {
@@ -446,12 +443,6 @@ export const davloomTheme = {
         "borderInlineEndColor": "var(--color-border)"
       },
       "mode:topbar": {
-        "borderInlineEndWidth": "0"
-      },
-      "mode:drawer": {
-        "borderInlineEndWidth": "0"
-      },
-      "mode:drawer-content": {
         "borderInlineEndWidth": "0"
       }
     },

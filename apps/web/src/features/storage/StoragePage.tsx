@@ -58,7 +58,7 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
   };
 
   return (
-    <Card>
+    <Card elevation="low">
       <VStack gap={4}>
         <HStack hAlign="between" vAlign="start" gap={3}>
           <VStack gap={0.5}>
@@ -358,7 +358,7 @@ export const StoragePage = () => {
             </VStack>
             <VStack gap={3}>
               <Heading level={2}>Mounts</Heading>
-              <Card padding={0}>
+              <Card padding={0} elevation="low">
                 <Table<Mount>
                   data={mounts}
                   columns={columns}
