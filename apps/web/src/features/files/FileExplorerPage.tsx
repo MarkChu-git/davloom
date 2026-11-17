@@ -614,11 +614,6 @@ export const FileExplorerPage = ({
           <VStack gap={5}>
             <PageHeader
               title="Files"
-              description={
-                isRoot
-                  ? "Every mount, as WebDAV clients see it."
-                  : (backend?.name ?? "No mount with this name")
-              }
               actions={
                 isRoot ? (
                   <Button

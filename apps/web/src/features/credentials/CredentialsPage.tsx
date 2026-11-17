@@ -342,7 +342,6 @@ export const CredentialsPage = () => {
           <VStack gap={5}>
             <PageHeader
               title="Credentials"
-              description="API keys that WebDAV clients sign in with. Each key is shown once, when you create it."
               actions={
                 <Button
                   label="Create key"

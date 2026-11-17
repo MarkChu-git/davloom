@@ -118,6 +118,14 @@ const STATES: readonly PageState[] = [
     },
   },
   {
+    name: "Overview with a chart's tooltip",
+    path: "/",
+    show: async (page) => {
+      await page.getByRole("img", { name: "Operations per hour, last 24 hours" }).hover();
+      await shown(page.getByRole("status", { name: /Operations: \d/ }));
+    },
+  },
+  {
     name: "the top level of Files",
     path: "/files",
     show: (page) => shown(page.getByRole("link", { name: "documents", exact: true })),
@@ -755,6 +763,38 @@ test("Storage status in the navigation: an unreachable backend marks Storage & M
       path,
     ).toBeVisible();
   }
+});
+
+test("Figures at two widths: the three headline figures sit side by side at 900 px and one above another at 800 px", async ({
+  page,
+}) => {
+  const main = page.getByRole("main");
+  const figures = async () =>
+    Promise.all(
+      ["Stored", "Known capacity", "Mounts"].map(async (label) => {
+        const box = await main.getByText(label, { exact: true }).boundingBox();
+        if (box === null) {
+          throw new Error(`The ${label} figure has no box.`);
+        }
+        return box;
+      }),
+    );
+
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.goto("/");
+  const [stored, capacity, mounts] = await figures();
+  expect(capacity?.y).toBeCloseTo(stored?.y ?? Number.NaN, 0);
+  expect(mounts?.y).toBeCloseTo(stored?.y ?? Number.NaN, 0);
+  expect(stored?.x).toBeLessThan(capacity?.x ?? Number.NaN);
+  expect(capacity?.x).toBeLessThan(mounts?.x ?? Number.NaN);
+
+  // Too narrow for three, the row stacks all of them rather than wrapping two above one.
+  await page.setViewportSize({ width: 800, height: 900 });
+  const [narrowStored, narrowCapacity, narrowMounts] = await figures();
+  expect(narrowCapacity?.x).toBeCloseTo(narrowStored?.x ?? Number.NaN, 0);
+  expect(narrowMounts?.x).toBeCloseTo(narrowStored?.x ?? Number.NaN, 0);
+  expect(narrowStored?.y).toBeLessThan(narrowCapacity?.y ?? Number.NaN);
+  expect(narrowCapacity?.y).toBeLessThan(narrowMounts?.y ?? Number.NaN);
 });
 
 // Runs in the page: the main landmark and each element around it, up to the root, that is wider

@@ -335,7 +335,6 @@ export const StoragePage = () => {
           <VStack gap={6}>
             <PageHeader
               title="Storage & Mounts"
-              description="Backends hold the bytes. Mounts decide which of them WebDAV clients see."
               actions={
                 <Button
                   label="Add mount"

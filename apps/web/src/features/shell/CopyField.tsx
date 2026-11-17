@@ -2,7 +2,7 @@ import { Button } from "@astryxdesign/core/Button";
 import { useAnnounce, useClipboard } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, StackItem } from "@astryxdesign/core/Layout";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { TextInput, type TextInputProps } from "@astryxdesign/core/TextInput";
 import { Copy } from "lucide-react";
 import { useState } from "react";
 
@@ -18,11 +18,14 @@ export const CopyField = ({
   value,
   copyLabel,
   isLabelHidden = false,
+  width,
 }: {
   label: string;
   value: string;
   copyLabel: string;
   isLabelHidden?: boolean;
+  /** The field's width; without one it fills the row. */
+  width?: TextInputProps["width"];
 }) => {
   const { copy, isCopied } = useClipboard({ announce: `${label} copied` });
   const announce = useAnnounce();
@@ -34,6 +37,7 @@ export const CopyField = ({
           label={label}
           isLabelHidden={isLabelHidden}
           value={value}
+          width={width}
           isReadOnly
           autoComplete="off"
           hasSpellCheck={false}

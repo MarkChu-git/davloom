@@ -157,6 +157,31 @@ export const recentErrors: OperationError[] = [
   },
 ];
 
+/** Operations recorded in one hour of the audit log (PRD §7, `audit_events`). */
+export interface HourlyOperations {
+  /** Whole hours between the end of this hour and the sample clock: 0 is the latest hour. */
+  hoursAgo: number;
+  operations: number;
+  /** Operations that failed in this hour; each one is in `recentErrors`. */
+  failed: number;
+}
+
+/** Operations per hour, oldest first: quiet at night, busy while clients sync in the morning. */
+const HOURLY_COUNTS = [
+  114, 156, 183, 141, 99, 63, 42, 27, 21, 36, 288, 426, 354, 192, 123, 111, 135, 174, 216, 198, 162,
+  147, 183, 141,
+];
+
+/** The last 24 hours of operations, oldest first. */
+export const operationsByHour: HourlyOperations[] = HOURLY_COUNTS.map((operations, index) => {
+  const hoursAgo = HOURLY_COUNTS.length - 1 - index;
+  const failed = recentErrors.filter(
+    (error) =>
+      Math.floor((SAMPLE_NOW.getTime() - new Date(error.at).getTime()) / 3_600_000) === hoursAgo,
+  ).length;
+  return { hoursAgo, operations, failed };
+});
+
 export type EntryKind = "folder" | "file";
 
 export interface Entry {
