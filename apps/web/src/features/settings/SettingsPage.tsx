@@ -2,7 +2,6 @@ import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { FormLayout } from "@astryxdesign/core/FormLayout";
 import { Heading } from "@astryxdesign/core/Heading";
-import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -27,6 +26,7 @@ import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
 import { backends, instance } from "../sample-data/data";
 import { CopyField } from "../shell/CopyField";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
+import { useIsNarrowPage } from "../shell/pageWidth";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
 import {
   saveDefaultBackend,
@@ -292,10 +292,10 @@ const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
 export const SettingsPage = ({ section }: { section: SettingsSection }) => {
   const Content = SECTION_CONTENT[section];
   const navigate = useNavigate();
-  // Responsive contract: above 1024px the sections are a 280px list beside the chosen one. At
-  // 1024px and below the side navigation already takes one region, so the list becomes a
-  // selector above the section, which keeps the remaining width.
-  const isNarrow = useMediaQuery("(width <= 1024px)");
+  // Responsive contract: on a page wider than 776px, which a 1024px window leaves beside the side
+  // navigation at its default width, the sections are a 280px list beside the chosen one. On a
+  // narrower page the list becomes a selector above the section, which keeps the remaining width.
+  const isNarrow = useIsNarrowPage();
 
   if (isNarrow) {
     return (

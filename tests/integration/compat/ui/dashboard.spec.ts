@@ -1529,3 +1529,49 @@ test("Changes last for the visit: a new mount shows in Files until a reload", as
   await expect(page.getByRole("link", { name: "documents", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "music", exact: true })).toHaveCount(0);
 });
+
+test.describe("in a window 1100 px wide", () => {
+  test.use({ viewport: { width: 1100, height: 800 } });
+
+  test("A wider side navigation: Settings and Files lay out for the room it leaves them", async ({
+    page,
+  }) => {
+    const sections = page.getByRole("navigation", { name: "Settings sections" });
+    const selector = page.getByRole("combobox", { name: "Section" });
+    await page.goto("/settings");
+    await expect(levelOne(page)).toHaveText("Settings");
+    // Beside the navigation at its default width, the page has room for the section list.
+    await expect(sections).toBeVisible();
+    await expect(selector).toHaveCount(0);
+
+    // Widened to 400 px, the navigation leaves the page 700 px: the list becomes a selector, Files
+    // opens a file's details in a dialog, and neither page spills sideways.
+    await dragNavigationEdge(page, 152);
+    await expect(page.getByRole("separator", { name: "Resize sidebar" })).toHaveAttribute(
+      "aria-valuenow",
+      "400",
+    );
+    await expect(selector).toBeVisible();
+    await expect(sections).toHaveCount(0);
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+    await page.goto(PREVIEW);
+    await expect(page.getByRole("dialog").getByRole("heading", { name: "Preview" })).toBeVisible();
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+
+    // Folded to its rail in a window 1000 px wide, the navigation leaves room for the list again.
+    // The page slides with the rail as it folds, so it is measured once the motion has ended.
+    await page.goto("/settings");
+    await sideNavigation(page).getByRole("button", { name: "Collapse sidebar" }).click();
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await expect(sections).toBeVisible();
+    await page.evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+          .map((animation) => animation.finished.catch(() => undefined)),
+      ),
+    );
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  });
+});

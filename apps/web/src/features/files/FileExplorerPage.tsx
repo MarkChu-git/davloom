@@ -6,7 +6,7 @@ import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
-import { useAnnounce, useMediaQuery } from "@astryxdesign/core/hooks";
+import { useAnnounce } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import {
@@ -45,6 +45,7 @@ import { formatBytes, formatDateTime, formatRelative } from "../sample-data/form
 import { sampleId } from "../sample-data/id";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
+import { useIsNarrowPage } from "../shell/pageWidth";
 import { useFormDialog } from "../shell/useFormDialog";
 import { useMounts } from "../storage/mountStore";
 import { NameForm, TransferForm } from "./dialogs";
@@ -121,9 +122,10 @@ export const FileExplorerPage = ({
   const mounts = useMounts();
   const toast = useToast();
   const navigate = useNavigate();
-  // Responsive contract: above 1024px the details sit in a 360px panel beside the listing;
-  // at 1024px and below they open in a dialog, so the listing keeps the full width.
-  const isNarrow = useMediaQuery("(width <= 1024px)");
+  // Responsive contract: on a page wider than 776px, which a 1024px window leaves beside the side
+  // navigation at its default width, the details sit in a 360px panel beside the listing; on a
+  // narrower page they open in a dialog, so the listing keeps the full width.
+  const isNarrow = useIsNarrowPage();
   // Astryx advises one announcer per kind of message: the match count changes as the user types,
   // so only its latest value is said, and an error must not cancel a count or another error.
   const announceCount = useAnnounce({ hasReplace: true });
