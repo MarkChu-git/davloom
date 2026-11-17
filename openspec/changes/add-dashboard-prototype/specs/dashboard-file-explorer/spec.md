@@ -106,7 +106,7 @@ Moving or copying SHALL offer as destinations the folders of every mount whose b
 - **THEN** the dialog says that `README.txt` is already in `/documents/Drafts`, and nothing is copied
 
 ### Requirement: Delete
-Deleting one or several items SHALL ask for confirmation, say that WebDAV has no trash so it cannot be undone, and report what was deleted.
+Deleting one or several items SHALL ask for confirmation, say that it cannot be undone, and report what was deleted.
 
 #### Scenario: Deleting two files
 - **WHEN** a user selects two files in `/documents`, chooses Delete and confirms

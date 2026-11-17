@@ -51,18 +51,18 @@ The Sign-in and security section SHALL show when the password last changed and w
 - **THEN** that session leaves the list, and the current session offers no sign-out
 
 ### Requirement: Appearance setting
-The Appearance section SHALL offer Light, Dark and System, and SHALL say which scheme the operating system uses while System is chosen.
+The Appearance section SHALL offer Light, Dark and System, with the mode in use selected.
 
-#### Scenario: Following a light system
-- **WHEN** the operating system uses a light scheme and a user opens the Appearance section with System chosen
-- **THEN** the section says that it follows the system, which is light right now
+#### Scenario: The modes on offer
+- **WHEN** a user who has not chosen a mode opens the Appearance section
+- **THEN** it offers Light, Dark and System, with System selected
 
 ### Requirement: WebDAV settings
-The WebDAV section SHALL show the WebDAV address with a control that copies it, and SHALL say that clients sign in with a key from Credentials rather than the account password.
+The WebDAV section SHALL show the WebDAV address with a control that copies it.
 
 #### Scenario: Connecting a client
 - **WHEN** a user opens the WebDAV section
-- **THEN** it shows `https://files.example.com/dav/` with Copy address, and says that clients sign in with a key from Credentials, not with the account password
+- **THEN** it shows `https://files.example.com/dav/` with Copy address
 
 ### Requirement: Default backend
 The Storage section SHALL let the user choose the backend that new mounts start with, and the choice SHALL last for the visit once saved.
@@ -72,7 +72,7 @@ The Storage section SHALL let the user choose the backend that new mounts start 
 - **THEN** the mount form's backend is R2 photos
 
 ### Requirement: Data export
-The Data export section SHALL say that keys and other secrets are never exported in plaintext, and SHALL confirm the export with the file name.
+The Data export section SHALL export the instance's data to a file and confirm the export with the file name.
 
 #### Scenario: Exporting
 - **WHEN** a user selects Export

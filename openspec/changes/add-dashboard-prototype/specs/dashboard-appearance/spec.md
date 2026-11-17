@@ -14,7 +14,7 @@ Every color in the Davloom Theme SHALL be black, white or a gray in both light a
 - **THEN** errors stand furthest from the page's background, then warnings, then success and information, which share one gray
 
 #### Scenario: Rendered pages
-- **WHEN** Playwright opens each Dashboard page and Settings section in light mode and in dark mode, together with the dialogs, menus, option lists and confirmations the pages open, the details dialog and the navigation menu of narrower windows, and the tooltip, notifications, warnings, field errors, checked switch, empty states, loading states, upload outcomes, row selection and keyboard focus that the pages show
+- **WHEN** Playwright opens each Dashboard page and Settings section in light mode and in dark mode, together with the dialogs, menus, option lists and confirmations the pages open, the details dialog and the navigation menu of narrower windows, the folded side navigation, and the tooltips of a control and of a chart, notifications, warnings, field errors, checked switch, empty states, loading states, upload outcomes, row selection and keyboard focus that the pages show
 - **THEN** no element or pseudo-element has a computed color, in the properties that paint colors, including shadows, filters, gradients and SVG data URLs, whose red, green and blue channels differ by more than 1 in 255, the rounding that color mixing leaves, and no element leaves its accent color to the browser
 
 ### Requirement: Colors the browser draws

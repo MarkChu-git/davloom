@@ -2,37 +2,52 @@
 
 ## Purpose
 
-Gives a one-page summary of the instance: where data is stored and whether it answers, which mounts publish it, how WebDAV clients connect, and which operations failed recently.
+Gives a one-page summary of the instance: what it stores and where, how busy it was over the last day, whether each backend answers, which mounts publish its data, how WebDAV clients connect, and which operations failed recently.
 
 ## ADDED Requirements
 
-### Requirement: Storage summary
-The Overview SHALL show the number of backends and how many answer, the number of mounts and how many backends they use, the number of objects, and the bytes stored, with the share of known capacity in use.
+### Requirement: Headline figures
+The Overview SHALL show the bytes stored with the number of objects, the share of known capacity in use with the bytes it measures, and the number of mounts with how many of the backends hold them. The three figures SHALL sit side by side, or one above another where the row is too narrow for three, and never two above one.
 
-#### Scenario: Summary of the sample data
+#### Scenario: Figures of the sample data
 - **WHEN** a user opens the Overview
-- **THEN** it shows 3 backends with 2 connected and 1 unreachable, 4 mounts on 3 backends, 24,597 objects, and 255.1 GB stored, of which 213.9 GB counts against 2 TB of known capacity
+- **THEN** it shows 255.1 GB stored in 24,597 objects, 10.7% of known capacity in use, which is 213.9 GB of 2 TB, and 4 mounts on 3 of 3 backends
+
+#### Scenario: Figures at two widths
+- **WHEN** a user opens the Overview in a window 900 px wide and then narrows the window to 800 px
+- **THEN** the three figures sit side by side at 900 px and one above another at 800 px
+
+### Requirement: Operations
+The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any.
+
+#### Scenario: The last 24 hours
+- **WHEN** a user opens the Overview
+- **THEN** it shows 3,732 operations with 4 failed, and the chart marks the 3 hours in which an operation failed
+
+#### Scenario: Pointing at an hour
+- **WHEN** a user points at the chart where it shows 12 hours ago
+- **THEN** a tooltip names that hour and shows 426 operations
+
+### Requirement: Storage by backend
+The Overview SHALL chart the bytes stored on each backend, largest first, with each backend's bytes beside its bar, and SHALL link to Storage & Mounts.
+
+#### Scenario: The sample backends
+- **WHEN** a user opens the Overview
+- **THEN** the chart shows RustFS archive with 212 GB, R2 photos with 41.2 GB and Durable Objects with 1.9 GB, in that order, and Manage storage opens Storage & Mounts
 
 ### Requirement: Connection status
-The Overview SHALL list each backend with its status in an icon and words, its object count and its use of space, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
+The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
 
 #### Scenario: An unreachable backend
 - **WHEN** a user opens the Overview
-- **THEN** the storage connections list shows RustFS archive as Unreachable
+- **THEN** the connections list shows Durable Objects as the default backend, serving `/documents` and `/shared`, and RustFS archive as Unreachable, serving `/archive`
 
 #### Scenario: Checking connections
 - **WHEN** a user selects Check connections
 - **THEN** the button shows that the check is running, and an error notification then says that 3 backends were checked and RustFS archive is still unreachable
 
-### Requirement: Mounts
-The Overview SHALL list each mount with its backend, bucket and prefix, and SHALL link to Storage & Mounts.
-
-#### Scenario: The sample mounts
-- **WHEN** a user opens the Overview
-- **THEN** the mount list shows `/documents`, `/shared`, `/photos` and `/archive`, each with its backend and its bucket and prefix, and Manage mounts opens Storage & Mounts
-
 ### Requirement: WebDAV address
-The Overview SHALL show the WebDAV address in a read-only field the user can select, offer a control that copies it, and point to Credentials for a key to sign in with. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves.
+The Overview SHALL show the WebDAV address in a read-only field the user can select, and SHALL offer a control that copies it. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves.
 
 #### Scenario: Copying the address
 - **WHEN** a user selects Copy address

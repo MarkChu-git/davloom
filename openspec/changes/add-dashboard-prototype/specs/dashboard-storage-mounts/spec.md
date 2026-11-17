@@ -40,7 +40,7 @@ A mount SHALL need a folder name that is a single path segment, is neither `.` n
 - **THEN** the second form shows the folder name `documents`, and Add mount starts with an empty folder name
 
 ### Requirement: Removing a mount
-Removing a mount SHALL ask for confirmation and say that the files stay in the bucket and come back if the mount is added again.
+Removing a mount SHALL ask for confirmation and say that its files stay in the bucket.
 
 #### Scenario: Removing a mount keeps its files
 - **WHEN** a user chooses Remove for `/shared` and confirms

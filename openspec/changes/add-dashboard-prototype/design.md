@@ -24,7 +24,7 @@ Phase 0 left `apps/web` as a TanStack Start SPA with the Davloom Theme built on 
 
 ### 1. Sample data in the browser, not a mocked API
 
-`features/sample-data` holds the instance, three backends, four mounts, the file trees, five keys and four recent errors. Times are relative to a fixed clock (2026-11-16 15:30 UTC), so "2 minutes ago" reads the same on every run. Module-level TanStack Store instances keep the visit's changes to mounts, files, keys, uploads and settings (the profile, the sessions and the default backend), and the pages share them: a mount added on Storage & Mounts shows in Files and on the Overview, and the default backend chosen in Settings is where a new mount starts.
+`features/sample-data` holds the instance, three backends, four mounts, the file trees, five keys, four recent errors and a day of hourly operation counts. Times are relative to a fixed clock (2026-11-16 15:30 UTC), so "2 minutes ago" reads the same on every run. Module-level TanStack Store instances keep the visit's changes to mounts, files, keys, uploads and settings (the profile, the sessions and the default backend), and the pages share them: a mount added on Storage & Mounts shows in Files and on the Overview, and the default backend chosen in Settings is where a new mount starts.
 
 Alternative: Mock Service Worker in front of a draft management API. Rejected, because it would fix request and response shapes before Phase 3 defines them, and a public API contract needs the owner's approval.
 
@@ -55,13 +55,13 @@ Alternative: write the stand-ins in Bend now. Rejected for this change: it would
 
 ### 3. A black, white and gray theme through tokens
 
-The theme still extends `@astryxdesign/theme-neutral`. It changes tokens, and the styles of cards and the side navigation (Decision 11):
+The theme still extends `@astryxdesign/theme-neutral`. It changes tokens, and the styles of the side navigation (Decision 11):
 
 - The accent is near-black in light mode and near-white in dark mode (`#111111` and `#f1f1f1`), with the inverse for text on it.
-- The page is built in layers of gray, each lighter than the one below: the frame with the side navigation (`#f1f1f1`, dark `#121212`), the page (`#fcfcfc`, `#171717`), cards (`#ffffff`, `#1e1e1e`) and popovers (`#ffffff`, `#262626`). Low, medium and high shadows in black at low opacity lift cards, menus and dialogs, and a card without an elevation rests on the low one. Before the owner's review, dark mode drew cards in the frame's gray, darker than the page under them.
+- The page is built in layers of gray, each lighter than the one below: the frame with the side navigation (`#f1f1f1`, dark `#121212`), the page (`#fcfcfc`, `#171717`), cards (`#ffffff`, `#1e1e1e`) and popovers (`#ffffff`, `#262626`). Low, medium and high shadows in black at low opacity lift cards, menus and dialogs, and every card takes the low elevation. In dark mode a shadow barely shows against the page, so each one also draws a white hairline just inside the layer's edge, as the neutral theme does. Before the owner's review, dark mode drew cards in the frame's gray, darker than the page under them.
 - Status colors are ranked by how loud they need to be. In light mode the error fill is `#111111`, warning `#474747`, and success and info share `#6a6a6a`; dark mode mirrors this, and status text and rings follow the same order. Statuses keep their icons and words, and error text is semibold.
 - The nine categorical hues share one set of grays for background, border, icon and text. Code syntax, inset rings, inverted backgrounds and the progress track are gray too.
-- Astryx 0.7.16 keeps chart series colors in a separate token set. The theme leaves them alone, because no page has a chart.
+- Astryx 0.7.16 keeps chart series colors in a separate token set, whose grays carry a blue tint. The theme leaves them alone, and the Overview's charts paint with the theme's own tokens instead (Decision 12).
 
 `packages/ui/src/tokens/monochrome.ts` holds the grays and `davloom-source.ts` assigns them to tokens. `brand.ts` still writes the light accent as a six-digit hex literal, the form that `verify-brand-change.ts` looks for when it swaps the brand color.
 
@@ -77,7 +77,7 @@ Page state lives in search parameters (`path` and `file` for Files, `section` fo
 
 ### 5. A responsive contract per region
 
-PRD §8.1 asks for the Astryx Dashboard Layout. The Overview keeps the frame of the Astryx `dashboard` page template, with its padding and gaps: a row of headline tiles, then tables in cards. It leaves out the template's charts and filter bar, because the sample data has no series over time and nothing to filter.
+PRD §8.1 asks for the Astryx Dashboard Layout. The Overview keeps the frame of the Astryx `dashboard` page template, with its padding and gaps: a row of headline tiles, then charts, then lists in cards (Decision 12). It leaves out the template's filter bar, because the Overview shows one time range.
 
 Following the Astryx layout guide, each region states what it does as the width changes:
 
@@ -85,14 +85,15 @@ Following the Astryx layout guide, each region states what it does as the width 
 - The Files details panel is 360 px wide beside the list above 1024 px. At 1024 px and below the details open in a dialog.
 - The Settings section list is 280 px wide above 1024 px. At 1024 px and below it becomes a selector above the section, because between 768 and 908 px the list beside the side navigation left the section too narrow, and its content spilled sideways.
 - Card grids reflow with a minimum column width and a maximum column count, which lets the last column shrink on a phone instead of overflowing.
+- The Overview's three headline tiles sit side by side, or one above another once the row has no room for three tiles 10rem wide, so they never wrap two above one. Astryx Grid has no such mode, so the Overview gives its grid a column template of its own (Decision 9).
 
 ### 6. Automated tests now, most page flows after the review
 
 Automated now:
 
 - Unit tests read the built theme stylesheet and theme module, check that the status grays keep their ranking in both modes (Decision 3), and check the stand-in rules with fast-check (Decision 2).
-- Playwright checks the appearance requirements on Bun and on Workers. It scans 40 page states in both modes: every page and Settings section; the dialogs, menus, option lists and confirmations the pages open; the details dialog of a window 1024 px wide and the navigation menu of one 375 px wide; and keyboard focus, a tooltip, notifications, warnings, field errors, a checked switch, empty states, a loading listing, a busy button, upload progress, finished and refused uploads, and row selection. States that pass, such as a busy button, pause the page's timers with Playwright's clock, which `clock.install()` alone leaves running, and check after the scan that the page still shows the state the scan read. The scan reads every element and nine pseudo-elements, among them `::selection` and the spelling marks, in the 30 properties that paint colors, including shadows, filters and gradients, and the hex values, color functions and color names inside SVG data URLs. It allows a difference of 1 in 255 between channels, the rounding that color mixing leaves, counts a notation it does not parse as a hue, and reports an element whose `accent-color` is left to the browser. Two tests put hues on a page on purpose, in each kind of place and notation that task 1.3 lists and in a notation the scan does not parse, and check that the scan reports every one of them and none of the grays beside them. Other tests cover the color scheme, the first paint and a change made in another tab.
-- Playwright checks the navigation requirements: titles, headings, the document language, focus after a change, that no request goes to `/api/` or `/dav/`, and that nothing is wider than a 375 px window. The page scrolls inside its main landmark rather than the document, so that test measures the landmark and every element around it.
+- Playwright checks the appearance requirements on Bun and on Workers. It scans 42 page states in both modes: every page and Settings section; the dialogs, menus, option lists and confirmations the pages open; the details dialog of a window 1024 px wide, the navigation menu of one 375 px wide and the folded side navigation; and keyboard focus, a tooltip, a chart's tooltip, notifications, warnings, field errors, a checked switch, empty states, a loading listing, a busy button, upload progress, finished and refused uploads, and row selection. States that pass, such as a busy button, pause the page's timers with Playwright's clock, which `clock.install()` alone leaves running, and check after the scan that the page still shows the state the scan read. The scan reads every element and nine pseudo-elements, among them `::selection` and the spelling marks, in the 30 properties that paint colors, including shadows, filters and gradients, and the hex values, color functions and color names inside SVG data URLs. It allows a difference of 1 in 255 between channels, the rounding that color mixing leaves, counts a notation it does not parse as a hue, and reports an element whose `accent-color` is left to the browser. Two tests put hues on a page on purpose, in each kind of place and notation that task 1.3 lists and in a notation the scan does not parse, and check that the scan reports every one of them and none of the grays beside them. Other tests cover the color scheme, the first paint and a change made in another tab.
+- Playwright checks the navigation requirements: titles, headings, the document language, the storage status in the side navigation and its rail, resizing and folding the side navigation, focus after a change, that no request goes to `/api/` or `/dav/`, and that nothing is wider than a 375 px window. The page scrolls inside its main landmark rather than the document, so that test measures the landmark and every element around it.
 - Scenarios that guard a fix made after review have their tests now: "The name a screen reader hears", "Opening the name dialog again", "Opening the form again", "A folder outside the mount" and "A profile without a name".
 
 Playwright runs in UTC, so the dates on the pages read the same on every machine.
@@ -119,17 +120,25 @@ Icons come from `lucide-react`, the icon set PRD §2 names. `bun.lock` already h
 
 `fast-check` 4.10.2, the npm `latest` version, is a dev dependency of `apps/web` for the property tests of Decision 2. It brings `pure-rand` 8.4.2 into `bun.lock`.
 
+`@tanstack/charts` 1.5.0, the npm `latest` version, draws the Overview's charts (Decision 12). It pins the D3 modules behind its marks, and `bun.lock` gains 41 entries: the D3 modules and their types, `delaunator`, `internmap` and `robust-predicates`, and the older `d3-array`, `d3-shape`, `d3-path` and `@types/d3-shape` that `d3-sankey` 0.12.3 and its types ask for. Only the Overview imports the charts, so the entry chunk stays at 320.6 kB, and the Overview's own chunk grows from 5.3 kB to 157 kB, or from 2.1 kB to 52 kB after gzip.
+
+TanStack Charts draws straight lines unless it is handed a D3 curve, and its documentation asks an application to declare every `d3-*` module that its own source imports. `d3-shape` 3.2.1 and `@types/d3-shape` 3.2.0, both npm `latest`, therefore give the operations chart its monotone curve through `d3Curve` from `@tanstack/charts/d3/shape`. `@tanstack/charts` pins `d3-shape` 3.2.0 for itself, so `bun.lock` holds both versions.
+
+A chart library is none of the runtimes, frameworks, databases, storage backends or cloud services whose addition `CLAUDE.md` brings to the owner, and the owner asked for TanStack Charts by name.
+
 `<html lang="en">` matches the interface text, which is English.
 
 ### 9. Where the pages leave Astryx props
 
-`astryx doctor` reports three places in the source, and each needs what no Astryx prop gives:
+`astryx doctor` reports five places in the source, and each needs what no Astryx prop gives:
 
 - `FileName` uses StyleX so that a file name's stem can shrink to an ellipsis while its extension keeps its width. `StackItem` only offers a size that grows or one that stays put.
 - `FileExplorerPage` uses StyleX to make the name link fill its table cell, because the Link root is sized to its content and its `display` prop styles only the inner text.
+- `OverviewPage` gives its tile grid a column template that switches between three columns and one (Decision 5). Astryx Grid's responsive columns would wrap the three tiles two above one at some widths, and Grid's guide points to `xstyle` for a template of one's own.
+- `charts.tsx` sets the CSS variables from which TanStack Charts takes its palette, the fills of its focus ring and crosshair, its tooltip's colors, border, radius and shadow, and the font of its labels, each from an Astryx token. A chart is not an Astryx component and has no other way to take them (Decision 12).
 - `RouterLink` renders a plain `<a>`: it is the component that Astryx `LinkProvider` renders for every link, and it hands in-app clicks to the router.
 
-Both StyleX uses follow PRD §3.3 and the UI rules in `CLAUDE.md`. `FileName` also hides the two parts from assistive technology and gives it the whole name in `VisuallyHidden`, since two boxes on screen would read as two words.
+The StyleX uses follow PRD §3.3 and the UI rules in `CLAUDE.md`. `FileName` also hides the two parts from assistive technology and gives it the whole name in `VisuallyHidden`, since two boxes on screen would read as two words.
 
 ### 10. Focus after a change
 
@@ -137,20 +146,22 @@ When a change removes the control that had focus, `refocusIfLost` in `features/s
 
 A closing dialog needs the same help. Astryx Dialog takes as its opener whatever has focus once its content has mounted, and a form's first field focuses itself in that same commit, so the dialog returns focus to that field inside the closed dialog, and focus falls to the page body after Cancel, Escape or the close button alike. `features/shell/useFormDialog.tsx` remembers the control that opened a form dialog and sends focus back to it however the dialog closes, or to the menu's button when the opener was an item of a menu that has since closed. Credentials does the same for its key dialog. Each form shown also gets a new React `key`, because a dialog keeps its content while it closes, and the next form would otherwise start with the last one's values.
 
-Errors are announced assertively: an error notification, a folder that cannot be listed, a try that fails again, a connection that still does not answer, and a copy the browser blocked. A missing folder needs no announcement of its own, because Astryx `EmptyState` announces its title and description when they appear. Files announces the match count of a search and its errors through two announcers, as Astryx advises, so an error never cancels a count, and a try, a connection check or an export that is still running when the user leaves the page is cancelled rather than announced on the next one.
+Errors are announced assertively: an error notification, a folder that cannot be listed, a try that fails again, a connection that still does not answer, and a copy the browser blocked. A missing folder needs no announcement of its own, because Astryx `EmptyState` announces its title when it appears. Files announces the match count of a search and its errors through two announcers, as Astryx advises, so an error never cancels a count, and a try, a connection check or an export that is still running when the user leaves the page is cancelled rather than announced on the next one.
 
 ### 11. A side navigation after Linear
 
 The owner reviewed the prototype on 2026-11-17, asked for a side navigation after Linear's, and asked for components with more depth than black on white (Decision 3). The side navigation now:
 
-- shows the Davloom mark beside the product name, which links to the Overview: four rounded squares, each a step lighter and turned 12 degrees past the one around it, with no letter in it, as the owner asked;
-- lists Overview and Files at the top without a heading, and Credentials and Storage & Mounts under a Manage heading, in rows 28 px tall with medium-weight secondary text;
+- shows the Davloom mark beside the product name, which links to the Overview: a tile and three rounded squares, each turned 12 degrees past the one around it, whose shades step evenly from the tile to the core, with no letter in it, as the owner asked;
+- lists Overview and Files at the top without a heading, and Credentials and Storage & Mounts under a Manage heading, in rows of the design system's default size with medium-weight secondary text;
+- lines up the mark, the Manage heading, every row's icon and the collapse button's chevron on one edge, 16 px in, which the owner asked for after a second review. Rows of the small size had put the icons 4 px further out than the heading and the mark;
 - marks the current page with the design system's fill and primary text, in semibold, with its icon drawn in a heavier stroke, so the page differs in weight and shape as well as in shade (WCAG 1.4.1);
-- shows a status glyph after Storage & Mounts while a backend is slow or unreachable, and the glyph's label, such as "1 backend unreachable", joins the link's name;
-- keeps Settings, the "Prototype, sample data" note and the collapse button at its foot;
-- meets the page at a hairline, which the top bar and drawer of narrow windows leave out.
+- shows a status glyph after Storage & Mounts while a backend is slow or unreachable, and the glyph's label, such as "1 backend unreachable", joins the link's name. The folded rail draws icons only, so there the glyph takes the row's icon, and the status joins the label, which names the link and fills its tooltip;
+- keeps Settings and the collapse button at its foot;
+- can be dragged from its edge between 200 and 400 px wide, or moved with the arrow keys on that edge, and folds to its icon rail when dragged narrower than 200 px or with the collapse button, which the owner asked for. Astryx SideNav's `resizable` does this, and the browser keeps the width and whether the rail is folded between visits;
+- meets the page at a hairline, which the top bar of narrow windows leaves out.
 
-The Overview and the glyph read their totals from `features/storage/summary.ts`, so the two always agree. The mark's grays run from `--color-accent` at the tile to `--color-on-accent` at the core through two translucent squares, so the mark inverts with the mode, as the accent buttons do.
+The Overview and the glyph read their totals from `features/storage/summary.ts`, so the two always agree. The mark's grays run from `--color-accent` at the tile to `--color-on-accent` at the core through two translucent squares, so the mark inverts with the mode, as the accent buttons do. Astryx Icon draws it at its large size, 24 px, and hides it from assistive technology, because the product name beside it names the link.
 
 Alternative: a letter on an ink tile, such as a D. Rejected, because the owner asked for a mark without letters. Sketches drawn on a canvas also set aside a trefoil knot, which the owner found too close to Stash's mark, and a woven lattice or a tartan, which come close to Plaid's.
 
@@ -158,18 +169,53 @@ Alternative: an ink bar at the start of the current row, which would give the ma
 
 Alternative: a storage card at the foot of the navigation, with a capacity bar. Rejected, because Linear keeps its navigation to rows, and the Overview already shows the capacity.
 
+### 12. Charts on the Overview
+
+On 2026-11-17 the owner asked the Overview to keep the important figures and show more of them as charts, named TanStack Charts, and asked for a polished, startup look. From top to bottom the Overview now holds:
+
+- the page title, with the WebDAV address and Copy address beside it;
+- three headline tiles: the bytes stored with the object count, the share of known capacity in use with a bar and the bytes it measures, and the number of mounts with how many backends hold them;
+- the operations of the last 24 hours, with how many failed and an area chart of operations per hour, on which a hollow ring marks each hour with a failed operation;
+- a bar chart of the bytes on each backend, largest first, with each bar's size at its tip, beside the backends' connection status with the mounts each one serves, the default backend marked, and Check connections;
+- the recent operation errors.
+
+Everything PRD §8.1 lists is still there. The current storage backend is the one marked Default, the mount list is the mounts under each backend, the object count and the known capacity have their tiles, and the WebDAV address, the connection status and the recent errors keep their places. The operations chart goes beyond PRD §8.1, and its counts stand for what the audit log, `audit_events` in PRD §7, will record (Open Questions).
+
+The charts draw with the theme's tokens. The line, the wash under it and the bars take the accent, axis labels take secondary text, grid lines take the border gray, and the tooltip takes the popover's background, the border, the element radius and the medium shadow. TanStack Charts reads its series palette and the fills of its focus ring, crosshair and tooltip from `--ts-chart-*` variables and falls back to blue, orange and other hues where one is not set, so the Overview sets every one of them to a gray. The charts follow the dataviz guidance: one series needs no legend, the line is 2 px over a wash that fades from 20% to nothing, the grid is a hairline with no axis lines, bars are 12 px thick with a 4 px rounded end and their values in text color at the tip, and a failed hour differs by shape, not by shade. Each chart has an accessible name, and pointing at an hour or a bar shows its values in a tooltip, which the color scan covers (Decision 6).
+
+Alternative: Recharts, which the Astryx `dashboard` template uses. Rejected, because the owner named TanStack Charts, which belongs to the TanStack family that already gives the app its router, Start and stores, and Recharts 3 brings Redux Toolkit and Immer with it.
+
+Alternative: charts drawn by hand in SVG. Rejected, because scales, axes, tooltips and pointer tracking would all become Davloom code to test and maintain.
+
+Alternative: the chart colors of Astryx's data tokens. Rejected, because their grays carry a blue tint (Decision 3).
+
+### 13. No explanatory or defensive text
+
+On 2026-11-17 the owner asked to remove every piece of explanatory and defensive text from the interface. These went:
+
+- the description under each page title and each Settings section, and the Settings notes on whether the appearance follows the system and on how WebDAV clients sign in;
+- the descriptions and example placeholders of form fields, and the description of the upload area;
+- the descriptions under empty states, and the second sentence of the banner for an unreachable backend in Files;
+- the "Prototype, sample data" note at the foot of the side navigation;
+- the warning that a new key is shown only once, and the hint that a WebDAV client uses it as the password;
+- the longer explanations in confirmations, such as WebDAV having no trash.
+
+What stays is what someone needs in order to act: labels, values, statuses, errors with their reasons, the reason a control is unavailable, the titles of empty states, and one sentence in each confirmation that says what will happen, such as "Its files stay in the bucket." when a mount is removed. Astryx AlertDialog requires that sentence as its `description`, which assistive technology reads through `aria-describedby`.
+
 ## Cloudflare Workers and Bun
 
 They do not differ for this change. Everything runs in the browser, both runtimes serve the same `apps/web/dist/client` build, and no server code changes.
 
 ## Risks / Trade-offs
 
-- [Sample data taken for real state] → The navigation says "Prototype, sample data", no request leaves the page, and a reload restores the samples.
+- [Sample data taken for real state] → No request leaves the page, a reload restores the samples, and the pull request and these documents say that the pages run on samples. The navigation no longer says so, because the owner asked for no explanatory text (Decision 13).
 - [Stand-in rules drift from the server's rules] → Decision 2 names the rule that replaces each one, property tests check the laws they share, and connecting the API deletes them.
 - [The owner declines the PRD §4 exception] → The stand-ins sit in their own modules, so they can move to Bend in Phase 1, or the pages can wait for the API, without a redesign.
 - [Gray statuses are harder to tell apart] → Every status has an icon and words, errors are semibold and have the strongest contrast, and errors are announced assertively (Decision 10).
 - [Destructive buttons look much like secondary ones] → Every destructive action opens a confirmation that names the action and its consequence.
 - [Page flows have no automated tests until the review] → Their tasks stay open in tasks.md, and the change is not archived before they are done.
+- [A new key closed before it is copied] → The dialog no longer warns that the key is shown once. A key cannot be shown again, so the user creates another and revokes the first.
+- [The charts make the Overview heavier] → They load only with the Overview's chunk, which grows from 5.3 kB to 157 kB, or from 2.1 kB to 52 kB after gzip. The entry chunk stays at 320.6 kB.
 
 ## Open Questions
 
@@ -179,10 +225,10 @@ The reviews of this change found these. The owner's review of the prototype deci
 - Opening a folder rebuilds the Files page, so keyboard focus starts again from the top of the page. A file manager would keep it in the list.
 - Keys scoped to a mount stay Active after the mount is removed, and the confirmation does not mention them. Adding the mount again on another bucket would give those keys its files.
 - At 375 px the Credentials table shows only Name and Access, and its status and actions are reached by scrolling the table sideways, with no cue that it scrolls. The Mounts table's actions are also off screen.
-- At 900 px the Overview tiles wrap three and one.
 - Above 1024 px the Settings heading sits inside the section navigation landmark.
 - The specs keep details that Phases 1 and 3 may settle differently: a key covers one mount or all of them, while PRD §7's `mount_permissions` could hold several, and every mount names a bucket, Durable Objects included.
 - Whether a few elements may take a hue. On 2026-11-17 the owner asked for more than two colors, with black and white, or gray and white, as the main ones. The theme answers with more steps of gray (Decisions 3 and 11) and still has no hue, so the owner decides whether statuses or the accent may take one.
+- The operations chart counts every operation in an hour. PRD §7 keeps `audit_events` for security and operation auditing, but does not say whether reads such as GET and PROPFIND are recorded. The phase that builds the table decides, and the chart then counts what it holds.
 - A key's folder drops the spaces around each segment, because the Dashboard never names a folder that way. A WebDAV client could name one ` public`, and a key meant for it would then cover `public` instead. Phase 3 decides whether the Policy Service keeps, refuses or trims such a segment.
 
 ## Migration Plan

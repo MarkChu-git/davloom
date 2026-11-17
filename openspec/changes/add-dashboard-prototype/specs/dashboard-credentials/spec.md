@@ -29,14 +29,14 @@ Creating a key SHALL require a name and SHALL let the user limit the key to a mo
 - **THEN** the folder field cannot be used
 
 ### Requirement: Key shown once
-After a key is created, the same dialog SHALL show the whole key once, with a warning that it cannot be shown again, a control that copies it, and how a WebDAV client signs in with it. Once the user closes the dialog, the page SHALL no longer hold the whole key, and the list SHALL show only its first characters.
+After a key is created, the same dialog SHALL show the whole key once, with a control that copies it. Once the user closes the dialog, the page SHALL no longer hold the whole key, and the list SHALL show only its first characters.
 
 #### Scenario: Creating a key
 - **WHEN** a user creates a key named "Work laptop" that expires in 90 days
-- **THEN** the dialog shows the whole key and the warning, and after Done the page no longer contains the key, and the list shows "Work laptop" first, expiring on Feb 14, 2027, with only its first characters
+- **THEN** the dialog shows the whole key with Copy key, and after Done the page no longer contains the key, and the list shows "Work laptop" first, expiring on Feb 14, 2027, with only its first characters
 
 ### Requirement: Revoking a key
-Revoking a key SHALL ask for confirmation and say that clients using it lose access at once and that it cannot be restored. A revoked key SHALL be marked Revoked and SHALL NOT offer Revoke again.
+Revoking a key SHALL ask for confirmation and say that clients signed in with it lose access and that this cannot be undone. A revoked key SHALL be marked Revoked and SHALL NOT offer Revoke again.
 
 #### Scenario: Revoking a key
 - **WHEN** a user chooses Revoke for "Laptop (Finder)" and confirms
