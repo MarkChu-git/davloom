@@ -1219,6 +1219,10 @@ const detailsOf = async (toggle: Locator): Promise<Locator> => {
   return toggle.page().locator(`[id="${id}"]`);
 };
 
+/** Runs in the page: the lines of visible text in each element, such as the rows of a list. */
+const linesOf = (elements: Element[]): string[][] =>
+  elements.map((element) => (element instanceof HTMLElement ? element.innerText.split("\n") : []));
+
 /**
  * Runs in the page: the background a row draws behind itself, on the row or on one of its pseudo
  * elements, with its corner radius and how far the row stays inside the nearest element around
@@ -1500,6 +1504,7 @@ test.describe("in a window 375 px wide", () => {
       .getByRole("cell")
       .filter({ hasText: /^Contracts/ })
       .evaluate(columnOf);
+    expect(nameColumn, "the column of names").toBeGreaterThanOrEqual(0);
     const inNameHeader = async (named: string) => {
       await expect(menu(named), "the sort menu in the Name header's place").toBeVisible();
       expect(await header(named).evaluate(columnOf), "the sort menu's column").toBe(nameColumn);
@@ -1581,10 +1586,13 @@ test.describe("on a touch screen", () => {
     await expect(keys).toHaveCount(5);
     await expect(page.getByRole("table")).toHaveCount(0);
     // A row shows a key's name, first characters and status, and the rest waits until it opens.
-    const laptop = keys.filter({ hasText: "Laptop (Finder)" });
-    await expect(laptop).toContainText("dvl_7Q2M…");
-    await expect(laptop).toContainText("Active");
-    await expect(main).not.toContainText("Read and write");
+    expect(await keys.evaluateAll(linesOf)).toEqual([
+      ["Laptop (Finder)", "dvl_7Q2M…", "Active"],
+      ["Phone photo backup", "dvl_K9XA…", "Active"],
+      ["Accountant, invoices only", "dvl_P3VD…", "Active"],
+      ["Old tablet", "dvl_2HTE…", "Revoked"],
+      ["Conference laptop", "dvl_M4RC…", "Expired"],
+    ]);
     for (const key of await keys.all()) {
       const toggle = key.getByRole("button", { name: /^Details for key / });
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -1632,11 +1640,15 @@ test.describe("on a touch screen", () => {
     const toggles = main.getByRole("button", { name: /^Details for mount / });
     await expect(toggles).toHaveCount(4);
     await expect(page.getByRole("table")).toHaveCount(0);
-    await expect(main.getByRole("listitem").filter({ hasText: "/documents" })).toContainText(
-      "Durable Objects",
-    );
-    await expect(main.getByText("Bucket", { exact: true })).toHaveCount(0);
+    // A mount's row shows its path and backend, and the rest waits until it opens.
+    expect(await main.getByRole("listitem").evaluateAll(linesOf)).toEqual([
+      ["/documents", "Durable Objects"],
+      ["/shared", "Durable Objects"],
+      ["/photos", "R2 photos"],
+      ["/archive", "RustFS archive"],
+    ]);
     for (const toggle of await toggles.all()) {
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
       expect(await insideWindow(toggle, 375)).toBe(true);
     }
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
