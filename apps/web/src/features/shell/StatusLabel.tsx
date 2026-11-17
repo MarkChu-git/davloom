@@ -5,7 +5,7 @@ import { Text } from "@astryxdesign/core/Text";
 export type Tone = "success" | "warning" | "error" | "info";
 
 /**
- * A status as an icon and a word. The theme has no hues, so each tone has its own glyph and the
+ * A status as an icon in the status's color and a word. Each tone also has its own glyph, and the
  * label always carries the meaning (WCAG 1.4.1: never color alone).
  */
 export const StatusLabel = ({ tone, label }: { tone: Tone; label: string }) => (

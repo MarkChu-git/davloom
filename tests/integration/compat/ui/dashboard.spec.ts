@@ -435,13 +435,43 @@ const bodyIsDark = (): boolean => {
   return red < 128;
 };
 
-// Runs in the page: every color that an element or one of its pseudo-elements paints with a hue.
-// It reads colors inside shadows, filters, gradients and SVG data URLs too, including the color
-// names an SVG uses. An RGB color is a gray when its channels differ by at most 1 in 255, the
-// rounding that color mixing leaves; a Lab or LCH color when its chroma is as small. A notation it
-// does not parse, such as XYZ, counts as a hue, and so does `accent-color: auto`, which leaves
-// checkboxes and radio buttons to the browser's own blue.
-const huesOnPage = (): string[] => {
+// Runs in the page: the colors the theme's status tokens resolve to in the mode in use, as the
+// browser reports them, in rgb() or rgba(). Statuses are the only parts of a page with a hue.
+const statusColorsOnPage = (): string[] => {
+  const probe = document.createElement("span");
+  document.body.append(probe);
+  const colors: string[] = [];
+  for (const status of ["error", "warning", "success", "info"]) {
+    for (const token of [
+      `--color-${status}`,
+      `--color-text-${status}`,
+      `--color-icon-${status}`,
+      `--color-border-${status}`,
+      `--color-on-${status}`,
+      `--color-${status}-muted`,
+      `--color-on-${status}-muted`,
+    ]) {
+      probe.style.color = `var(${token})`;
+      colors.push(getComputedStyle(probe).color);
+    }
+    probe.style.boxShadow = `var(--shadow-inset-${status})`;
+    colors.push(getComputedStyle(probe).boxShadow);
+  }
+  probe.style.color = "var(--color-background-error-inverted)";
+  colors.push(getComputedStyle(probe).color);
+  probe.remove();
+  return colors;
+};
+
+// Runs in the page: every color that an element or one of its pseudo-elements paints with a hue,
+// apart from the status colors in `allowed`. It reads colors inside shadows, filters, gradients and
+// SVG data URLs too, including the color names an SVG uses. An RGB color is a gray when its
+// channels differ by at most 1 in 255, the rounding that color mixing leaves; a Lab or LCH color
+// when its chroma is as small. An RGB color is a status color when each channel is within 1 of
+// one of `allowed`, whatever its alpha. A notation it does not parse, such as XYZ, counts as a hue,
+// and so does `accent-color: auto`, which leaves checkboxes and radio buttons to the browser's own
+// blue.
+const huesOnPage = (allowed: readonly string[]): string[] => {
   const properties = [
     "color",
     "background-color",
@@ -542,6 +572,24 @@ const huesOnPage = (): string[] => {
         return true;
     }
   };
+  const statusChannels = allowed.flatMap((value) =>
+    [...value.matchAll(/rgba?\(([^()]*)\)/g)].map(([, body = ""]) =>
+      body
+        .split(/[\s,/]+/)
+        .filter((part) => part !== "")
+        .slice(0, 3)
+        .map(Number),
+    ),
+  );
+  const isStatusColor = (notation: string, parts: readonly string[]): boolean => {
+    if (notation !== "rgb" && notation !== "rgba") {
+      return false;
+    }
+    const channels = parts.slice(0, 3).map(Number);
+    return statusChannels.some((status) =>
+      status.every((level, at) => Math.abs(level - (channels[at] ?? Number.NaN)) <= 1),
+    );
+  };
   const found = new Set<string>();
   for (const element of document.querySelectorAll("*")) {
     for (const pseudoElement of pseudoElements) {
@@ -561,12 +609,8 @@ const huesOnPage = (): string[] => {
         for (const [literal, notation = "", body = ""] of value.matchAll(
           /\b(rgba?|color|oklab|oklch|lab|lch|hsla?|hwb)\(([^()]*)\)/g,
         )) {
-          if (
-            hasHue(
-              notation,
-              body.split(/[\s,/]+/).filter((part) => part !== ""),
-            )
-          ) {
+          const parts = body.split(/[\s,/]+/).filter((part) => part !== "");
+          if (hasHue(notation, parts) && !isStatusColor(notation, parts)) {
             found.add(where + literal);
           }
         }
@@ -600,7 +644,9 @@ const huesOnPage = (): string[] => {
 
 for (const scheme of ["light", "dark"] as const) {
   for (const { name, path, width, before, show, still } of STATES) {
-    test(`Rendered pages: ${name} shows no hue in ${scheme} mode`, async ({ page }) => {
+    test(`Rendered pages: ${name} shows no hue but the status colors in ${scheme} mode`, async ({
+      page,
+    }) => {
       await page.emulateMedia({ colorScheme: scheme });
       if (width !== undefined) {
         await page.setViewportSize({ width, height: 900 });
@@ -610,7 +656,18 @@ for (const scheme of ["light", "dark"] as const) {
       await show(page);
 
       expect(await page.evaluate(bodyIsDark)).toBe(scheme === "dark");
-      expect(await page.evaluate(huesOnPage)).toEqual([]);
+      // A border or fill on its way to a status color passes through blends of the old color and
+      // the new one, which are not status colors, so the scan waits for transitions to end.
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation instanceof CSSTransition)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
+      const allowed = await page.evaluate(statusColorsOnPage);
+      expect(await page.evaluate(huesOnPage, allowed)).toEqual([]);
       await still?.(page);
     });
   }
@@ -631,7 +688,7 @@ const scanWith = async (page: Page, { css = "", html = "" }: { css?: string; htm
     },
     { css, html },
   );
-  const found = await page.evaluate(huesOnPage);
+  const found = await page.evaluate(huesOnPage, await page.evaluate(statusColorsOnPage));
   await page.evaluate(() => {
     document.querySelector("#scan-sample-style")?.remove();
     document.querySelector("#scan-sample-html")?.remove();
@@ -643,7 +700,7 @@ const svgImage = (shapes: string) =>
   `h1 { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E${shapes}%3C/svg%3E"); }`;
 
 // Colors put on a page on purpose. The hues sit in places and notations that task 1.3 lists, one
-// of them in a notation the scan does not parse, and the grays must pass.
+// of them in a notation the scan does not parse, and the grays and a status color must pass.
 const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue: boolean }[] = [
   {
     name: "a Lab selection",
@@ -701,6 +758,12 @@ const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue
     hasHue: true,
   },
   { name: "a gray in color()", css: "h1 { color: color(srgb 0.5 0.5 0.5); }", hasHue: false },
+  { name: "the error color", css: "h1 { color: var(--color-text-error); }", hasHue: false },
+  {
+    name: "a red two steps from the error color",
+    css: "h1 { color: rgb(from var(--color-text-error) r g calc(b + 2)); }",
+    hasHue: true,
+  },
   {
     name: "a placeholder and a file button the browser draws",
     html: "<input placeholder='Name'><input type='file'>",
@@ -715,7 +778,7 @@ const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue
   },
 ];
 
-test("Rendered pages: the scan reports hues put on a page on purpose, and no grays", async ({
+test("Rendered pages: the scan reports hues put on a page on purpose, and no grays or status colors", async ({
   page,
 }) => {
   // Each sample scans the whole page again.
@@ -1087,7 +1150,23 @@ const isGray = (color: string): boolean => {
   return alpha > 0 && Math.max(red, green, blue) - Math.min(red, green, blue) <= 1;
 };
 
-test("Selected text and spelling marks: the page paints them gray", async ({ page }) => {
+/** The color a theme token resolves to in the page's mode, as the browser reports it. */
+const tokenColor = (page: Page, token: string): Promise<string> =>
+  page.evaluate((name) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${name})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, token);
+
+const computed = (target: Locator, property: string): Promise<string> =>
+  target.evaluate((node, name) => getComputedStyle(node).getPropertyValue(name), property);
+
+test("Selected text and spelling marks: the selection is gray, misspellings take the error color and grammar the information color", async ({
+  page,
+}) => {
   await page.goto("/");
   await expect(levelOne(page)).toHaveText("Overview");
 
@@ -1104,10 +1183,53 @@ test("Selected text and spelling marks: the page paints them gray", async ({ pag
     }),
   }));
   expect(isGray(marks.selection), marks.selection).toBe(true);
-  for (const line of marks.lines) {
-    expect(line.shape).toBe("underline wavy");
-    expect(isGray(line.color), line.color).toBe(true);
+  const [spelling, grammar] = marks.lines;
+  expect(spelling?.shape).toBe("underline wavy");
+  expect(spelling?.color).toBe(await tokenColor(page, "--color-text-error"));
+  expect(grammar?.shape).toBe("underline wavy");
+  expect(grammar?.color).toBe(await tokenColor(page, "--color-text-info"));
+});
+
+test("Status colors: statuses, failed hours and a destructive action take their status colors", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const main = page.getByRole("main");
+  // The icon beside a status's word, which carries the status's tone.
+  const iconBeside = (label: string, tone: string) =>
+    main
+      .getByText(label, { exact: true })
+      .first()
+      .locator("xpath=..")
+      .locator(`[data-color="${tone}"]`);
+
+  await expect(iconBeside("Unreachable", "error")).toHaveCount(1);
+  expect(await computed(iconBeside("Unreachable", "error"), "color")).toBe(
+    await tokenColor(page, "--color-icon-error"),
+  );
+  await expect(iconBeside("Connected", "success")).toHaveCount(1);
+  expect(await computed(iconBeside("Connected", "success"), "color")).toBe(
+    await tokenColor(page, "--color-icon-success"),
+  );
+
+  // A ring on each of the 3 hours with a failed operation.
+  const rings = page
+    .getByRole("img", { name: "Operations per hour, last 24 hours" })
+    .locator("circle");
+  await expect(rings).toHaveCount(3);
+  for (const ring of await rings.all()) {
+    expect(await computed(ring, "stroke")).toBe(await tokenColor(page, "--color-error"));
   }
+
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Actions for mount /photos" }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
+  // Astryx fills a destructive button with the error color's muted shade, under its own text.
+  const remove = page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" });
+  expect(await computed(remove, "background-color")).toBe(
+    await tokenColor(page, "--color-error-muted"),
+  );
+  expect(await computed(remove, "color")).toBe(await tokenColor(page, "--color-on-error-muted"));
 });
 
 test("Rendered pages: the scan reports a red spelling mark and a checkbox left to the browser", async ({

@@ -34,10 +34,13 @@ input:autofill {
 }
 
 /*
- * Browsers underline misspelled words in red. Chromium lets a page style the marks, so they are
- * gray there; other browsers keep their own, and the fields that hold names turn spell check off.
+ * Misspelled words take the error color and grammar mistakes the information color, wherever the
+ * browser lets a page style the marks (Chromium does). Fields that hold names turn spell check off.
  */
-::spelling-error,
+::spelling-error {
+  text-decoration: underline wavy var(--color-text-error);
+}
+
 ::grammar-error {
-  text-decoration: underline wavy var(--color-text-secondary);
+  text-decoration: underline wavy var(--color-text-info);
 }

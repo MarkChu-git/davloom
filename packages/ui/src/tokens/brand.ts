@@ -1,8 +1,9 @@
 /**
  * Davloom's brand colors as [light, dark] pairs. The theme is built from these values.
  *
- * Davloom is black, white and grays: the accent is near-black ink in light mode and near-white ink
- * in dark mode, so the primary action is the strongest contrast on the page.
+ * Davloom is black, white and grays, with hues only for statuses: the accent is near-black ink in
+ * light mode and near-white ink in dark mode, so the primary action is the strongest contrast on
+ * the page.
  */
 export const brandTokens = {
   accent: ["#111111", "#f1f1f1"],

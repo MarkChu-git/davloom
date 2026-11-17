@@ -4,14 +4,11 @@ import { neutralTheme } from "@astryxdesign/theme-neutral/built";
 import { brandTokens } from "../tokens/brand";
 import {
   HUES,
-  STATUSES,
   elevationShadows,
   hueTone,
   insetRings,
   invertedTones,
   layerTones,
-  statusShared,
-  statusTones,
   syntaxTones,
   trackTone,
 } from "../tokens/monochrome";
@@ -28,25 +25,13 @@ const tokens: Partial<Record<TokenName, TokenValue>> = {
   "--color-background-card": pair(layerTones.card),
   "--color-background-popover": pair(layerTones.popover),
   "--color-background-inverted": pair(invertedTones.background),
-  "--color-background-error-inverted": pair(invertedTones.errorBackground),
   "--color-track": pair(trackTone),
   "--shadow-low": elevationShadows.low,
   "--shadow-med": elevationShadows.med,
   "--shadow-high": elevationShadows.high,
   "--shadow-inset-hover": insetRings.hover,
   "--shadow-inset-selected": insetRings.selected,
-  "--shadow-inset-success": insetRings.success,
-  "--shadow-inset-warning": insetRings.warning,
-  "--shadow-inset-error": insetRings.error,
 };
-
-for (const status of STATUSES) {
-  tokens[`--color-${status}` as const] = pair(statusTones[status].fill);
-  tokens[`--color-text-${status}` as const] = pair(statusTones[status].text);
-  tokens[`--color-on-${status}` as const] = pair(statusShared.onFill);
-  tokens[`--color-${status}-muted` as const] = pair(statusShared.muted);
-  tokens[`--color-on-${status}-muted` as const] = pair(statusShared.onMuted);
-}
 
 for (const hue of HUES) {
   tokens[`--color-background-${hue}` as const] = pair(hueTone.background);
@@ -55,7 +40,11 @@ for (const hue of HUES) {
   tokens[`--color-text-${hue}` as const] = pair(hueTone.text);
 }
 
-/** Davloom Theme: the neutral theme in black, white and grays (see ../tokens/monochrome). */
+/**
+ * Davloom Theme: the neutral theme in black, white and grays (see ../tokens/monochrome), apart
+ * from the status colors, which it keeps: errors red, warnings amber, success green and
+ * information blue, with the actions that destroy something in the error color.
+ */
 export const davloomTheme = defineTheme({
   name: "davloom",
   extends: neutralTheme,

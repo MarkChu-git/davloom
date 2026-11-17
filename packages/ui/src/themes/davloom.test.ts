@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STATUSES } from "../tokens/monochrome";
 import { davloomTheme } from "./davloom.js";
 
 // The stylesheet as browsers load it. Bun's fetch reads file URLs; Vitest would load CSS empty.
@@ -217,22 +218,42 @@ describe("the hue check", () => {
   });
 });
 
-describe("Black, white and gray palette", () => {
+// The tokens that may hold a hue: each status's fill, its text and border, its muted background
+// and the text on that, and its ring. Everything else in the theme is black, white or a gray.
+const STATUS_TOKEN =
+  /^--(?:color-(?:(?:text|on|border)-)?(?:error|warning|success|info)(?:-muted)?|shadow-inset-(?:error|warning|success|info))$/;
+
+const lastKey = (path: string): string => path.slice(path.lastIndexOf(".") + 1);
+
+describe("Gray and white, with color for status", () => {
   const values = stringsIn(davloomTheme, "davloomTheme");
   const declarations = declarationsIn(stylesheet);
 
-  it("The theme stylesheet: every color in the built stylesheet is a gray", () => {
+  it("The theme stylesheet: every hue in the built stylesheet belongs to a status token", () => {
     expect(
-      declarations.flatMap(([property, value]) =>
-        huesIn(value).map((hue) => `${property}: ${hue}`),
-      ),
+      declarations
+        .filter(([property]) => !STATUS_TOKEN.test(property))
+        .flatMap(([property, value]) => huesIn(value).map((hue) => `${property}: ${hue}`)),
     ).toEqual([]);
   });
 
-  it("The theme stylesheet: every color in the built theme module is a gray", () => {
+  it("The theme stylesheet: every hue in the built theme module belongs to a status token", () => {
     expect(
-      values.flatMap(([path, value]) => huesIn(value).map((hue) => `${path}: ${hue}`)),
+      values
+        .filter(([path]) => !STATUS_TOKEN.test(lastKey(path)))
+        .flatMap(([path, value]) => huesIn(value).map((hue) => `${path}: ${hue}`)),
     ).toEqual([]);
+  });
+
+  it("The theme stylesheet: each status keeps a hue in its fill and its text", () => {
+    for (const status of STATUSES) {
+      for (const token of [`--color-${status}`, `--color-text-${status}`]) {
+        const hues = declarations
+          .filter(([property]) => property === token)
+          .flatMap(([, value]) => huesIn(value));
+        expect(hues, token).not.toEqual([]);
+      }
+    }
   });
 
   it("reads enough colors to mean something", () => {

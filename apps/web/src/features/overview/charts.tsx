@@ -23,10 +23,12 @@ import {
 } from "../sample-data/data";
 import { formatBytes, formatCount } from "../sample-data/format";
 
-// Davloom has no hues (see packages/ui/src/tokens/monochrome), so every chart draws in the ink of
-// the accent on the card's surface, and the theme's grays carry the axes and grid. The paints are
-// the theme's own CSS variables, so a chart follows the color mode without being rebuilt.
+// Davloom draws in grays and keeps hues for statuses (see packages/ui/src/tokens/monochrome), so
+// the charts draw in the ink of the accent on the card's surface, the theme's grays carry the axes
+// and grid, and a failed hour takes the error color. The paints are the theme's own CSS variables,
+// so a chart follows the color mode without being rebuilt.
 const INK = colorVars["--color-accent"];
+const FAILED = colorVars["--color-error"];
 const SURFACE = colorVars["--color-background-card"];
 const RULE = colorVars["--color-border"];
 const LABEL = colorVars["--color-text-primary"];
@@ -91,11 +93,11 @@ const operationsDefinition = defineChart({
       strokeWidth: 2,
       curve: smooth,
     }),
-    // A hollow ring on each hour with a failed operation: the line's own ink, so it reads by
-    // shape rather than shade.
+    // A hollow ring in the error color on each hour with a failed operation, so a failure reads
+    // by its shape as well as its color.
     dot(
       operationsByHour.filter((hour) => hour.failed > 0),
-      { x: hourPosition, y: "operations", r: 4, fill: SURFACE, stroke: INK, strokeWidth: 2 },
+      { x: hourPosition, y: "operations", r: 4, fill: SURFACE, stroke: FAILED, strokeWidth: 2 },
     ),
     crosshair({ x: { stroke: RULE }, y: false }),
   ],
