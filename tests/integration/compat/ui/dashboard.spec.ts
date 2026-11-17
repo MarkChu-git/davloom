@@ -741,6 +741,22 @@ test("Moving between pages: the side navigation changes the page without a reloa
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 });
 
+test("Storage status in the navigation: an unreachable backend marks Storage & Mounts on every page", async ({
+  page,
+}) => {
+  for (const { path, name } of PAGES) {
+    await page.goto(path);
+    await expect(levelOne(page)).toHaveText(name);
+    // The glyph's label joins the link's name, after the visible label.
+    await expect(
+      sideNavigation(page).getByRole("link", {
+        name: /^Storage & Mounts\s*1 backend unreachable$/,
+      }),
+      path,
+    ).toBeVisible();
+  }
+});
+
 // Runs in the page: the main landmark and each element around it, up to the root, that is wider
 // inside than it is, so it scrolls or cuts its content off sideways. The page scrolls inside the
 // layout's main landmark rather than the document, so the document's own width alone misses it.
