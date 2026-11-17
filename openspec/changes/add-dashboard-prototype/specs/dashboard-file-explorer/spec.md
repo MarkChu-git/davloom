@@ -51,7 +51,7 @@ Searching SHALL filter the current folder by name without regard to case, tell a
 - **THEN** the page says that nothing matches and offers to clear the search
 
 ### Requirement: Item details
-Selecting a file SHALL show its location, size, modification time, type, backend and lock state, and a preview of a text file's content, and the `file` search parameter SHALL name it. Above 1024 px the details sit beside the list; at 1024 px and below they open in a dialog.
+Selecting a file SHALL show its location, size, modification time, type, backend and lock state, and a preview of a text file's content, and the `file` search parameter SHALL name it. On a page wider than 776 px beside the side navigation, which a window wider than 1024 px leaves beside the navigation at its default width, the details sit beside the list; on a narrower page they open in a dialog.
 
 #### Scenario: Details beside the list
 - **WHEN** a user opens `/files?path=/shared&file=wifi-guest.txt` in a window 1280 px wide

@@ -18,7 +18,7 @@ Settings SHALL offer the sections Profile, Sign-in and security, Appearance, Web
 - **THEN** the Profile section shows
 
 ### Requirement: Sections on narrow screens
-At 1024 px and below, Settings SHALL replace the section list with a selector above the open section, so that the section keeps the full width beside the side navigation, or the whole window once the navigation is behind its menu button.
+On a page 776 px wide or less beside the side navigation, which a window 1024 px wide leaves beside the navigation at its default width, Settings SHALL replace the section list with a selector above the open section, so that the section keeps the page's full width, or the whole window once the navigation is behind its menu button. The page's own width decides, so a wider navigation narrows it and a folded one widens it.
 
 #### Scenario: A phone-sized window
 - **WHEN** a user opens `/settings?section=webdav` in a window 375 px wide and chooses Storage in the selector
@@ -27,6 +27,10 @@ At 1024 px and below, Settings SHALL replace the section list with a selector ab
 #### Scenario: A tablet-sized window
 - **WHEN** a user opens `/settings?section=webdav` in a window 900 px wide
 - **THEN** a selector above the section shows WebDAV in place of the section list, and nothing on the page is wider than the window
+
+#### Scenario: A wider side navigation
+- **WHEN** a user opens Settings in a window 1100 px wide, widens the side navigation to 400 px, and then folds it in a window 1000 px wide
+- **THEN** the section list shows beside the section at first, a selector takes its place once the navigation is 400 px wide, the list comes back once the navigation is folded, and nothing on the page is wider than the window
 
 ### Requirement: Profile
 The Profile section SHALL let the user change the display name and email and save them, and each field SHALL declare its autofill purpose to the browser. Saving SHALL refuse an empty display name and an email address without an @ between two parts. A saved profile SHALL last for the visit.
@@ -72,7 +76,7 @@ The Storage section SHALL let the user choose the backend that new mounts start 
 - **THEN** the mount form's backend is R2 photos
 
 ### Requirement: Data export
-The Data export section SHALL export the instance's data to a file and confirm the export with the file name.
+Selecting Export in the Data export section SHALL show that the export is running and SHALL then confirm the export with the name of its file.
 
 #### Scenario: Exporting
 - **WHEN** a user selects Export

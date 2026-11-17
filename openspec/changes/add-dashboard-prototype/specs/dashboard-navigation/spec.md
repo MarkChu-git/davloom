@@ -22,15 +22,15 @@ The Dashboard SHALL list Overview, Files, Credentials, Storage & Mounts and Sett
 - **THEN** the mark, the Manage heading, the icon of every link and the collapse button's icon start at the same distance from the window's left edge
 
 #### Scenario: Narrow screens
-- **WHEN** a user opens each page, and a file's details, in a window 375 px wide
+- **WHEN** a user opens each page, and a file's details, in a window 360 px wide
 - **THEN** the side navigation is behind a menu button, neither the page's main region nor anything around it is wider than the window, and the dialog with the file's details fits inside the window
 
 ### Requirement: Resizing and folding the side navigation
-The side navigation's edge SHALL resize it, by pointer or by arrow keys, between 200 and 400 px wide. The navigation SHALL fold to a rail of icons when dragged narrower than 200 px or with its collapse button, and the rail SHALL still mark Storage & Mounts. The browser SHALL keep the width and whether the navigation is folded for the next visit.
+The side navigation's edge SHALL resize it, by pointer or by arrow keys, between 200 and 400 px wide. The navigation SHALL fold to a rail of icons when its edge is let go narrower than 160 px, when Enter is pressed on the edge, or with its collapse button, and let go at rest between 160 and 200 px it SHALL return to 200 px. The rail SHALL still mark Storage & Mounts. The browser SHALL keep the width and whether the navigation is folded for the next visit.
 
 #### Scenario: Resizing the side navigation
-- **WHEN** a user moves the navigation's edge with the right arrow key, drags it 80 px further to the right, then drags it far to the left, reloads the page and selects Expand sidebar
-- **THEN** the navigation grew with each move, folded to its rail, was still folded after the reload, and opened again at the width it had before folding
+- **WHEN** a user moves the navigation's edge with the right arrow key, drags it 80 px further to the right and then past 400 px, lets it go at rest 180 px from the window's edge and then 150 px from it, reloads the page, selects Expand sidebar, and presses Enter on the edge
+- **THEN** the navigation grew with each move and stopped at 400 px, came back to 200 px from 180 px, folded to its rail from 150 px, was still folded after the reload, opened again at 200 px, the width it had before folding, and folded again on Enter
 
 ### Requirement: Page identity
 Each page SHALL have its own document title and exactly one level-one heading, and the document SHALL declare English, the language of the interface.

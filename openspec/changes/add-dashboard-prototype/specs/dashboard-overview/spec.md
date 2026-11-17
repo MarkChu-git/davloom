@@ -18,7 +18,7 @@ The Overview SHALL show the bytes stored with the number of objects, the share o
 - **THEN** the three figures sit side by side at 900 px and one above another at 800 px
 
 ### Requirement: Operations
-The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any.
+The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any. The chart SHALL also say in words how many operations failed, in which hours, and which hour was busiest.
 
 #### Scenario: The last 24 hours
 - **WHEN** a user opens the Overview
@@ -28,12 +28,20 @@ The Overview SHALL show how many operations the instance handled in the last 24 
 - **WHEN** a user points at the chart where it shows 12 hours ago
 - **THEN** a tooltip names that hour and shows 426 operations
 
+#### Scenario: The operations chart in words
+- **WHEN** assistive technology reads the operations chart
+- **THEN** its description says that 4 of 3,732 operations failed, names the 3 hours in which they failed, and says that the busiest hour was 12 hours ago, with 426
+
 ### Requirement: Storage by backend
-The Overview SHALL chart the bytes stored on each backend, largest first, with each backend's bytes beside its bar, and SHALL link to Storage & Mounts.
+The Overview SHALL chart the bytes stored on each backend, largest first, with each backend's bytes beside its bar and in the chart's description in words, and SHALL link to Storage & Mounts.
 
 #### Scenario: The sample backends
 - **WHEN** a user opens the Overview
 - **THEN** the chart shows RustFS archive with 212 GB, R2 photos with 41.2 GB and Durable Objects with 1.9 GB, in that order, and Manage storage opens Storage & Mounts
+
+#### Scenario: The storage chart in words
+- **WHEN** assistive technology reads the storage chart
+- **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
 
 ### Requirement: Connection status
 The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
@@ -58,7 +66,7 @@ The Overview SHALL show the WebDAV address in a read-only field the user can sel
 - **THEN** the field says that this browser blocked copying and asks the user to select the text and copy it
 
 ### Requirement: Recent operation errors
-The Overview SHALL list recent failed operations with when they happened, the method and path, the status code and the reason in words.
+The Overview SHALL list recent failed operations with when they happened, the method and path, the status code in the error color, and the reason in words.
 
 #### Scenario: A rejected upload
 - **WHEN** a user opens the Overview
