@@ -1055,8 +1055,11 @@ const sidewaysOverflow = (): string[] => {
   return found;
 };
 
-test.describe("in a window 375 px wide", () => {
-  test.use({ viewport: { width: 375, height: 812 } });
+// 360 px is the narrowest common phone, as on many Android phones.
+const PHONE_WIDTH = 360;
+
+test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
+  test.use({ viewport: { width: PHONE_WIDTH, height: 780 } });
 
   test("Narrow screens: the navigation sits behind a menu button and no page scrolls sideways", async ({
     page,
@@ -1087,7 +1090,7 @@ test.describe("in a window 375 px wide", () => {
       );
     });
     const box = await dialog.boundingBox();
-    expect(box !== null && box.x >= 0 && box.x + box.width <= 375).toBe(true);
+    expect(box !== null && box.x >= 0 && box.x + box.width <= PHONE_WIDTH).toBe(true);
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
