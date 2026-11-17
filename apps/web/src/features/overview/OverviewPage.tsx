@@ -13,7 +13,7 @@ import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { backends, instance, operationsByHour, recentErrors } from "../sample-data/data";
+import { backends, instance, recentErrors } from "../sample-data/data";
 import { formatBytes, formatCount, formatRelative } from "../sample-data/format";
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { CopyField } from "../shell/CopyField";
@@ -23,9 +23,7 @@ import { BACKEND_STATUS } from "../storage/backendStatus";
 import { useMounts } from "../storage/mountStore";
 import { knownCapacity, knownUsed, objectCount, unreachable, usedBytes } from "../storage/summary";
 import { OperationsChart, StorageChart } from "./charts";
-
-const totalOperations = operationsByHour.reduce((sum, hour) => sum + hour.operations, 0);
-const failedOperations = operationsByHour.reduce((sum, hour) => sum + hour.failed, 0);
+import { failedOperations, totalOperations } from "./operations";
 
 const share = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
 

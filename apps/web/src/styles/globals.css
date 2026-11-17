@@ -34,6 +34,16 @@ input:autofill {
 }
 
 /*
+ * TanStack Charts make a chart's SVG focusable, so its values can be read from the keyboard, and
+ * leave its focus ring to the browser, which draws it in the system's blue. The chart takes the
+ * theme's ring instead, the one every Astryx control draws.
+ */
+.ts-chart:focus-visible {
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+/*
  * Misspelled words take the error color and grammar mistakes the information color, wherever the
  * browser lets a page style the marks (Chromium does). Fields that hold names turn spell check off.
  */

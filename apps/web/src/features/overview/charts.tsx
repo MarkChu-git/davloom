@@ -22,6 +22,7 @@ import {
   type StorageBackend,
 } from "../sample-data/data";
 import { formatBytes, formatCount } from "../sample-data/format";
+import { failedOperations, totalOperations } from "./operations";
 
 // Davloom draws in grays and keeps hues for statuses (see packages/ui/src/tokens/monochrome), so
 // the charts draw in the ink of the accent on the card's surface, the theme's grays carry the axes
@@ -55,6 +56,7 @@ const styles = stylex.create({
     "--ts-chart-tooltip-border": `${borderVars["--border-width"]} solid ${RULE}`,
     "--ts-chart-tooltip-border-radius": radiusVars["--radius-element"],
     "--ts-chart-tooltip-shadow": shadowVars["--shadow-med"],
+    "--ts-chart-tooltip-font": `500 ${textSizeVars["--font-size-xs"]}/1.3 ${typographyVars["--font-family-body"]}`,
   },
 });
 
@@ -74,6 +76,13 @@ const TEXT_SIZE = 12;
 const narrowHours = new Intl.RelativeTimeFormat("en", { numeric: "auto", style: "narrow" });
 const hours = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 const compact = new Intl.NumberFormat("en", { notation: "compact" });
+const list = new Intl.ListFormat("en");
+
+/** An hour as a sentence names it, such as "12 hours ago" or "this hour". */
+const hourAgo = (hour: HourlyOperations): string => hours.format(-hour.hoursAgo, "hour");
+
+/** An hour as the axis and the tooltip name it: the latest one is "Now". */
+const hourTitle = (hour: HourlyOperations): string => (hour.hoursAgo === 0 ? "Now" : hourAgo(hour));
 
 /** Hours run left to right towards the sample clock, so the latest hour sits at zero. */
 const hourPosition = (hour: HourlyOperations): number => -hour.hoursAgo;
@@ -149,7 +158,7 @@ const operationsDefinition = defineChart({
         return { rows: [] };
       }
       return {
-        title: hours.format(-hour.hoursAgo, "hour"),
+        title: hourTitle(hour),
         rows: [
           { label: "Operations", value: formatCount(hour.operations) },
           ...(hour.failed > 0 ? [{ label: "Failed", value: formatCount(hour.failed) }] : []),
@@ -159,6 +168,20 @@ const operationsDefinition = defineChart({
   },
 });
 
+const busiest = operationsByHour.reduce((top, hour) =>
+  hour.operations > top.operations ? hour : top,
+);
+
+// What the chart shows, in words, for assistive technology. Each hour's own figures are read by
+// moving through the chart with the arrow keys.
+const operationsDescription = [
+  `${formatCount(totalOperations)} operations, ${formatCount(failedOperations)} of them failed`,
+  failedOperations === 0
+    ? "."
+    : `, ${list.format(operationsByHour.filter((hour) => hour.failed > 0).map(hourAgo))}.`,
+  ` The busiest hour was ${hourAgo(busiest)}, with ${formatCount(busiest.operations)}.`,
+].join("");
+
 /** Operations per hour over the last 24 hours, with a ring on each hour where one failed. */
 export const OperationsChart = () => (
   <Chart
@@ -166,6 +189,7 @@ export const OperationsChart = () => (
     definition={operationsDefinition}
     height={200}
     ariaLabel="Operations per hour, last 24 hours"
+    ariaDescription={operationsDescription}
   />
 );
 
@@ -216,6 +240,10 @@ const storageDefinition = defineChart({
   },
 });
 
+const storageDescription = `${list.format(
+  byUse.map((backend) => `${backend.name} stores ${formatBytes(backend.usedBytes)}`),
+)}.`;
+
 /** Bytes stored on each backend, largest first. */
 export const StorageChart = () => (
   <Chart
@@ -223,5 +251,6 @@ export const StorageChart = () => (
     definition={storageDefinition}
     height={44 * byUse.length}
     ariaLabel="Bytes stored on each backend"
+    ariaDescription={storageDescription}
   />
 );

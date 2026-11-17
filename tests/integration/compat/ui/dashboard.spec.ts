@@ -124,6 +124,26 @@ const STATES: readonly PageState[] = [
       await page.getByRole("img", { name: "Operations per hour, last 24 hours" }).hover();
       await shown(page.getByRole("status", { name: /Operations: \d/ }));
     },
+    still: (page) => shown(page.getByRole("status", { name: /Operations: \d/ })),
+  },
+  {
+    name: "Overview with a chart in keyboard focus",
+    path: "/",
+    show: async (page) => {
+      const chart = page.getByRole("img", { name: "Operations per hour, last 24 hours" });
+      await shown(chart);
+      // Tabs through the page, as a keyboard user reaches the chart.
+      for (let step = 0; step < 30; step += 1) {
+        if (await chart.evaluate((node) => node === document.activeElement)) {
+          break;
+        }
+        await page.keyboard.press("Tab");
+      }
+      await expect(chart).toBeFocused();
+      await expect(page.locator(":focus-visible")).toHaveCount(1);
+    },
+    still: (page) =>
+      expect(page.getByRole("img", { name: "Operations per hour, last 24 hours" })).toBeFocused(),
   },
   {
     name: "the folded side navigation",
@@ -1285,6 +1305,39 @@ test("The name a screen reader hears: a file's link is named with the whole file
   const name =
     "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
   await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+});
+
+/**
+ * The description Chromium gives each image in its accessibility tree, by the image's name. A
+ * chart's description is an SVG `<desc>`, which Playwright's own description check does not read.
+ */
+const imageDescriptions = async (page: Page): Promise<Map<string, string>> => {
+  const session = await page.context().newCDPSession(page);
+  const { nodes } = await session.send("Accessibility.getFullAXTree");
+  await session.detach();
+  return new Map(
+    nodes
+      .filter((node) => node.role?.value === "image")
+      .map((node) => [String(node.name?.value ?? ""), String(node.description?.value ?? "")]),
+  );
+};
+
+test("The operations chart in words: it describes the failures and the busiest hour", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await shown(page.getByRole("img", { name: "Operations per hour, last 24 hours" }));
+  expect((await imageDescriptions(page)).get("Operations per hour, last 24 hours")).toBe(
+    "3,732 operations, 4 of them failed, 5 hours ago, 1 hour ago, and this hour. The busiest hour was 12 hours ago, with 426.",
+  );
+});
+
+test("The storage chart in words: it names the bytes on each backend", async ({ page }) => {
+  await page.goto("/");
+  await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
+  expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toBe(
+    "RustFS archive stores 212 GB, R2 photos stores 41.2 GB, and Durable Objects stores 1.9 GB.",
+  );
 });
 
 test("Opening the form again: the mount form starts from its own mount or the defaults", async ({
