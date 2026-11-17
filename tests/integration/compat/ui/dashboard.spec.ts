@@ -126,6 +126,16 @@ const STATES: readonly PageState[] = [
     },
   },
   {
+    name: "the folded side navigation",
+    path: "/",
+    show: async (page) => {
+      await sideNavigation(page).getByRole("button", { name: "Collapse sidebar" }).click();
+      await shown(
+        sideNavigation(page).getByRole("link", { name: "Storage & Mounts, 1 backend unreachable" }),
+      );
+    },
+  },
+  {
     name: "the top level of Files",
     path: "/files",
     show: (page) => shown(page.getByRole("link", { name: "documents", exact: true })),
@@ -752,16 +762,98 @@ test("Moving between pages: the side navigation changes the page without a reloa
 test("Storage status in the navigation: an unreachable backend marks Storage & Mounts on every page", async ({
   page,
 }) => {
+  const navigation = sideNavigation(page);
   for (const { path, name } of PAGES) {
     await page.goto(path);
     await expect(levelOne(page)).toHaveText(name);
     // The glyph's label joins the link's name, after the visible label.
     await expect(
-      sideNavigation(page).getByRole("link", {
-        name: /^Storage & Mounts\s*1 backend unreachable$/,
-      }),
+      navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ }),
       path,
     ).toBeVisible();
+    await expect(
+      navigation.getByRole("img", { name: "1 backend unreachable", exact: true }),
+      path,
+    ).toBeVisible();
+  }
+
+  // The rail draws only icons, so the glyph takes the row's icon and the status joins its name.
+  await navigation.getByRole("button", { name: "Collapse sidebar" }).click();
+  const link = navigation.getByRole("link", { name: "Storage & Mounts, 1 backend unreachable" });
+  await expect(link).toBeVisible();
+  await expect(link.locator('[data-color="error"]')).toBeVisible();
+  await link.hover();
+  await expect(page.getByRole("tooltip")).toHaveText("Storage & Mounts, 1 backend unreachable");
+});
+
+test("Resizing the side navigation: its edge drags wider and folds it to the rail past the minimum", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const navigation = sideNavigation(page);
+  const handle = page.getByRole("separator", { name: "Resize sidebar" });
+  const width = async () => (await navigation.boundingBox())?.width ?? 0;
+  await expect(handle).toHaveAttribute("aria-valuenow", "248");
+  expect(await width()).toBe(248);
+
+  // The edge also moves from the keyboard, as a separator does.
+  await handle.focus();
+  await page.keyboard.press("ArrowRight");
+  const stepped = Number(await handle.getAttribute("aria-valuenow"));
+  expect(stepped).toBeGreaterThan(248);
+
+  const drag = async (by: number) => {
+    const box = await handle.boundingBox();
+    if (box === null) {
+      throw new Error("The resize handle has no box.");
+    }
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width / 2, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + by, y, { steps: 8 });
+    await page.mouse.up();
+  };
+
+  await drag(80);
+  await expect(handle).toHaveAttribute("aria-valuenow", String(stepped + 80));
+  expect(await width()).toBe(stepped + 80);
+
+  // Narrower than the minimum, the navigation folds to its rail, and stays folded after a reload.
+  await drag(-400);
+  await expect(navigation.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+  await expect(handle).toBeHidden();
+  await page.reload();
+  await expect(navigation.getByRole("button", { name: "Expand sidebar" })).toBeVisible();
+
+  // Opening it again restores the width it had.
+  await navigation.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(handle).toHaveAttribute("aria-valuenow", String(stepped + 80));
+});
+
+const left = async (target: Locator): Promise<number> => {
+  const box = await target.boundingBox();
+  if (box === null) {
+    throw new Error("A part of the side navigation has no box.");
+  }
+  return box.x;
+};
+
+test("One edge: the mark, the Manage heading, each link's icon and the collapse button line up", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const navigation = sideNavigation(page);
+  const edges = [
+    await left(navigation.getByText("Manage", { exact: true })),
+    await left(navigation.getByRole("button", { name: "Collapse sidebar" }).locator("svg")),
+  ];
+  // The product name's link starts with the mark, and every other link with its icon.
+  for (const link of await navigation.getByRole("link").all()) {
+    edges.push(await left(link.locator("svg").first()));
+  }
+  expect(edges).toHaveLength(8);
+  for (const edge of edges) {
+    expect(edge).toBeCloseTo(edges[0] ?? Number.NaN, 0);
   }
 });
 

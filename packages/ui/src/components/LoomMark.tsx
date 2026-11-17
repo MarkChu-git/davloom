@@ -1,13 +1,9 @@
+import { Icon } from "@astryxdesign/core/Icon";
 import { colorVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
+import type { SVGProps } from "react";
 
 const styles = stylex.create({
-  mark: {
-    display: "block",
-    flexShrink: 0,
-    inlineSize: 24,
-    blockSize: 24,
-  },
   tile: {
     fill: colorVars["--color-accent"],
   },
@@ -24,20 +20,9 @@ const styles = stylex.create({
   },
 });
 
-/**
- * Davloom's mark: four rounded squares, each turned 12 degrees past the one around it and a step
- * lighter, so separate layers twist into one core the way fibres twist into a thread. The steps
- * run from the accent to the ink drawn on it, so the mark inverts with the mode. It is decorative;
- * the product name beside it names the link.
- */
-export const LoomMark = () => (
-  <svg
-    {...stylex.props(styles.mark)}
-    viewBox="0 0 32 32"
-    aria-hidden="true"
-    focusable="false"
-    data-testid="loom-mark"
-  >
+/** The mark's artwork. Icon sets its size and hides it from assistive technology. */
+const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => (
+  <svg viewBox="0 0 32 32" {...props}>
     <rect {...stylex.props(styles.tile)} width="32" height="32" rx="8" />
     <g {...stylex.props(styles.layer)}>
       <rect
@@ -62,3 +47,11 @@ export const LoomMark = () => (
     </g>
   </svg>
 );
+
+/**
+ * Davloom's mark: a tile and three rounded squares, each turned 12 degrees past the one around it,
+ * so separate layers twist into one core the way fibres twist into a thread. Their shades step
+ * evenly from the tile's accent to the ink drawn on it, so the mark inverts with the mode. It is
+ * decorative; the product name beside it names the link.
+ */
+export const LoomMark = () => <Icon icon={LoomGlyph} size="lg" />;

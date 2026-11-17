@@ -1,4 +1,5 @@
 import { backends, type BackendStatus } from "../sample-data/data";
+import type { Tone } from "../shell/StatusLabel";
 import { BACKEND_STATUS } from "./backendStatus";
 
 // Totals over the sample backends, shared by the Overview and the side navigation so that both
@@ -41,4 +42,17 @@ export const connectionSummary = STATUS_ORDER.map((status) => [countIn(status), 
 export const worstStatus = ((): { status: BackendStatus; count: number } => {
   const status = STATUS_ORDER.findLast((candidate) => countIn(candidate) > 0) ?? "connected";
   return { status, count: countIn(status) };
+})();
+
+/**
+ * What the side navigation says on every page while a backend is slow or unreachable, such as
+ * "1 backend unreachable", and the glyph it shows; absent while every backend answers.
+ */
+export const storageAlert = ((): { tone: Tone; text: string } | undefined => {
+  const { status, count } = worstStatus;
+  if (status === "connected") {
+    return undefined;
+  }
+  const { tone, label } = BACKEND_STATUS[status];
+  return { tone, text: `${count} ${count === 1 ? "backend" : "backends"} ${label.toLowerCase()}` };
 })();

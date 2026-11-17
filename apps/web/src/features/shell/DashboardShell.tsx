@@ -1,14 +1,13 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
-import type { IconType } from "@astryxdesign/core/Icon";
-import { HStack } from "@astryxdesign/core/Layout";
+import { Icon, type IconType } from "@astryxdesign/core/Icon";
 import {
   SideNav,
+  SideNavCollapseButton,
   SideNavHeading,
   SideNavItem,
   SideNavSection,
   useSideNavCollapse,
 } from "@astryxdesign/core/SideNav";
-import { Text } from "@astryxdesign/core/Text";
 import { LoomMark } from "@davloom/ui";
 import { useRouterState } from "@tanstack/react-router";
 import {
@@ -20,7 +19,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode, SVGProps } from "react";
-import { StorageAlert } from "./StorageAlert";
+import { storageAlert } from "../storage/summary";
+import type { Tone } from "./StatusLabel";
 
 /** A Lucide icon drawn at a fixed stroke width. */
 const stroked = (Glyph: LucideIcon, strokeWidth: number): IconType => {
@@ -46,7 +46,8 @@ interface NavEntry {
   href: string;
   icon: IconType;
   selectedIcon: IconType;
-  endContent?: ReactNode;
+  /** A problem the row names on every page, such as an unreachable backend. */
+  alert?: { tone: Tone; text: string };
 }
 
 /** The pages people open most, at the top without a heading, as in Linear. */
@@ -58,28 +59,53 @@ const WORK_ITEMS: NavEntry[] = [
 /** The pages that set the service up. */
 const MANAGE_ITEMS: NavEntry[] = [
   { label: "Credentials", href: "/credentials", ...navIcons(KeyRound) },
-  {
-    label: "Storage & Mounts",
-    href: "/storage",
-    ...navIcons(HardDrive),
-    endContent: <StorageAlert />,
-  },
+  { label: "Storage & Mounts", href: "/storage", ...navIcons(HardDrive), alert: storageAlert },
 ];
 
 const SETTINGS: NavEntry = { label: "Settings", href: "/settings", ...navIcons(Settings) };
 
+/**
+ * Width of the side navigation in pixels. Dragging its edge below the minimum folds it to the icon
+ * rail, and the browser keeps the chosen width and state between visits.
+ */
+const NAV_WIDTH = { defaultWidth: 248, minWidth: 200, maxWidth: 400 } as const;
+
 const isCurrent = (pathname: string, href: string): boolean =>
   href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 
-/** The notice that every page shows sample data (dashboard-navigation spec), hidden in the rail. */
-const SampleDataNote = () => {
+/**
+ * One row. An alert's glyph follows the label, and its words join the link's name. The rail draws
+ * only icons, so there the glyph takes the icon's place and the words join the label, which also
+ * fills the row's tooltip.
+ */
+const NavItem = ({ entry, isSelected }: { entry: NavEntry; isSelected: boolean }) => {
   const { isCollapsed } = useSideNavCollapse();
-  return isCollapsed ? null : (
-    <HStack paddingInline={2}>
-      <Text type="supporting" color="secondary">
-        Prototype, sample data
-      </Text>
-    </HStack>
+  const { alert } = entry;
+  if (alert !== undefined && isCollapsed) {
+    const glyph = <Icon icon={alert.tone} color={alert.tone} size="sm" />;
+    return (
+      <SideNavItem
+        label={`${entry.label}, ${alert.text}`}
+        icon={glyph}
+        selectedIcon={glyph}
+        href={entry.href}
+        isSelected={isSelected}
+      />
+    );
+  }
+  return (
+    <SideNavItem
+      label={entry.label}
+      icon={entry.icon}
+      selectedIcon={entry.selectedIcon}
+      href={entry.href}
+      isSelected={isSelected}
+      endContent={
+        alert === undefined ? undefined : (
+          <Icon icon={alert.tone} color={alert.tone} size="sm" label={alert.text} />
+        )
+      }
+    />
   );
 };
 
@@ -87,16 +113,7 @@ const SampleDataNote = () => {
 export const DashboardShell = ({ children }: { children: ReactNode }) => {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const item = (entry: NavEntry) => (
-    <SideNavItem
-      key={entry.href}
-      label={entry.label}
-      icon={entry.icon}
-      selectedIcon={entry.selectedIcon}
-      href={entry.href}
-      size="sm"
-      isSelected={isCurrent(pathname, entry.href)}
-      endContent={entry.endContent}
-    />
+    <NavItem key={entry.href} entry={entry} isSelected={isCurrent(pathname, entry.href)} />
   );
 
   return (
@@ -104,16 +121,17 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
       contentPadding={0}
       sideNav={
         <SideNav
-          collapsible
+          // The footer draws its own collapse button, at the size of the rows above it, so its
+          // chevron lines up with their icons.
+          collapsible={{ hasButton: false }}
+          resizable={{ ...NAV_WIDTH, autoSaveId: "davloom.side-nav" }}
           header={<SideNavHeading heading="Davloom" headingHref="/" icon={<LoomMark />} />}
           footer={
-            <>
-              <SideNavSection title="Account" isHeaderHidden>
-                {item(SETTINGS)}
-              </SideNavSection>
-              <SampleDataNote />
-            </>
+            <SideNavSection title="Account" isHeaderHidden>
+              {item(SETTINGS)}
+            </SideNavSection>
           }
+          footerIcons={<SideNavCollapseButton size="md" />}
         >
           <SideNavSection title="Dashboard" isHeaderHidden>
             {WORK_ITEMS.map(item)}
