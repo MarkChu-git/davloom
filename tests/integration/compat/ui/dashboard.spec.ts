@@ -1212,7 +1212,6 @@ const scrollOf = (target: Locator): Promise<number> =>
     return total;
   });
 
-/** Waits for the page to draw a frame, as it does between the touch events of a moving finger. */
 /**
  * Watches the page for the storage chart's values on every frame and at every change to the page,
  * so values shown for a single frame count too. The function it returns stops watching and says
@@ -1255,6 +1254,7 @@ const watchStoredValues = async (page: Page): Promise<() => Promise<boolean>> =>
     });
 };
 
+/** Waits for the page to draw a frame, as it does between the touch events of a moving finger. */
 const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 
