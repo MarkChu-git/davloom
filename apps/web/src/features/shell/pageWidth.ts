@@ -1,3 +1,4 @@
+import { useAppShellMobile } from "@astryxdesign/core/AppShell";
 import { useLayoutEffect, useState } from "react";
 
 /**
@@ -14,6 +15,13 @@ export const NAV_WIDTH = { defaultWidth: 248, minWidth: 200, maxWidth: 400 } as 
  * than the window's, so widening the navigation narrows the page, and folding it widens the page.
  */
 export const NARROW_PAGE_WIDTH = 1024 - NAV_WIDTH.defaultWidth;
+
+/**
+ * The space between a page's edges and its content, as an Astryx spacing step. Beside the side
+ * navigation it is 24 px, the inset the navigation keeps from the window's edge, so the two share
+ * one grid; on a phone, where the navigation drops down from the bar across the top, it is 16 px.
+ */
+export const usePageGutter = (): 4 | 6 => (useAppShellMobile().isMobile ? 4 : 6);
 
 /** The main region AppShell draws around each page. */
 const mainRegion = (): Element | null => document.querySelector('[role="main"]');

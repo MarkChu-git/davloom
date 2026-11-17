@@ -1036,6 +1036,66 @@ test("One edge: the mark, the Manage heading, each link's icon and the collapse 
   }
 });
 
+// Runs in the page: where the page's content starts, the top of the first element after the title,
+// at any level, that starts below the title's line. Actions beside the title start on its line.
+const contentTop = (): number => {
+  const title = document.querySelector('[role="main"] h1');
+  const lineBottom = title?.parentElement?.getBoundingClientRect().bottom ?? Number.NaN;
+  for (let node = title; node !== null && node !== undefined; node = node.parentElement) {
+    for (let next = node.nextElementSibling; next !== null; next = next.nextElementSibling) {
+      const { top } = next.getBoundingClientRect();
+      if (top >= lineBottom) {
+        return top;
+      }
+    }
+  }
+  return Number.NaN;
+};
+
+test("One grid: the mark and each page's title share a line, the first link starts where the page's content does, and the gutters match", async ({
+  page,
+}) => {
+  for (const { path, name } of PAGES) {
+    await page.goto(path);
+    const navigation = sideNavigation(page);
+    const mark = navigation.getByRole("link", { name: "Davloom" }).locator("svg").first();
+    const title = levelOne(page);
+    await shown(title);
+    expect(await middleOf(title), name).toBeCloseTo(await middleOf(mark), 0);
+    const firstLink = navigation.getByRole("link", { name: "Overview" });
+    expect((await boxOf(firstLink)).y, name).toBeCloseTo(await page.evaluate(contentTop), 0);
+    // The navigation's content starts as far in from the window's edge as the page's content starts
+    // from the navigation, and its last control ends as far above the bottom.
+    const { x: navX, width: navWidth } = await boxOf(navigation);
+    const gutter = (await boxOf(title)).x - (navX + navWidth);
+    expect((await boxOf(mark)).x, name).toBeCloseTo(gutter, 0);
+    const collapse = await boxOf(navigation.getByRole("button", { name: "Collapse sidebar" }));
+    const height = page.viewportSize()?.height ?? Number.NaN;
+    expect(height - (collapse.y + collapse.height), name).toBeCloseTo(gutter, 0);
+  }
+});
+
+test.describe("on a touch tablet", () => {
+  test.use({ viewport: { width: 820, height: 1180 }, hasTouch: true });
+
+  test("The title line on a touch screen: each page's title stays on the mark's line in the larger type", async ({
+    page,
+  }) => {
+    for (const { path, name } of PAGES) {
+      await page.goto(path);
+      const title = levelOne(page);
+      await shown(title);
+      // The touch type scale is in use, so the title's own line is taller than the mark's row.
+      expect((await boxOf(title)).height, name).toBeGreaterThan(32);
+      const mark = sideNavigation(page)
+        .getByRole("link", { name: "Davloom" })
+        .locator("svg")
+        .first();
+      expect(await middleOf(title), name).toBeCloseTo(await middleOf(mark), 0);
+    }
+  });
+});
+
 test("Figures at two widths: the three headline figures sit side by side at 900 px and one above another at 800 px", async ({
   page,
 }) => {

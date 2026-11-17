@@ -51,7 +51,7 @@ export const TitleRow = ({
 }: {
   title: ReactNode;
   actions?: ReactNode;
-  gap?: 3 | 4;
+  gap?: 3 | 4 | 6;
 }) => {
   const [row, setRow] = useState<HTMLElement | null>(null);
   const [isCompact, setIsCompact] = useState(false);

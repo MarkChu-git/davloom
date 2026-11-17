@@ -45,8 +45,8 @@ import { backends, SAMPLE_NOW, type Entry, type EntryKind } from "../sample-data
 import { formatBytes, formatDateTime, formatRelative } from "../sample-data/format";
 import { sampleId } from "../sample-data/id";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
-import { PageHeader } from "../shell/PageHeader";
-import { useIsNarrowPage } from "../shell/pageWidth";
+import { PageHeader, TitleLine } from "../shell/PageHeader";
+import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { TitleAction } from "../shell/TitleRow";
 import { useFormDialog } from "../shell/useFormDialog";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
@@ -137,6 +137,7 @@ export const FileExplorerPage = ({
   // navigation at its default width, the details sit in a 360px panel beside the listing; on a
   // narrower page they open in a dialog, so the listing keeps the full width.
   const isNarrow = useIsNarrowPage();
+  const gutter = usePageGutter();
   // A narrower listing, as on a phone, puts each entry's size and age under its name instead of in
   // columns of their own, so its actions stay in view rather than past the edge.
   const [listingRef, isNarrowListing] = useNarrowerThan(WIDE_FILE_TABLE);
@@ -655,8 +656,8 @@ export const FileExplorerPage = ({
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={isNarrow ? 4 : 6}>
-          <VStack gap={5}>
+        <LayoutContent padding={gutter}>
+          <VStack gap={6}>
             <PageHeader
               // Each set of actions has its own key, so the header measures the new set.
               key={isRoot ? "mounts" : entries === undefined ? "none" : "folder"}
@@ -760,13 +761,15 @@ export const FileExplorerPage = ({
       }
       end={
         isNarrow || selectedEntry === undefined ? undefined : (
-          <LayoutPanel hasDivider width={360} padding={4} label="Details">
-            <VStack gap={4}>
+          <LayoutPanel hasDivider width={360} padding={gutter} label="Details">
+            <VStack gap={6}>
               <HStack gap={2} vAlign="start" hAlign="between">
                 <StackItem size="fill">
-                  <Heading level={2} maxLines={3} wordBreak="break-word">
-                    {selectedEntry.name}
-                  </Heading>
+                  <TitleLine canWrap>
+                    <Heading level={2} maxLines={3} wordBreak="break-word">
+                      {selectedEntry.name}
+                    </Heading>
+                  </TitleLine>
                 </StackItem>
                 <IconButton
                   label="Close details"

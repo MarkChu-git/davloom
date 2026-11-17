@@ -33,7 +33,8 @@ import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
 import { backends, instance } from "../sample-data/data";
 import { CopyField } from "../shell/CopyField";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
-import { useIsNarrowPage } from "../shell/pageWidth";
+import { TitleLine } from "../shell/PageHeader";
+import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
 import {
@@ -55,9 +56,13 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   about: Info,
 };
 
+// A section's heading shares the line of the page's title, and its content starts a gutter below,
+// where the section list and the side navigation start theirs.
 const SectionFrame = ({ title, children }: { title: string; children: ReactNode }) => (
-  <VStack gap={5}>
-    <Heading level={2}>{title}</Heading>
+  <VStack gap={6}>
+    <TitleLine>
+      <Heading level={2}>{title}</Heading>
+    </TitleLine>
     {children}
   </VStack>
 );
@@ -319,6 +324,7 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
   // Folding or widening the side navigation can switch the layout, so both keep the section at the
   // same place in the tree: React then keeps it mounted, with its unsaved input and running timers.
   const isNarrow = useIsNarrowPage();
+  const gutter = usePageGutter();
 
   return (
     <Layout
@@ -327,13 +333,15 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
         isNarrow ? undefined : (
           <LayoutPanel
             hasDivider
-            padding={4}
+            padding={gutter}
             width={280}
             role="navigation"
             label="Settings sections"
           >
-            <VStack gap={4}>
-              <Heading level={1}>Settings</Heading>
+            <VStack gap={6}>
+              <TitleLine>
+                <Heading level={1}>Settings</Heading>
+              </TitleLine>
               <List density="balanced">
                 {SETTINGS_SECTIONS.map((item) => (
                   <ListItem
@@ -350,11 +358,13 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
         )
       }
       content={
-        <LayoutContent padding={isNarrow ? 4 : 6}>
+        <LayoutContent padding={gutter}>
           <VStack gap={6} maxWidth={isNarrow ? undefined : 640}>
             {isNarrow ? (
-              <VStack gap={4}>
-                <Heading level={1}>Settings</Heading>
+              <VStack gap={6}>
+                <TitleLine>
+                  <Heading level={1}>Settings</Heading>
+                </TitleLine>
                 <Selector
                   label="Section"
                   value={section}

@@ -1,7 +1,7 @@
 import { AppShell, useAppShellMobile } from "@astryxdesign/core/AppShell";
 import { Button } from "@astryxdesign/core/Button";
 import { Icon, type IconType } from "@astryxdesign/core/Icon";
-import { VStack } from "@astryxdesign/core/Layout";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Popover } from "@astryxdesign/core/Popover";
 import {
   SideNav,
@@ -10,6 +10,7 @@ import {
   SideNavItem,
   SideNavSection,
   useSideNavCollapse,
+  type SideNavSectionProps,
 } from "@astryxdesign/core/SideNav";
 import { LoomMark } from "@davloom/ui";
 import { useRouterState } from "@tanstack/react-router";
@@ -68,6 +69,55 @@ const MANAGE_ITEMS: NavEntry[] = [
 ];
 
 const SETTINGS: NavEntry = { label: "Settings", href: "/settings", ...navIcons(Settings) };
+
+/**
+ * The side navigation keeps to the page's grid. Beside the page, its content starts one gutter,
+ * 24 px, in from the window's edge, as a page's content starts one gutter in from the navigation.
+ * The brand's row sits on the line of a page's title, one gutter below the top, the first row
+ * starts where a page's content does, one gutter below the title, and the last row ends one gutter
+ * above the bottom. SideNav pads its parts by 8 px, so each part adds the rest. The rail keeps the
+ * lines across and centers its icons, and a phone's bar keeps AppShell's own spacing.
+ */
+const useNavGrid = () => {
+  const { isMobile } = useAppShellMobile();
+  const { isCollapsed } = useSideNavCollapse();
+  return { isMobile, inset: isMobile || isCollapsed ? (0 as const) : (2 as const) };
+};
+
+/** The mark and name of the product, on the line of the page's title. */
+const NavBrand = () => {
+  const { isMobile, inset } = useNavGrid();
+  const heading = <SideNavHeading heading="Davloom" headingHref="/" icon={<LoomMark />} />;
+  return isMobile ? (
+    heading
+  ) : (
+    <VStack paddingBlockStart={4} paddingBlockEnd={2} paddingInline={inset}>
+      {heading}
+    </VStack>
+  );
+};
+
+/** A group of rows, inset to the navigation's gutter. */
+const NavSection = (props: SideNavSectionProps) => {
+  const { inset } = useNavGrid();
+  return (
+    <VStack paddingInline={inset}>
+      <SideNavSection {...props} />
+    </VStack>
+  );
+};
+
+/** The collapse button, one gutter above the bottom, or the Menu button in a phone's bar. */
+const NavFooterIcons = ({ children }: { children: ReactNode }) => {
+  const { isMobile, inset } = useNavGrid();
+  return isMobile ? (
+    children
+  ) : (
+    <HStack gap={1} paddingBlockEnd={4} paddingInline={inset}>
+      {children}
+    </HStack>
+  );
+};
 
 const isCurrent = (pathname: string, href: string): boolean =>
   href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
@@ -130,15 +180,15 @@ const navGroups = (pathname: string, onChoose?: () => void) => {
   );
   return {
     work: (
-      <SideNavSection title="Dashboard" isHeaderHidden>
+      <NavSection title="Dashboard" isHeaderHidden>
         {WORK_ITEMS.map(item)}
-      </SideNavSection>
+      </NavSection>
     ),
-    manage: <SideNavSection title="Manage">{MANAGE_ITEMS.map(item)}</SideNavSection>,
+    manage: <NavSection title="Manage">{MANAGE_ITEMS.map(item)}</NavSection>,
     account: (
-      <SideNavSection title="Account" isHeaderHidden>
+      <NavSection title="Account" isHeaderHidden>
         {item(SETTINGS)}
-      </SideNavSection>
+      </NavSection>
     ),
   };
 };
@@ -202,14 +252,14 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           // chevron lines up with their icons.
           collapsible={{ hasButton: false }}
           resizable={{ ...NAV_WIDTH, autoSaveId: "davloom.side-nav" }}
-          header={<SideNavHeading heading="Davloom" headingHref="/" icon={<LoomMark />} />}
+          header={<NavBrand />}
           footer={groups.account}
           // On a phone the collapse button hides itself, and the Menu button takes its place.
           footerIcons={
-            <>
+            <NavFooterIcons>
               <SideNavCollapseButton size="md" />
               <PhoneMenu pathname={pathname} />
-            </>
+            </NavFooterIcons>
           }
         >
           {groups.work}

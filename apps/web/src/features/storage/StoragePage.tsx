@@ -32,7 +32,7 @@ import { sampleId } from "../sample-data/id";
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
-import { useIsNarrowPage } from "../shell/pageWidth";
+import { usePageGutter } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
 import { SummaryRow } from "../shell/SummaryRow";
 import { TitleAction } from "../shell/TitleRow";
@@ -295,7 +295,7 @@ export const StoragePage = () => {
   const toast = useToast();
   const dialog = useFormDialog(520);
   const confirm = useImperativeAlertDialog();
-  const isNarrowPage = useIsNarrowPage();
+  const gutter = usePageGutter();
   const [tableRef, isNarrowTable] = useNarrowerThan(WIDE_MOUNT_TABLE);
 
   // Each form gets a new key, so that it starts from its mount or the default (useFormDialog).
@@ -364,7 +364,7 @@ export const StoragePage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={isNarrowPage ? 4 : 6}>
+        <LayoutContent padding={gutter}>
           <VStack gap={6}>
             <PageHeader
               title="Storage & Mounts"

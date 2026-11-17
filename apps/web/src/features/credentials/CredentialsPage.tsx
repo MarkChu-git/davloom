@@ -22,7 +22,7 @@ import { sampleId } from "../sample-data/id";
 import { CopyField } from "../shell/CopyField";
 import { buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
-import { useIsNarrowPage } from "../shell/pageWidth";
+import { usePageGutter } from "../shell/pageWidth";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
 import { SummaryRow } from "../shell/SummaryRow";
 import { TitleAction } from "../shell/TitleRow";
@@ -279,7 +279,7 @@ export const CredentialsPage = () => {
   const confirm = useImperativeAlertDialog();
   // Held in state rather than in an imperative dialog, so the key leaves the page with Done.
   const [keyDialog, setKeyDialog] = useState<KeyDialog>();
-  const isNarrowPage = useIsNarrowPage();
+  const gutter = usePageGutter();
   const [tableRef, isNarrowTable] = useNarrowerThan(WIDE_TABLE);
 
   const showSecret = (credential: Credential, secret: string) => {
@@ -341,8 +341,8 @@ export const CredentialsPage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={isNarrowPage ? 4 : 6}>
-          <VStack gap={5}>
+        <LayoutContent padding={gutter}>
+          <VStack gap={6}>
             <PageHeader
               title="Credentials"
               actions={

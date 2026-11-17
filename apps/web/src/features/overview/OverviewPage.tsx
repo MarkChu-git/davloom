@@ -16,7 +16,7 @@ import { formatBytes, formatCount, formatRelative } from "../sample-data/format"
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { CopyField } from "../shell/CopyField";
 import { PageHeader } from "../shell/PageHeader";
-import { useIsNarrowPage } from "../shell/pageWidth";
+import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
 import { TitleAction, TitleRow } from "../shell/TitleRow";
 import { BACKEND_STATUS } from "../storage/backendStatus";
@@ -88,6 +88,7 @@ export const OverviewPage = () => {
   const defaultBackendId = useDefaultBackendId();
   const toast = useToast();
   const isNarrowPage = useIsNarrowPage();
+  const gutter = usePageGutter();
   const [isChecking, setIsChecking] = useState(false);
   // Leaving the page ends the check, so its answer never shows on another page.
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -116,7 +117,7 @@ export const OverviewPage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={isNarrowPage ? 4 : 6}>
+        <LayoutContent padding={gutter}>
           <VStack gap={6}>
             <PageHeader
               title="Overview"
