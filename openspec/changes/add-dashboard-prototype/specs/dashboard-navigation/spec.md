@@ -54,11 +54,11 @@ Every page SHALL fit a window from 320 px wide up without scrolling sideways. A 
 - **THEN** no page scrolls sideways, Credentials lists each key as a row with its menu in view at 1024 px, and it shows a column per detail, Scope among them, at 1280 px
 
 ### Requirement: Rows and buttons on a phone
-Where Credentials and Storage & Mounts list keys and mounts as rows, every row SHALL take one shape: the name in bold, a key's status at the end of the name's line, at most two lines of details beneath, each kept to one line, and the row's menu level with the name. Where a title has no room beside its buttons' words, the buttons SHALL show only their icons, named for assistive technology and in a tooltip, and SHALL stay on the title's row.
+Where Credentials and Storage & Mounts list keys and mounts as rows, every row SHALL take one shape: the name in bold on a line of its own, level with the row's menu, then a key's first characters with its status at the end of that line, then at most two lines of details, each kept to one line. Where a title has no room beside its buttons' words, the buttons SHALL show only their icons, named for assistive technology and in a tooltip, and SHALL stay on the title's row.
 
 #### Scenario: Lists on a phone
-- **WHEN** a user opens Credentials and Storage & Mounts in a window 375 px wide
-- **THEN** each key is a row with its name, its status, its access and scope, and when it was last used and expires, each mount is a row with its path, its backend and its bucket, every row's menu is inside the window, and no page scrolls sideways
+- **WHEN** a user opens Credentials and Storage & Mounts in a window 375 px wide, and Credentials in one 320 px wide
+- **THEN** each key is a row with its name, its first characters, its status, its access and scope, and when it was last used and expires, each mount is a row with its path, its backend and its bucket, every row's menu is inside the window, no page scrolls sideways, and at both widths every key's name is whole, its first characters share the next line with its status, and the statuses end in one column
 
 #### Scenario: Buttons beside a title
 - **WHEN** a user opens Storage & Mounts in a window 320 px wide, points at Add mount, and widens the window to 414 px

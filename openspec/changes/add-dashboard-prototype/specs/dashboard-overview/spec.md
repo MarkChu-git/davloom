@@ -44,11 +44,18 @@ The Overview SHALL chart the bytes stored on each backend, largest first, with e
 - **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
 
 ### Requirement: Charts on a touch screen
-On a touch screen, a chart SHALL show a point's values only while a finger holds the chart. A press held for half a second SHALL show the values of the point under the finger, above the chart where the finger does not cover them; sliding the finger SHALL move along the chart without scrolling the page; and lifting the finger SHALL hide the values. A tap SHALL show nothing, and a swipe that starts on a chart SHALL scroll the page.
+On a touch screen, a chart SHALL show a point's values only while a finger holds the chart. A press held for half a second SHALL show the values of the point under the finger, above the chart where the finger does not cover them; sliding the finger SHALL move along the chart without scrolling the page; and lifting the finger SHALL hide the values. A tap SHALL show nothing at any moment, and a swipe that starts on a chart SHALL scroll the page and show nothing.
 
 #### Scenario: Holding a chart
 - **WHEN** a user on a phone taps the storage chart, then holds a finger on the RustFS archive bar, slides it to R2 photos, lifts it, and swipes up from the chart
-- **THEN** the tap shows nothing, the hold shows RustFS archive's values above the chart, the slide shows R2 photos' values while the page stays still, the values hide when the finger lifts, and the swipe scrolls the page without showing any
+- **THEN** the tap shows nothing at any moment, the hold shows RustFS archive's values above the chart, the slide shows R2 photos' values while the page stays still, the values hide when the finger lifts, and the swipe scrolls the page without showing any values at any moment
+
+### Requirement: Focus on a chart
+A chart SHALL draw the theme's focus ring when the keyboard moves focus to it, as every Astryx control does, and SHALL draw no ring when a click focuses it.
+
+#### Scenario: Focusing a chart
+- **WHEN** a user clicks the storage chart, and later reaches it with Tab from Manage storage
+- **THEN** the click draws no focus ring, and Tab draws the theme's
 
 ### Requirement: Connection status
 The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.

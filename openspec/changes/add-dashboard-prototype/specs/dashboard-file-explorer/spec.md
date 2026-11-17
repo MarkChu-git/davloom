@@ -33,11 +33,15 @@ Until a folder's listing arrives, the File Explorer SHALL show placeholder rows 
 - **THEN** the page says that the folder is empty and offers New folder and Upload
 
 ### Requirement: Sorting
-The list SHALL sort by name, size or modification time in either direction, and folders SHALL stay above files in every order.
+The list SHALL sort by name, size or modification time in either direction, and folders SHALL stay above files in every order. A listing too narrow for its Size and Modified columns SHALL offer the same orders from a menu in place of its Name header, and the menu SHALL name the order in use.
 
 #### Scenario: Sorting by size
 - **WHEN** a user sorts `/documents` by size, first one way and then the other
 - **THEN** both times every folder comes before every file, and the files are in size order
+
+#### Scenario: Sorting a narrow listing
+- **WHEN** a user in a window 375 px wide sorts `/documents` by size from the menu in place of the Name header, then largest first, then by modification time, and then widens the window to 1280 px
+- **THEN** the menu names each order, every folder comes before every file, the files follow their size both ways and then their modification time, newest first, and the wide listing keeps that order and marks it on its Modified header
 
 ### Requirement: Search
 Searching SHALL filter the current folder by name without regard to case, tell assistive technology how many items match, and say so when nothing matches.
