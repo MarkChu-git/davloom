@@ -1576,5 +1576,34 @@ test.describe("in a window 1100 px wide", () => {
       ),
     );
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+    // Files has room again too, so a file's details sit in a panel beside the listing.
+    await page.goto(PREVIEW);
+    await expect(page.getByRole("heading", { name: "Preview" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close details" })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  });
+
+  test("Folding the navigation on Settings: the open section keeps what was typed and finishes an export", async ({
+    page,
+  }) => {
+    // Beside the navigation at its default width, a window 1000 px wide leaves a narrow page.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    const sections = page.getByRole("navigation", { name: "Settings sections" });
+    const selector = page.getByRole("combobox", { name: "Section" });
+    await page.goto("/settings?section=profile");
+    await expect(selector).toBeVisible();
+    const field = page.getByRole("textbox", { name: "Display name" });
+    await field.fill("Edited but unsaved");
+    await sideNavigation(page).getByRole("button", { name: "Collapse sidebar" }).click();
+    await expect(sections).toBeVisible();
+    await expect(field).toHaveValue("Edited but unsaved");
+
+    // An export started before the navigation opens again still says it finished.
+    await page.goto("/settings?section=export");
+    await page.getByRole("button", { name: "Export" }).click();
+    await sideNavigation(page).getByRole("button", { name: "Expand sidebar" }).click();
+    await expect(selector).toBeVisible();
+    await shown(onScreen(page, /^Exported davloom-export/));
   });
 });

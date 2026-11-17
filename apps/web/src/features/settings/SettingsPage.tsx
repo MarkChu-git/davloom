@@ -295,15 +295,43 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
   // Responsive contract: on a page wider than 776px, which a 1024px window leaves beside the side
   // navigation at its default width, the sections are a 280px list beside the chosen one. On a
   // narrower page the list becomes a selector above the section, which keeps the remaining width.
+  // Folding or widening the side navigation can switch the layout, so both keep the section at the
+  // same place in the tree: React then keeps it mounted, with its unsaved input and running timers.
   const isNarrow = useIsNarrowPage();
 
-  if (isNarrow) {
-    return (
-      <Layout
-        height="fill"
-        content={
-          <LayoutContent padding={4}>
-            <VStack gap={6}>
+  return (
+    <Layout
+      height="fill"
+      start={
+        isNarrow ? undefined : (
+          <LayoutPanel
+            hasDivider
+            padding={4}
+            width={280}
+            role="navigation"
+            label="Settings sections"
+          >
+            <VStack gap={4}>
+              <Heading level={1}>Settings</Heading>
+              <List density="balanced">
+                {SETTINGS_SECTIONS.map((item) => (
+                  <ListItem
+                    key={item.id}
+                    label={item.label}
+                    startContent={<Icon icon={SECTION_ICONS[item.id]} size="sm" />}
+                    href={`/settings?section=${item.id}`}
+                    isSelected={item.id === section}
+                  />
+                ))}
+              </List>
+            </VStack>
+          </LayoutPanel>
+        )
+      }
+      content={
+        <LayoutContent padding={isNarrow ? 4 : 6}>
+          <VStack gap={6} maxWidth={isNarrow ? undefined : 640}>
+            {isNarrow ? (
               <VStack gap={4}>
                 <Heading level={1}>Settings</Heading>
                 <Selector
@@ -313,38 +341,7 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
                   options={SETTINGS_SECTIONS.map(({ id, label }) => ({ value: id, label }))}
                 />
               </VStack>
-              <Content />
-            </VStack>
-          </LayoutContent>
-        }
-      />
-    );
-  }
-
-  return (
-    <Layout
-      height="fill"
-      start={
-        <LayoutPanel hasDivider padding={4} width={280} role="navigation" label="Settings sections">
-          <VStack gap={4}>
-            <Heading level={1}>Settings</Heading>
-            <List density="balanced">
-              {SETTINGS_SECTIONS.map((item) => (
-                <ListItem
-                  key={item.id}
-                  label={item.label}
-                  startContent={<Icon icon={SECTION_ICONS[item.id]} size="sm" />}
-                  href={`/settings?section=${item.id}`}
-                  isSelected={item.id === section}
-                />
-              ))}
-            </List>
-          </VStack>
-        </LayoutPanel>
-      }
-      content={
-        <LayoutContent padding={6}>
-          <VStack gap={6} maxWidth={640}>
+            ) : null}
             <Content />
           </VStack>
         </LayoutContent>
