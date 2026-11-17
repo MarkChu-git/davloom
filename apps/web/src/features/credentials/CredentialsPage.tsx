@@ -28,7 +28,7 @@ import { SummaryRow } from "../shell/SummaryRow";
 import { TitleAction } from "../shell/TitleRow";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { useMounts } from "../storage/mountStore";
-import { keyStateOf, type KeyState } from "./keyState";
+import { hasExpired, keyStateOf, type KeyState } from "./keyState";
 import { scopeOf, type Scope } from "./scope";
 
 const credentialStore = new Store<Credential[]>(credentials);
@@ -120,7 +120,7 @@ const expiryOf = (credential: Credential): string => {
   if (credential.expiresAt === null) {
     return "Never expires";
   }
-  const verb = Date.parse(credential.expiresAt) <= SAMPLE_NOW.getTime() ? "Expired" : "Expires";
+  const verb = hasExpired(credential, SAMPLE_NOW) ? "Expired" : "Expires";
   return `${verb} ${formatDate(credential.expiresAt)}`;
 };
 

@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { keyStateOf } from "./keyState";
+import { hasExpired, keyStateOf } from "./keyState";
 
 const NOW = new Date("2026-11-16T15:30:00Z");
 
@@ -30,6 +30,12 @@ describe("key states", () => {
             expect(state).toBe("revoked");
           } else {
             expect(state).toBe(offset !== null && offset <= 0 ? "expired" : "active");
+          }
+          // A key's row says Expired exactly when its expiry has come, revoked or not, so an
+          // unrevoked key's words always agree with its status.
+          expect(hasExpired({ expiresAt }, NOW)).toBe(offset !== null && offset <= 0);
+          if (!isRevoked) {
+            expect(hasExpired({ expiresAt }, NOW)).toBe(state === "expired");
           }
         },
       ),
