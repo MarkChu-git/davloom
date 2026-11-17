@@ -1,13 +1,19 @@
 import { useLayoutEffect, useState } from "react";
 
 /**
- * The widest page, beside the side navigation, that Settings and Files lay out as narrow: a window
- * 1024 px wide less the navigation's default 248 px. The page's own width decides rather than the
- * window's, so widening the navigation narrows the page, and folding it widens the page.
+ * Width of the side navigation in pixels. Let go narrower than 160 px, or flung towards there, its
+ * edge folds it to the icon rail: Astryx SideNav projects a moving release forward. Let go at rest
+ * between 160 px and the minimum, it springs back to the minimum. The browser keeps the chosen
+ * width and state between visits.
  */
-export const NARROW_PAGE_WIDTH = 776;
+export const NAV_WIDTH = { defaultWidth: 248, minWidth: 200, maxWidth: 400 } as const;
 
-const DEFAULT_NAVIGATION_WIDTH = 248;
+/**
+ * The widest page, beside the side navigation, that Settings and Files lay out as narrow: a window
+ * 1024 px wide less the navigation's default width, 776 px. The page's own width decides rather
+ * than the window's, so widening the navigation narrows the page, and folding it widens the page.
+ */
+export const NARROW_PAGE_WIDTH = 1024 - NAV_WIDTH.defaultWidth;
 
 /** The main region AppShell draws around each page. */
 const mainRegion = (): Element | null => document.querySelector('[role="main"]');
@@ -15,7 +21,7 @@ const mainRegion = (): Element | null => document.querySelector('[role="main"]')
 const isNarrow = (): boolean => {
   const region = mainRegion();
   return region === null
-    ? window.innerWidth <= NARROW_PAGE_WIDTH + DEFAULT_NAVIGATION_WIDTH
+    ? window.innerWidth <= NARROW_PAGE_WIDTH + NAV_WIDTH.defaultWidth
     : region.getBoundingClientRect().width <= NARROW_PAGE_WIDTH;
 };
 
@@ -28,7 +34,7 @@ export const useIsNarrowPage = (): boolean => {
   const [narrow, setNarrow] = useState(
     () =>
       typeof window !== "undefined" &&
-      window.innerWidth <= NARROW_PAGE_WIDTH + DEFAULT_NAVIGATION_WIDTH,
+      window.innerWidth <= NARROW_PAGE_WIDTH + NAV_WIDTH.defaultWidth,
   );
   useLayoutEffect(() => {
     const update = () => setNarrow(isNarrow());

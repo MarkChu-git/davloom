@@ -36,6 +36,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderPlus, HardDrive, Upload as UploadIcon } from "lucide-react";
@@ -46,7 +47,9 @@ import { sampleId } from "../sample-data/id";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
 import { useIsNarrowPage } from "../shell/pageWidth";
+import { TitleAction } from "../shell/TitleRow";
 import { useFormDialog } from "../shell/useFormDialog";
+import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { useMounts } from "../storage/mountStore";
 import { NameForm, TransferForm } from "./dialogs";
 import { FileName, splitExtension } from "./FileName";
@@ -58,7 +61,15 @@ import type { Upload } from "./uploadStore";
 const styles = stylex.create({
   // The cell is as wide as its column, so the name inside can end in an ellipsis.
   nameLink: { display: "block", maxWidth: "100%" },
+  // Under the name, past its small icon and the gap after it, so the two lines start together.
+  detail: { paddingInlineStart: spacingVars["--spacing-6"] },
 });
+
+/** The narrowest listing, in rem, with room for its Size and Modified columns. */
+const WIDE_FILE_TABLE = 37;
+
+/** The narrowest row, in rem, that holds the folder's path and a search field beside it. */
+const WIDE_TOOLBAR = 32;
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -126,6 +137,11 @@ export const FileExplorerPage = ({
   // navigation at its default width, the details sit in a 360px panel beside the listing; on a
   // narrower page they open in a dialog, so the listing keeps the full width.
   const isNarrow = useIsNarrowPage();
+  // A narrower listing, as on a phone, puts each entry's size and age under its name instead of in
+  // columns of their own, so its actions stay in view rather than past the edge.
+  const [listingRef, isNarrowListing] = useNarrowerThan(WIDE_FILE_TABLE);
+  // A narrower row puts the search field on a line of its own, as wide as the listing.
+  const [toolbarRef, isNarrowToolbar] = useNarrowerThan(WIDE_TOOLBAR);
   // Astryx advises one announcer per kind of message: the match count changes as the user types,
   // so only its latest value is said, and an error must not cancel a count or another error.
   const announceCount = useAnnounce({ hasReplace: true });
@@ -236,6 +252,12 @@ export const FileExplorerPage = ({
   const selectedEntry = isUnreachable
     ? undefined
     : entries?.find((entry) => entry.kind === "file" && entry.name === selectedName);
+
+  // At the top level, a mount's backend says more under its name than when it last changed.
+  const backendOf = (mountId: string): string => {
+    const backendId = mounts.find((item) => item.id === mountId)?.backendId;
+    return backends.find((candidate) => candidate.id === backendId)?.name ?? "";
+  };
 
   const rowHref = (row: { name: string; kind: EntryKind }): string =>
     row.kind === "folder" ? filesHref(joinPath([...parts, row.name])) : filesHref(path, row.name);
@@ -424,32 +446,54 @@ export const FileExplorerPage = ({
       key: "name",
       header: "Name",
       sortable: true,
-      width: proportional(3, { minWidth: 220 }),
-      renderCell: (row) => (
-        <Link xstyle={styles.nameLink} href={rowHref(row)}>
-          <FileName name={row.name} kind={row.kind} />
-        </Link>
-      ),
+      width: proportional(3, { minWidth: isNarrowListing ? 160 : 220 }),
+      renderCell: (row) => {
+        const name = (
+          <Link xstyle={styles.nameLink} href={rowHref(row)}>
+            <FileName name={row.name} kind={row.kind} />
+          </Link>
+        );
+        return isNarrowListing ? (
+          <VStack gap={0.5}>
+            {name}
+            <Text type="supporting" color="secondary" hasTabularNumbers xstyle={styles.detail}>
+              {isRoot
+                ? backendOf(row.name)
+                : row.kind === "folder"
+                  ? formatRelative(row.modifiedAt)
+                  : `${formatBytes(row.sizeBytes)} · ${formatRelative(row.modifiedAt)}`}
+            </Text>
+          </VStack>
+        ) : (
+          name
+        );
+      },
     },
-    {
-      key: "sizeBytes",
-      header: "Size",
-      sortable: true,
-      width: pixel(112),
-      align: "end",
-      renderCell: (row) => (
-        <Text color="secondary" hasTabularNumbers>
-          {row.kind === "folder" ? "—" : formatBytes(row.sizeBytes)}
-        </Text>
-      ),
-    },
-    {
-      key: "modifiedAt",
-      header: "Modified",
-      sortable: true,
-      width: pixel(160),
-      renderCell: (row) => <Text color="secondary">{formatRelative(row.modifiedAt)}</Text>,
-    },
+    ...(isNarrowListing
+      ? []
+      : ([
+          {
+            key: "sizeBytes",
+            header: "Size",
+            sortable: true,
+            width: pixel(112),
+            align: "end",
+            renderCell: (row: Row) => (
+              <Text color="secondary" hasTabularNumbers>
+                {row.kind === "folder" ? "—" : formatBytes(row.sizeBytes)}
+              </Text>
+            ),
+          },
+          {
+            key: "modifiedAt",
+            header: "Modified",
+            sortable: true,
+            width: pixel(160),
+            renderCell: (row: Row) => (
+              <Text color="secondary">{formatRelative(row.modifiedAt)}</Text>
+            ),
+          },
+        ] satisfies TableColumn<Row>[])),
     ...(canChange
       ? [
           {
@@ -548,7 +592,7 @@ export const FileExplorerPage = ({
       );
     }
     return (
-      <VStack gap={2}>
+      <VStack ref={listingRef} gap={2}>
         {selectionState.hasSelection ? (
           <TableSelectionToolbar
             selection={toolbarSelection}
@@ -611,13 +655,15 @@ export const FileExplorerPage = ({
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={6}>
+        <LayoutContent padding={isNarrow ? 4 : 6}>
           <VStack gap={5}>
             <PageHeader
+              // Each set of actions has its own key, so the header measures the new set.
+              key={isRoot ? "mounts" : entries === undefined ? "none" : "folder"}
               title="Files"
               actions={
                 isRoot ? (
-                  <Button
+                  <TitleAction
                     label="Manage mounts"
                     variant="secondary"
                     icon={<Icon icon={HardDrive} size="sm" />}
@@ -625,7 +671,7 @@ export const FileExplorerPage = ({
                   />
                 ) : entries === undefined ? undefined : (
                   <>
-                    <Button
+                    <TitleAction
                       label="New folder"
                       variant="secondary"
                       icon={<Icon icon={FolderPlus} size="sm" />}
@@ -633,7 +679,7 @@ export const FileExplorerPage = ({
                       tooltip={blockedReason}
                       onClick={openNewFolder}
                     />
-                    <Button
+                    <TitleAction
                       label="Upload"
                       variant="primary"
                       icon={<Icon icon={UploadIcon} size="sm" />}
@@ -646,21 +692,24 @@ export const FileExplorerPage = ({
               }
             />
 
-            <HStack gap={4} hAlign="between" vAlign="center" wrap="wrap">
-              <Breadcrumbs label="Folder">
-                <BreadcrumbItem href="/files" isCurrent={isRoot}>
-                  Files
-                </BreadcrumbItem>
-                {parts.map((part, index) => (
-                  <BreadcrumbItem
-                    key={joinPath(parts.slice(0, index + 1))}
-                    href={filesHref(joinPath(parts.slice(0, index + 1)))}
-                    isCurrent={index === parts.length - 1}
-                  >
-                    {part}
+            <HStack ref={toolbarRef} gap={4} hAlign="between" vAlign="center" wrap="wrap">
+              {/* On a narrow page the top level's path would only repeat the page's title. */}
+              {isRoot && isNarrowToolbar ? null : (
+                <Breadcrumbs label="Folder">
+                  <BreadcrumbItem href="/files" isCurrent={isRoot}>
+                    Files
                   </BreadcrumbItem>
-                ))}
-              </Breadcrumbs>
+                  {parts.map((part, index) => (
+                    <BreadcrumbItem
+                      key={joinPath(parts.slice(0, index + 1))}
+                      href={filesHref(joinPath(parts.slice(0, index + 1)))}
+                      isCurrent={index === parts.length - 1}
+                    >
+                      {part}
+                    </BreadcrumbItem>
+                  ))}
+                </Breadcrumbs>
+              )}
               <TextInput
                 type="search"
                 label="Search this folder"
@@ -673,7 +722,7 @@ export const FileExplorerPage = ({
                 }}
                 hasClear
                 size="sm"
-                width={260}
+                width={isNarrowToolbar ? "100%" : 260}
                 autoCapitalize="none"
                 hasAutoCorrect={false}
                 hasSpellCheck={false}

@@ -26,7 +26,8 @@ export interface StorageBackend extends Record<string, unknown> {
   id: string;
   name: string;
   kind: string;
-  endpoint: string;
+  /** Where Davloom reaches the backend; absent for Durable Objects, which Davloom itself runs. */
+  endpoint?: string;
   status: BackendStatus;
   objectCount: number;
   usedBytes: number;
@@ -41,7 +42,6 @@ export const backends: StorageBackend[] = [
     id: "do",
     name: "Durable Objects",
     kind: "Cloudflare Durable Objects",
-    endpoint: "Built in",
     status: "connected",
     objectCount: 12_480,
     usedBytes: 1_860_000_000,

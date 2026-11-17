@@ -6,7 +6,15 @@ import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
 import { useAnnounce } from "@astryxdesign/core/hooks";
 import { Icon } from "@astryxdesign/core/Icon";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  Stack,
+  VStack,
+} from "@astryxdesign/core/Layout";
+import { List } from "@astryxdesign/core/List";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
@@ -24,8 +32,12 @@ import { sampleId } from "../sample-data/id";
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
-import { useFormDialog } from "../shell/useFormDialog";
+import { useIsNarrowPage } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
+import { SummaryRow } from "../shell/SummaryRow";
+import { TitleAction } from "../shell/TitleRow";
+import { useFormDialog } from "../shell/useFormDialog";
+import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { BACKEND_STATUS } from "./backendStatus";
 import { mountFolderOf, mountNameProblem, removeMount, saveMount, useMounts } from "./mountStore";
 
@@ -34,8 +46,15 @@ const backendName = (id: string): string =>
 
 type Check = { state: "idle" } | { state: "checking" } | { state: "done"; answered: boolean };
 
+/** The narrowest backend card, in rem, with room for the status beside the name and each value
+ * beside its label: the RustFS endpoint is the longest value. */
+const WIDE_BACKEND_CARD = 21;
+
 const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCount: number }) => {
   const announce = useAnnounce();
+  // A narrower card, as on the narrowest phones, puts the status under the backend's kind and
+  // each label above its value, so neither the name nor the endpoint breaks across lines.
+  const [cardRef, isNarrow] = useNarrowerThan(WIDE_BACKEND_CARD);
   const [check, setCheck] = useState<Check>({ state: "idle" });
   const status = BACKEND_STATUS[backend.status];
   const answered = backend.status !== "unreachable";
@@ -58,9 +77,14 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
   };
 
   return (
-    <Card elevation="low">
+    <Card ref={cardRef} elevation="low">
       <VStack gap={4}>
-        <HStack hAlign="between" vAlign="start" gap={3}>
+        <Stack
+          direction={isNarrow ? "vertical" : "horizontal"}
+          hAlign={isNarrow ? "start" : "between"}
+          vAlign="start"
+          gap={isNarrow ? 2 : 3}
+        >
           <VStack gap={0.5}>
             <Heading level={3}>{backend.name}</Heading>
             <Text type="supporting" color="secondary">
@@ -68,10 +92,14 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
             </Text>
           </VStack>
           <StatusLabel tone={status.tone} label={status.label} />
-        </HStack>
-        <MetadataList>
+        </Stack>
+        <MetadataList label={isNarrow ? { position: "top" } : undefined}>
           <MetadataListItem label="Endpoint">
-            <Text type="code">{backend.endpoint}</Text>
+            {backend.endpoint === undefined ? (
+              "Built in"
+            ) : (
+              <Text type="code">{backend.endpoint}</Text>
+            )}
           </MetadataListItem>
           <MetadataListItem label="Objects">{formatCount(backend.objectCount)}</MetadataListItem>
           <MetadataListItem label="Stored">
@@ -241,6 +269,25 @@ const MountForm = ({
   );
 };
 
+/** The narrowest mount table, in rem, that has room for a column per detail. */
+const WIDE_MOUNT_TABLE = 39;
+
+const WIDE_MOUNT_COLUMNS: TableColumn<Mount>[] = [
+  { key: "path", header: "Mount", width: proportional(1, { minWidth: 120 }) },
+  {
+    key: "backendId",
+    header: "Backend",
+    width: proportional(1, { minWidth: 140 }),
+    renderCell: (mount) => backendName(mount.backendId),
+  },
+  {
+    key: "bucket",
+    header: "Bucket and prefix",
+    width: proportional(2, { minWidth: 180 }),
+    renderCell: (mount) => <Text type="code">{`${mount.bucket}/${mount.prefix}`}</Text>,
+  },
+];
+
 /** Storage & Mounts (PRD §8.4): where bytes live, and how they appear to WebDAV clients. */
 export const StoragePage = () => {
   const mounts = useMounts();
@@ -248,6 +295,8 @@ export const StoragePage = () => {
   const toast = useToast();
   const dialog = useFormDialog(520);
   const confirm = useImperativeAlertDialog();
+  const isNarrowPage = useIsNarrowPage();
+  const [tableRef, isNarrowTable] = useNarrowerThan(WIDE_MOUNT_TABLE);
 
   // Each form gets a new key, so that it starts from its mount or the default (useFormDialog).
   const openForm = (mount?: Mount) =>
@@ -288,37 +337,26 @@ export const StoragePage = () => {
       },
     });
 
+  const mountMenu = (mount: Mount) => (
+    <MoreMenu
+      label={`Actions for mount ${mount.path}`}
+      size="sm"
+      alignment="end"
+      items={[
+        { label: "Edit", onClick: () => openForm(mount) },
+        { type: "divider" },
+        { label: "Remove", variant: "destructive", onClick: () => openRemove(mount) },
+      ]}
+    />
+  );
   const columns: TableColumn<Mount>[] = [
-    { key: "path", header: "Mount", width: proportional(1, { minWidth: 120 }) },
-    {
-      key: "backendId",
-      header: "Backend",
-      width: proportional(1, { minWidth: 140 }),
-      renderCell: (mount) => backendName(mount.backendId),
-    },
-    {
-      key: "bucket",
-      header: "Bucket and prefix",
-      width: proportional(2, { minWidth: 180 }),
-      renderCell: (mount) => <Text type="code">{`${mount.bucket}/${mount.prefix}`}</Text>,
-    },
+    ...WIDE_MOUNT_COLUMNS,
     {
       key: "actions",
       header: <VisuallyHidden>Actions</VisuallyHidden>,
       width: pixel(64),
       align: "end",
-      renderCell: (mount) => (
-        <MoreMenu
-          label={`Actions for mount ${mount.path}`}
-          size="sm"
-          alignment="end"
-          items={[
-            { label: "Edit", onClick: () => openForm(mount) },
-            { type: "divider" },
-            { label: "Remove", variant: "destructive", onClick: () => openRemove(mount) },
-          ]}
-        />
-      ),
+      renderCell: mountMenu,
     },
   ];
 
@@ -326,12 +364,12 @@ export const StoragePage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={6}>
+        <LayoutContent padding={isNarrowPage ? 4 : 6}>
           <VStack gap={6}>
             <PageHeader
               title="Storage & Mounts"
               actions={
-                <Button
+                <TitleAction
                   label="Add mount"
                   variant="primary"
                   icon={<Icon icon={Plus} size="sm" />}
@@ -353,15 +391,32 @@ export const StoragePage = () => {
             </VStack>
             <VStack gap={3}>
               <Heading level={2}>Mounts</Heading>
-              <Card padding={0} elevation="low">
-                <Table<Mount>
-                  data={mounts}
-                  columns={columns}
-                  idKey="id"
-                  textOverflow="truncate"
-                  hasHover
-                />
-              </Card>
+              {isNarrowTable ? (
+                // Where a column per detail has no room, as on a phone, each mount is a row of a
+                // list, the same shape as a key's on Credentials.
+                <Card ref={tableRef} elevation="low">
+                  <List hasDividers edge="bleed">
+                    {mounts.map((mount) => (
+                      <SummaryRow
+                        key={mount.id}
+                        title={mount.path}
+                        details={[backendName(mount.backendId), `${mount.bucket}/${mount.prefix}`]}
+                        menu={mountMenu(mount)}
+                      />
+                    ))}
+                  </List>
+                </Card>
+              ) : (
+                <Card ref={tableRef} padding={0} elevation="low">
+                  <Table<Mount>
+                    data={mounts}
+                    columns={columns}
+                    idKey="id"
+                    textOverflow="truncate"
+                    hasHover
+                  />
+                </Card>
+              )}
             </VStack>
           </VStack>
           {dialog.element}

@@ -429,14 +429,24 @@ const STATES: readonly PageState[] = [
     show: (page) => shown(page.getByRole("heading", { name: "About this instance" })),
   },
   {
-    name: "the navigation menu in a narrow window",
+    name: "Credentials as a list in a narrow window",
+    path: "/credentials",
+    width: 375,
+    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+  },
+  {
+    name: "Storage & Mounts in the narrowest window",
+    path: "/storage",
+    width: 320,
+    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+  },
+  {
+    name: "the navigation dropdown in a narrow window",
     path: "/",
     width: 375,
     show: async (page) => {
-      await page.getByRole("button", { name: "Open navigation" }).click();
-      await shown(
-        page.getByRole("dialog", { name: "Navigation" }).getByRole("link", { name: "Files" }),
-      );
+      await page.getByRole("button", { name: "Menu" }).click();
+      await shown(page.getByRole("dialog", { name: "Menu" }).getByRole("link", { name: "Files" }));
     },
   },
   {
@@ -1037,10 +1047,12 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   expect(narrowCapacity?.y).toBeLessThan(narrowMounts?.y ?? Number.NaN);
 });
 
-// Runs in the page: the main landmark and each element around it, up to the root, that is wider
-// inside than it is, so it scrolls or cuts its content off sideways. The page scrolls inside the
-// layout's main landmark rather than the document, so the document's own width alone misses it.
-// Astryx renders the landmark as an element with role="main", not as <main>.
+// Runs in the page: what scrolls or reaches past the window sideways. That is the main landmark
+// and each element around it, up to the root, when it is wider inside than it is; each element in
+// it that scrolls sideways, as a page does inside its layout and a table inside its frame; and each
+// element whose visible part, after whatever clips it, reaches past an edge of the window. Text cut
+// off with an ellipsis is cut off on purpose, so it does not count. Astryx renders the landmark as
+// an element with role="main", not as <main>.
 const sidewaysOverflow = (): string[] => {
   const main = document.querySelector('[role="main"]');
   if (main === null) {
@@ -1052,19 +1064,82 @@ const sidewaysOverflow = (): string[] => {
       found.push(`${element.tagName}: ${element.scrollWidth} > ${element.clientWidth}`);
     }
   }
+  const windowWidth = document.documentElement.clientWidth;
+  for (const element of main.querySelectorAll("*")) {
+    const style = getComputedStyle(element);
+    // Labels kept for screen readers alone sit in a box 1 px wide that cuts them off on purpose.
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      element.getBoundingClientRect().width <= 1
+    ) {
+      continue;
+    }
+    const name = `${element.tagName.toLowerCase()} "${(element.textContent ?? "").trim().slice(0, 30)}"`;
+    const truncates = style.textOverflow === "ellipsis" || style.webkitLineClamp !== "none";
+    if (
+      style.overflowX !== "visible" &&
+      !truncates &&
+      element.scrollWidth > element.clientWidth + 1
+    ) {
+      found.push(`scrolls ${element.scrollWidth} > ${element.clientWidth}: ${name}`);
+    }
+    // The part of the element that what clips it leaves in sight.
+    let { left: start, right: end } = element.getBoundingClientRect();
+    for (let clip = element.parentElement; clip !== null; clip = clip.parentElement) {
+      if (getComputedStyle(clip).overflowX !== "visible") {
+        const box = clip.getBoundingClientRect();
+        start = Math.max(start, box.left);
+        end = Math.min(end, box.right);
+      }
+    }
+    if (end - start > 1 && (start < -0.5 || end > windowWidth + 0.5)) {
+      found.push(`reaches ${Math.round(start)} to ${Math.round(end)}: ${name}`);
+    }
+  }
   return found;
 };
 
-// 360 px is the narrowest common phone, as on many Android phones.
-const PHONE_WIDTH = 360;
+/** The box of an element that must be on screen. */
+const boxOf = async (target: Locator) => {
+  const box = await target.boundingBox();
+  if (box === null) {
+    throw new Error("The element has no box.");
+  }
+  return box;
+};
+
+/** The height of an element's middle, to tell whether two elements share a row. */
+const middleOf = async (target: Locator): Promise<number> => {
+  const { y, height } = await boxOf(target);
+  return y + height / 2;
+};
+
+/** Whether an element sits inside a window `width` px wide, sideways. The page may scroll down. */
+const insideWindow = async (target: Locator, width: number): Promise<boolean> => {
+  const box = await target.boundingBox();
+  return box !== null && box.x >= 0 && box.x + box.width <= width;
+};
+
+// WCAG 1.4.10 asks content to reflow to 320 px without scrolling sideways, narrower than any
+// common phone.
+const PHONE_WIDTH = 320;
 
 test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
   test.use({ viewport: { width: PHONE_WIDTH, height: 780 } });
 
-  test("Narrow screens: the navigation sits behind a menu button and no page scrolls sideways", async ({
+  test("Narrow screens: the navigation sits behind a Menu button and no page scrolls sideways", async ({
     page,
   }) => {
-    for (const { path, name } of [...PAGES, { path: PREVIEW, name: "Files" }]) {
+    for (const { path, name } of [
+      ...PAGES,
+      { path: "/files?path=%2Fdocuments", name: "Files" },
+      ...["security", "webdav", "storage"].map((section) => ({
+        path: `/settings?section=${section}`,
+        name: "Settings",
+      })),
+      { path: PREVIEW, name: "Files" },
+    ]) {
       await page.goto(path);
       await expect(levelOne(page)).toHaveText(name);
       // Files lists a folder after a short pause, and the list is what could spill sideways.
@@ -1072,7 +1147,7 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
         await shown(page.getByRole("row").nth(1));
       }
 
-      await expect(page.getByRole("button", { name: "Open navigation" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Menu" })).toBeVisible();
       await expect(sideNavigation(page)).toBeHidden();
       expect(await page.evaluate(sidewaysOverflow), path).toEqual([]);
     }
@@ -1094,6 +1169,144 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
+  });
+
+  test("The Menu button: the navigation drops down from it, marks the page and closes on a choice", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const menu = page.getByRole("button", { name: "Menu" });
+    const dropdown = page.getByRole("dialog", { name: "Menu" });
+    await menu.click();
+    await expect(menu).toHaveAttribute("aria-expanded", "true");
+    await expect(dropdown.getByRole("link", { name: "Overview" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    // The side navigation's links, the storage alert with them.
+    for (const name of ["Files", "Credentials", "Settings"]) {
+      await expect(dropdown.getByRole("link", { name, exact: true })).toBeVisible();
+    }
+    await expect(
+      dropdown.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ }),
+    ).toBeVisible();
+    // It hangs below the button, inside the window.
+    const button = await menu.boundingBox();
+    const panel = await dropdown.boundingBox();
+    expect(
+      button !== null &&
+        panel !== null &&
+        panel.y >= button.y + button.height &&
+        panel.x >= 0 &&
+        panel.x + panel.width <= PHONE_WIDTH,
+    ).toBe(true);
+
+    // A link changes the page without a reload, closes the dropdown and gives focus back to Menu.
+    const origin = await page.evaluate(() => performance.timeOrigin);
+    await dropdown.getByRole("link", { name: "Credentials" }).click();
+    await expect(levelOne(page)).toHaveText("Credentials");
+    await expect(dropdown).toBeHidden();
+    await expect(menu).toBeFocused();
+    expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
+
+    // Escape closes it as well.
+    await menu.click();
+    await expect(dropdown.getByRole("link", { name: "Credentials" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await page.keyboard.press("Escape");
+    await expect(dropdown).toBeHidden();
+    await expect(menu).toBeFocused();
+  });
+
+  test("Buttons beside a title: they stay on its row and show only their icons where their words do not fit", async ({
+    page,
+  }) => {
+    await page.goto("/storage");
+    const add = page.getByRole("button", { name: "Add mount" });
+    // A square button, its icon alone, level with the title.
+    const narrow = await boxOf(add);
+    expect(narrow.width).toBeCloseTo(narrow.height, 0);
+    expect(await middleOf(add)).toBeCloseTo(await middleOf(levelOne(page)), -1);
+    await add.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Add mount");
+
+    // With room for its words, the button shows them, still level with the title.
+    await page.setViewportSize({ width: 414, height: 780 });
+    await expect(add).toContainText("Add mount");
+    expect((await boxOf(add)).width).toBeGreaterThan(narrow.width * 2);
+    expect(await middleOf(add)).toBeCloseTo(await middleOf(levelOne(page)), -1);
+  });
+});
+
+test.describe("in a window 1024 px wide", () => {
+  test.use({ viewport: { width: 1024, height: 768 } });
+
+  test("Tables beside the navigation: no page scrolls sideways, so every row's actions are in view", async ({
+    page,
+  }) => {
+    for (const { path, name } of [...PAGES, { path: "/files?path=%2Fdocuments", name: "Files" }]) {
+      await page.goto(path);
+      await expect(levelOne(page)).toHaveText(name);
+      if (path.startsWith("/files")) {
+        await shown(page.getByRole("row").nth(1));
+      }
+      expect(await page.evaluate(sidewaysOverflow), path).toEqual([]);
+    }
+
+    // Credentials lists each key as a row here, and gives each detail a column where there is room.
+    await page.goto("/credentials");
+    const laptop = page
+      .getByRole("main")
+      .getByRole("listitem")
+      .filter({ hasText: "Laptop (Finder)" });
+    await expect(laptop).toContainText("Read and write · All mounts");
+    await expect(
+      laptop.getByRole("button", { name: "Actions for key Laptop (Finder)" }),
+    ).toBeInViewport();
+    await expect(page.getByRole("table")).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 768 });
+    await expect(page.getByRole("columnheader", { name: "Scope" })).toBeVisible();
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  });
+});
+
+test.describe("in a window 375 px wide", () => {
+  test.use({ viewport: { width: 375, height: 812 } });
+
+  test("Lists on a phone: each key and each mount is a row with its name, details and menu", async ({
+    page,
+  }) => {
+    await page.goto("/credentials");
+    const main = page.getByRole("main");
+    await expect(page.getByRole("table")).toHaveCount(0);
+    const keys = main.getByRole("listitem");
+    await expect(keys).toHaveCount(5);
+    const laptop = keys.filter({ hasText: "Laptop (Finder)" });
+    await expect(laptop).toContainText("Active");
+    await expect(laptop).toContainText("Read and write · All mounts");
+    await expect(laptop).toContainText("Used 2 minutes ago · Never expires");
+    // A key past its expiry says it expired, beside its Expired status.
+    await expect(keys.filter({ hasText: "Conference laptop" })).toContainText(
+      /Expired [A-Z][a-z]{2} \d{1,2}, \d{4}/,
+    );
+    for (const key of await keys.all()) {
+      expect(await insideWindow(key.getByRole("button", { name: /^Actions for key / }), 375)).toBe(
+        true,
+      );
+    }
+
+    await page.goto("/storage");
+    await expect(page.getByRole("table")).toHaveCount(0);
+    const documents = main.getByRole("listitem").filter({ hasText: "/documents" });
+    await expect(documents).toContainText("Durable Objects");
+    await expect(documents).toContainText("default/documents/");
+    for (const path of ["/documents", "/shared", "/photos", "/archive"]) {
+      const menu = main.getByRole("button", { name: `Actions for mount ${path}` });
+      expect(await insideWindow(menu, 375), path).toBe(true);
+    }
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
   });
 });
 

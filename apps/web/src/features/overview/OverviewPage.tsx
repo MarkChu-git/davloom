@@ -1,24 +1,24 @@
-import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { RefreshCw } from "lucide-react";
+import { HardDrive, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { backends, instance, recentErrors } from "../sample-data/data";
 import { formatBytes, formatCount, formatRelative } from "../sample-data/format";
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { CopyField } from "../shell/CopyField";
 import { PageHeader } from "../shell/PageHeader";
+import { useIsNarrowPage } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
+import { TitleAction, TitleRow } from "../shell/TitleRow";
 import { BACKEND_STATUS } from "../storage/backendStatus";
 import { useMounts } from "../storage/mountStore";
 import { knownCapacity, knownUsed, objectCount, unreachable, usedBytes } from "../storage/summary";
@@ -31,10 +31,10 @@ const TILE_GAP = spacingVars["--spacing-4"];
 
 const styles = stylex.create({
   // The three tiles sit side by side, or one above another, and never two above one. Once the row
-  // has no room for three tiles 10rem wide, the columns' minimum jumps from a third of the row to
+  // has no room for three tiles 11rem wide, the columns' minimum jumps from a third of the row to
   // all of it.
   tiles: {
-    gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 10rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
+    gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 11rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
   },
   // A failed operation's status code takes the error color, as the failed count above it does.
   errorCode: {
@@ -76,10 +76,7 @@ const Panel = ({
 }) => (
   <Card elevation="low">
     <VStack gap={4}>
-      <HStack hAlign="between" vAlign="center" gap={3} wrap="wrap">
-        <Heading level={2}>{title}</Heading>
-        {action}
-      </HStack>
+      <TitleRow title={<Heading level={2}>{title}</Heading>} actions={action} gap={3} />
       {children}
     </VStack>
   </Card>
@@ -90,6 +87,7 @@ export const OverviewPage = () => {
   const mounts = useMounts();
   const defaultBackendId = useDefaultBackendId();
   const toast = useToast();
+  const isNarrowPage = useIsNarrowPage();
   const [isChecking, setIsChecking] = useState(false);
   // Leaving the page ends the check, so its answer never shows on another page.
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -118,7 +116,7 @@ export const OverviewPage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={6}>
+        <LayoutContent padding={isNarrowPage ? 4 : 6}>
           <VStack gap={6}>
             <PageHeader
               title="Overview"
@@ -179,14 +177,22 @@ export const OverviewPage = () => {
             <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
               <Panel
                 title="Storage by backend"
-                action={<Link href="/storage">Manage storage</Link>}
+                action={
+                  <TitleAction
+                    label="Manage storage"
+                    variant="secondary"
+                    size="sm"
+                    icon={<Icon icon={HardDrive} size="sm" />}
+                    href="/storage"
+                  />
+                }
               >
                 <StorageChart />
               </Panel>
               <Panel
                 title="Connections"
                 action={
-                  <Button
+                  <TitleAction
                     label="Check connections"
                     variant="secondary"
                     size="sm"
@@ -221,23 +227,36 @@ export const OverviewPage = () => {
 
             <Panel title="Recent operation errors">
               <List density="compact" edge="flush" hasDividers>
-                {recentErrors.map((error) => (
-                  <ListItem
-                    key={error.id}
-                    startContent={
-                      <Text hasTabularNumbers weight="semibold" xstyle={styles.errorCode}>
-                        {error.status}
-                      </Text>
-                    }
-                    label={`${error.method} ${error.path}`}
-                    description={error.message}
-                    endContent={
-                      <Text type="supporting" color="secondary">
-                        {formatRelative(error.at)}
-                      </Text>
-                    }
-                  />
-                ))}
+                {recentErrors.map((error) => {
+                  const when = (
+                    <Text type="supporting" color="secondary">
+                      {formatRelative(error.at)}
+                    </Text>
+                  );
+                  return (
+                    // The request keeps to one line. On a narrow page its time moves under the
+                    // message, so the request has the row's width.
+                    <ListItem
+                      key={error.id}
+                      align="first-line"
+                      startContent={
+                        <Text hasTabularNumbers weight="semibold" xstyle={styles.errorCode}>
+                          {error.status}
+                        </Text>
+                      }
+                      label={`${error.method} ${error.path}`}
+                      description={
+                        <VStack gap={0.5}>
+                          <Text type="supporting" color="secondary" maxLines={2}>
+                            {error.message}
+                          </Text>
+                          {isNarrowPage ? when : null}
+                        </VStack>
+                      }
+                      endContent={isNarrowPage ? undefined : when}
+                    />
+                  );
+                })}
               </List>
             </Panel>
           </VStack>

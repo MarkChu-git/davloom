@@ -3,7 +3,14 @@ import { Divider } from "@astryxdesign/core/Divider";
 import { FormLayout } from "@astryxdesign/core/FormLayout";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
-import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutPanel,
+  StackItem,
+  VStack,
+} from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Selector } from "@astryxdesign/core/Selector";
@@ -27,6 +34,7 @@ import { backends, instance } from "../sample-data/data";
 import { CopyField } from "../shell/CopyField";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { useIsNarrowPage } from "../shell/pageWidth";
+import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
 import {
   saveDefaultBackend,
@@ -63,7 +71,8 @@ const Row = ({ label, value, action }: { label: string; value: string; action?: 
           {value}
         </Text>
       </VStack>
-      {action}
+      {/* The words beside the button wrap on a narrow screen, so the button keeps its label. */}
+      {action === undefined ? null : <StackItem>{action}</StackItem>}
     </HStack>
     <Divider />
   </VStack>
@@ -212,13 +221,15 @@ const StorageSection = () => {
   const [defaultBackendId, setDefaultBackendId] = useState(saved);
   return (
     <SectionFrame title="Storage">
-      <Selector
-        label="Default backend for new mounts"
-        value={defaultBackendId}
-        onChange={setDefaultBackendId}
-        options={backends.map((backend) => ({ value: backend.id, label: backend.name }))}
-        width={320}
-      />
+      {/* In a form layout, as Profile's fields are, so the two sections' fields share a width. */}
+      <FormLayout>
+        <Selector
+          label="Default backend for new mounts"
+          value={defaultBackendId}
+          onChange={setDefaultBackendId}
+          options={backends.map((backend) => ({ value: backend.id, label: backend.name }))}
+        />
+      </FormLayout>
       <HStack>
         <Button
           label="Save storage settings"
@@ -261,22 +272,32 @@ const ExportSection = () => {
   );
 };
 
-const AboutSection = () => (
-  <SectionFrame title="About this instance">
-    <MetadataList>
-      <MetadataListItem label="Name">{instance.name}</MetadataListItem>
-      <MetadataListItem label="Version">{instance.version}</MetadataListItem>
-      <MetadataListItem label="Commit">
-        <Text type="code">{instance.commit}</Text>
-      </MetadataListItem>
-      <MetadataListItem label="Deployment">{instance.deployment}</MetadataListItem>
-      <MetadataListItem label="Runtime">{instance.runtime}</MetadataListItem>
-      <MetadataListItem label="Database">{instance.database}</MetadataListItem>
-      <MetadataListItem label="Region">{instance.region}</MetadataListItem>
-      <MetadataListItem label="WebDAV address">{instance.webdavUrl}</MetadataListItem>
-    </MetadataList>
-  </SectionFrame>
-);
+/** The narrowest section, in rem, whose values have room beside their labels. */
+const WIDE_ABOUT = 30;
+
+const AboutSection = () => {
+  // A narrower section, as on a phone, puts each label above its value, so the address keeps to
+  // one line rather than breaking inside a word.
+  const [ref, isNarrow] = useNarrowerThan(WIDE_ABOUT);
+  return (
+    <SectionFrame title="About this instance">
+      <VStack ref={ref}>
+        <MetadataList label={isNarrow ? { position: "top" } : undefined}>
+          <MetadataListItem label="Name">{instance.name}</MetadataListItem>
+          <MetadataListItem label="Version">{instance.version}</MetadataListItem>
+          <MetadataListItem label="Commit">
+            <Text type="code">{instance.commit}</Text>
+          </MetadataListItem>
+          <MetadataListItem label="Deployment">{instance.deployment}</MetadataListItem>
+          <MetadataListItem label="Runtime">{instance.runtime}</MetadataListItem>
+          <MetadataListItem label="Database">{instance.database}</MetadataListItem>
+          <MetadataListItem label="Region">{instance.region}</MetadataListItem>
+          <MetadataListItem label="WebDAV address">{instance.webdavUrl}</MetadataListItem>
+        </MetadataList>
+      </VStack>
+    </SectionFrame>
+  );
+};
 
 const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
   profile: ProfileSection,

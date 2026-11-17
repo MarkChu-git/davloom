@@ -4,6 +4,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Icon } from "@astryxdesign/core/Icon";
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { List } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { Switch } from "@astryxdesign/core/Switch";
@@ -21,7 +22,11 @@ import { sampleId } from "../sample-data/id";
 import { CopyField } from "../shell/CopyField";
 import { buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
+import { useIsNarrowPage } from "../shell/pageWidth";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
+import { SummaryRow } from "../shell/SummaryRow";
+import { TitleAction } from "../shell/TitleRow";
+import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { useMounts } from "../storage/mountStore";
 import { keyStateOf, type KeyState } from "./keyState";
 import { scopeOf, type Scope } from "./scope";
@@ -45,6 +50,78 @@ const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
   active: { tone: "success", label: "Active" },
   expired: { tone: "warning", label: "Expired" },
   revoked: { tone: "error", label: "Revoked" },
+};
+
+const accessOf = (credential: Credential): string =>
+  credential.permission === "read-only" ? "Read only" : "Read and write";
+
+const KeyName = ({ credential }: { credential: Credential }) => (
+  <VStack gap={0.5}>
+    <Text weight="semibold" maxLines={1}>
+      {credential.name}
+    </Text>
+    <Text type="code" color="secondary">{`${credential.prefix}…`}</Text>
+  </VStack>
+);
+
+const KeyStatus = ({ credential }: { credential: Credential }) => (
+  <StatusLabel {...KEY_STATES[keyStateOf(credential, SAMPLE_NOW)]} />
+);
+
+/** The narrowest table, in rem, that has room for a column per detail. */
+const WIDE_TABLE = 58;
+
+const WIDE_COLUMNS: TableColumn<Credential>[] = [
+  {
+    key: "name",
+    header: "Name",
+    width: proportional(2, { minWidth: 180 }),
+    renderCell: (credential) => <KeyName credential={credential} />,
+  },
+  { key: "permission", header: "Access", width: pixel(136), renderCell: accessOf },
+  {
+    key: "scope",
+    header: "Scope",
+    width: proportional(2, { minWidth: 160 }),
+    renderCell: (credential) => <Text maxLines={1}>{credential.scope}</Text>,
+  },
+  {
+    key: "lastUsedAt",
+    header: "Last used",
+    width: pixel(120),
+    renderCell: (credential) => (
+      <Text color="secondary">
+        {credential.lastUsedAt === null ? "Never" : formatRelative(credential.lastUsedAt)}
+      </Text>
+    ),
+  },
+  {
+    key: "expiresAt",
+    header: "Expires",
+    width: pixel(120),
+    renderCell: (credential) => (
+      <Text color="secondary">
+        {credential.expiresAt === null ? "Never" : formatDate(credential.expiresAt)}
+      </Text>
+    ),
+  },
+  {
+    key: "state",
+    header: "Status",
+    width: pixel(120),
+    renderCell: (credential) => <KeyStatus credential={credential} />,
+  },
+];
+
+const usedOf = (credential: Credential): string =>
+  credential.lastUsedAt === null ? "Never used" : `Used ${formatRelative(credential.lastUsedAt)}`;
+
+const expiryOf = (credential: Credential): string => {
+  if (credential.expiresAt === null) {
+    return "Never expires";
+  }
+  const verb = Date.parse(credential.expiresAt) <= SAMPLE_NOW.getTime() ? "Expired" : "Expires";
+  return `${verb} ${formatDate(credential.expiresAt)}`;
 };
 
 const ShowOnce = ({
@@ -202,6 +279,8 @@ export const CredentialsPage = () => {
   const confirm = useImperativeAlertDialog();
   // Held in state rather than in an imperative dialog, so the key leaves the page with Done.
   const [keyDialog, setKeyDialog] = useState<KeyDialog>();
+  const isNarrowPage = useIsNarrowPage();
+  const [tableRef, isNarrowTable] = useNarrowerThan(WIDE_TABLE);
 
   const showSecret = (credential: Credential, secret: string) => {
     credentialStore.setState((items) => [credential, ...items]);
@@ -232,81 +311,29 @@ export const CredentialsPage = () => {
       },
     });
 
+  const keyMenu = (credential: Credential) => (
+    <MoreMenu
+      label={`Actions for key ${credential.name}`}
+      size="sm"
+      alignment="end"
+      items={[
+        {
+          label: "Revoke",
+          variant: "destructive",
+          isDisabled: credential.isRevoked,
+          onClick: () => openRevoke(credential),
+        },
+      ]}
+    />
+  );
   const columns: TableColumn<Credential>[] = [
-    {
-      key: "name",
-      header: "Name",
-      width: proportional(2, { minWidth: 180 }),
-      renderCell: (credential) => (
-        <VStack gap={0.5}>
-          <Text weight="semibold" maxLines={1}>
-            {credential.name}
-          </Text>
-          <Text type="code" color="secondary">{`${credential.prefix}…`}</Text>
-        </VStack>
-      ),
-    },
-    {
-      key: "permission",
-      header: "Access",
-      width: pixel(136),
-      renderCell: (credential) =>
-        credential.permission === "read-only" ? "Read only" : "Read and write",
-    },
-    {
-      key: "scope",
-      header: "Scope",
-      width: proportional(2, { minWidth: 160 }),
-      renderCell: (credential) => <Text maxLines={1}>{credential.scope}</Text>,
-    },
-    {
-      key: "lastUsedAt",
-      header: "Last used",
-      width: pixel(120),
-      renderCell: (credential) => (
-        <Text color="secondary">
-          {credential.lastUsedAt === null ? "Never" : formatRelative(credential.lastUsedAt)}
-        </Text>
-      ),
-    },
-    {
-      key: "expiresAt",
-      header: "Expires",
-      width: pixel(120),
-      renderCell: (credential) => (
-        <Text color="secondary">
-          {credential.expiresAt === null ? "Never" : formatDate(credential.expiresAt)}
-        </Text>
-      ),
-    },
-    {
-      key: "state",
-      header: "Status",
-      width: pixel(120),
-      renderCell: (credential) => (
-        <StatusLabel {...KEY_STATES[keyStateOf(credential, SAMPLE_NOW)]} />
-      ),
-    },
+    ...WIDE_COLUMNS,
     {
       key: "actions",
       header: <VisuallyHidden>Actions</VisuallyHidden>,
       width: pixel(64),
       align: "end",
-      renderCell: (credential) => (
-        <MoreMenu
-          label={`Actions for key ${credential.name}`}
-          size="sm"
-          alignment="end"
-          items={[
-            {
-              label: "Revoke",
-              variant: "destructive",
-              isDisabled: credential.isRevoked,
-              onClick: () => openRevoke(credential),
-            },
-          ]}
-        />
-      ),
+      renderCell: keyMenu,
     },
   ];
 
@@ -314,12 +341,12 @@ export const CredentialsPage = () => {
     <Layout
       height="fill"
       content={
-        <LayoutContent padding={6}>
+        <LayoutContent padding={isNarrowPage ? 4 : 6}>
           <VStack gap={5}>
             <PageHeader
               title="Credentials"
               actions={
-                <Button
+                <TitleAction
                   label="Create key"
                   variant="primary"
                   icon={<Icon icon={Plus} size="sm" />}
@@ -327,15 +354,35 @@ export const CredentialsPage = () => {
                 />
               }
             />
-            <Card padding={0} elevation="low">
-              <Table<Credential>
-                data={rows}
-                columns={columns}
-                idKey="id"
-                textOverflow="truncate"
-                hasHover
-              />
-            </Card>
+            {isNarrowTable ? (
+              // Where a column per detail has no room, as on a phone, each key is a row of a list.
+              <Card ref={tableRef} elevation="low">
+                <List hasDividers edge="bleed">
+                  {rows.map((credential) => (
+                    <SummaryRow
+                      key={credential.id}
+                      title={credential.name}
+                      status={<KeyStatus credential={credential} />}
+                      details={[
+                        `${accessOf(credential)} · ${credential.scope}`,
+                        `${usedOf(credential)} · ${expiryOf(credential)}`,
+                      ]}
+                      menu={keyMenu(credential)}
+                    />
+                  ))}
+                </List>
+              </Card>
+            ) : (
+              <Card ref={tableRef} padding={0} elevation="low">
+                <Table<Credential>
+                  data={rows}
+                  columns={columns}
+                  idKey="id"
+                  textOverflow="truncate"
+                  hasHover
+                />
+              </Card>
+            )}
           </VStack>
           <Dialog
             isOpen={keyDialog !== undefined}
