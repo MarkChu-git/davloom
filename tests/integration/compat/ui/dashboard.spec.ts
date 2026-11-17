@@ -1425,10 +1425,11 @@ test.describe("in a window 375 px wide", () => {
     await expect(laptop).toContainText("Active");
     await expect(laptop).toContainText("Read and write · All mounts");
     await expect(laptop).toContainText("Used 2 minutes ago · Never expires");
-    // A key past its expiry says it expired, beside its Expired status.
+    // A key past its expiry says it expired, beside its Expired status, and so does a revoked one.
     await expect(keys.filter({ hasText: "Conference laptop" })).toContainText(
       /Expired [A-Z][a-z]{2} \d{1,2}, \d{4}/,
     );
+    await expect(keys.filter({ hasText: "Old tablet" })).toContainText("Expired Sep 30, 2026");
     for (const key of await keys.all()) {
       expect(await insideWindow(key.getByRole("button", { name: /^Actions for key / }), 375)).toBe(
         true,

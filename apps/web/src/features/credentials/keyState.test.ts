@@ -22,7 +22,8 @@ describe("key states", () => {
     fc.assert(
       fc.property(
         fc.boolean(),
-        fc.option(fc.integer({ min: -1e10, max: 1e10 })),
+        // Drawn often, the expiry time itself and a millisecond either side pin the boundary.
+        fc.option(fc.oneof(fc.constantFrom(-1, 0, 1), fc.integer({ min: -1e10, max: 1e10 }))),
         (isRevoked, offset) => {
           const expiresAt = offset === null ? null : new Date(NOW.getTime() + offset).toISOString();
           const state = keyStateOf({ isRevoked, expiresAt }, NOW);
@@ -31,12 +32,8 @@ describe("key states", () => {
           } else {
             expect(state).toBe(offset !== null && offset <= 0 ? "expired" : "active");
           }
-          // A key's row says Expired exactly when its expiry has come, revoked or not, so an
-          // unrevoked key's words always agree with its status.
+          // A key's row says Expired exactly when its expiry has come, revoked or not.
           expect(hasExpired({ expiresAt }, NOW)).toBe(offset !== null && offset <= 0);
-          if (!isRevoked) {
-            expect(hasExpired({ expiresAt }, NOW)).toBe(state === "expired");
-          }
         },
       ),
     );
