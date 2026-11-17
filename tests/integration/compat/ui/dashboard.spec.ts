@@ -1440,6 +1440,70 @@ test.describe("in a window 375 px wide", () => {
     }
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
   });
+
+  test("Sorting a narrow listing: a menu in the Name header's place sorts by name, size or time, either way", async ({
+    page,
+  }) => {
+    await page.goto("/files?path=%2Fdocuments");
+    const main = page.getByRole("main");
+    await expect(main.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
+    const order = () =>
+      main
+        .getByRole("button", { name: /^Actions for / })
+        .evaluateAll((buttons) =>
+          buttons.map((button) =>
+            (button.getAttribute("aria-label") ?? "").replace("Actions for ", ""),
+          ),
+        );
+    const sortBy = async (current: string, choice: string, next: string) => {
+      await main.getByRole("button", { name: current }).click();
+      await page.getByRole("menuitemradio", { name: choice }).click();
+      await expect(main.getByRole("button", { name: next })).toBeVisible();
+    };
+    const FOLDERS = ["Contracts", "Drafts", "Invoices 2026", "Scans"];
+    const EXPORT =
+      "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
+    const REPORT = "Quarterly report — Q3 2026, final version (signed by both parties).pdf";
+    const BY_SIZE = [
+      "README.txt",
+      "meeting-notes-2026-11-14.md",
+      "budget-2027.xlsx",
+      EXPORT,
+      REPORT,
+    ];
+    const foldersThenFiles = async (files: string[]) => {
+      const names = await order();
+      expect(names.slice(0, FOLDERS.length).toSorted()).toEqual(FOLDERS);
+      expect(names.slice(FOLDERS.length)).toEqual(files);
+    };
+
+    await sortBy("Name, A to Z", "Size", "Size, smallest first");
+    await foldersThenFiles(BY_SIZE);
+    await sortBy("Size, smallest first", "Largest first", "Size, largest first");
+    await foldersThenFiles(BY_SIZE.toReversed());
+    // A new key keeps the order's direction.
+    await sortBy("Size, largest first", "Modified", "Modified, newest first");
+    const BY_TIME = [
+      "Drafts",
+      "Invoices 2026",
+      "Contracts",
+      "Scans",
+      EXPORT,
+      "budget-2027.xlsx",
+      "meeting-notes-2026-11-14.md",
+      REPORT,
+      "README.txt",
+    ];
+    expect(await order()).toEqual(BY_TIME);
+
+    // A wider window brings the columns back in the same order, which the Modified header shows.
+    await page.setViewportSize({ width: 1280, height: 812 });
+    await expect(main.getByRole("columnheader", { name: /Modified/ })).toHaveAttribute(
+      "aria-sort",
+      "descending",
+    );
+    expect(await order()).toEqual(BY_TIME);
+  });
 });
 
 test.describe("on a touch screen", () => {

@@ -31,6 +31,7 @@ import {
   useTableSortable,
   useTableSortableState,
   type TableColumn,
+  type TableSortState,
 } from "@astryxdesign/core/Table";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -54,6 +55,7 @@ import { useMounts } from "../storage/mountStore";
 import { NameForm, TransferForm } from "./dialogs";
 import { FileName, splitExtension } from "./FileName";
 import { createFolder, removeEntries, renameEntry, transferEntries, useTrees } from "./fileStore";
+import { SortMenu, type SortKey } from "./SortMenu";
 import { destinationsFor, folderIn, joinPath, splitPath, type Transfer } from "./tree";
 import { UploadPanel } from "./UploadPanel";
 import type { Upload } from "./uploadStore";
@@ -197,9 +199,14 @@ export const FileExplorerPage = ({
       }));
   }, [entries, isUnreachable, query]);
 
-  const { sortedData, sortConfig } = useTableSortableState<Row>({
+  // The page keeps the order, so the column headers and a narrow listing's sort menu share it.
+  const [sort, setSort] = useState<TableSortState<SortKey>>([
+    { sortKey: "name", direction: "ascending" },
+  ]);
+  const { sortedData, sortConfig } = useTableSortableState<Row, SortKey>({
     data: rows,
-    defaultSort: [{ sortKey: "name", direction: "ascending" }],
+    sort,
+    onSortChange: setSort,
     comparators: {
       name: (a, b) => collator.compare(a.name, b.name),
       sizeBytes: (a, b) => a.sizeBytes - b.sizeBytes,
@@ -219,7 +226,7 @@ export const FileExplorerPage = ({
     const shown = new Set(ordered.map((row) => row.id));
     return new Set([...selectedKeys].filter((key) => shown.has(key)));
   }, [ordered, selectedKeys]);
-  const sortable = useTableSortable<Row>(sortConfig);
+  const sortable = useTableSortable<Row, SortKey>(sortConfig);
   const { selectionConfig, selectionState } = useTableSelectionState<Row>({
     data: ordered,
     idKey: "id",
@@ -445,8 +452,9 @@ export const FileExplorerPage = ({
   const columns: TableColumn<Row>[] = [
     {
       key: "name",
-      header: "Name",
-      sortable: true,
+      // Without the Size and Modified headers, the menu sorts a narrow listing in their place.
+      header: isNarrowListing ? <SortMenu sort={sort} onSortChange={setSort} /> : "Name",
+      sortable: !isNarrowListing,
       width: proportional(3, { minWidth: isNarrowListing ? 160 : 220 }),
       renderCell: (row) => {
         const name = (
