@@ -27,24 +27,19 @@ import { PageHeader } from "../shell/PageHeader";
 import { StatusLabel } from "../shell/StatusLabel";
 import { BACKEND_STATUS } from "../storage/backendStatus";
 import { useMounts } from "../storage/mountStore";
+import {
+  connectionSummary,
+  knownCapacity,
+  knownUsed,
+  objectCount,
+  unreachable,
+  usedBytes,
+} from "../storage/summary";
 
 const backendName = (id: string): string =>
   backends.find((backend) => backend.id === id)?.name ?? id;
 
-const usedBytes = backends.reduce((sum, backend) => sum + backend.usedBytes, 0);
-const limited = backends.filter((backend) => backend.capacityBytes !== undefined);
-const knownUsed = limited.reduce((sum, backend) => sum + backend.usedBytes, 0);
-const knownCapacity = limited.reduce((sum, backend) => sum + (backend.capacityBytes ?? 0), 0);
-const objectCount = backends.reduce((sum, backend) => sum + backend.objectCount, 0);
 const onBackends = (count: number): string => `On ${count} ${count === 1 ? "backend" : "backends"}`;
-const unreachable = backends.filter((backend) => backend.status === "unreachable");
-const connectionSummary = (["connected", "degraded", "unreachable"] as const)
-  .map(
-    (status) => [backends.filter((backend) => backend.status === status).length, status] as const,
-  )
-  .filter(([count]) => count > 0)
-  .map(([count, status]) => `${count} ${BACKEND_STATUS[status].label.toLowerCase()}`)
-  .join(", ");
 
 const MetricCard = ({
   label,
