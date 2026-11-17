@@ -72,7 +72,7 @@ When a row opens or closes, the rows under it SHALL move to their new places rat
 
 #### Scenario: Rows that glide
 - **WHEN** a user on a touch screen 375 px wide opens and then closes "Old tablet", once as usual and once with reduced motion
-- **THEN** each time, the row of "Conference laptop" under it passes through places between where it was and where it comes to rest, and with reduced motion it moves there at once
+- **THEN** each time "Old tablet" opens or closes as usual, the row of "Conference laptop" under it passes through places between where it was and where it comes to rest, and each time with reduced motion that row is already at rest in the first frame after the tap
 
 ### Requirement: Pressed rows
 A pressed row that opens SHALL show a background with rounded corners inside its card, not a band across it.
