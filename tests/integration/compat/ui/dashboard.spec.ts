@@ -1850,6 +1850,12 @@ test.describe("on a touch screen", () => {
         const between = places.filter((place) => place > top + 1 && place < bottom - 1);
         if (motion === "reduce") {
           expect(between, `the places between, ${tap} with reduced motion`).toEqual([]);
+          // At once rather than late: the first frame after the tap shows the row at rest.
+          const [, firstFrame = first] = places;
+          expect(
+            Math.abs(firstFrame - last),
+            `the first frame after the tap, ${tap} with reduced motion`,
+          ).toBeLessThanOrEqual(1);
         } else {
           expect(between.length, `the frames between its places, ${tap}`).toBeGreaterThan(0);
         }
