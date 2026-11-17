@@ -1245,6 +1245,10 @@ const pressedBackground = (row: Element): { radius: number; inset: number } | nu
   };
 };
 
+/** The column of a table's cell or header, counted from 0, or -1 for anything else. */
+const columnOf = (element: Element): number =>
+  element instanceof HTMLTableCellElement ? element.cellIndex : -1;
+
 /** How far the page has scrolled down: the scroll of every element that holds `target`. */
 const scrollOf = (target: Locator): Promise<number> =>
   target.evaluate((element) => {
@@ -1487,11 +1491,21 @@ test.describe("in a window 375 px wide", () => {
             (button.getAttribute("aria-label") ?? "").replace("Actions for ", ""),
           ),
         );
-    // The menu stands where the Name header stood, and its button names the order in use.
-    const menu = (named: string) =>
-      main.getByRole("columnheader", { name: named }).getByRole("button", { name: named });
+    // The menu stands where the Name header stood, at the head of the column of names, and its
+    // button names the order in use.
+    const header = (named: string) => main.getByRole("columnheader", { name: named });
+    const menu = (named: string) => header(named).getByRole("button", { name: named });
+    // The row's checkbox is labelled "Select Contracts", so the name's cell is the one it starts.
+    const nameColumn = await main
+      .getByRole("cell")
+      .filter({ hasText: /^Contracts/ })
+      .evaluate(columnOf);
+    const inNameHeader = async (named: string) => {
+      await expect(menu(named), "the sort menu in the Name header's place").toBeVisible();
+      expect(await header(named).evaluate(columnOf), "the sort menu's column").toBe(nameColumn);
+    };
     const sortBy = async (current: string, choice: string, next: string) => {
-      await expect(menu(current), "the sort menu in the Name header's place").toBeVisible();
+      await inNameHeader(current);
       await menu(current).click();
       await page.getByRole("menuitemradio", { name: choice }).click();
       await expect(menu(next)).toBeVisible();
@@ -1529,7 +1543,7 @@ test.describe("in a window 375 px wide", () => {
       expect(names.slice(FOLDERS.length)).toEqual(files);
     };
 
-    await expect(menu("Name, A to Z"), "the sort menu in the Name header's place").toBeVisible();
+    await inNameHeader("Name, A to Z");
     expect(await order()).toEqual([...FOLDERS, ...BY_NAME]);
     await sortBy("Name, A to Z", "Z to A", "Name, Z to A");
     expect(await order()).toEqual([...FOLDERS.toReversed(), ...BY_NAME.toReversed()]);
@@ -2163,6 +2177,11 @@ test("The address field's name: a screen reader hears the field's label alone", 
   await expect(page.getByRole("textbox", { name: "WebDAV address", exact: true })).toHaveValue(
     /^https:\/\//,
   );
+});
+
+test("The WebDAV section's address field: a screen reader hears its label alone", async ({
+  page,
+}) => {
   await page.goto("/settings?section=webdav");
   await expect(page.getByRole("textbox", { name: "Address", exact: true })).toHaveValue(
     /^https:\/\//,
