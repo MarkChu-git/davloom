@@ -21,6 +21,20 @@ The Dashboard SHALL list Overview, Files, Credentials, Storage & Mounts and Sett
 - **WHEN** a user opens the Overview in a window 1280 px wide
 - **THEN** the mark, the Manage heading, the icon of every link and the collapse button's icon start at the same distance from the window's left edge
 
+### Requirement: One grid
+Beside the side navigation, the navigation and every page SHALL share one grid: a 24 px gutter between each edge and what it holds, the brand and each page's title on one line a gutter below the top, and the navigation's first link and each page's content on one line a gutter below that. On a phone the gutter SHALL be 16 px.
+
+#### Scenario: One grid
+- **WHEN** a user opens each page in a window 1280 px wide
+- **THEN** the page's title is level with the mark, the Overview link starts where the page's content starts, the mark is as far from the window's edge as the page's content is from the navigation, and the collapse button ends as far above the bottom
+
+### Requirement: Titles on a touch screen
+A page's title SHALL stay level with the brand where a touch screen's type scale makes the title larger.
+
+#### Scenario: The title line on a touch screen
+- **WHEN** a user opens each page on a touch tablet 820 px wide, where titles are 26 px
+- **THEN** the page's title is level with the mark
+
 ### Requirement: Navigation on a phone
 In a window narrower than 768 px, the side navigation's links SHALL drop down from a Menu button in a bar across the top. They SHALL stay links, with the current page and Storage & Mounts marked, and the dropdown SHALL close once a link is chosen or Escape is pressed, giving focus back to the button.
 
