@@ -14,9 +14,14 @@ const PREVIEW = "/files?path=%2Fshared&file=wifi-guest.txt";
 const levelOne = (page: Page) => page.getByRole("heading", { level: 1 });
 const sideNavigation = (page: Page) => page.getByRole("navigation", { name: "Side navigation" });
 const shown = (locator: Locator) => expect(locator).toBeVisible();
-/** Text on the screen, without the live regions that repeat it for screen readers. */
+/**
+ * Text on the screen, without the live regions that repeat it for screen readers: the page's own,
+ * and the one a dialog keeps for its alerts.
+ */
 const onScreen = (page: Page, text: string | RegExp) =>
-  page.getByText(text).and(page.locator(":not([data-astryx-live-region])"));
+  page
+    .getByText(text)
+    .and(page.locator(":not([data-astryx-live-region], [data-astryx-modal-live-region])"));
 
 const selectFirstRow = (page: Page) => page.getByRole("row").nth(1).getByRole("checkbox").check();
 
@@ -794,9 +799,22 @@ const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue
     hasHue: true,
   },
   { name: "a gray in color()", css: "h1 { color: color(srgb 0.5 0.5 0.5); }", hasHue: false },
+  // A gray's channels may differ by 1 in 255, the rounding color mixing leaves, and no more.
+  { name: "a gray one step apart", css: "h1 { color: rgb(128 128 129); }", hasHue: false },
+  { name: "a color two steps apart", css: "h1 { color: rgb(128 128 130); }", hasHue: true },
+  {
+    name: "a gray one step apart in color()",
+    css: "h1 { color: color(srgb 0.5 0.5 0.5039); }",
+    hasHue: false,
+  },
+  {
+    name: "a color two steps apart in color()",
+    css: "h1 { color: color(srgb 0.5 0.5 0.5079); }",
+    hasHue: true,
+  },
   { name: "the error color", css: "h1 { color: var(--color-text-error); }", hasHue: false },
-  // Relative colors compute to color(srgb), so these test the scan's tolerance in that notation;
-  // the test below tests it in rgb().
+  // A status color may be off by 1 in 255 in each channel. Relative colors compute to color(srgb),
+  // so these test that allowance in that notation; the test below tests it in rgb().
   {
     name: "the error color as a relative color",
     css: "h1 { color: rgb(from var(--color-text-error) r g b); }",
@@ -973,7 +991,10 @@ test("Resizing the side navigation: its edge resizes it between 200 and 400 px a
   await expect(handle).toHaveAttribute("aria-valuenow", "200");
   expect(await width()).toBe(200);
 
-  // Let go narrower than 160 px, it folds to its rail, and stays folded after a reload.
+  // Let go narrower than 160 px, it folds to its rail, and stays folded after a reload. It is
+  // widened first, so the width it comes back to differs from the minimum.
+  await dragTo(300);
+  await expect(handle).toHaveAttribute("aria-valuenow", "300");
   await dragTo(150);
   await expect(expand).toBeVisible();
   await expect(handle).toBeHidden();
@@ -982,7 +1003,7 @@ test("Resizing the side navigation: its edge resizes it between 200 and 400 px a
 
   // Opening it again restores the width it had before folding, and Enter on the edge folds it.
   await expand.click();
-  await expect(handle).toHaveAttribute("aria-valuenow", "200");
+  await expect(handle).toHaveAttribute("aria-valuenow", "300");
   await handle.focus();
   await page.keyboard.press("Enter");
   await expect(expand).toBeVisible();
@@ -1624,9 +1645,11 @@ test("Status colors: statuses, failed hours and destructive actions take their s
   }
 
   // The status code of each recent operation error.
-  expect(await computed(main.getByText("413", { exact: true }), "color")).toBe(
-    await tokenColor(page, "--color-text-error"),
-  );
+  for (const code of ["504", "412", "423", "413"]) {
+    expect(await computed(main.getByText(code, { exact: true }), "color"), code).toBe(
+      await tokenColor(page, "--color-text-error"),
+    );
+  }
 
   // Astryx fills a destructive button with the error color's muted shade, under its own text:
   // the Delete of a selection, the Delete in a file's details and a confirmation's action.
@@ -1652,6 +1675,8 @@ test("Status colors: statuses, failed hours and destructive actions take their s
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
     await page.goto("/");
+    // The token resolves in the page's own mode, so the mode is checked before it is trusted.
+    expect(await page.evaluate(bodyIsDark), colorScheme).toBe(colorScheme === "dark");
     await page.getByRole("button", { name: "Check connections" }).click();
     const { color, background } = await textOnBackground(onScreen(page, /still unreachable/));
     expect(background, colorScheme).toBe(
