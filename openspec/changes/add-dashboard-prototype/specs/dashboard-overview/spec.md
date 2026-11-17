@@ -108,8 +108,8 @@ The list SHALL give each error one line, starting where the panel's title does, 
 The timeline SHALL place each error of the last 24 hours as a marker of its cause on a scale that gives the last hour more than half of its width, along an axis that starts where the panel's title does. A marker whose center would come within 46 px of the one before it, a marker's width and a gap, SHALL move onto a second lane, so that no marker covers another unless three fall that close. Pointing at a marker or moving to it with the arrow keys SHALL show the error's name and details.
 
 #### Scenario: Reading the timeline
-- **WHEN** a user in a window 1280 px wide chooses Timeline, points at the marker of `budget-2027.xlsx`, moves through the markers with the arrow keys, and then narrows the window to 320 px
-- **THEN** the markers run from `holiday.mov` to `2026-11-16.tar.zst` from left to right, the tick marked 1h lies left of the middle with the two errors of the last hour after it, no two markers overlap and the axis starts where the title does at either width, pointing shows `budget-2027.xlsx` with 423 and Locked above the timeline, and each arrow key shows the next marker's details
+- **WHEN** a user in a window 1280 px wide chooses Timeline, points at the marker of `budget-2027.xlsx`, moves through the markers with the arrow keys, and then narrows the window to 375 px and to 320 px
+- **THEN** the markers run from `holiday.mov` to `2026-11-16.tar.zst` from left to right, the tick marked 1h lies left of the middle with the two errors of the last hour after it, no two markers overlap and the axis starts where the title does at 1280 and 320 px, pointing shows `budget-2027.xlsx` with 423 and Locked above the timeline, each arrow key shows the next marker's details, and at 375 px the marker of `budget-2027.xlsx`, between 40 and 46 px after the one of `holiday.mov`, sits a lane above it
 
 ### Requirement: Timeline errors by touch and in words
 Holding a finger on a marker of the timeline SHALL show the error's name and details while the finger holds. The timeline SHALL also say in words when each error happened and why.
