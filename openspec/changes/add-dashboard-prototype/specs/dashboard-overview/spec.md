@@ -105,7 +105,7 @@ The list SHALL give each error one line, starting where the panel's title does, 
 - **THEN** every line fits the window on one line, starts where the title does and keeps `.zst` whole, the first tap shows 504, Timed out, PUT `/archive/2026-11-16.tar.zst` and the reason under its line, both stay open after the second tap, the third closes `2026-11-16.tar.zst` alone, and the held line draws a rounded background inside the card
 
 ### Requirement: Errors on a timeline
-The timeline SHALL place each error of the last 24 hours as a marker of its cause on a scale that gives the last hour more than half of its width, along an axis that starts where the panel's title does. A marker that would come within a marker's width of the one before it SHALL move onto a second lane, so that no marker covers another unless three errors fall that close together. Pointing at a marker or moving to it with the arrow keys SHALL show the error's name and details.
+The timeline SHALL place each error of the last 24 hours as a marker of its cause on a scale that gives the last hour more than half of its width, along an axis that starts where the panel's title does. A marker whose center would come within 46 px of the one before it, a marker's width and a gap, SHALL move onto a second lane, so that no marker covers another unless three fall that close. Pointing at a marker or moving to it with the arrow keys SHALL show the error's name and details.
 
 #### Scenario: Reading the timeline
 - **WHEN** a user in a window 1280 px wide chooses Timeline, points at the marker of `budget-2027.xlsx`, moves through the markers with the arrow keys, and then narrows the window to 320 px
