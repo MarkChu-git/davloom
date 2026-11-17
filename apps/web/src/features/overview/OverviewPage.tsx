@@ -210,7 +210,7 @@ export const OverviewPage = () => {
                             ? `${backend.name} · Default`
                             : backend.name
                         }
-                        description={paths.length === 0 ? undefined : paths.join("  ")}
+                        description={paths.length === 0 ? undefined : paths.join(", ")}
                         endContent={<StatusLabel tone={tone} label={label} />}
                       />
                     );
