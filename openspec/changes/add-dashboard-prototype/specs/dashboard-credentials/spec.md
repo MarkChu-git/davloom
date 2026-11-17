@@ -7,11 +7,15 @@ Lets the administrator create, scope and revoke the API keys that WebDAV clients
 ## ADDED Requirements
 
 ### Requirement: Key list
-Credentials SHALL list every key with its name, the first characters of the key, its access, its scope, when it was last used, when it expires, and its state: Revoked once revoked, otherwise Expired from its expiry time on, otherwise Active.
+Credentials SHALL list every key with its name, the first characters of the key, its access, its scope, when it was last used, when it expires, and its state: Revoked once revoked, otherwise Expired from its expiry time on, otherwise Active. Where a key's expiry has a label of its own, as in an opened row, the label SHALL read Expired from the key's expiry time on, whether or not the key was revoked, and Expires before it.
 
 #### Scenario: The sample keys
 - **WHEN** a user opens Credentials
 - **THEN** the list shows five keys, among them "Phone photo backup" scoped to `/photos`, "Old tablet" marked Revoked and "Conference laptop" marked Expired
+
+#### Scenario: A revoked key past its expiry
+- **WHEN** a user on a phone opens the rows of "Old tablet" and "Conference laptop"
+- **THEN** both say Expired, Sep 30, 2026 and Oct 31, 2026, though "Old tablet" is marked Revoked
 
 ### Requirement: Creating a key
 Creating a key SHALL require a name and SHALL let the user limit the key to a mount or to a folder inside it, make it read only, and choose when it expires: in 30, 90 or 365 days, or never. The folder can be set only once a mount is chosen, and a folder whose path has a `.` or `..` segment SHALL be refused, so that a key never reaches outside its mount. Spaces around a segment of the folder are dropped, since the Dashboard never names a folder that way.

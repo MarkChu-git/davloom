@@ -58,7 +58,7 @@ A chart SHALL draw the theme's focus ring when the keyboard moves focus to it, a
 - **THEN** the click draws no focus ring, and Tab draws the theme's
 
 ### Requirement: Connection status
-The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
+The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend at the start of the line of the mounts it serves, so that a narrow window shortens the mounts rather than the mark, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
 
 #### Scenario: An unreachable backend
 - **WHEN** a user opens the Overview
@@ -80,8 +80,8 @@ The Overview SHALL show the WebDAV address in a read-only field the user can sel
 - **THEN** the field says that this browser blocked copying and asks the user to select the text and copy it
 
 #### Scenario: The address field's name
-- **WHEN** assistive technology reads the address field on the Overview, and the one in the WebDAV section of Settings
-- **THEN** it hears them named "WebDAV address" and "Address", their labels alone
+- **WHEN** assistive technology reads the address field on the Overview
+- **THEN** it hears it named "WebDAV address", its label alone
 
 ### Requirement: Recent operation errors
 The Overview SHALL list recent failed operations with when they happened, the method and path, the status code in the error color, and the reason in words.
