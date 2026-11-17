@@ -1306,6 +1306,29 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
+
+    // The default backend's mark leads the line of the mounts it serves, so the window cuts the
+    // paths short rather than the mark.
+    await page.goto("/");
+    const mark = page.getByRole("main").getByText("Default · /documents, /shared", { exact: true });
+    await expect(mark).toBeVisible();
+    expect(
+      await mark.evaluate((element) => {
+        const text = element.firstChild;
+        if (text === null) {
+          return false;
+        }
+        const word = document.createRange();
+        word.setStart(text, 0);
+        word.setEnd(text, "Default".length);
+        // An ellipsis takes about a letter's width at the end of the line.
+        const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
+        return (
+          word.getBoundingClientRect().right <= element.getBoundingClientRect().right - fontSize
+        );
+      }),
+      "the default backend's mark, whole",
+    ).toBe(true);
   });
 
   test("The Menu button: the navigation drops down from it, marks the page and closes on a choice", async ({

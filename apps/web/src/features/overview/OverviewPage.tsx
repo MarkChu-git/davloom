@@ -209,15 +209,17 @@ export const OverviewPage = () => {
                     const paths = mounts
                       .filter((mount) => mount.backendId === backend.id)
                       .map((mount) => mount.path);
+                    // The default backend's mark leads the line of its mounts, so a narrow window
+                    // cuts the paths short rather than the mark.
+                    const details = [
+                      ...(backend.id === defaultBackendId ? ["Default"] : []),
+                      ...(paths.length === 0 ? [] : [paths.join(", ")]),
+                    ];
                     return (
                       <ListItem
                         key={backend.id}
-                        label={
-                          backend.id === defaultBackendId
-                            ? `${backend.name} · Default`
-                            : backend.name
-                        }
-                        description={paths.length === 0 ? undefined : paths.join(", ")}
+                        label={backend.name}
+                        description={details.length === 0 ? undefined : details.join(" · ")}
                         endContent={<StatusLabel tone={tone} label={label} />}
                       />
                     );
