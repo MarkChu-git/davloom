@@ -18,7 +18,7 @@ The Overview SHALL show the bytes stored with the number of objects, the share o
 - **THEN** the three figures sit side by side at 900 px and one above another at 800 px
 
 ### Requirement: Operations
-The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any. The chart SHALL also say in words how many operations failed, in which hours, and which hour was busiest.
+The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any. The chart SHALL also say in words how many operations failed, in which hours, and which hour was busiest, and it SHALL call the latest hour "now", as its axis and tooltip do.
 
 #### Scenario: The last 24 hours
 - **WHEN** a user opens the Overview
@@ -30,7 +30,7 @@ The Overview SHALL show how many operations the instance handled in the last 24 
 
 #### Scenario: The operations chart in words
 - **WHEN** assistive technology reads the operations chart
-- **THEN** its description says that 4 of 3,732 operations failed, names the 3 hours in which they failed, and says that the busiest hour was 12 hours ago, with 426
+- **THEN** its description says that 4 of 3,732 operations failed, names the 3 hours in which they failed, the latest of them as now, and says that the busiest hour was 12 hours ago, with 426
 
 ### Requirement: Storage by backend
 The Overview SHALL chart the bytes stored on each backend, largest first, with each backend's bytes beside its bar and in the chart's description in words, and SHALL link to Storage & Mounts.
@@ -42,6 +42,13 @@ The Overview SHALL chart the bytes stored on each backend, largest first, with e
 #### Scenario: The storage chart in words
 - **WHEN** assistive technology reads the storage chart
 - **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
+
+### Requirement: Charts on a touch screen
+On a touch screen, a chart SHALL show a point's values only while a finger holds the chart. A press held for half a second SHALL show the values of the point under the finger, above the chart where the finger does not cover them; sliding the finger SHALL move along the chart without scrolling the page; and lifting the finger SHALL hide the values. A tap SHALL show nothing, and a swipe that starts on a chart SHALL scroll the page.
+
+#### Scenario: Holding a chart
+- **WHEN** a user on a phone taps the storage chart, then holds a finger on the RustFS archive bar, slides it to R2 photos, lifts it, and swipes up from the chart
+- **THEN** the tap shows nothing, the hold shows RustFS archive's values above the chart, the slide shows R2 photos' values while the page stays still, the values hide when the finger lifts, and the swipe scrolls the page without showing any
 
 ### Requirement: Connection status
 The Overview SHALL list each backend with its status in an icon and words and the mounts it serves, SHALL mark the default backend, and SHALL offer to check every connection again and report the result. A result in which a backend still does not answer SHALL be reported as an error.
@@ -55,7 +62,7 @@ The Overview SHALL list each backend with its status in an icon and words and th
 - **THEN** the button shows that the check is running, and an error notification then says that 3 backends were checked and RustFS archive is still unreachable
 
 ### Requirement: WebDAV address
-The Overview SHALL show the WebDAV address in a read-only field the user can select, and SHALL offer a control that copies it. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves.
+The Overview SHALL show the WebDAV address in a read-only field the user can select, and SHALL offer a control that copies it, joined to the field. Where the row is too narrow for the control's words beside the whole address, the control SHALL show only its icon and keep its name. When the browser does not allow copying, the field SHALL say so and ask the user to copy the text themselves.
 
 #### Scenario: Copying the address
 - **WHEN** a user selects Copy address

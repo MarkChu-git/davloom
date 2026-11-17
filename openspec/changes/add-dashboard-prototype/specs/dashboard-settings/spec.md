@@ -22,15 +22,22 @@ On a page 776 px wide or less beside the side navigation, which a window 1024 px
 
 #### Scenario: A phone-sized window
 - **WHEN** a user opens `/settings?section=webdav` in a window 375 px wide and chooses Storage in the selector
-- **THEN** the selector showed WebDAV, the Storage section now shows, and nothing on the page is wider than the window
+- **THEN** the selector showed WebDAV, the Storage section now shows, and nothing on the page scrolls sideways or reaches past the window
 
 #### Scenario: A tablet-sized window
 - **WHEN** a user opens `/settings?section=webdav` in a window 900 px wide
-- **THEN** a selector above the section shows WebDAV in place of the section list, and nothing on the page is wider than the window
+- **THEN** a selector above the section shows WebDAV in place of the section list, and nothing on the page scrolls sideways or reaches past the window
 
 #### Scenario: A wider side navigation
 - **WHEN** a user opens Settings in a window 1100 px wide, widens the side navigation to 400 px, and then folds it in a window 1000 px wide
-- **THEN** the section list shows beside the section at first, a selector takes its place once the navigation is 400 px wide, the list comes back once the navigation is folded, and nothing on the page is wider than the window
+- **THEN** the section list shows beside the section at first, a selector takes its place once the navigation is 400 px wide, the list comes back once the navigation is folded, and nothing on the page scrolls sideways or reaches past the window
+
+### Requirement: Keeping the section when the layout switches
+Switching Settings between the section list and the selector SHALL keep the open section as it was, with what was typed in it and an export it started.
+
+#### Scenario: Folding the navigation on Settings
+- **WHEN** a user in a window 1000 px wide types "Edited but unsaved" as the display name and folds the side navigation, then selects Export in the Data export section and opens the navigation again
+- **THEN** the section list takes the selector's place and the display name still reads "Edited but unsaved", and once the selector is back a notification names `davloom-export-2026-11-16.json`
 
 ### Requirement: Profile
 The Profile section SHALL let the user change the display name and email and save them, and each field SHALL declare its autofill purpose to the browser. Saving SHALL refuse an empty display name and an email address without an @ between two parts. A saved profile SHALL last for the visit.
