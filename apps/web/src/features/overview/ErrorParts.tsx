@@ -8,7 +8,7 @@ import { Clock } from "lucide-react";
 import { FileName } from "../files/FileName";
 import type { OperationError } from "../sample-data/data";
 import { formatRelative } from "../sample-data/format";
-import { causeOf, methodIconOf, minutesAgo, nameOf, shortSpan, type Cause } from "./errors";
+import { causeOf, methodIconOf, nameOf, shortAge, type Cause } from "./errors";
 
 const styles = stylex.create({
   // A cause sits in a disc tinted with the error color, the one hue the page gives failures.
@@ -51,7 +51,7 @@ export const Age = ({ at }: { at: string }) => (
   <HStack gap={0} vAlign="center" xstyle={styles.keep}>
     <HStack aria-hidden>
       <Text type="supporting" color="secondary" hasTabularNumbers>
-        {shortSpan(minutesAgo(at))}
+        {shortAge(at)}
       </Text>
     </HStack>
     <VisuallyHidden>{formatRelative(at)}</VisuallyHidden>

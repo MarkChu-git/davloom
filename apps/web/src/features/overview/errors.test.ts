@@ -1,8 +1,9 @@
 import { CircleX, CopyX, Lock, Maximize2, TimerOff } from "@lucide/icons";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { recentErrors, type OperationError } from "../sample-data/data";
-import { causeOf, glyphPaths, lanesFor, nameOf, shortSpan } from "./errors";
+import { recentErrors, SAMPLE_NOW, type OperationError } from "../sample-data/data";
+import { formatRelative } from "../sample-data/format";
+import { causeOf, glyphPaths, lanesFor, nameOf, shortAge, shortSpan } from "./errors";
 
 const sample = (patch: Partial<OperationError>): OperationError => ({
   id: "x",
@@ -16,14 +17,17 @@ const sample = (patch: Partial<OperationError>): OperationError => ({
 });
 
 describe("an error's cause", () => {
+  // A 412 says a name exists only for MOVE and COPY, which fail so with `Overwrite: F`.
   it.each([
-    [412, "Already exists"],
-    [413, "Too large"],
-    [423, "Locked"],
-    [504, "Timed out"],
-    [500, "Failed"],
-  ])("status %i is %s", (status, label) => {
-    expect(causeOf(sample({ status })).label).toBe(label);
+    [412, "MOVE", "Already exists"],
+    [412, "COPY", "Already exists"],
+    [412, "PUT", "Failed"],
+    [413, "PUT", "Too large"],
+    [423, "PUT", "Locked"],
+    [504, "PUT", "Timed out"],
+    [500, "PUT", "Failed"],
+  ])("status %i of a %s is %s", (status, method, label) => {
+    expect(causeOf(sample({ status, method })).label).toBe(label);
   });
 
   it("names every sample error's cause", () => {
@@ -42,7 +46,7 @@ describe("an error's name", () => {
   });
 });
 
-describe("a short age", () => {
+describe("a short span of minutes", () => {
   it.each([
     [0, "0m"],
     [12, "12m"],
@@ -53,6 +57,27 @@ describe("a short age", () => {
     [24 * 60, "1d"],
   ])("%i minutes is %s", (minutes, text) => {
     expect(shortSpan(minutes)).toBe(text);
+  });
+});
+
+/** A time the given minutes before the sample clock. */
+const ago = (minutes: number): string =>
+  new Date(SAMPLE_NOW.getTime() - minutes * 60_000).toISOString();
+
+describe("an operation's short age", () => {
+  // Half units and the minutes either side of them, where rounding apart from the words would
+  // disagree with them: the short form shows the count and unit the words read out.
+  it.each([
+    [12, "12m", "12 minutes ago"],
+    [59.5, "59m", "59 minutes ago"],
+    [90, "1h", "1 hour ago"],
+    [90.4, "2h", "2 hours ago"],
+    [150, "2h", "2 hours ago"],
+    [36 * 60, "1d", "yesterday"],
+    [60 * 60, "2d", "2 days ago"],
+  ])("%f minutes ago is %s, read as %s", (minutes, short, words) => {
+    expect(shortAge(ago(minutes))).toBe(short);
+    expect(formatRelative(ago(minutes))).toBe(words);
   });
 });
 

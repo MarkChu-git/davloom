@@ -367,7 +367,7 @@ export const StorageChart = () => {
 // The errors timeline. Each failed operation is a disc of the error color with the picture of its
 // cause, on a stem above an axis of the last 24 hours.
 
-/** A marker's radius: a disc as wide as the theme's large controls, 40 px. */
+/** A marker's radius: a disc 40 px wide, with room around the 24 px picture of its cause. */
 const MARKER = 20;
 /** Lucide draws its icons in a box 24 units wide, which the timeline draws at 24 px. */
 const GLYPH_BOX = 24;
@@ -378,6 +378,8 @@ const LANE_GAP = 6;
 /** Markers stack two high where they would cover each other, which the sample errors need. */
 const LANES = 2;
 const LANE_STEP = 2 * MARKER + LANE_GAP;
+/** The room beside the plot for half a marker on either end of the day. */
+const INSET = MARKER + 4;
 const TIMELINE_HEIGHT = 128;
 
 const DISC = colorVars["--color-error-muted"];
@@ -500,9 +502,11 @@ const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) 
               {
                 kind: "rule",
                 key: `${id}:axis`,
-                x1: chart.x,
+                // The axis runs the panel's whole width, from the title's line, while the scale
+                // keeps half a marker inside each end of the day.
+                x1: chart.x - INSET,
                 y1: axis,
-                x2: chart.x + chart.width,
+                x2: chart.x + chart.width + INSET,
                 y2: axis,
                 style: { stroke: AXIS_LINE, strokeWidth: 1 },
               },
@@ -541,8 +545,7 @@ const defineErrorTimeline = (isFinger: boolean) =>
       // The markers stack in pixels above the axis, so the vertical scale only spans the plot.
       y: { scale: scaleLinear().domain([0, 1]), axis: false },
     },
-    // Room beside the plot for a marker on either end of the day.
-    margin: { top: 4, left: MARKER + 4, right: MARKER + 4 },
+    margin: { top: 4, left: INSET, right: INSET },
     theme,
     focus: "nearest",
     // A pointer shows an error once it is on its marker; a finger, which covers what it holds,
@@ -569,7 +572,7 @@ const timelineForFinger = defineErrorTimeline(true);
 // What the timeline shows, in words, for assistive technology: each error's file, cause and age,
 // oldest first, as the markers run from left to right.
 const timelineDescription = [
-  `${formatCount(lastDay.length)} operations failed in the last 24 hours.`,
+  `${formatCount(lastDay.length)} ${lastDay.length === 1 ? "operation" : "operations"} failed in the last 24 hours.`,
   ...lastDay
     .toSorted((first, second) => agePosition(first) - agePosition(second))
     .map(

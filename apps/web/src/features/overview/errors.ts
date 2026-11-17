@@ -9,6 +9,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { SAMPLE_NOW, type OperationError } from "../sample-data/data";
+import { relativeSpan } from "../sample-data/format";
 
 /** Why an operation failed, as a picture and in a word or two. */
 export interface Cause {
@@ -27,17 +28,27 @@ const cause = (label: string, glyph: LucideIconData): Cause => ({
 });
 
 // The status codes the sample operations fail with, each named for what the owner of the instance
-// would do about it. A MOVE or COPY with `Overwrite: F` onto a name that exists fails with 412.
+// would do about it.
 const CAUSES: ReadonlyMap<number, Cause> = new Map([
-  [412, cause("Already exists", CopyX)],
   [413, cause("Too large", Maximize2)],
   [423, cause("Locked", Lock)],
   [504, cause("Timed out", TimerOff)],
 ]);
 
+const ALREADY_EXISTS = cause("Already exists", CopyX);
 const FAILED = cause("Failed", CircleX);
 
-export const causeOf = (error: OperationError): Cause => CAUSES.get(error.status) ?? FAILED;
+/**
+ * Why an operation failed. A MOVE or COPY with `Overwrite: F` onto a name that exists fails with
+ * 412. Another request fails with 412 when a precondition of its own no longer holds, such as an
+ * `If-Match` on a file changed since, so only those two read as a name that already exists.
+ */
+export const causeOf = (error: OperationError): Cause => {
+  if (error.status === 412) {
+    return error.method === "MOVE" || error.method === "COPY" ? ALREADY_EXISTS : FAILED;
+  }
+  return CAUSES.get(error.status) ?? FAILED;
+};
 
 const METHOD_ICONS: ReadonlyMap<string, LucideIcon> = new Map([
   ["COPY", Copy],
@@ -60,16 +71,13 @@ export const nameOf = (error: OperationError): string => {
 export const minutesAgo = (iso: string): number =>
   Math.max(0, Math.round((SAMPLE_NOW.getTime() - new Date(iso).getTime()) / 60_000));
 
-const inUnit = (unit: "minute" | "hour" | "day") =>
+const inUnit = (unit: "minute" | "hour" | "day" | "month" | "year") =>
   new Intl.NumberFormat("en", { style: "unit", unit, unitDisplay: "narrow" });
 const inMinutes = inUnit("minute");
 const inHours = inUnit("hour");
 const inDays = inUnit("day");
 
-/**
- * A span of minutes as short as it gets, such as "12m", "5h" or "2d". It rounds as the sentences
- * of `formatRelative` do, so "2h" and "2 hours ago" name the same age.
- */
+/** A span of minutes as short as it gets, such as "10m", "6h" or "2d", for the timeline's ticks. */
 export const shortSpan = (minutes: number): string => {
   if (minutes < 60) {
     return inMinutes.format(Math.round(minutes));
@@ -78,6 +86,15 @@ export const shortSpan = (minutes: number): string => {
     return inHours.format(Math.round(minutes / 60));
   }
   return inDays.format(Math.round(minutes / (24 * 60)));
+};
+
+/**
+ * How long ago a time was, as short as it gets, such as "12m", "5h" or "2d". It shows the count and
+ * the unit that `formatRelative` reads out, so "1h" and "1 hour ago" always name the same age.
+ */
+export const shortAge = (iso: string): string => {
+  const { count, unit } = relativeSpan(iso);
+  return inUnit(unit).format(Math.abs(count));
 };
 
 const numberIn = (attributes: Readonly<Record<string, unknown>>, name: string): number =>

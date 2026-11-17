@@ -32,17 +32,27 @@ const RELATIVE_STEPS = [
   ["year", Number.POSITIVE_INFINITY],
 ] as const;
 
-/** "2 minutes ago", measured from the sample data's fixed clock. */
-export const formatRelative = (iso: string): string => {
+/**
+ * How far a time lies from the sample data's fixed clock: a whole count of the largest unit that
+ * keeps it under the next one, such as -2 hours, below zero for a time past.
+ */
+export const relativeSpan = (
+  iso: string,
+): { count: number; unit: (typeof RELATIVE_STEPS)[number][0] } => {
   let value = (new Date(iso).getTime() - SAMPLE_NOW.getTime()) / 60_000;
-  const format = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
   for (const [unit, next] of RELATIVE_STEPS) {
     if (Math.abs(value) < next) {
-      return format.format(Math.round(value), unit);
+      return { count: Math.round(value), unit };
     }
     value /= next;
   }
-  return format.format(Math.round(value), "year");
+  return { count: Math.round(value), unit: "year" };
+};
+
+/** "2 minutes ago", measured from the sample data's fixed clock. */
+export const formatRelative = (iso: string): string => {
+  const { count, unit } = relativeSpan(iso);
+  return new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" }).format(count, unit);
 };
 
 export const formatDate = (iso: string): string =>

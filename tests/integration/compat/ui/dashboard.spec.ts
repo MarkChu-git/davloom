@@ -2020,13 +2020,15 @@ test.describe("on a touch screen", () => {
     const panel = errorsPanel(page);
     await panel.getByRole("radio", { name: "Tiles" }).tap();
     const tile = (name: RegExp) => panel.getByRole("button", { name });
+    // A tile is the card that holds its button. The button itself is hidden, a pixel wide.
+    const card = (name: RegExp) => tile(name).locator("..");
     const tiles = [
       /^2026-11-16\.tar\.zst, /,
       /^Drafts, /,
       /^budget-2027\.xlsx, /,
       /^holiday\.mov, /,
     ];
-    const [first, second, third] = await Promise.all(tiles.map((name) => boxOf(tile(name))));
+    const [first, second, third] = await Promise.all(tiles.map((name) => boxOf(card(name))));
     if (first === undefined || second === undefined || third === undefined) {
       throw new Error("The tiles are missing.");
     }
@@ -2054,11 +2056,13 @@ test.describe("on a touch screen", () => {
     }
     await expect(details.getByRole("img", { name: "MOVE", exact: true })).toBeVisible();
     await expect(details.getByText(/already has Drafts/)).toBeVisible();
-    // Beside the tile: just above or just below it.
+    // Beside the tile: just above or just below it, over the same columns.
     const at = await boxOf(details);
-    const of = await boxOf(drafts);
+    const of = await boxOf(card(/^Drafts, Already exists, 47 minutes ago$/));
     const apart = Math.min(Math.abs(at.y + at.height - of.y), Math.abs(of.y + of.height - at.y));
     expect(apart).toBeLessThanOrEqual(16);
+    expect(at.x).toBeLessThan(of.x + of.width);
+    expect(at.x + at.width).toBeGreaterThan(of.x);
 
     await page.keyboard.press("Escape");
     await expect(details).toBeHidden();
@@ -2417,14 +2421,39 @@ test("Status colors: statuses, failed hours and destructive actions take their s
       ink: await tokenColor(page, "--color-on-error-muted"),
     });
   }
+  // Each marker draws the picture of its own error's cause, the one its line shows in the list:
+  // as many shapes, and the same data in each path, where the list's icon keeps shapes such as a
+  // rectangle that the timeline draws as paths. The markers' keys carry the sample errors' ids.
+  const pictures = new Map<string, { shapes: number; paths: string[] }>();
+  for (const [id, cause] of [
+    ["e1", "Timed out"],
+    ["e2", "Already exists"],
+    ["e3", "Locked"],
+    ["e4", "Too large"],
+  ] as const) {
+    const icon = main.getByRole("img", { name: cause, exact: true });
+    pictures.set(
+      id,
+      await icon.evaluate((node) => ({
+        shapes: node.querySelectorAll("path, line, circle, ellipse, rect, polyline, polygon")
+          .length,
+        paths: [...node.querySelectorAll("path")].map((path) => path.getAttribute("d") ?? ""),
+      })),
+    );
+  }
   await main.getByRole("radio", { name: "Timeline" }).click();
   await expect(errorMarkers(page)).toHaveCount(4);
   for (const marker of await errorMarkers(page).all()) {
     expect(await computed(marker, "fill")).toBe(await tokenColor(page, "--color-error-muted"));
   }
+  for (const [id, picture] of pictures) {
+    const drawn = errorTimeline(page).locator(`path[data-ts-key*=":${id}:glyph:"]`);
+    await expect(drawn, id).toHaveCount(picture.shapes);
+    const data = await drawn.evaluateAll((paths) => paths.map((path) => path.getAttribute("d")));
+    expect(data, id).toEqual(expect.arrayContaining(picture.paths));
+  }
   // The picture of each cause is drawn in lines of the ink, with nothing filled.
   const glyphs = errorTimeline(page).locator('path[data-ts-key*=":glyph:"]');
-  expect(await glyphs.count()).toBeGreaterThanOrEqual(4);
   for (const glyph of await glyphs.all()) {
     expect(await computed(glyph, "fill")).toBe("none");
     expect(await computed(glyph, "stroke")).toBe(await tokenColor(page, "--color-on-error-muted"));
@@ -2528,8 +2557,12 @@ test("A rejected upload: an error shows its cause, its name and its age, and its
   const row = panel.getByRole("listitem").filter({ hasText: "holiday.mov" });
   await expect(row.getByRole("img", { name: "Too large", exact: true })).toBeVisible();
   await expect(row.getByText("5h", { exact: true })).toBeVisible();
-  // The short age reads as words.
-  await expect(row).toContainText("5 hours ago");
+  // Assistive technology hears the age in words, and not its short form.
+  await expect(row).toMatchAriaSnapshot(`
+    - listitem:
+      - img "Too large"
+      - text: holiday.mov 5 hours ago
+  `);
   // The details wait for a tap: no status code, request or reason shows before it.
   await expect(panel.getByText("413", { exact: true })).toHaveCount(0);
   await expect(panel.getByText(/Cloudflare Free/)).toHaveCount(0);
@@ -2582,6 +2615,31 @@ test("Choosing a view: the list shows first, and the view chosen lasts for the v
   await expect(panel.getByRole("button", { name: "Details for holiday.mov" })).toBeVisible();
   await expect(errorTimeline(page)).toHaveCount(0);
 });
+
+/**
+ * The timeline's axis runs on the panel's grid: from the line where the panel's title starts to the
+ * end of the panel's content, which the chart spans. A horizontal line has no height, so its edges
+ * are read from the page rather than from a visible box.
+ */
+const expectAxisOnGrid = async (page: Page): Promise<void> => {
+  const panel = errorsPanel(page);
+  const title = await boxOf(panel.getByRole("heading", { name: "Recent operation errors" }));
+  const chart = await boxOf(errorTimeline(page));
+  const axis = await errorTimeline(page)
+    .locator('line[data-ts-key$=":axis"]')
+    .evaluate((line) => {
+      const edges = line.getBoundingClientRect();
+      return { start: edges.left, end: edges.right };
+    });
+  expect(
+    Math.abs(axis.start - title.x),
+    "the axis starts where the title does",
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(axis.end - (chart.x + chart.width)),
+    "the axis ends with the panel",
+  ).toBeLessThanOrEqual(1);
+};
 
 /** Moves keyboard focus with Tab until `target` has it, as a keyboard user reaches it. */
 const tabTo = async (page: Page, target: Locator): Promise<void> => {
@@ -2637,6 +2695,7 @@ test("Reading the timeline: the errors lie along the last day, the last hour ove
       );
     }
   });
+  await expectAxisOnGrid(page);
 
   // Pointing at a marker shows its error's name and details.
   await page.mouse.move(budget.x, budget.y);
@@ -2698,6 +2757,7 @@ test("Reading the timeline: the errors lie along the last day, the last hour ove
       );
     }
   });
+  await expectAxisOnGrid(page);
 });
 
 test("The timeline in words: it names each error's file, cause and age", async ({ page }) => {
