@@ -35,9 +35,15 @@ input:autofill {
 
 /*
  * TanStack Charts make a chart's SVG focusable, so its values can be read from the keyboard, and
- * leave its focus ring to the browser, which draws it in the system's blue. The chart takes the
- * theme's ring instead, the one every Astryx control draws.
+ * leave its focus ring to the browser. Chromium draws that ring in the system's blue around any
+ * SVG with focus, even one a click focused, since its rule for SVG is :focus, not :focus-visible.
+ * The chart shows the theme's ring instead, the one every Astryx control draws, and only where the
+ * keyboard moved focus.
  */
+.ts-chart:focus {
+  outline: none;
+}
+
 .ts-chart:focus-visible {
   outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
   outline-offset: var(--focus-outline-offset);

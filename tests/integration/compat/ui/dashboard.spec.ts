@@ -1121,6 +1121,20 @@ const insideWindow = async (target: Locator, width: number): Promise<boolean> =>
   return box !== null && box.x >= 0 && box.x + box.width <= width;
 };
 
+/** How far the page has scrolled down: the scroll of every element that holds `target`. */
+const scrollOf = (target: Locator): Promise<number> =>
+  target.evaluate((element) => {
+    let total = 0;
+    for (let node = element.parentElement; node !== null; node = node.parentElement) {
+      total += node.scrollTop;
+    }
+    return total;
+  });
+
+/** Waits for the page to draw a frame, as it does between the touch events of a moving finger. */
+const nextFrame = (page: Page) =>
+  page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+
 // WCAG 1.4.10 asks content to reflow to 320 px without scrolling sideways, narrower than any
 // common phone.
 const PHONE_WIDTH = 320;
@@ -1307,6 +1321,63 @@ test.describe("in a window 375 px wide", () => {
       expect(await insideWindow(menu, 375), path).toBe(true);
     }
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  });
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
+
+  test("Holding a chart: a finger shows a bar's values only while it holds the chart, above the chart", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const chart = page.getByRole("img", { name: "Bytes stored on each backend" });
+    await chart.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    const values = page.getByRole("status", { name: /Stored: / });
+    const { x, y, width, height } = await boxOf(chart);
+    // A row per backend, largest first.
+    const archive = { x: x + width / 2, y: y + height / 6 };
+    const photos = { x: x + width / 2, y: y + height / 2 };
+    const session = await page.context().newCDPSession(page);
+    const finger = (type: "touchStart" | "touchMove" | "touchEnd", at?: { x: number; y: number }) =>
+      session.send("Input.dispatchTouchEvent", { type, touchPoints: at === undefined ? [] : [at] });
+
+    // A tap shows nothing, even after the time a hold takes.
+    await finger("touchStart", archive);
+    await finger("touchEnd");
+    await page.waitForTimeout(1000);
+    await expect(values).toBeHidden();
+
+    // A held finger shows the bar under it, above the chart, where the finger does not cover it.
+    await finger("touchStart", archive);
+    await expect(values).toHaveAccessibleName(/^RustFS archive /);
+    const shownAt = await boxOf(values);
+    expect(shownAt.y + shownAt.height).toBeLessThanOrEqual(y);
+
+    // Sliding the finger moves to the next bar, and the page stays where it was.
+    const scrolled = await scrollOf(chart);
+    for (const step of [1, 2, 3, 4]) {
+      await finger("touchMove", {
+        x: archive.x,
+        y: archive.y + ((photos.y - archive.y) * step) / 4,
+      });
+      await nextFrame(page);
+    }
+    await expect(values).toHaveAccessibleName(/^R2 photos /);
+    expect(await scrollOf(chart)).toBe(scrolled);
+
+    // Lifting the finger hides the values.
+    await finger("touchEnd");
+    await expect(values).toBeHidden();
+
+    // A swipe that starts on the chart scrolls the page and shows nothing.
+    await session.send("Input.synthesizeScrollGesture", {
+      ...archive,
+      yDistance: -200,
+      gestureSourceType: "touch",
+    });
+    expect(await scrollOf(chart)).toBeGreaterThan(scrolled + 100);
+    await expect(values).toBeHidden();
   });
 });
 
@@ -1633,7 +1704,7 @@ test("The operations chart in words: it describes the failures and the busiest h
   await page.goto("/");
   await shown(page.getByRole("img", { name: "Operations per hour, last 24 hours" }));
   expect((await imageDescriptions(page)).get("Operations per hour, last 24 hours")).toBe(
-    "3,732 operations, 4 of them failed, 5 hours ago, 1 hour ago, and this hour. The busiest hour was 12 hours ago, with 426.",
+    "3,732 operations, 4 of them failed, 5 hours ago, 1 hour ago, and now. The busiest hour was 12 hours ago, with 426.",
   );
 });
 
