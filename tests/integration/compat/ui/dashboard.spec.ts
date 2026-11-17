@@ -1213,6 +1213,48 @@ const scrollOf = (target: Locator): Promise<number> =>
   });
 
 /** Waits for the page to draw a frame, as it does between the touch events of a moving finger. */
+/**
+ * Watches the page for the storage chart's values on every frame and at every change to the page,
+ * so values shown for a single frame count too. The function it returns stops watching and says
+ * whether the values showed.
+ */
+const watchStoredValues = async (page: Page): Promise<() => Promise<boolean>> => {
+  const watch = await page.evaluateHandle(() => {
+    const state: { seen: boolean; stop: () => void } = { seen: false, stop: () => undefined };
+    const note = () => {
+      state.seen ||= [...document.querySelectorAll('[role="status"]')].some(
+        (element) =>
+          (element.getAttribute("aria-label") ?? "").includes("Stored: ") &&
+          element.checkVisibility({ opacityProperty: true, visibilityProperty: true }),
+      );
+    };
+    note();
+    const observer = new MutationObserver(note);
+    observer.observe(document, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    let frame = 0;
+    const everyFrame = () => {
+      note();
+      frame = requestAnimationFrame(everyFrame);
+    };
+    frame = requestAnimationFrame(everyFrame);
+    state.stop = () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+    return state;
+  });
+  return () =>
+    watch.evaluate((state) => {
+      state.stop();
+      return state.seen;
+    });
+};
+
 const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 
@@ -1524,10 +1566,12 @@ test.describe("on a touch screen", () => {
     const finger = (type: "touchStart" | "touchMove" | "touchEnd", at?: { x: number; y: number }) =>
       session.send("Input.dispatchTouchEvent", { type, touchPoints: at === undefined ? [] : [at] });
 
-    // A tap shows nothing, even after the time a hold takes.
+    // A tap shows nothing, not for a single frame, even after the time a hold takes.
+    let seen = await watchStoredValues(page);
     await finger("touchStart", archive);
     await finger("touchEnd");
     await page.waitForTimeout(1000);
+    expect(await seen()).toBe(false);
     await expect(values).toBeHidden();
 
     // A held finger shows the bar under it, above the chart, where the finger does not cover it.
@@ -1552,13 +1596,15 @@ test.describe("on a touch screen", () => {
     await finger("touchEnd");
     await expect(values).toBeHidden();
 
-    // A swipe that starts on the chart scrolls the page and shows nothing.
+    // A swipe that starts on the chart scrolls the page and shows nothing, not for a single frame.
+    seen = await watchStoredValues(page);
     await session.send("Input.synthesizeScrollGesture", {
       ...archive,
       yDistance: -200,
       gestureSourceType: "touch",
     });
     expect(await scrollOf(chart)).toBeGreaterThan(scrolled + 100);
+    expect(await seen()).toBe(false);
     await expect(values).toBeHidden();
   });
 });
