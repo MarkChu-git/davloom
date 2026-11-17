@@ -487,10 +487,10 @@ const statusColorsOnPage = (): string[] => {
 // apart from the status colors in `allowed`. It reads colors inside shadows, filters, gradients and
 // SVG data URLs too, including the color names an SVG uses. An RGB color is a gray when its
 // channels differ by at most 1 in 255, the rounding that color mixing leaves; a Lab or LCH color
-// when its chroma is as small. An RGB color is a status color when each channel is within 1 of
-// one of `allowed`, whatever its alpha. A notation it does not parse, such as XYZ, counts as a hue,
-// and so does `accent-color: auto`, which leaves checkboxes and radio buttons to the browser's own
-// blue.
+// when its chroma is as small. An RGB color, in rgb() or color(srgb), is a status color when each
+// channel is within 1 in 255 of one of `allowed`, whatever its alpha. A notation it does not
+// parse, such as XYZ, counts as a hue, and so does `accent-color: auto`, which leaves checkboxes
+// and radio buttons to the browser's own blue.
 const huesOnPage = (allowed: readonly string[]): string[] => {
   const properties = [
     "color",
@@ -601,11 +601,17 @@ const huesOnPage = (allowed: readonly string[]): string[] => {
         .map(Number),
     ),
   );
+  // A relative color, such as rgb(from …), computes to color(srgb), whose channels run from 0 to 1,
+  // so they are scaled to the 0 to 255 of rgb() first.
   const isStatusColor = (notation: string, parts: readonly string[]): boolean => {
-    if (notation !== "rgb" && notation !== "rgba") {
+    let channels: number[];
+    if (notation === "rgb" || notation === "rgba") {
+      channels = parts.slice(0, 3).map(Number);
+    } else if (notation === "color" && parts[0] === "srgb") {
+      channels = parts.slice(1, 4).map((part) => Math.round(Number.parseFloat(part) * 255));
+    } else {
       return false;
     }
-    const channels = parts.slice(0, 3).map(Number);
     return statusChannels.some((status) =>
       status.every((level, at) => Math.abs(level - (channels[at] ?? Number.NaN)) <= 1),
     );
@@ -779,8 +785,20 @@ const SCAN_SAMPLES: readonly { name: string; css?: string; html?: string; hasHue
   },
   { name: "a gray in color()", css: "h1 { color: color(srgb 0.5 0.5 0.5); }", hasHue: false },
   { name: "the error color", css: "h1 { color: var(--color-text-error); }", hasHue: false },
+  // Relative colors compute to color(srgb), so these test the scan's tolerance in that notation;
+  // the test below tests it in rgb().
   {
-    name: "a red two steps from the error color",
+    name: "the error color as a relative color",
+    css: "h1 { color: rgb(from var(--color-text-error) r g b); }",
+    hasHue: false,
+  },
+  {
+    name: "a relative red one step from the error color",
+    css: "h1 { color: rgb(from var(--color-text-error) r g calc(b + 1)); }",
+    hasHue: false,
+  },
+  {
+    name: "a relative red two steps from the error color",
     css: "h1 { color: rgb(from var(--color-text-error) r g calc(b + 2)); }",
     hasHue: true,
   },
@@ -810,6 +828,20 @@ test("Rendered pages: the scan reports hues put on a page on purpose, and no gra
   for (const { name, css, html, hasHue } of SCAN_SAMPLES) {
     expect((await scanWith(page, { css, html })).length > 0, name).toBe(hasHue);
   }
+
+  // The same steps in rgb(), the notation most computed colors take, from the error color as this
+  // mode resolves it: one step is the rounding the scan forgives, two are a color of their own.
+  const [red = 0, green = 0, blue = 0] =
+    (await tokenColor(page, "--color-text-error")).match(/\d+/g)?.map(Number) ?? [];
+  const stepped = (step: number) =>
+    `h1 { color: rgb(${red} ${green} ${blue > 255 - step ? blue - step : blue + step}); }`;
+  expect(await scanWith(page, { css: stepped(1) }), "a red one step from the error color").toEqual(
+    [],
+  );
+  expect(
+    (await scanWith(page, { css: stepped(2) })).length > 0,
+    "a red two steps from the error color",
+  ).toBe(true);
 });
 
 for (const { path, name } of PAGES) {
