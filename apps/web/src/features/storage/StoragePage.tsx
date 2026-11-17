@@ -12,9 +12,9 @@ import {
   LayoutContent,
   LayoutFooter,
   Stack,
+  StackItem,
   VStack,
 } from "@astryxdesign/core/Layout";
-import { List } from "@astryxdesign/core/List";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
@@ -30,11 +30,11 @@ import { backends, type Mount, type StorageBackend } from "../sample-data/data";
 import { formatBytes, formatCount, formatRelative } from "../sample-data/format";
 import { sampleId } from "../sample-data/id";
 import { useDefaultBackendId } from "../settings/settingsStore";
+import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
-import { SummaryRow } from "../shell/SummaryRow";
 import { TitleAction } from "../shell/TitleRow";
 import { useFormDialog } from "../shell/useFormDialog";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
@@ -328,11 +328,13 @@ export const StoragePage = () => {
         removeMount(mount.id);
         confirm.hide();
         toast({ body: `Removed ${mount.path}.` });
-        // The row and its menu go away, so focus moves to the next mount's menu or Add mount.
+        // The row goes away with its menu, or on a phone with its details, so focus moves to the
+        // next mount's menu or row, or else to Add mount.
         refocusIfLost(() =>
           next === undefined || next.id === mount.id
             ? buttonNamed("Add mount")
-            : buttonLabelled(`Actions for mount ${next.path}`),
+            : (buttonLabelled(`Actions for mount ${next.path}`) ??
+              buttonLabelled(`Details for mount ${next.path}`)),
         );
       },
     });
@@ -392,20 +394,50 @@ export const StoragePage = () => {
             <VStack gap={3}>
               <Heading level={2}>Mounts</Heading>
               {isNarrowTable ? (
-                // Where a column per detail has no room, as on a phone, each mount is a row of a
-                // list, the same shape as a key's on Credentials.
-                <Card ref={tableRef} elevation="low">
-                  <List hasDividers edge="bleed">
-                    {mounts.map((mount) => (
-                      <SummaryRow
-                        key={mount.id}
-                        title={mount.path}
-                        details={[backendName(mount.backendId), `${mount.bucket}/${mount.prefix}`]}
-                        menu={mountMenu(mount)}
-                      />
-                    ))}
-                  </List>
-                </Card>
+                // Where a column per detail has no room, as on a phone, each mount is a row with its
+                // path and backend, the same shape as a key's on Credentials. Opening the row shows
+                // its bucket and prefix, and Edit and Remove.
+                <ExpandableList
+                  ref={tableRef}
+                  records={mounts.map((mount) => ({
+                    id: mount.id,
+                    title: mount.path,
+                    summary: backendName(mount.backendId),
+                    details: (
+                      <>
+                        {/* The bucket and the prefix each have a line, as in the form, so the
+                            narrowest phone breaks neither name. */}
+                        <MetadataList>
+                          <MetadataListItem label="Bucket">
+                            <Text type="code">{mount.bucket}</Text>
+                          </MetadataListItem>
+                          <MetadataListItem label="Prefix">
+                            {mount.prefix === "" ? "None" : <Text type="code">{mount.prefix}</Text>}
+                          </MetadataListItem>
+                        </MetadataList>
+                        <HStack gap={2}>
+                          <StackItem size="fill">
+                            <Button
+                              label="Edit"
+                              variant="secondary"
+                              width="100%"
+                              onClick={() => openForm(mount)}
+                            />
+                          </StackItem>
+                          <StackItem size="fill">
+                            <Button
+                              label="Remove"
+                              variant="destructive"
+                              width="100%"
+                              onClick={() => openRemove(mount)}
+                            />
+                          </StackItem>
+                        </HStack>
+                      </>
+                    ),
+                    toggleLabel: `Details for mount ${mount.path}`,
+                  }))}
+                />
               ) : (
                 <Card ref={tableRef} padding={0} elevation="low">
                   <Table<Mount>

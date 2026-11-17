@@ -3,8 +3,15 @@ import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Icon } from "@astryxdesign/core/Icon";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
-import { List } from "@astryxdesign/core/List";
+import {
+  HStack,
+  Layout,
+  LayoutContent,
+  LayoutFooter,
+  StackItem,
+  VStack,
+} from "@astryxdesign/core/Layout";
+import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Selector } from "@astryxdesign/core/Selector";
 import { Switch } from "@astryxdesign/core/Switch";
@@ -20,11 +27,11 @@ import { credentials, SAMPLE_NOW, type Credential } from "../sample-data/data";
 import { formatDate, formatRelative } from "../sample-data/format";
 import { sampleId } from "../sample-data/id";
 import { CopyField } from "../shell/CopyField";
-import { buttonNamed, refocusIfLost } from "../shell/focus";
+import { ExpandableList } from "../shell/ExpandableList";
+import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
-import { SummaryRow } from "../shell/SummaryRow";
 import { TitleAction } from "../shell/TitleRow";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { useMounts } from "../storage/mountStore";
@@ -54,6 +61,12 @@ const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
 
 const accessOf = (credential: Credential): string =>
   credential.permission === "read-only" ? "Read only" : "Read and write";
+
+const lastUsedOf = (credential: Credential): string =>
+  credential.lastUsedAt === null ? "Never" : formatRelative(credential.lastUsedAt);
+
+const expiresOf = (credential: Credential): string =>
+  credential.expiresAt === null ? "Never" : formatDate(credential.expiresAt);
 
 const KeyName = ({ credential }: { credential: Credential }) => (
   <VStack gap={0.5}>
@@ -89,21 +102,13 @@ const WIDE_COLUMNS: TableColumn<Credential>[] = [
     key: "lastUsedAt",
     header: "Last used",
     width: pixel(120),
-    renderCell: (credential) => (
-      <Text color="secondary">
-        {credential.lastUsedAt === null ? "Never" : formatRelative(credential.lastUsedAt)}
-      </Text>
-    ),
+    renderCell: (credential) => <Text color="secondary">{lastUsedOf(credential)}</Text>,
   },
   {
     key: "expiresAt",
     header: "Expires",
     width: pixel(120),
-    renderCell: (credential) => (
-      <Text color="secondary">
-        {credential.expiresAt === null ? "Never" : formatDate(credential.expiresAt)}
-      </Text>
-    ),
+    renderCell: (credential) => <Text color="secondary">{expiresOf(credential)}</Text>,
   },
   {
     key: "state",
@@ -113,16 +118,30 @@ const WIDE_COLUMNS: TableColumn<Credential>[] = [
   },
 ];
 
-const usedOf = (credential: Credential): string =>
-  credential.lastUsedAt === null ? "Never used" : `Used ${formatRelative(credential.lastUsedAt)}`;
+/** A key's first characters, with its status at the end of the line. */
+const KeySummary = ({ credential }: { credential: Credential }) => (
+  <HStack gap={3} vAlign="center">
+    <StackItem size="fill">
+      <Text type="code" color="secondary" maxLines={1}>
+        {`${credential.prefix}…`}
+      </Text>
+    </StackItem>
+    <KeyStatus credential={credential} />
+  </HStack>
+);
 
-const expiryOf = (credential: Credential): string => {
-  if (credential.expiresAt === null) {
-    return "Never expires";
-  }
-  const verb = hasExpired(credential, SAMPLE_NOW) ? "Expired" : "Expires";
-  return `${verb} ${formatDate(credential.expiresAt)}`;
-};
+/** What a key's row shows once opened: the details the table has columns for. */
+const KeyFacts = ({ credential }: { credential: Credential }) => (
+  <MetadataList>
+    <MetadataListItem label="Access">{accessOf(credential)}</MetadataListItem>
+    <MetadataListItem label="Scope">{credential.scope}</MetadataListItem>
+    <MetadataListItem label="Last used">{lastUsedOf(credential)}</MetadataListItem>
+    {/* Past its expiry time a key says it expired, whether or not it was revoked. */}
+    <MetadataListItem label={hasExpired(credential, SAMPLE_NOW) ? "Expired" : "Expires"}>
+      {expiresOf(credential)}
+    </MetadataListItem>
+  </MetadataList>
+);
 
 const ShowOnce = ({
   name,
@@ -308,6 +327,12 @@ export const CredentialsPage = () => {
         );
         confirm.hide();
         toast({ body: `Revoked “${credential.name}”.` });
+        // On a phone, Revoke leaves the key's details with the key, so focus moves to its row.
+        refocusIfLost(
+          () =>
+            buttonLabelled(`Actions for key ${credential.name}`) ??
+            buttonLabelled(`Details for key ${credential.name}`),
+        );
       },
     });
 
@@ -355,24 +380,31 @@ export const CredentialsPage = () => {
               }
             />
             {isNarrowTable ? (
-              // Where a column per detail has no room, as on a phone, each key is a row of a list.
-              <Card ref={tableRef} elevation="low">
-                <List hasDividers edge="bleed">
-                  {rows.map((credential) => (
-                    <SummaryRow
-                      key={credential.id}
-                      title={credential.name}
-                      code={`${credential.prefix}…`}
-                      status={<KeyStatus credential={credential} />}
-                      details={[
-                        `${accessOf(credential)} · ${credential.scope}`,
-                        `${usedOf(credential)} · ${expiryOf(credential)}`,
-                      ]}
-                      menu={keyMenu(credential)}
-                    />
-                  ))}
-                </List>
-              </Card>
+              // Where a column per detail has no room, as on a phone, each key is a row with its
+              // name, first characters and status. Opening the row shows the rest and Revoke.
+              <ExpandableList
+                ref={tableRef}
+                records={rows.map((credential) => ({
+                  id: credential.id,
+                  title: credential.name,
+                  summary: <KeySummary credential={credential} />,
+                  // A revoked key has no action left, so its details end with its expiry.
+                  details: (
+                    <>
+                      <KeyFacts credential={credential} />
+                      {credential.isRevoked ? null : (
+                        <Button
+                          label="Revoke"
+                          variant="destructive"
+                          width="100%"
+                          onClick={() => openRevoke(credential)}
+                        />
+                      )}
+                    </>
+                  ),
+                  toggleLabel: `Details for key ${credential.name}`,
+                }))}
+              />
             ) : (
               <Card ref={tableRef} padding={0} elevation="low">
                 <Table<Credential>
