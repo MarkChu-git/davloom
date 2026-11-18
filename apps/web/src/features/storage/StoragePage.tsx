@@ -24,6 +24,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
+import * as stylex from "@stylexjs/stylex";
 import { Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { backends, type Mount, type StorageBackend } from "../sample-data/data";
@@ -49,6 +50,22 @@ type Check = { state: "idle" } | { state: "checking" } | { state: "done"; answer
 /** The narrowest backend card, in rem, with room for the status beside the name and each value
  * beside its label: the RustFS endpoint is the longest value. */
 const WIDE_BACKEND_CARD = 21;
+
+const styles = stylex.create({
+  // A backend card spans three rows of the backend grid, one for each part: the name and status,
+  // the details, and Verify connection. The card takes the grid's rows as its own (subgrid), so
+  // each part starts on the same line as the parts of the cards beside it, and the actions line up
+  // along the bottom of a row of cards where one card has no capacity bar.
+  card: {
+    display: "grid",
+    gridRow: "span 3",
+    gridTemplateRows: "subgrid",
+  },
+  // The status's words sit on the line of the name's. Stack's vAlign offers no baseline.
+  onBaseline: {
+    alignItems: "baseline",
+  },
+});
 
 const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCount: number }) => {
   const announce = useAnnounce();
@@ -77,22 +94,23 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
   };
 
   return (
-    <Card ref={cardRef} elevation="low">
+    <Card ref={cardRef} elevation="low" xstyle={styles.card}>
+      <Stack
+        direction={isNarrow ? "vertical" : "horizontal"}
+        hAlign={isNarrow ? "start" : "between"}
+        vAlign="start"
+        gap={isNarrow ? 2 : 3}
+        xstyle={isNarrow ? undefined : styles.onBaseline}
+      >
+        <VStack gap={0.5}>
+          <Heading level={3}>{backend.name}</Heading>
+          <Text type="supporting" color="secondary">
+            {backend.kind}
+          </Text>
+        </VStack>
+        <StatusLabel tone={status.tone} label={status.label} />
+      </Stack>
       <VStack gap={4}>
-        <Stack
-          direction={isNarrow ? "vertical" : "horizontal"}
-          hAlign={isNarrow ? "start" : "between"}
-          vAlign="start"
-          gap={isNarrow ? 2 : 3}
-        >
-          <VStack gap={0.5}>
-            <Heading level={3}>{backend.name}</Heading>
-            <Text type="supporting" color="secondary">
-              {backend.kind}
-            </Text>
-          </VStack>
-          <StatusLabel tone={status.tone} label={status.label} />
-        </Stack>
         <MetadataList label={isNarrow ? { position: "top" } : undefined}>
           <MetadataListItem label="Endpoint">
             {backend.endpoint === undefined ? (
@@ -117,30 +135,30 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
             max={backend.capacityBytes}
           />
         )}
-        <HStack gap={3} vAlign="center" wrap="wrap">
-          <Button
-            label="Verify connection"
-            variant="secondary"
-            size="sm"
-            isLoading={check.state === "checking"}
-            onClick={verify}
-          />
-          {check.state === "done" ? (
-            <StatusLabel
-              tone={check.answered ? "success" : "error"}
-              label={
-                check.answered
-                  ? `Answered just now, ${backend.statusDetail.replace("answered ", "")}`
-                  : `Still unreachable, ${backend.statusDetail}`
-              }
-            />
-          ) : (
-            <Text type="supporting" color="secondary">
-              {`Last checked ${formatRelative(backend.checkedAt)}`}
-            </Text>
-          )}
-        </HStack>
       </VStack>
+      <HStack gap={3} vAlign="center" wrap="wrap">
+        <Button
+          label="Verify connection"
+          variant="secondary"
+          size="sm"
+          isLoading={check.state === "checking"}
+          onClick={verify}
+        />
+        {check.state === "done" ? (
+          <StatusLabel
+            tone={check.answered ? "success" : "error"}
+            label={
+              check.answered
+                ? `Answered just now, ${backend.statusDetail.replace("answered ", "")}`
+                : `Still unreachable, ${backend.statusDetail}`
+            }
+          />
+        ) : (
+          <Text type="supporting" color="secondary">
+            {`Last checked ${formatRelative(backend.checkedAt)}`}
+          </Text>
+        )}
+      </HStack>
     </Card>
   );
 };

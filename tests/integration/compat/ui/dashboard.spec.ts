@@ -1207,6 +1207,111 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   expect(narrowCapacity?.y).toBeLessThan(narrowMounts?.y ?? Number.NaN);
 });
 
+// Runs in the page: the height of the line an element's first words stand on. An empty box set in
+// front of them on that line has its top there.
+const baselineOf = (element: Element): number => {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node.textContent?.trim() && node.parentNode !== null) {
+      const probe = document.createElement("span");
+      probe.style.cssText = "display: inline-block; width: 0; height: 0; vertical-align: baseline";
+      node.parentNode.insertBefore(probe, node);
+      const { top } = probe.getBoundingClientRect();
+      probe.remove();
+      return top;
+    }
+  }
+  return Number.NaN;
+};
+
+/** A card in the page's main region, found by something in it. */
+const cardWith = (page: Page, has: Locator) =>
+  page.getByRole("main").locator(".astryx-card").filter({ has });
+
+test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line, with a capacity bar or without", async ({
+  page,
+}) => {
+  const tiles = [
+    { label: "Stored", figure: "255.1 GB", caption: "24,597 objects" },
+    { label: "Known capacity", figure: "10.7%", caption: "213.9 GB of 2 TB" },
+    { label: "Mounts", figure: "4", caption: "On 3 of 3 backends" },
+  ];
+  // The default width, and the narrowest that still sets the three side by side.
+  for (const width of [1280, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const lines = await Promise.all(
+      tiles.map(async ({ label, figure, caption }) => {
+        const tile = cardWith(page, page.getByText(label, { exact: true }));
+        return {
+          label: await tile.getByText(label, { exact: true }).evaluate(baselineOf),
+          figure: await tile.getByText(figure, { exact: true }).evaluate(baselineOf),
+          caption: await tile.getByText(caption, { exact: true }).evaluate(baselineOf),
+          bars: await tile.getByRole("progressbar").count(),
+        };
+      }),
+    );
+    expect(lines.map(({ bars }) => bars)).toEqual([0, 1, 0]);
+    for (const [index, line] of lines.entries()) {
+      for (const part of ["label", "figure", "caption"] as const) {
+        expect(line[part], `${tiles[index]?.label}'s ${part} at ${width} px`).toBeCloseTo(
+          lines[0]?.[part] ?? Number.NaN,
+          0,
+        );
+      }
+    }
+  }
+});
+
+test("A count and its status: the failures stand on the line of the operations count beside them", async ({
+  page,
+}) => {
+  for (const width of [1280, PHONE_WIDTH]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const card = cardWith(page, page.getByRole("heading", { name: "Operations", exact: true }));
+    const count = await card.getByText("3,732", { exact: true }).evaluate(baselineOf);
+    const failed = await card.getByText("4 failed", { exact: true }).evaluate(baselineOf);
+    expect(failed, `at ${width} px`).toBeCloseTo(count, 0);
+  }
+});
+
+test("Backend cards on one grid: with room, each status stands on its name's line, and side by side every part starts on a shared line", async ({
+  page,
+}) => {
+  const names = ["Durable Objects", "R2 photos", "RustFS archive"];
+  // The three cards sit in one row at both widths, and R2 photos alone has no capacity bar. At
+  // 1440 px each card has room for its status beside its name; at 1280 px the status moves under
+  // the backend's kind.
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/storage");
+    const lines = await Promise.all(
+      names.map(async (name) => {
+        const card = cardWith(page, page.getByRole("heading", { level: 3, name, exact: true }));
+        return {
+          top: (await boxOf(card)).y,
+          title: await card.getByRole("heading", { level: 3 }).evaluate(baselineOf),
+          status: await card.getByText(/^(Connected|Slow|Unreachable)$/).evaluate(baselineOf),
+          details: (await boxOf(card.getByText("Endpoint", { exact: true }))).y,
+          action: (await boxOf(card.getByRole("button", { name: "Verify connection" }))).y,
+          bars: await card.getByRole("progressbar").count(),
+        };
+      }),
+    );
+    expect(lines.map(({ bars }) => bars)).toEqual([1, 0, 1]);
+    for (const [index, line] of lines.entries()) {
+      const where = `${names[index]} at ${width} px`;
+      if (width === 1440) {
+        expect(line.status, `${where}: status`).toBeCloseTo(line.title, 0);
+      }
+      for (const part of ["top", "title", "status", "details", "action"] as const) {
+        expect(line[part], `${where}: ${part}`).toBeCloseTo(lines[0]?.[part] ?? Number.NaN, 0);
+      }
+    }
+  }
+});
+
 // Runs in the page: what scrolls or reaches past the window sideways. That is the main landmark
 // and each element around it, up to the root, when it is wider inside than it is; each element in
 // it that scrolls sideways, as a page does inside its layout and a table inside its frame; and each
