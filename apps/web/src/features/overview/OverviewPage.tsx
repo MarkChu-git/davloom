@@ -37,28 +37,47 @@ const styles = stylex.create({
   tiles: {
     gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 11rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
   },
+  // A tile spans three rows of the tiles' grid: its label, its number with any meter under it, and
+  // what the number is measured in. The tile takes the grid's rows as its own (subgrid), so the
+  // last lines of the tiles share a line where one tile has a meter, and its own gap keeps its
+  // parts 4 px apart rather than the 16 px between tiles. Each part keeps its own height at the top
+  // of its row, as a backend card's parts do.
+  tile: {
+    display: "grid",
+    gridRow: "span 3",
+    gridTemplateRows: "subgrid",
+    rowGap: spacingVars["--spacing-1"],
+    alignItems: "start",
+  },
+  // Words beside a headline number, such as a status, sit on the number's baseline.
+  onBaseline: {
+    alignItems: "baseline",
+  },
 });
 
-/** A headline number with what it is measured in. */
+/** A headline number with what it is measured in, and a meter under the number where it has one. */
 const Tile = ({
   label,
   value,
+  meter,
   children,
 }: {
   label: string;
   value: string;
+  meter?: ReactNode;
   children: ReactNode;
 }) => (
-  <Card elevation="low">
+  <Card elevation="low" xstyle={styles.tile}>
+    <Text type="label" color="secondary">
+      {label}
+    </Text>
     <VStack gap={1}>
-      <Text type="label" color="secondary">
-        {label}
-      </Text>
       <Text type="display-3" weight="semibold">
         {value}
       </Text>
-      {children}
+      {meter}
     </VStack>
+    {children}
   </Card>
 );
 
@@ -134,13 +153,18 @@ export const OverviewPage = () => {
                   {`${formatCount(objectCount)} objects`}
                 </Text>
               </Tile>
-              <Tile label="Known capacity" value={share.format(knownUsed / knownCapacity)}>
-                <ProgressBar
-                  label="Known capacity used"
-                  isLabelHidden
-                  value={knownUsed}
-                  max={knownCapacity}
-                />
+              <Tile
+                label="Known capacity"
+                value={share.format(knownUsed / knownCapacity)}
+                meter={
+                  <ProgressBar
+                    label="Known capacity used"
+                    isLabelHidden
+                    value={knownUsed}
+                    max={knownCapacity}
+                  />
+                }
+              >
                 <Text type="supporting" color="secondary">
                   {`${formatBytes(knownUsed)} of ${formatBytes(knownCapacity)}`}
                 </Text>
@@ -160,7 +184,7 @@ export const OverviewPage = () => {
                 </Text>
               }
             >
-              <HStack gap={3} vAlign="center" wrap="wrap">
+              <HStack gap={3} wrap="wrap" xstyle={styles.onBaseline}>
                 <Text type="display-3" weight="semibold">
                   {formatCount(totalOperations)}
                 </Text>

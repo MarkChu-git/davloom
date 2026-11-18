@@ -12,7 +12,9 @@ import {
   useSideNavCollapse,
   type SideNavSectionProps,
 } from "@astryxdesign/core/SideNav";
+import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import { LoomMark } from "@davloom/ui";
+import * as stylex from "@stylexjs/stylex";
 import { useRouterState } from "@tanstack/react-router";
 import {
   Folder,
@@ -193,6 +195,24 @@ const navGroups = (pathname: string, onChoose?: () => void) => {
   };
 };
 
+const styles = stylex.create({
+  // AppShell pads the ends of a phone's bar by spacing-2, and the brand's link pads the mark by
+  // spacing-2 more, so the mark starts on the page's gutter, spacing-4. A ghost button pads its
+  // words by spacing-3, which left the Menu button's words 4 px short of the gutter at the bar's
+  // other end. The button pads its end as the link pads its start, so its words end on the gutter.
+  // It stays inside the bar: SideNav's bar clips what reaches past it, and scrolls sideways to show
+  // a focused button whole.
+  menu: {
+    paddingInlineEnd: spacingVars["--spacing-2"],
+  },
+  // The dropdown ends where the button's words do, on the gutter, rather than at the button's edge,
+  // and keeps the navigation's width.
+  dropdown: {
+    marginInlineStart: `calc(-1 * ${spacingVars["--spacing-2"]})`,
+    marginInlineEnd: spacingVars["--spacing-2"],
+  },
+});
+
 /**
  * On a phone, AppShell trades the side navigation for a bar across the top. The same rows then drop
  * down from a Menu button in that bar. They stay links, as navigation should, rather than becoming
@@ -216,6 +236,7 @@ const PhoneMenu = ({ pathname }: { pathname: string }) => {
       alignment="end"
       width={NAV_WIDTH.defaultWidth}
       padding={2}
+      xstyle={styles.dropdown}
       isOpen={openOn === pathname}
       onOpenChange={(isOpen) => setOpenOn(isOpen ? pathname : undefined)}
       content={
@@ -226,7 +247,12 @@ const PhoneMenu = ({ pathname }: { pathname: string }) => {
         </VStack>
       }
     >
-      <Button label="Menu" variant="ghost" icon={<Icon icon={Menu} size="sm" />} />
+      <Button
+        label="Menu"
+        variant="ghost"
+        icon={<Icon icon={Menu} size="sm" />}
+        xstyle={styles.menu}
+      />
     </Popover>
   );
 };

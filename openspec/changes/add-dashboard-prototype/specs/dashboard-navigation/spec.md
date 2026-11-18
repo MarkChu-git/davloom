@@ -22,11 +22,15 @@ The Dashboard SHALL list Overview, Files, Credentials, Storage & Mounts and Sett
 - **THEN** the mark, the Manage heading, the icon of every link and the collapse button's icon start at the same distance from the window's left edge
 
 ### Requirement: One grid
-Beside the side navigation, the navigation and every page SHALL share one grid: a 24 px gutter between each edge and what it holds, the brand and each page's title on one line a gutter below the top, and the navigation's first link and each page's content on one line a gutter below that. On a phone the gutter SHALL be 16 px.
+Beside the side navigation, the navigation and every page SHALL share one grid: a 24 px gutter between each edge and what it holds, the brand and each page's title on one line a gutter below the top, and the navigation's first link and each page's content on one line a gutter below that. On a phone the gutter SHALL be 16 px, and the Menu button's word and its dropdown SHALL end on it at the bar's right end, as the mark starts on it at the left.
 
 #### Scenario: One grid
 - **WHEN** a user opens each page in a window 1280 px wide
 - **THEN** the page's title is level with the mark, the Overview link starts where the page's content starts, the mark is as far from the window's edge as the page's content is from the navigation, and the collapse button ends as far above the bottom
+
+#### Scenario: The Menu button on the grid
+- **WHEN** a user on the Overview in a window 320 px wide selects Menu
+- **THEN** the word Menu ends as far from the window's right edge as the page's title starts from its left, before and after the button is selected, and the dropdown ends on the same line
 
 ### Requirement: Titles on a touch screen
 A page's title SHALL stay level with the brand where a touch screen's type scale makes the title larger.

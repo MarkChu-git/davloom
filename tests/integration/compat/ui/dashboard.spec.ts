@@ -1207,6 +1207,146 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   expect(narrowCapacity?.y).toBeLessThan(narrowMounts?.y ?? Number.NaN);
 });
 
+// Runs in the page: the height of the line an element's first words stand on. An empty box set in
+// front of them on that line has its top there.
+const baselineOf = (element: Element): number => {
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    if (node.textContent?.trim() && node.parentNode !== null) {
+      const probe = document.createElement("span");
+      probe.style.cssText = "display: inline-block; width: 0; height: 0; vertical-align: baseline";
+      node.parentNode.insertBefore(probe, node);
+      const { top } = probe.getBoundingClientRect();
+      probe.remove();
+      return top;
+    }
+  }
+  return Number.NaN;
+};
+
+/** A card in the page's main region, found by something in it. */
+const cardWith = (page: Page, has: Locator) =>
+  page.getByRole("main").locator(".astryx-card").filter({ has });
+
+test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line, with a capacity bar or without", async ({
+  page,
+}) => {
+  const tiles = [
+    { label: "Stored", figure: "255.1 GB", caption: "24,597 objects" },
+    { label: "Known capacity", figure: "10.7%", caption: "213.9 GB of 2 TB" },
+    { label: "Mounts", figure: "4", caption: "On 3 of 3 backends" },
+  ];
+  // The default width, and the narrowest that still sets the three side by side.
+  for (const width of [1280, 900]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const lines = await Promise.all(
+      tiles.map(async ({ label, figure, caption }) => {
+        const tile = cardWith(page, page.getByText(label, { exact: true }));
+        const labelBox = await boxOf(tile.getByText(label, { exact: true }));
+        return {
+          label: await tile.getByText(label, { exact: true }).evaluate(baselineOf),
+          figure: await tile.getByText(figure, { exact: true }).evaluate(baselineOf),
+          caption: await tile.getByText(caption, { exact: true }).evaluate(baselineOf),
+          gap:
+            (await boxOf(tile.getByText(figure, { exact: true }))).y - labelBox.y - labelBox.height,
+          bars: await tile.getByRole("progressbar").count(),
+        };
+      }),
+    );
+    expect(lines.map(({ bars }) => bars)).toEqual([0, 1, 0]);
+    for (const [index, line] of lines.entries()) {
+      // A tile keeps its parts 4 px apart, the gap it had before it took the grid's rows, rather
+      // than the 16 px between tiles.
+      expect(line.gap, `${tiles[index]?.label}'s gap at ${width} px`).toBeCloseTo(4, 0);
+      for (const part of ["label", "figure", "caption"] as const) {
+        expect(line[part], `${tiles[index]?.label}'s ${part} at ${width} px`).toBeCloseTo(
+          lines[0]?.[part] ?? Number.NaN,
+          0,
+        );
+      }
+    }
+  }
+});
+
+test("A count and its status: the failures stand on the line of the operations count beside them", async ({
+  page,
+}) => {
+  for (const width of [1280, PHONE_WIDTH]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    const card = cardWith(page, page.getByRole("heading", { name: "Operations", exact: true }));
+    const count = await card.getByText("3,732", { exact: true }).evaluate(baselineOf);
+    const failed = await card.getByText("4 failed", { exact: true }).evaluate(baselineOf);
+    expect(failed, `at ${width} px`).toBeCloseTo(count, 0);
+  }
+});
+
+test("Backend cards on one grid: with room, each status stands on its name's line, and side by side every part starts on a shared line", async ({
+  page,
+}) => {
+  const names = ["Durable Objects", "R2 photos", "RustFS archive"];
+  // The three cards sit in one row at both widths, and R2 photos alone has no capacity bar. At
+  // 1440 px each card has room for its status beside its name; at 1280 px the status moves under
+  // the backend's kind.
+  for (const width of [1440, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/storage");
+    const lines = await Promise.all(
+      names.map(async (name) => {
+        const card = cardWith(page, page.getByRole("heading", { level: 3, name, exact: true }));
+        return {
+          top: (await boxOf(card)).y,
+          title: await card.getByRole("heading", { level: 3 }).evaluate(baselineOf),
+          status: await card.getByText(/^(Connected|Slow|Unreachable)$/).evaluate(baselineOf),
+          details: (await boxOf(card.getByText("Endpoint", { exact: true }))).y,
+          action: (await boxOf(card.getByRole("button", { name: "Verify connection" }))).y,
+          bars: await card.getByRole("progressbar").count(),
+        };
+      }),
+    );
+    expect(lines.map(({ bars }) => bars)).toEqual([1, 0, 1]);
+    for (const [index, line] of lines.entries()) {
+      const where = `${names[index]} at ${width} px`;
+      if (width === 1440) {
+        expect(line.status, `${where}: status`).toBeCloseTo(line.title, 0);
+      }
+      for (const part of ["top", "title", "status", "details", "action"] as const) {
+        expect(line[part], `${where}: ${part}`).toBeCloseTo(lines[0]?.[part] ?? Number.NaN, 0);
+      }
+    }
+  }
+
+  // Verified at 1440 px, RustFS archive's answer wraps under its button and makes the row of
+  // actions taller. Every card's button keeps the top of that row, so none of them moves.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/storage");
+  const buttons = names.map((name) =>
+    cardWith(page, page.getByRole("heading", { level: 3, name, exact: true })).getByRole("button", {
+      name: "Verify connection",
+    }),
+  );
+  const tops = async () => Promise.all(buttons.map(async (button) => (await boxOf(button)).y));
+  const before = await tops();
+  const archive = cardWith(
+    page,
+    page.getByRole("heading", { level: 3, name: "RustFS archive", exact: true }),
+  );
+  await archive.getByRole("button", { name: "Verify connection" }).click();
+  const answer = archive.getByText(/^Still unreachable/);
+  await shown(answer);
+  const verify = await boxOf(archive.getByRole("button", { name: "Verify connection" }));
+  expect((await boxOf(answer)).y, "the answer under its button").toBeGreaterThanOrEqual(
+    verify.y + verify.height,
+  );
+  for (const [index, top] of (await tops()).entries()) {
+    expect(top, `${names[index]}'s button once RustFS archive is verified`).toBeCloseTo(
+      before[index] ?? Number.NaN,
+      0,
+    );
+  }
+});
+
 // Runs in the page: what scrolls or reaches past the window sideways. That is the main landmark
 // and each element around it, up to the root, when it is wider inside than it is; each element in
 // it that scrolls sideways, as a page does inside its layout and a table inside its frame; and each
@@ -1418,6 +1558,13 @@ const watchStoredValues = async (page: Page): Promise<() => Promise<boolean>> =>
 const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 
+// Runs in the page: where an element's words end, sideways.
+const wordsEnd = (element: Element): number => {
+  const words = document.createRange();
+  words.selectNodeContents(element);
+  return words.getBoundingClientRect().right;
+};
+
 // WCAG 1.4.10 asks content to reflow to 320 px without scrolling sideways, narrower than any
 // common phone.
 const PHONE_WIDTH = 320;
@@ -1538,6 +1685,35 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     await page.keyboard.press("Escape");
     await expect(dropdown).toBeHidden();
     await expect(menu).toBeFocused();
+  });
+
+  test("The Menu button on the grid: its word ends on the gutter the page's content keeps, and so does its dropdown", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    // The page's content starts as far in from the window's left edge as it ends from the right.
+    const gutter = (await boxOf(levelOne(page))).x;
+    const menu = page.getByRole("button", { name: "Menu" });
+    const word = menu.getByText("Menu", { exact: true });
+    expect(await word.evaluate(wordsEnd)).toBeCloseTo(PHONE_WIDTH - gutter, 0);
+
+    await menu.click();
+    const dropdown = page.getByRole("dialog", { name: "Menu" });
+    await shown(dropdown);
+    // It grows into place, so it is measured once its entrance has finished.
+    await dropdown.evaluate(async (element) => {
+      await Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+          .map((animation) => animation.finished),
+      );
+    });
+    const { x, width } = await boxOf(dropdown);
+    expect(x + width).toBeCloseTo(PHONE_WIDTH - gutter, 0);
+    // The click focused the button. The bar scrolls sideways to show a focused button whole, which
+    // would carry the word off the gutter if the button reached past the bar.
+    expect(await word.evaluate(wordsEnd)).toBeCloseTo(PHONE_WIDTH - gutter, 0);
   });
 
   test("Buttons beside a title: they stay on its row and show only their icons where their words do not fit", async ({
@@ -2570,6 +2746,60 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toBe(
     "RustFS archive stores 212 GB, R2 photos stores 41.2 GB, and Durable Objects stores 1.9 GB.",
   );
+});
+
+// Runs in the page: where the labels of a chart start and end, sideways. The y axis's labels all end
+// where the plot starts, so the one that starts furthest left is the longest of them; the one that
+// ends furthest right is the x axis's last. A label's box is the box its words fill, not their ink.
+const labelEdges = (chart: Element): { start: number; end: number } => {
+  const boxes = [...chart.querySelectorAll("text")]
+    .map((label) => label.getBoundingClientRect())
+    .filter(({ width }) => width > 0);
+  return {
+    start: Math.min(...boxes.map((box) => box.left)),
+    end: Math.max(...boxes.map((box) => box.right)),
+  };
+};
+
+// Runs in the page: where a card's content ends on the right, inside its padding and border.
+const contentRight = (card: Element): number => {
+  const style = getComputedStyle(card);
+  return (
+    card.getBoundingClientRect().right -
+    Number.parseFloat(style.paddingRight) -
+    Number.parseFloat(style.borderRightWidth)
+  );
+};
+
+test("Charts on their card's grid: the longest label on the y axis starts where the title does, and the last hour ends where the card's content does", async ({
+  page,
+}) => {
+  for (const width of [1280, 800, PHONE_WIDTH]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    for (const [title, name] of [
+      ["Operations", "Operations per hour, last 24 hours"],
+      ["Storage by backend", "Bytes stored on each backend"],
+    ] as const) {
+      const heading = page.getByRole("heading", { name: title, exact: true });
+      const card = cardWith(page, heading);
+      const { start, end } = await card.getByRole("img", { name }).evaluate(labelEdges);
+      // Within 0.05 px: on a Mac, a label measured by its ink, as TanStack measures it, starts
+      // 0.69 px out. Each edge is checked on its own, so one run reports every chart and width
+      // that misses.
+      expect
+        .soft(start, `${title}'s longest label at ${width} px`)
+        .toBeCloseTo((await boxOf(heading)).x, 1);
+      // The storage chart's last labels are its bars' values, which end where the bars do. Within
+      // half a pixel: on CI's Linux, Chromium draws Now 0.66 px wider than its canvas measure at
+      // every width, for a reason not found, and ends it 0.33 px past the content's edge.
+      if (title === "Operations") {
+        expect
+          .soft(end, `${title}'s last hour at ${width} px`)
+          .toBeCloseTo(await card.evaluate(contentRight), 0);
+      }
+    }
+  }
 });
 
 test("A rejected upload: an error shows its cause, its name and its age, and its details on demand", async ({

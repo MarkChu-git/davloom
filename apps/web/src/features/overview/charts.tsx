@@ -20,6 +20,7 @@ import {
   text,
   whenFocused,
   type ChartPoint,
+  type ChartTextMeasurer,
   type SceneNode,
 } from "@tanstack/charts";
 import { crosshair } from "@tanstack/charts/crosshair";
@@ -56,6 +57,12 @@ const SURFACE = colorVars["--color-background-card"];
 const RULE = colorVars["--color-border"];
 const LABEL = colorVars["--color-text-primary"];
 const AXIS = colorVars["--color-text-secondary"];
+
+/**
+ * The room TanStack Charts keeps between a chart's edge and its outermost labels, in pixels: its
+ * `automaticGuideInset`, which it does not export.
+ */
+const GUIDE_INSET = 4;
 
 const styles = stylex.create({
   // TanStack Charts reads its palette and tooltip chrome from these variables, and falls back to
@@ -97,7 +104,81 @@ const styles = stylex.create({
   glyph: {
     pointerEvents: "none",
   },
+  // A chart with axes reaches into its card's padding by the room TanStack Charts keeps outside
+  // its labels, so the longest label on the y axis starts where the card's title does, and the
+  // last label on the x axis ends at the edge of the card's content.
+  reach: {
+    marginInline: -GUIDE_INSET,
+  },
 });
+
+let labelCanvas: CanvasRenderingContext2D | null | undefined;
+
+const STRETCHES = [
+  "ultra-condensed",
+  "extra-condensed",
+  "condensed",
+  "semi-condensed",
+  "normal",
+  "semi-expanded",
+  "expanded",
+  "extra-expanded",
+  "ultra-expanded",
+] as const;
+
+/**
+ * Measures a label as TanStack Charts does in a browser, on a canvas in the font the chart draws
+ * it in, except for its width. TanStack takes a label's ink, which set the longest label on the y
+ * axis a side bearing out from where the card's title starts. This takes the label's advance, the
+ * box a line of text fills, so the label and the title line up as two lines of text do. The height
+ * stays the ink's, as TanStack measures it, so each chart keeps its vertical layout. Where there is
+ * no canvas, as on a server, it estimates from the font size.
+ */
+const measureLabel: ChartTextMeasurer = (label, options) => {
+  const scale = Number.isFinite(options.fontScale) && options.fontScale > 0 ? options.fontScale : 1;
+  const size = options.fontSize * scale;
+  if (labelCanvas === undefined && typeof document !== "undefined") {
+    labelCanvas = document.createElement("canvas").getContext("2d");
+  }
+  const startsAtLeft = options.direction !== "rtl";
+  const offset = (width: number) =>
+    options.anchor === "middle"
+      ? -width / 2
+      : (options.anchor === "start") === startsAtLeft
+        ? 0
+        : -width;
+  const estimate = {
+    y: options.baseline === "middle" ? -size / 2 : options.baseline === "hanging" ? 0 : -size * 0.8,
+    height: size,
+  };
+  if (!labelCanvas) {
+    const width = Array.from(label).length * size * 0.55;
+    return { x: offset(width), width, ...estimate };
+  }
+  // Where a label names no weight, TanStack takes the chart's own, which is the body's 400.
+  labelCanvas.font = `${options.fontStyle} ${options.fontWeight ?? 400} ${size}px ${options.fontFamily}`;
+  if ("fontStretch" in labelCanvas) {
+    labelCanvas.fontStretch =
+      STRETCHES.find((stretch) => stretch === options.fontStretch) ?? "normal";
+  }
+  labelCanvas.textBaseline = options.baseline === "auto" ? "alphabetic" : options.baseline;
+  labelCanvas.direction = options.direction;
+  if ("letterSpacing" in labelCanvas) {
+    labelCanvas.letterSpacing = `${options.letterSpacing * scale}px`;
+  }
+  const measured = labelCanvas.measureText(label);
+  const ascent = measured.actualBoundingBoxAscent;
+  const descent = measured.actualBoundingBoxDescent;
+  const inked =
+    Number.isFinite(ascent) &&
+    Number.isFinite(descent) &&
+    (ascent + descent > 0 || measured.width === 0);
+  return {
+    x: offset(measured.width),
+    width: measured.width,
+    ...(inked ? { y: -ascent, height: ascent + descent } : estimate),
+  };
+};
 
 const GLYPH_CLASS = stylex.props(styles.glyph).className ?? "";
 
@@ -267,13 +348,16 @@ export const OperationsChart = () => {
   const isFinger = useMediaQuery(FINGER);
   return (
     <TouchHold>
-      <Chart
-        {...stylex.props(styles.chart)}
-        definition={isFinger ? operationsForFinger : operationsDefinition}
-        height={200}
-        ariaLabel="Operations per hour, last 24 hours"
-        ariaDescription={operationsDescription}
-      />
+      <VStack xstyle={styles.reach}>
+        <Chart
+          {...stylex.props(styles.chart)}
+          definition={isFinger ? operationsForFinger : operationsDefinition}
+          height={200}
+          measureText={measureLabel}
+          ariaLabel="Operations per hour, last 24 hours"
+          ariaDescription={operationsDescription}
+        />
+      </VStack>
     </TouchHold>
   );
 };
@@ -353,13 +437,16 @@ export const StorageChart = () => {
   const isFinger = useMediaQuery(FINGER);
   return (
     <TouchHold>
-      <Chart
-        {...stylex.props(styles.chart)}
-        definition={isFinger ? storageForFinger : storageDefinition}
-        height={44 * byUse.length}
-        ariaLabel="Bytes stored on each backend"
-        ariaDescription={storageDescription}
-      />
+      <VStack xstyle={styles.reach}>
+        <Chart
+          {...stylex.props(styles.chart)}
+          definition={isFinger ? storageForFinger : storageDefinition}
+          height={44 * byUse.length}
+          measureText={measureLabel}
+          ariaLabel="Bytes stored on each backend"
+          ariaDescription={storageDescription}
+        />
+      </VStack>
     </TouchHold>
   );
 };
