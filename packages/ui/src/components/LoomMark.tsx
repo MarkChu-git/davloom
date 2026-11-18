@@ -1,8 +1,8 @@
 import { Icon } from "@astryxdesign/core/Icon";
 import { useId, type SVGProps } from "react";
 
-// The ring is an ellipse 14.6 by 3.5 about the planet's center, tilted 22 degrees up to the right.
-// Before the tilt, its front half runs below the center.
+// The ring is an ellipse with radii of 14.6 and 3.5 about the planet's center, tilted 22 degrees up
+// to the right. Before the tilt, its front half runs below the center.
 const TILT = "rotate(-22 16 16)";
 const FRONT = "M1.4 16A14.6 3.5 0 0 0 30.6 16";
 
@@ -15,7 +15,7 @@ const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
   return (
     <svg viewBox="0 0 32 32" {...props}>
       <defs>
-        {/* Across the ring: a light gray at the back, the full ink at the front. */}
+        {/* Across the ring: 22% of the ink at the back, the full ink at the front. */}
         <linearGradient
           id={fade}
           gradientUnits="userSpaceOnUse"
@@ -27,7 +27,7 @@ const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
           <stop offset="0.38" stopColor="currentColor" stopOpacity="0.22" />
           <stop offset="0.62" stopColor="currentColor" />
         </linearGradient>
-        {/* The ring shows except behind the planet and a seam around it, and in front of it. */}
+        {/* The ring hides behind the planet and its seam, and shows where it passes in front. */}
         <mask id={behind} maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
           <rect width="32" height="32" fill="white" />
           <circle cx="16" cy="16" r="7.8" fill="black" stroke="black" strokeWidth="2.3" />
@@ -60,8 +60,8 @@ const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
 };
 
 /**
- * Davloom's mark: a planet with a ring around it, tilted up to the right. The ring fades from a
- * light gray behind the planet to the full ink in front of it, where a seam parts it from the
+ * Davloom's mark: a planet with a ring around it, tilted up to the right. The ring fades from 22%
+ * of the ink behind the planet to the full ink in front of it, where a seam parts it from the
  * planet. It is drawn in the accent, which Icon sets as its color, so the mark inverts with the
  * mode. It is decorative; the product name beside it names the link.
  */
