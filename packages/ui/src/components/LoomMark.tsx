@@ -3,7 +3,8 @@ import { useId, type SVGProps } from "react";
 
 // The ring is an ellipse with radii of 14.6 and 3.5 about the planet's center, tilted 22 degrees up
 // to the right. Before the tilt, its front half runs below the center. The favicon,
-// apps/web/public/favicon.svg, draws the same shapes, and a delivery test fails when they differ.
+// apps/web/public/favicon.svg, draws the same shapes, and a delivery test fails when a pixel of it
+// differs from the mark's in either mode.
 const TILT = "rotate(-22 16 16)";
 const FRONT = "M1.4 16A14.6 3.5 0 0 0 30.6 16";
 
