@@ -2677,6 +2677,49 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   );
 });
 
+// Runs in the page: where the labels of a chart start and end, sideways.
+const labelEdges = (chart: Element): { start: number; end: number } => {
+  const boxes = [...chart.querySelectorAll("text")]
+    .map((label) => label.getBoundingClientRect())
+    .filter(({ width }) => width > 0);
+  return {
+    start: Math.min(...boxes.map((box) => box.left)),
+    end: Math.max(...boxes.map((box) => box.right)),
+  };
+};
+
+// Runs in the page: where a card's content ends on the right, inside its padding and border.
+const contentRight = (card: Element): number => {
+  const style = getComputedStyle(card);
+  return (
+    card.getBoundingClientRect().right -
+    Number.parseFloat(style.paddingRight) -
+    Number.parseFloat(style.borderRightWidth)
+  );
+};
+
+test("Charts on their card's grid: the longest label on the y axis starts where the title does, and the last hour ends at the card's edge", async ({
+  page,
+}) => {
+  for (const width of [1280, 800, PHONE_WIDTH]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    for (const [title, name] of [
+      ["Operations", "Operations per hour, last 24 hours"],
+      ["Storage by backend", "Bytes stored on each backend"],
+    ] as const) {
+      const heading = page.getByRole("heading", { name: title, exact: true });
+      const card = cardWith(page, heading);
+      const { start, end } = await card.getByRole("img", { name }).evaluate(labelEdges);
+      expect(start, `${title} at ${width} px`).toBeCloseTo((await boxOf(heading)).x, 0);
+      // The storage chart's last labels are its bars' values, which end where the bars do.
+      if (title === "Operations") {
+        expect(end, `${title} at ${width} px`).toBeCloseTo(await card.evaluate(contentRight), 0);
+      }
+    }
+  }
+});
+
 test("A rejected upload: an error shows its cause, its name and its age, and its details on demand", async ({
   page,
 }) => {

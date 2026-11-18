@@ -20,6 +20,7 @@ import {
   text,
   whenFocused,
   type ChartPoint,
+  type ChartTextMeasurer,
   type SceneNode,
 } from "@tanstack/charts";
 import { crosshair } from "@tanstack/charts/crosshair";
@@ -56,6 +57,9 @@ const SURFACE = colorVars["--color-background-card"];
 const RULE = colorVars["--color-border"];
 const LABEL = colorVars["--color-text-primary"];
 const AXIS = colorVars["--color-text-secondary"];
+
+/** The room TanStack Charts keeps between a chart's edge and its outermost labels, in pixels. */
+const GUIDE_INSET = 4;
 
 const styles = stylex.create({
   // TanStack Charts reads its palette and tooltip chrome from these variables, and falls back to
@@ -97,7 +101,51 @@ const styles = stylex.create({
   glyph: {
     pointerEvents: "none",
   },
+  // A chart with axes reaches past its card's padding by the room TanStack Charts keeps outside
+  // its labels, so the longest label on the y axis starts where the card's title does, and the
+  // last label on the x axis ends at the card's edge.
+  reach: {
+    marginInline: -GUIDE_INSET,
+  },
 });
+
+let labelCanvas: CanvasRenderingContext2D | null | undefined;
+let labelFont = "";
+
+/**
+ * Measures a label in the font the chart draws it in. TanStack Charts otherwise sizes the room for
+ * its axes from a guess at each character's width, which left the longest label on the y axis up
+ * to a pixel off the card's edge. Only the width is measured: the height stays TanStack's own
+ * guess, so the charts keep their vertical layout.
+ */
+const measureLabel: ChartTextMeasurer = (label, options) => {
+  const size = options.fontSize * options.fontScale;
+  if (labelCanvas === undefined && typeof document !== "undefined") {
+    labelCanvas = document.createElement("canvas").getContext("2d");
+    const probe = document.createElement("span");
+    probe.className = stylex.props(styles.chart).className ?? "";
+    document.body.append(probe);
+    labelFont = getComputedStyle(probe).fontFamily;
+    probe.remove();
+  }
+  let width = label.length * size * 0.55;
+  if (labelCanvas) {
+    labelCanvas.font = `${options.fontStyle} ${options.fontWeight ?? 400} ${size}px ${labelFont}`;
+    width =
+      labelCanvas.measureText(label).width +
+      Math.max(0, Array.from(label).length - 1) * options.letterSpacing * options.fontScale;
+  }
+  const startsAtLeft = options.direction !== "rtl";
+  const x =
+    options.anchor === "middle"
+      ? -width / 2
+      : (options.anchor === "start") === startsAtLeft
+        ? 0
+        : -width;
+  const y =
+    options.baseline === "middle" ? -size / 2 : options.baseline === "hanging" ? 0 : -size * 0.8;
+  return { x, y, width, height: size };
+};
 
 const GLYPH_CLASS = stylex.props(styles.glyph).className ?? "";
 
@@ -267,13 +315,16 @@ export const OperationsChart = () => {
   const isFinger = useMediaQuery(FINGER);
   return (
     <TouchHold>
-      <Chart
-        {...stylex.props(styles.chart)}
-        definition={isFinger ? operationsForFinger : operationsDefinition}
-        height={200}
-        ariaLabel="Operations per hour, last 24 hours"
-        ariaDescription={operationsDescription}
-      />
+      <VStack xstyle={styles.reach}>
+        <Chart
+          {...stylex.props(styles.chart)}
+          definition={isFinger ? operationsForFinger : operationsDefinition}
+          height={200}
+          measureText={measureLabel}
+          ariaLabel="Operations per hour, last 24 hours"
+          ariaDescription={operationsDescription}
+        />
+      </VStack>
     </TouchHold>
   );
 };
@@ -353,13 +404,16 @@ export const StorageChart = () => {
   const isFinger = useMediaQuery(FINGER);
   return (
     <TouchHold>
-      <Chart
-        {...stylex.props(styles.chart)}
-        definition={isFinger ? storageForFinger : storageDefinition}
-        height={44 * byUse.length}
-        ariaLabel="Bytes stored on each backend"
-        ariaDescription={storageDescription}
-      />
+      <VStack xstyle={styles.reach}>
+        <Chart
+          {...stylex.props(styles.chart)}
+          definition={isFinger ? storageForFinger : storageDefinition}
+          height={44 * byUse.length}
+          measureText={measureLabel}
+          ariaLabel="Bytes stored on each backend"
+          ariaDescription={storageDescription}
+        />
+      </VStack>
     </TouchHold>
   );
 };
