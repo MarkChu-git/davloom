@@ -1725,6 +1725,9 @@ test.describe("on a touch screen", () => {
     ] as const;
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 812 });
+      // The page lays itself out for the new width two frames after the window changes, so the
+      // rows are measured once it has.
+      await settle(page);
       const ends = new Set<number>();
       for (const [name, state] of KEYS) {
         const key = keys.filter({ hasText: name });
@@ -2164,11 +2167,14 @@ test.describe("on a touch screen", () => {
 
     // A swipe that starts on the chart scrolls the page and shows nothing, not for a single frame.
     seen = await watchStoredValues(page);
-    await session.send("Input.synthesizeScrollGesture", {
-      ...archive,
-      yDistance: -200,
-      gestureSourceType: "touch",
-    });
+    // By hand, since Chromium on Linux sends no touch moves for a synthesized scroll gesture.
+    await finger("touchStart", archive);
+    for (const step of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      await finger("touchMove", { x: archive.x, y: archive.y - step * 25 });
+      await nextFrame(page);
+    }
+    await finger("touchEnd");
+    await settle(page);
     expect(await scrollOf(chart)).toBeGreaterThan(scrolled + 100);
     expect(await seen()).toBe(false);
     await expect(values).toBeHidden();
@@ -2865,6 +2871,21 @@ test("Focusing a chart: a click draws no ring, and the keyboard draws the theme'
   const ring = await ringOf();
   expect(ring.style).not.toMatch(/^(none|auto)$/);
   expect(ring.isTheme).toBe(true);
+});
+
+test("Pointing at a chart: a mouse shows a bar's values over the chart and hides them when it leaves", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const chart = page.getByRole("img", { name: "Bytes stored on each backend" });
+  const values = page.getByRole("status", { name: /Stored: / });
+
+  await chart.hover();
+  await expect(values).toBeVisible();
+
+  // TouchHold keeps a chart's mouseleave away from it only while a finger holds the chart.
+  await page.mouse.move(0, 0);
+  await expect(values).toBeHidden();
 });
 
 test("The address field's name: a screen reader hears the field's label alone", async ({
