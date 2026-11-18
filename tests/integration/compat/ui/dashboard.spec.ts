@@ -2166,11 +2166,14 @@ test.describe("on a touch screen", () => {
 
     // A swipe that starts on the chart scrolls the page and shows nothing, not for a single frame.
     seen = await watchStoredValues(page);
-    await session.send("Input.synthesizeScrollGesture", {
-      ...archive,
-      yDistance: -200,
-      gestureSourceType: "touch",
-    });
+    // By hand, since Chromium on Linux sends no touch moves for a synthesized scroll gesture.
+    await finger("touchStart", archive);
+    for (const step of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      await finger("touchMove", { x: archive.x, y: archive.y - step * 25 });
+      await nextFrame(page);
+    }
+    await finger("touchEnd");
+    await settle(page);
     expect(await scrollOf(chart)).toBeGreaterThan(scrolled + 100);
     expect(await seen()).toBe(false);
     await expect(values).toBeHidden();
