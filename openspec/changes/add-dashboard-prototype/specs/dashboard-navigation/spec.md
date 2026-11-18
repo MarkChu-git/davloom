@@ -43,22 +43,46 @@ In a window narrower than 768 px, the side navigation's links SHALL drop down fr
 - **THEN** the navigation's links drop down below the button inside the window, with Overview marked as the current page and Storage & Mounts marked as unreachable; Credentials opens without a reload, the dropdown closes and focus is on Menu; and Escape closes the dropdown again with focus on Menu
 
 ### Requirement: Fitting the window
-Every page SHALL fit a window from 320 px wide up without scrolling sideways. A table without room for a column per detail SHALL become a list with a row per record, or for Files move those details into each row's first cell, so that the actions of every row stay in view.
+Every page SHALL fit a window from 320 px wide up without scrolling sideways. A table without room for a column per detail SHALL become a list with a row per record that opens to show the record's other details and its actions, or for Files move those details into each row's first cell, so that every row's actions, or the chevron that shows them, stay in view.
 
 #### Scenario: Narrow screens
 - **WHEN** a user opens each page, the folder `/documents`, three Settings sections and a file's details in a window 320 px wide
-- **THEN** the side navigation is behind a Menu button, no page scrolls sideways and nothing on it reaches past the window, and the dialog with the file's details fits inside the window
+- **THEN** the side navigation is behind a Menu button, no page scrolls sideways and nothing on it reaches past the window, the dialog with the file's details fits inside the window, and the Overview's connections list shows Default whole at the start of the line of the mounts it serves
 
 #### Scenario: Tables beside the navigation
 - **WHEN** a user opens each page and the folder `/documents` in a window 1024 px wide, and then widens the window to 1280 px on Credentials
-- **THEN** no page scrolls sideways, Credentials lists each key as a row with its menu in view at 1024 px, and it shows a column per detail, Scope among them, at 1280 px
+- **THEN** no page scrolls sideways, Credentials lists each key as a row with its chevron in view at 1024 px, the chevron naming its key in a tooltip, and it shows a column per detail, Scope among them, at 1280 px
 
-### Requirement: Rows and buttons on a phone
-Where Credentials and Storage & Mounts list keys and mounts as rows, every row SHALL take one shape: the name in bold on a line of its own, level with the row's menu, then a key's first characters with its status at the end of that line, then at most two lines of details, each kept to one line. Where a title has no room beside its buttons' words, the buttons SHALL show only their icons, named for assistive technology and in a tooltip, and SHALL stay on the title's row.
+### Requirement: Rows on a phone
+Where Credentials and Storage & Mounts list keys and mounts as rows, every row SHALL take one shape: the name in bold on a line of its own, then one line under it, a key's first characters with its status at the end of that line or a mount's backend, with a chevron at the row's end.
 
 #### Scenario: Lists on a phone
-- **WHEN** a user opens Credentials and Storage & Mounts in a window 375 px wide, and Credentials in one 320 px wide
-- **THEN** each key is a row with its name, its first characters, its status, its access and scope, and when it was last used and expires, each mount is a row with its path, its backend and its bucket, every row's menu is inside the window, no page scrolls sideways, and at both widths every key's name is whole, its first characters share the next line with its status, and the statuses end in one column
+- **WHEN** a user opens Credentials and Storage & Mounts on a touch screen 375 px wide, and Credentials on one 320 px wide
+- **THEN** each key's row shows its name, its first characters and its status and nothing more, each mount's row shows its path and its backend and nothing more, every row's chevron is inside the window and says that its row is closed, no page scrolls sideways, and at both widths every key's name is whole, its first characters share the next line with its status, and the statuses end in one column
+
+### Requirement: Opening a row
+A tap anywhere on such a row, or on its chevron, SHALL open the row in place, and another SHALL close it. Every row SHALL start closed, and several SHALL stay open at once. An open key's row shows its access, scope, last use and expiry, with Revoke unless it is revoked, and a mount's its bucket and prefix with Edit and Remove. The chevron SHALL name its record, for assistive technology and in a tooltip, and say whether its row is open, and the details SHALL be a group of the same name.
+
+#### Scenario: Opening a row
+- **WHEN** a user on a touch screen 375 px wide taps the name of "Old tablet", the chevron of "Conference laptop", and the name of "Old tablet" again, revokes "Conference laptop" from its details, and then on Storage & Mounts opens `/photos`, closes Edit's dialog after a tap that left Edit unfocused, as Safari leaves it, cancels Edit, removes the mount, presses Shift+Tab and Enter, and adds a mount named `photos` again
+- **THEN** "Old tablet" shows Read only, All mounts, 2 months ago, and Expired Sep 30, 2026 with no action, under its row, in a group named Details for key Old tablet, the two rows stay open together and fit a window 320 px wide, the second tap closes "Old tablet" alone, "Conference laptop" is then marked Revoked with no action left and focus is on its chevron, `/photos` shows the bucket `davloom-photos`, the prefix None on the line under it, Edit and Remove, focus goes to the chevron of `/photos` after the unfocused tap and back to Edit after Cancel, moves to the chevron of `/archive` once `/photos` is removed, Enter opens `/shared`, and the new `/photos` starts closed
+
+### Requirement: Moving rows
+When a row opens or closes, the rows under it SHALL move to their new places rather than jump there, and SHALL move there at once when the user asks for reduced motion.
+
+#### Scenario: Rows that glide
+- **WHEN** a user on a touch screen 375 px wide opens and then closes "Old tablet", once as usual and once with reduced motion
+- **THEN** each time "Old tablet" opens or closes as usual, the row of "Conference laptop" under it passes through places between where it was and where it comes to rest, and each time with reduced motion that row is already at rest in the first frame after the tap
+
+### Requirement: Pressed rows
+A pressed row that opens SHALL show a background with rounded corners inside its card, not a band across it.
+
+#### Scenario: Holding a row
+- **WHEN** a user on a touch screen holds a finger on a key's row
+- **THEN** the row shows a background with rounded corners, at least 8 px inside its card on either side
+
+### Requirement: Buttons beside a title
+Where a title has no room beside its buttons' words, the buttons SHALL show only their icons, named for assistive technology and in a tooltip, and SHALL stay on the title's row.
 
 #### Scenario: Buttons beside a title
 - **WHEN** a user opens Storage & Mounts in a window 320 px wide, points at Add mount, and widens the window to 414 px

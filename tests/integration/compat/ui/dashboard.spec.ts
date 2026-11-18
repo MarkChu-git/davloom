@@ -434,16 +434,24 @@ const STATES: readonly PageState[] = [
     show: (page) => shown(page.getByRole("heading", { name: "About this instance" })),
   },
   {
-    name: "Credentials as a list in a narrow window",
+    name: "Credentials as a list in a narrow window, with two keys open",
     path: "/credentials",
     width: 375,
-    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+    show: async (page) => {
+      for (const name of ["Old tablet", "Conference laptop"]) {
+        await page.getByRole("button", { name: `Details for key ${name}` }).click();
+      }
+      await shown(page.getByRole("main").getByRole("button", { name: "Revoke" }));
+    },
   },
   {
-    name: "Storage & Mounts in the narrowest window",
+    name: "Storage & Mounts in the narrowest window, with a mount open",
     path: "/storage",
     width: 320,
-    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+    show: async (page) => {
+      await page.getByRole("button", { name: "Details for mount /documents" }).click();
+      await shown(page.getByRole("main").getByRole("button", { name: "Remove" }));
+    },
   },
   {
     name: "the navigation dropdown in a narrow window",
@@ -1202,6 +1210,87 @@ const insideWindow = async (target: Locator, width: number): Promise<boolean> =>
   return box !== null && box.x >= 0 && box.x + box.width <= width;
 };
 
+/** The details a row's toggle opens, found by the id its `aria-controls` names. */
+const detailsOf = async (toggle: Locator): Promise<Locator> => {
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const id = await toggle.getAttribute("aria-controls");
+  if (id === null) {
+    throw new Error("The row is closed.");
+  }
+  return toggle.page().locator(`[id="${id}"]`);
+};
+
+/** Waits two frames for a change to start its animations, then for every animation that ends. */
+const settle = (page: Page): Promise<void> =>
+  page.evaluate(async () => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const ending = document
+      .getAnimations()
+      .filter(
+        (animation) => animation.effect?.getComputedTiming().endTime !== Number.POSITIVE_INFINITY,
+      );
+    await Promise.all(ending.map((animation) => animation.finished.catch(() => undefined)));
+  });
+
+/**
+ * Runs in the page: where the row of "Conference laptop" is on each frame, from before a tap on
+ * the chevron of "Old tablet" above it, which opens or closes that row, until a second later.
+ */
+const placesWhileToggling = async (): Promise<number[]> => {
+  const main = document.querySelector('[role="main"]');
+  const chevron = [...(main?.querySelectorAll("button") ?? [])].find(
+    (button) => button.getAttribute("aria-label") === "Details for key Old tablet",
+  );
+  const row = [...(main?.querySelectorAll("li") ?? [])].find((item) =>
+    (item.textContent ?? "").startsWith("Conference laptop"),
+  );
+  if (chevron === undefined || row === undefined) {
+    return [];
+  }
+  const places = [row.getBoundingClientRect().y];
+  chevron.click();
+  const until = performance.now() + 1000;
+  while (performance.now() < until) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    places.push(row.getBoundingClientRect().y);
+  }
+  return places;
+};
+
+/** Runs in the page: the lines of visible text in each element, such as the rows of a list. */
+const linesOf = (elements: Element[]): string[][] =>
+  elements.map((element) => (element instanceof HTMLElement ? element.innerText.split("\n") : []));
+
+/**
+ * Runs in the page: the background a row draws behind itself, on the row or on one of its pseudo
+ * elements, with its corner radius and how far the row stays inside the nearest element around
+ * it that draws a background, such as its card; or null while it draws none.
+ */
+const pressedBackground = (row: Element): { radius: number; inset: number } | null => {
+  // An element that paints no background computes it to transparent black.
+  const unpainted = ["transparent", "rgba(0, 0, 0, 0)"];
+  const painted = [null, "::before", "::after"]
+    .map((pseudo) => getComputedStyle(row, pseudo))
+    .find((style) => !unpainted.includes(style.backgroundColor));
+  let around = row.parentElement;
+  while (around !== null && unpainted.includes(getComputedStyle(around).backgroundColor)) {
+    around = around.parentElement;
+  }
+  if (painted === undefined || around === null) {
+    return null;
+  }
+  const inner = row.getBoundingClientRect();
+  const outer = around.getBoundingClientRect();
+  return {
+    radius: Number.parseFloat(painted.borderTopLeftRadius),
+    inset: Math.min(inner.left - outer.left, outer.right - inner.right),
+  };
+};
+
+/** The column of a table's cell or header, counted from 0, or -1 for anything else. */
+const columnOf = (element: Element): number =>
+  element instanceof HTMLTableCellElement ? element.cellIndex : -1;
+
 /** How far the page has scrolled down: the scroll of every element that holds `target`. */
 const scrollOf = (target: Locator): Promise<number> =>
   target.evaluate((element) => {
@@ -1306,6 +1395,29 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
+
+    // The default backend's mark leads the line of the mounts it serves, so the window cuts the
+    // paths short rather than the mark.
+    await page.goto("/");
+    const mark = page.getByRole("main").getByText("Default · /documents, /shared", { exact: true });
+    await expect(mark).toBeVisible();
+    expect(
+      await mark.evaluate((element) => {
+        const text = element.firstChild;
+        if (text === null) {
+          return false;
+        }
+        const word = document.createRange();
+        word.setStart(text, 0);
+        word.setEnd(text, "Default".length);
+        // An ellipsis takes about a letter's width at the end of the line.
+        const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
+        return (
+          word.getBoundingClientRect().right <= element.getBoundingClientRect().right - fontSize
+        );
+      }),
+      "the default backend's mark, whole",
+    ).toBe(true);
   });
 
   test("The Menu button: the navigation drops down from it, marks the page and closes on a choice", async ({
@@ -1380,7 +1492,7 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
 test.describe("in a window 1024 px wide", () => {
   test.use({ viewport: { width: 1024, height: 768 } });
 
-  test("Tables beside the navigation: no page scrolls sideways, so every row's actions are in view", async ({
+  test("Tables beside the navigation: no page scrolls sideways, so every row's actions or chevron are in view", async ({
     page,
   }) => {
     for (const { path, name } of [...PAGES, { path: "/files?path=%2Fdocuments", name: "Files" }]) {
@@ -1394,14 +1506,13 @@ test.describe("in a window 1024 px wide", () => {
 
     // Credentials lists each key as a row here, and gives each detail a column where there is room.
     await page.goto("/credentials");
-    const laptop = page
-      .getByRole("main")
-      .getByRole("listitem")
-      .filter({ hasText: "Laptop (Finder)" });
-    await expect(laptop).toContainText("Read and write · All mounts");
-    await expect(
-      laptop.getByRole("button", { name: "Actions for key Laptop (Finder)" }),
-    ).toBeInViewport({ ratio: 1 });
+    const chevrons = page.getByRole("main").getByRole("button", { name: /^Details for key / });
+    await expect(chevrons).toHaveCount(5);
+    for (const chevron of await chevrons.all()) {
+      await expect(chevron).toBeInViewport({ ratio: 1 });
+    }
+    await chevrons.first().hover();
+    await expect(page.getByRole("tooltip")).toHaveText("Details for key Laptop (Finder)");
     await expect(page.getByRole("table")).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 768 });
     await expect(page.getByRole("columnheader", { name: "Scope" })).toBeVisible();
@@ -1411,78 +1522,6 @@ test.describe("in a window 1024 px wide", () => {
 
 test.describe("in a window 375 px wide", () => {
   test.use({ viewport: { width: 375, height: 812 } });
-
-  test("Lists on a phone: each key and each mount is a row with its name, details and menu", async ({
-    page,
-  }) => {
-    await page.goto("/credentials");
-    const main = page.getByRole("main");
-    await expect(page.getByRole("table")).toHaveCount(0);
-    const keys = main.getByRole("listitem");
-    await expect(keys).toHaveCount(5);
-    const laptop = keys.filter({ hasText: "Laptop (Finder)" });
-    await expect(laptop).toContainText("dvl_7Q2M…");
-    await expect(laptop).toContainText("Active");
-    await expect(laptop).toContainText("Read and write · All mounts");
-    await expect(laptop).toContainText("Used 2 minutes ago · Never expires");
-    // A key past its expiry says it expired, beside its Expired status, and so does a revoked one.
-    await expect(keys.filter({ hasText: "Conference laptop" })).toContainText(
-      /Expired [A-Z][a-z]{2} \d{1,2}, \d{4}/,
-    );
-    await expect(keys.filter({ hasText: "Old tablet" })).toContainText("Expired Sep 30, 2026");
-    for (const key of await keys.all()) {
-      expect(await insideWindow(key.getByRole("button", { name: /^Actions for key / }), 375)).toBe(
-        true,
-      );
-    }
-    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
-
-    // Each name has a line of its own, so even the narrowest phone shows it whole. Under it, a
-    // key's first characters share a line with its status, and the statuses end in one column.
-    const KEYS = [
-      ["Laptop (Finder)", "Active"],
-      ["Phone photo backup", "Active"],
-      ["Accountant, invoices only", "Active"],
-      ["Old tablet", "Revoked"],
-      ["Conference laptop", "Expired"],
-    ] as const;
-    for (const width of [375, 320]) {
-      await page.setViewportSize({ width, height: 812 });
-      const ends = new Set<number>();
-      for (const [name, state] of KEYS) {
-        const key = keys.filter({ hasText: name });
-        const title = key.getByText(name, { exact: true });
-        const where = `${name} at ${width} px`;
-        expect(
-          await title.evaluate((element) => element.scrollWidth <= element.clientWidth),
-          where,
-        ).toBe(true);
-        const titleBox = await boxOf(title);
-        const prefix = await boxOf(key.getByText(/^dvl_\w{4}…$/));
-        const status = await boxOf(key.getByText(state, { exact: true }));
-        expect(prefix.y, where).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
-        expect(
-          Math.abs(prefix.y + prefix.height / 2 - (status.y + status.height / 2)),
-          where,
-        ).toBeLessThanOrEqual(2);
-        expect(status.x, where).toBeGreaterThan(prefix.x + prefix.width);
-        ends.add(Math.round(status.x + status.width));
-      }
-      expect([...ends], `the statuses' ends at ${width} px`).toHaveLength(1);
-    }
-    await page.setViewportSize({ width: 375, height: 812 });
-
-    await page.goto("/storage");
-    await expect(page.getByRole("table")).toHaveCount(0);
-    const documents = main.getByRole("listitem").filter({ hasText: "/documents" });
-    await expect(documents).toContainText("Durable Objects");
-    await expect(documents).toContainText("default/documents/");
-    for (const path of ["/documents", "/shared", "/photos", "/archive"]) {
-      const menu = main.getByRole("button", { name: `Actions for mount ${path}` });
-      expect(await insideWindow(menu, 375), path).toBe(true);
-    }
-    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
-  });
 
   test("Sorting a narrow listing: a menu in the Name header's place sorts by name, size or time, either way", async ({
     page,
@@ -1498,11 +1537,22 @@ test.describe("in a window 375 px wide", () => {
             (button.getAttribute("aria-label") ?? "").replace("Actions for ", ""),
           ),
         );
-    // The menu stands where the Name header stood, and its button names the order in use.
-    const menu = (named: string) =>
-      main.getByRole("columnheader", { name: named }).getByRole("button", { name: named });
+    // The menu stands where the Name header stood, at the head of the column of names, and its
+    // button names the order in use.
+    const header = (named: string) => main.getByRole("columnheader", { name: named });
+    const menu = (named: string) => header(named).getByRole("button", { name: named });
+    // The row's checkbox is labelled "Select Contracts", so the name's cell is the one it starts.
+    const nameColumn = await main
+      .getByRole("cell")
+      .filter({ hasText: /^Contracts/ })
+      .evaluate(columnOf);
+    expect(nameColumn, "the column of names").toBeGreaterThanOrEqual(0);
+    const inNameHeader = async (named: string) => {
+      await expect(menu(named), "the sort menu in the Name header's place").toBeVisible();
+      expect(await header(named).evaluate(columnOf), "the sort menu's column").toBe(nameColumn);
+    };
     const sortBy = async (current: string, choice: string, next: string) => {
-      await expect(menu(current), "the sort menu in the Name header's place").toBeVisible();
+      await inNameHeader(current);
       await menu(current).click();
       await page.getByRole("menuitemradio", { name: choice }).click();
       await expect(menu(next)).toBeVisible();
@@ -1540,7 +1590,7 @@ test.describe("in a window 375 px wide", () => {
       expect(names.slice(FOLDERS.length)).toEqual(files);
     };
 
-    await expect(menu("Name, A to Z"), "the sort menu in the Name header's place").toBeVisible();
+    await inNameHeader("Name, A to Z");
     expect(await order()).toEqual([...FOLDERS, ...BY_NAME]);
     await sortBy("Name, A to Z", "Z to A", "Name, Z to A");
     expect(await order()).toEqual([...FOLDERS.toReversed(), ...BY_NAME.toReversed()]);
@@ -1567,6 +1617,272 @@ test.describe("in a window 375 px wide", () => {
 
 test.describe("on a touch screen", () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true });
+
+  test("Lists on a phone: each key and each mount is a row with its name and one line under it", async ({
+    page,
+  }) => {
+    await page.goto("/credentials");
+    const main = page.getByRole("main");
+    const keys = main.getByRole("listitem");
+    // Once the keys are drawn as rows, no table is drawn beside them.
+    await expect(keys).toHaveCount(5);
+    await expect(page.getByRole("table")).toHaveCount(0);
+    // A row shows a key's name, first characters and status, and the rest waits until it opens.
+    expect(await keys.evaluateAll(linesOf)).toEqual([
+      ["Laptop (Finder)", "dvl_7Q2M…", "Active"],
+      ["Phone photo backup", "dvl_K9XA…", "Active"],
+      ["Accountant, invoices only", "dvl_P3VD…", "Active"],
+      ["Old tablet", "dvl_2HTE…", "Revoked"],
+      ["Conference laptop", "dvl_M4RC…", "Expired"],
+    ]);
+    for (const key of await keys.all()) {
+      const toggle = key.getByRole("button", { name: /^Details for key / });
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(await insideWindow(toggle, 375)).toBe(true);
+    }
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+
+    // Each name has a line of its own, so even the narrowest phone shows it whole in the larger
+    // type of a touch screen. Under it, a key's first characters share a line with its status, and
+    // the statuses end in one column.
+    const KEYS = [
+      ["Laptop (Finder)", "Active"],
+      ["Phone photo backup", "Active"],
+      ["Accountant, invoices only", "Active"],
+      ["Old tablet", "Revoked"],
+      ["Conference laptop", "Expired"],
+    ] as const;
+    for (const width of [375, 320]) {
+      await page.setViewportSize({ width, height: 812 });
+      const ends = new Set<number>();
+      for (const [name, state] of KEYS) {
+        const key = keys.filter({ hasText: name });
+        const where = `${name} at ${width} px`;
+        const title = key.getByText(name, { exact: true });
+        expect(
+          await title.evaluate((element) => element.scrollWidth <= element.clientWidth),
+          where,
+        ).toBe(true);
+        const titleBox = await boxOf(title);
+        const prefix = await boxOf(key.getByText(/^dvl_\w{4}…$/));
+        const status = await boxOf(key.getByText(state, { exact: true }));
+        expect(prefix.y, where).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
+        expect(
+          Math.abs(prefix.y + prefix.height / 2 - (status.y + status.height / 2)),
+          where,
+        ).toBeLessThanOrEqual(2);
+        expect(status.x, where).toBeGreaterThan(prefix.x + prefix.width);
+        ends.add(Math.round(status.x + status.width));
+      }
+      expect([...ends], `the statuses' ends at ${width} px`).toHaveLength(1);
+    }
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    await page.goto("/storage");
+    const toggles = main.getByRole("button", { name: /^Details for mount / });
+    await expect(toggles).toHaveCount(4);
+    await expect(page.getByRole("table")).toHaveCount(0);
+    // A mount's row shows its path and backend, and the rest waits until it opens.
+    expect(await main.getByRole("listitem").evaluateAll(linesOf)).toEqual([
+      ["/documents", "Durable Objects"],
+      ["/shared", "Durable Objects"],
+      ["/photos", "R2 photos"],
+      ["/archive", "RustFS archive"],
+    ]);
+    for (const toggle of await toggles.all()) {
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      expect(await insideWindow(toggle, 375)).toBe(true);
+    }
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  });
+
+  test("Opening a row: a tap shows the details and actions under it, and another tap hides them", async ({
+    page,
+  }) => {
+    await page.goto("/credentials");
+    const main = page.getByRole("main");
+    const key = (name: string) =>
+      main.getByRole("button", { name: `Details for key ${name}`, exact: true });
+    await expect(main.getByRole("listitem")).toHaveCount(5);
+
+    // A tap anywhere on the row opens it, not only on its chevron.
+    await main.getByText("Old tablet", { exact: true }).tap();
+    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
+    const tablet = await detailsOf(key("Old tablet"));
+    await expect(tablet).toBeVisible();
+    // The rows glide into place, so where they rest is measured once they stop.
+    await settle(page);
+    const tabletRow = await boxOf(main.getByRole("listitem").filter({ hasText: "Old tablet" }));
+    expect((await boxOf(tablet)).y, "the details under their row").toBeGreaterThanOrEqual(
+      tabletRow.y + tabletRow.height - 1,
+    );
+    // The details are a group named for their key, so a screen reader says whose they are.
+    await expect(main.getByRole("group", { name: "Details for key Old tablet" })).toBeVisible();
+    for (const words of ["Read only", "All mounts", "2 months ago"]) {
+      await expect(tablet.getByText(words, { exact: true })).toBeVisible();
+    }
+    // Past its expiry time a key says it expired, revoked or not. A revoked key has no action.
+    await expect(tablet.getByText("Expired", { exact: true })).toBeVisible();
+    await expect(tablet.getByText("Sep 30, 2026", { exact: true })).toBeVisible();
+    await expect(tablet.getByRole("button")).toHaveCount(0);
+
+    // Several rows stay open at once, so two keys can be compared.
+    await key("Conference laptop").tap();
+    const conference = await detailsOf(key("Conference laptop"));
+    await expect(conference.getByText("Expired", { exact: true })).toBeVisible();
+    await expect(conference.getByText("Oct 31, 2026", { exact: true })).toBeVisible();
+    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
+    await page.setViewportSize({ width: 320, height: 812 });
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+    await page.setViewportSize({ width: 375, height: 812 });
+
+    // Another tap closes the row and leaves the other open.
+    await main.getByText("Old tablet", { exact: true }).tap();
+    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "false");
+    await expect(key("Old tablet")).not.toHaveAttribute("aria-controls");
+    await expect(tablet).toHaveCount(0);
+    await expect(conference).toBeVisible();
+
+    // Revoke asks first. Once the key is revoked, its details keep no action and focus moves to
+    // its row.
+    await conference.getByRole("button", { name: "Revoke" }).tap();
+    const confirm = page.getByRole("alertdialog");
+    await expect(confirm).toContainText("Revoke “Conference laptop”?");
+    await confirm.getByRole("button", { name: "Revoke", exact: true }).tap();
+    await expect(confirm).toHaveCount(0);
+    await expect(main.getByRole("listitem").filter({ hasText: "Conference laptop" })).toContainText(
+      "Revoked",
+    );
+    await expect(conference.getByRole("button")).toHaveCount(0);
+    await expect(key("Conference laptop")).toBeFocused();
+
+    // A mount's row opens the same way, with its bucket, its prefix, and Edit and Remove.
+    await page.goto("/storage");
+    const mount = (path: string) =>
+      main.getByRole("button", { name: `Details for mount ${path}`, exact: true });
+    await main.getByText("/photos", { exact: true }).tap();
+    const photos = await detailsOf(mount("/photos"));
+    await settle(page);
+    const bucket = await boxOf(photos.getByText("davloom-photos", { exact: true }));
+    const prefix = await boxOf(photos.getByText("None", { exact: true }));
+    expect(prefix.y, "the prefix on a line under the bucket").toBeGreaterThanOrEqual(
+      bucket.y + bucket.height - 1,
+    );
+    const form = page.getByRole("dialog");
+    // Safari does not focus a button it taps, so Edit's dialog then returns focus to the chevron.
+    // This runs first, while nothing else on the page is still watching where focus goes.
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
+    });
+    await photos.getByRole("button", { name: "Edit" }).dispatchEvent("click");
+    await expect(form).toContainText("Edit /photos");
+    await page.keyboard.press("Escape");
+    await expect(form).toHaveCount(0);
+    await expect(mount("/photos")).toBeFocused();
+    // A browser that focuses the button it taps gets focus back on Edit.
+    await photos.getByRole("button", { name: "Edit" }).tap();
+    await expect(form).toContainText("Edit /photos");
+    await form.getByRole("button", { name: "Cancel" }).tap();
+    await expect(form).toHaveCount(0);
+    await expect(photos.getByRole("button", { name: "Edit" })).toBeFocused();
+    // Removing the mount takes its row away, so focus moves to the next mount's row.
+    await photos.getByRole("button", { name: "Remove" }).tap();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" }).tap();
+    await expect(mount("/photos")).toHaveCount(0);
+    await expect(mount("/archive")).toBeFocused();
+
+    // The chevron is a button, so a keyboard opens a row too.
+    await page.keyboard.press("Shift+Tab");
+    await expect(mount("/shared")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(mount("/shared")).toHaveAttribute("aria-expanded", "true");
+
+    // A mount added again under the removed one's name starts closed.
+    await page.getByRole("button", { name: "Add mount", exact: true }).tap();
+    const added = page.getByRole("dialog");
+    await added.getByLabel("Folder name").fill("photos");
+    await added.getByRole("button", { name: "Add mount" }).tap();
+    await expect(added).toHaveCount(0);
+    await expect(mount("/photos")).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("A revoked key past its expiry: its row says Expired with the date, as an expired key's does", async ({
+    page,
+  }) => {
+    await page.goto("/credentials");
+    const main = page.getByRole("main");
+    // Before its expiry time a key says Expires instead.
+    for (const [name, label, date] of [
+      ["Old tablet", "Expired", "Sep 30, 2026"],
+      ["Conference laptop", "Expired", "Oct 31, 2026"],
+      ["Phone photo backup", "Expires", "May 1, 2027"],
+    ] as const) {
+      const toggle = main.getByRole("button", { name: `Details for key ${name}`, exact: true });
+      await toggle.tap();
+      const details = await detailsOf(toggle);
+      await expect(details.getByText(label, { exact: true }), name).toBeVisible();
+      await expect(details.getByText(date, { exact: true }), name).toBeVisible();
+    }
+    await expect(main.getByRole("listitem").filter({ hasText: "Old tablet" })).toContainText(
+      "Revoked",
+    );
+  });
+
+  test("Rows that glide: the rows under a row that opens or closes move to their places, at once with reduced motion", async ({
+    page,
+  }) => {
+    for (const motion of ["no-preference", "reduce"] as const) {
+      await page.emulateMedia({ reducedMotion: motion });
+      await page.goto("/credentials");
+      await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(5);
+      // The first tap opens "Old tablet", which moves the row under it down, and the second
+      // closes it, which moves that row back up.
+      for (const tap of ["opening", "closing"] as const) {
+        const places = await page.evaluate(placesWhileToggling);
+        const [first = 0] = places;
+        const last = places.at(-1) ?? first;
+        const moved = tap === "opening" ? last - first : first - last;
+        expect(moved, `how far the row moved, ${tap}, ${motion}`).toBeGreaterThan(50);
+        const top = Math.min(first, last);
+        const bottom = Math.max(first, last);
+        const between = places.filter((place) => place > top + 1 && place < bottom - 1);
+        if (motion === "reduce") {
+          expect(between, `the places between, ${tap} with reduced motion`).toEqual([]);
+          // At once rather than late: the first frame after the tap shows the row at rest.
+          const [, firstFrame = first] = places;
+          expect(
+            Math.abs(firstFrame - last),
+            `the first frame after the tap, ${tap} with reduced motion`,
+          ).toBeLessThanOrEqual(1);
+        } else {
+          expect(between.length, `the frames between its places, ${tap}`).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  test("Holding a row: its background is rounded and stays inside the card", async ({ page }) => {
+    await page.goto("/credentials");
+    const row = page
+      .getByRole("main")
+      .getByRole("listitem")
+      .filter({ hasText: "Accountant, invoices only" });
+    await expect(row).toBeVisible();
+    const box = await boxOf(row);
+    const touch = await page.context().newCDPSession(page);
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: box.x + 40, y: box.y + box.height / 2 }],
+    });
+    // The pressed row draws its background, rounded, with the card's padding left around it.
+    await expect.poll(() => row.evaluate(pressedBackground)).not.toBeNull();
+    const pressed = await row.evaluate(pressedBackground);
+    expect(pressed?.radius).toBeGreaterThan(0);
+    expect(pressed?.inset).toBeGreaterThanOrEqual(8);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  });
 
   test("Holding a chart: a finger shows a bar's values only while it holds the chart, above the chart", async ({
     page,
@@ -2003,6 +2319,11 @@ test("The address field's name: a screen reader hears the field's label alone", 
   await expect(page.getByRole("textbox", { name: "WebDAV address", exact: true })).toHaveValue(
     /^https:\/\//,
   );
+});
+
+test("The WebDAV section's address field: a screen reader hears its label alone", async ({
+  page,
+}) => {
   await page.goto("/settings?section=webdav");
   await expect(page.getByRole("textbox", { name: "Address", exact: true })).toHaveValue(
     /^https:\/\//,

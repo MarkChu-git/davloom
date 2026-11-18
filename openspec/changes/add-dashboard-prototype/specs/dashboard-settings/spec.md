@@ -69,11 +69,15 @@ The Appearance section SHALL offer Light, Dark and System, with the mode in use 
 - **THEN** it offers Light, Dark and System, with System selected
 
 ### Requirement: WebDAV settings
-The WebDAV section SHALL show the WebDAV address with a control that copies it.
+The WebDAV section SHALL show the WebDAV address with a control that copies it. Assistive technology SHALL hear the address field named by its label alone.
 
 #### Scenario: Connecting a client
 - **WHEN** a user opens the WebDAV section
 - **THEN** it shows `https://files.example.com/dav/` with Copy address
+
+#### Scenario: The WebDAV section's address field
+- **WHEN** assistive technology reads the address field in the WebDAV section of Settings
+- **THEN** it hears it named "Address", its label alone
 
 ### Requirement: Default backend
 The Storage section SHALL let the user choose the backend that new mounts start with, and the choice SHALL last for the visit once saved.
