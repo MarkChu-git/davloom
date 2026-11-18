@@ -51,7 +51,7 @@ On a touch screen, a chart SHALL show a point's values only while a finger holds
 - **THEN** the tap shows nothing at any moment, the hold shows RustFS archive's values above the chart, the slide shows R2 photos' values while the page stays still, the values hide when the finger lifts, and the swipe scrolls the page without showing any values at any moment
 
 ### Requirement: Charts with a mouse
-A chart SHALL show a point's values while a mouse is over it and SHALL hide them when the mouse leaves the chart, whatever the chart does for a finger.
+A chart SHALL show a point's values while a mouse is over the chart and SHALL hide them when the mouse leaves it, unless a finger holds the chart.
 
 #### Scenario: Pointing at a chart
 - **WHEN** a user with a mouse points at the storage chart, then moves the mouse off the chart
