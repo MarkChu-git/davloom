@@ -63,6 +63,7 @@ Davloom follows Hexagonal architecture with Effect Layers.
 - Astryx and StyleX stay on exact versions, and StyleX follows the Astryx peer dependency. `bun run check` enforces this.
 - Search before writing UI: `bunx astryx search "<query>"` finds components, hooks, docs and templates, and `bunx astryx component <Name>` prints a component's API.
 - The generated Astryx block below says there is no StyleX compiler. Davloom has one (`@stylexjs/unplugin`), so Davloom's own components use `stylex.create()` and `stylex.props()` with Astryx tokens. Astryx components themselves stay on props and tokens, and never depend on Astryx's generated class names.
+- The generated Astryx block below prefers the experimental theme editor for making or changing a theme. Davloom's theme stays in the hand-written `packages/ui/src/themes/davloom-source.ts`, which extends the neutral theme in code. Change it there, rebuild `davloom.css` with `bun run --filter @davloom/ui build:theme`, and look at the result on the Dashboard in light and dark mode instead of the editor's PNGs. Do not move the theme to the editor.
 
 ## Issue tracker
 
