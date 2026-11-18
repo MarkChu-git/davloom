@@ -7,7 +7,7 @@ Gives a one-page summary of the instance: what it stores and where, how busy it 
 ## ADDED Requirements
 
 ### Requirement: Headline figures
-The Overview SHALL show the bytes stored with the number of objects, the share of known capacity in use with the bytes it measures, and the number of mounts with how many of the backends hold them. The three figures SHALL sit side by side, or one above another where the row is too narrow for three, and never two above one.
+The Overview SHALL show the bytes stored with the number of objects, the share of known capacity in use with the bytes it measures, and the number of mounts with how many of the backends hold them. The three figures SHALL sit side by side, or one above another where the row is too narrow for three, and never two above one. Side by side, their labels, the figures and the lines under them SHALL each stand on a shared line, whether or not a figure has a bar.
 
 #### Scenario: Figures of the sample data
 - **WHEN** a user opens the Overview
@@ -16,6 +16,10 @@ The Overview SHALL show the bytes stored with the number of objects, the share o
 #### Scenario: Figures at two widths
 - **WHEN** a user opens the Overview in a window 900 px wide and then narrows the window to 800 px
 - **THEN** the three figures sit side by side at 900 px and one above another at 800 px
+
+#### Scenario: Figures on one grid
+- **WHEN** a user opens the Overview in a window 1280 px wide, and in one 900 px wide
+- **THEN** Stored, Known capacity and Mounts stand on one line, 255.1 GB, 10.7% and 4 on another, and 24,597 objects, 213.9 GB of 2 TB and On 3 of 3 backends on a third, although only Known capacity has a bar
 
 ### Requirement: Operations
 The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any. The chart SHALL also say in words how many operations failed, in which hours, and which hour was busiest, and it SHALL call the latest hour "now", as its axis and tooltip do.
@@ -32,6 +36,13 @@ The Overview SHALL show how many operations the instance handled in the last 24 
 - **WHEN** assistive technology reads the operations chart
 - **THEN** its description says that 4 of 3,732 operations failed, names the 3 hours in which they failed, the latest of them as now, and says that the busiest hour was 12 hours ago, with 426
 
+### Requirement: A count and its status
+The count of failed operations SHALL stand on the line of the count of operations beside it.
+
+#### Scenario: A count and its status
+- **WHEN** a user opens the Overview in a window 1280 px wide, and in one 320 px wide
+- **THEN** 4 failed stands on the line of 3,732
+
 ### Requirement: Storage by backend
 The Overview SHALL chart the bytes stored on each backend, largest first, with each backend's bytes beside its bar and in the chart's description in words, and SHALL link to Storage & Mounts.
 
@@ -42,6 +53,13 @@ The Overview SHALL chart the bytes stored on each backend, largest first, with e
 #### Scenario: The storage chart in words
 - **WHEN** assistive technology reads the storage chart
 - **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
+
+### Requirement: Charts on their card's grid
+The longest label on a chart's y axis SHALL start where its card's title starts, and the last label on the operations chart's x axis SHALL end at its card's right edge.
+
+#### Scenario: Charts on their card's grid
+- **WHEN** a user opens the Overview in windows 1280, 800 and 320 px wide
+- **THEN** the longest label on the y axis of each chart starts where the card's title starts, and Now ends at the right edge of the operations card's content
 
 ### Requirement: Charts on a touch screen
 On a touch screen, a chart SHALL show a point's values only while a finger holds the chart. A press held for half a second SHALL show the values of the point under the finger, above the chart where the finger does not cover them; sliding the finger SHALL move along the chart without scrolling the page; and lifting the finger SHALL hide the values. A tap SHALL show nothing at any moment, and a swipe that starts on a chart SHALL scroll the page and show nothing.
