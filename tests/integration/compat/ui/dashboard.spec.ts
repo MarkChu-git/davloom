@@ -2771,7 +2771,7 @@ const contentRight = (card: Element): number => {
   );
 };
 
-test("Charts on their card's grid: the longest label on the y axis starts where the title does, and the last hour ends at the card's edge", async ({
+test("Charts on their card's grid: the longest label on the y axis starts where the title does, and the last hour ends where the card's content does", async ({
   page,
 }) => {
   for (const width of [1280, 800, PHONE_WIDTH]) {
@@ -2784,11 +2784,17 @@ test("Charts on their card's grid: the longest label on the y axis starts where 
       const heading = page.getByRole("heading", { name: title, exact: true });
       const card = cardWith(page, heading);
       const { start, end } = await card.getByRole("img", { name }).evaluate(labelEdges);
-      // Within 0.05 px: a label measured by its ink, as TanStack measures it, starts 0.69 px out.
-      expect(start, `${title} at ${width} px`).toBeCloseTo((await boxOf(heading)).x, 1);
+      // Within 0.05 px: on a Mac, a label measured by its ink, as TanStack measures it, starts
+      // 0.69 px out. Each edge is checked on its own, so one run reports every chart and width
+      // that misses.
+      expect
+        .soft(start, `${title}'s longest label at ${width} px`)
+        .toBeCloseTo((await boxOf(heading)).x, 1);
       // The storage chart's last labels are its bars' values, which end where the bars do.
       if (title === "Operations") {
-        expect(end, `${title} at ${width} px`).toBeCloseTo(await card.evaluate(contentRight), 1);
+        expect
+          .soft(end, `${title}'s last hour at ${width} px`)
+          .toBeCloseTo(await card.evaluate(contentRight), 1);
       }
     }
   }
