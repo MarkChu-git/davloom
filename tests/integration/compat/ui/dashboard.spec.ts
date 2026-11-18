@@ -2873,6 +2873,21 @@ test("Focusing a chart: a click draws no ring, and the keyboard draws the theme'
   expect(ring.isTheme).toBe(true);
 });
 
+test("Pointing at a chart: a mouse shows a bar's values over the chart and hides them when it leaves", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const chart = page.getByRole("img", { name: "Bytes stored on each backend" });
+  const values = page.getByRole("status", { name: /Stored: / });
+
+  await chart.hover();
+  await expect(values).toBeVisible();
+
+  // TouchHold keeps a chart's mouseleave away from it only while a finger holds the chart.
+  await page.mouse.move(0, 0);
+  await expect(values).toBeHidden();
+});
+
 test("The address field's name: a screen reader hears the field's label alone", async ({
   page,
 }) => {
