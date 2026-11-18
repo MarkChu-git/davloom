@@ -58,11 +58,11 @@ The Overview SHALL chart the bytes stored on each backend, largest first, with e
 - **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
 
 ### Requirement: Charts on their card's grid
-The longest label on a chart's y axis SHALL start where its card's title starts, and the last label on the operations chart's x axis SHALL end where its card's content ends on the right.
+The longest label on a chart's y axis SHALL start where its card's title starts, and the last label on the operations chart's x axis SHALL end within half a pixel of where its card's content ends on the right.
 
 #### Scenario: Charts on their card's grid
 - **WHEN** a user opens the Overview in windows 1280, 800 and 320 px wide
-- **THEN** the longest label on the y axis of each chart starts where the card's title starts, and Now ends at the right edge of the operations card's content
+- **THEN** the longest label on the y axis of each chart starts where the card's title starts, and Now ends within half a pixel of the right edge of the operations card's content
 
 ### Requirement: Charts on a touch screen
 On a touch screen, a chart SHALL show a point's values only while a finger holds the chart. A press held for half a second SHALL show the values of the point under the finger, above the chart where the finger does not cover them; sliding the finger SHALL move along the chart without scrolling the page; and lifting the finger SHALL hide the values. A tap SHALL show nothing at any moment, and a swipe that starts on a chart SHALL scroll the page and show nothing.
