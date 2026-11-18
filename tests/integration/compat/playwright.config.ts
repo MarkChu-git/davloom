@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
+import { DEV_SERVER_ORIGIN, DEV_SERVER_PORT } from "./ui/devServer";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../../..");
 const BUN_PORT = 4310;
@@ -8,7 +9,9 @@ const WORKERS_PORT = 4311;
 // Lets a machine reuse a browser it already has instead of `playwright install chromium`.
 const executablePath = process.env.DAVLOOM_CHROMIUM_PATH;
 
-// Every spec runs against the production build, delivered both ways.
+// Every spec runs against the production build, delivered both ways, except `dev-server.spec.ts`,
+// which runs in the `bun` project only and compares `vite dev` with the build that Bun delivers.
+// Playwright starts all three servers for every run, so `vite dev` must start for any spec to run.
 export default defineConfig({
   testDir: "./ui",
   forbidOnly: true,
@@ -22,7 +25,11 @@ export default defineConfig({
   },
   projects: [
     { name: "bun", use: { baseURL: `http://127.0.0.1:${BUN_PORT}` } },
-    { name: "workers", use: { baseURL: `http://127.0.0.1:${WORKERS_PORT}` } },
+    {
+      name: "workers",
+      use: { baseURL: `http://127.0.0.1:${WORKERS_PORT}` },
+      testIgnore: "dev-server.spec.ts",
+    },
   ],
   webServer: [
     {
@@ -40,6 +47,12 @@ export default defineConfig({
       timeout: 90_000,
       // Without it Playwright sends SIGKILL, and the script cannot remove its bundle.
       gracefulShutdown: { signal: "SIGTERM", timeout: 10_000 },
+    },
+    {
+      // `bun --bun` keeps Vite on Bun: `bun run` inside a package directory ignores `run.bun`.
+      command: `bun --bun run dev --host 127.0.0.1 --port ${DEV_SERVER_PORT} --strictPort`,
+      cwd: resolve(REPO_ROOT, "apps/web"),
+      url: DEV_SERVER_ORIGIN,
     },
   ],
 });

@@ -31,7 +31,15 @@ export const Route = createRootRoute({
       { name: "color-scheme", content: SUPPORTED_COLOR_SCHEMES },
       { title: "Davloom" },
     ],
-    links: [{ rel: "stylesheet", href: globals }],
+    links: [
+      { rel: "stylesheet", href: globals },
+      // The build appends Davloom's own StyleX rules to the stylesheet above. `vite dev` serves
+      // them at this address instead, and the plugin's runtime refetches them as modules compile.
+      // The plugin adds both through index.html, which TanStack Start does not use, so the shell
+      // has to name them.
+      ...(import.meta.env.DEV ? [{ rel: "stylesheet", href: "/virtual:stylex.css" }] : []),
+    ],
+    scripts: import.meta.env.DEV ? [{ type: "module", src: "/@id/virtual:stylex:runtime" }] : [],
   }),
   shellComponent: Document,
 });

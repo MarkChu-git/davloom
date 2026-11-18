@@ -45,6 +45,13 @@ The page SHALL declare to the browser that it supports light and dark, and its r
 - **WHEN** a user who chose Dark reloads the page while its script bundles are blocked, so that only the inline first-paint script runs
 - **THEN** the root element already carries the dark mode and the `dark` color scheme when the browser starts to parse the body
 
+### Requirement: The dev server matches the build
+`vite dev` SHALL draw every Dashboard page as the production build does, with Davloom's own styles in effect and overriding the design system's wherever they do in the build, so that a page reviewed on the dev server looks as it will ship.
+
+#### Scenario: The same page on both servers
+- **WHEN** Playwright opens the Overview, Files at `/documents`, Credentials, Storage & Mounts and Settings on the build that Bun delivers and on `vite dev`, 1280 px wide in light and in dark mode and 375 px wide in light mode, with reduced motion
+- **THEN** every element that draws has the same box on both servers, to within a pixel, and the same display, text color, background color, top border color and width, font size and font weight, and each page on `vite dev` links the StyleX plugin's dev stylesheet and holds the rules its runtime adds
+
 ### Requirement: Appearance shared across tabs
 A mode chosen in one tab SHALL apply to the app's other open tabs in the same browser without a reload.
 
