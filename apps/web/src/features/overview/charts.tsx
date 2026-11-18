@@ -3,27 +3,46 @@ import {
   colorVars,
   radiusVars,
   shadowVars,
+  spacingVars,
   textSizeVars,
   typographyVars,
 } from "@astryxdesign/core/theme/tokens.stylex";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { VStack } from "@astryxdesign/core/Layout";
 import * as stylex from "@stylexjs/stylex";
-import { areaY, barX, defineChart, dot, lineY, text, whenFocused } from "@tanstack/charts";
+import {
+  areaY,
+  barX,
+  createMark,
+  defineChart,
+  dot,
+  lineY,
+  text,
+  whenFocused,
+  type ChartPoint,
+  type SceneNode,
+} from "@tanstack/charts";
 import { crosshair } from "@tanstack/charts/crosshair";
 import { d3Curve } from "@tanstack/charts/d3/shape";
 import { Chart } from "@tanstack/charts/react";
+import { Chart as ChartWithBody } from "@tanstack/charts/react/tooltip";
 import { scaleBand } from "@tanstack/charts/scales/band";
 import { scaleLinear } from "@tanstack/charts/scales/linear";
 import { tooltip } from "@tanstack/charts/tooltip";
 import { portal } from "@tanstack/charts/tooltip/portal";
+import { scaleSymlog } from "d3-scale";
 import { curveMonotoneX } from "d3-shape";
 import {
   backends,
   operationsByHour,
+  recentErrors,
   type HourlyOperations,
+  type OperationError,
   type StorageBackend,
 } from "../sample-data/data";
-import { formatBytes, formatCount } from "../sample-data/format";
+import { formatBytes, formatCount, formatRelative } from "../sample-data/format";
+import { ErrorDetails, ErrorSubject } from "./ErrorParts";
+import { causeOf, glyphPaths, lanesFor, minutesAgo, nameOf, shortSpan } from "./errors";
 import { failedOperations, totalOperations } from "./operations";
 import { TouchHold } from "./TouchHold";
 
@@ -61,7 +80,26 @@ const styles = stylex.create({
     "--ts-chart-tooltip-shadow": shadowVars["--shadow-med"],
     "--ts-chart-tooltip-font": `500 ${textSizeVars["--font-size-xs"]}/1.3 ${typographyVars["--font-family-body"]}`,
   },
+  // TanStack Charts leaves the whole surface to a tooltip body rendered in React, so the timeline
+  // draws its own, from the tokens the other charts' tooltips take, and keeps it to a phone's width.
+  errorTooltip: {
+    maxInlineSize: "18rem",
+    padding: spacingVars["--spacing-3"],
+    backgroundColor: colorVars["--color-background-popover"],
+    color: LABEL,
+    borderWidth: borderVars["--border-width"],
+    borderStyle: "solid",
+    borderColor: RULE,
+    borderRadius: radiusVars["--radius-element"],
+    boxShadow: shadowVars["--shadow-med"],
+  },
+  // The picture on a marker belongs to it, so a pointer on the picture is on the marker.
+  glyph: {
+    pointerEvents: "none",
+  },
 });
+
+const GLYPH_CLASS = stylex.props(styles.glyph).className ?? "";
 
 const theme = {
   foreground: AXIS,
@@ -321,6 +359,265 @@ export const StorageChart = () => {
         height={44 * byUse.length}
         ariaLabel="Bytes stored on each backend"
         ariaDescription={storageDescription}
+      />
+    </TouchHold>
+  );
+};
+
+// The errors timeline. Each failed operation is a disc of the error color with the picture of its
+// cause, on a stem above an axis of the last 24 hours.
+
+/** A marker's radius: a disc 40 px wide, with room around the 24 px picture of its cause. */
+const MARKER = 20;
+/** The ring of the card's color around each marker. */
+const RING = 2;
+/** Lucide draws its icons in a box 24 units wide, which the timeline draws at 24 px. */
+const GLYPH_BOX = 24;
+/** The stem between the axis and the lowest marker. */
+const STEM = 12;
+/** The room between a marker and the one above it. */
+const LANE_GAP = 6;
+/** Markers stack two high where they would cover each other, which the sample errors need. */
+const LANES = 2;
+const LANE_STEP = 2 * MARKER + LANE_GAP;
+/** The room beside the plot for half a marker on either end of the day. */
+const INSET = MARKER + 4;
+const TIMELINE_HEIGHT = 128;
+
+const DISC = colorVars["--color-error-muted"];
+const GLYPH = colorVars["--color-on-error-muted"];
+const AXIS_LINE = colorVars["--color-border-emphasized"];
+
+/** A day in minutes, the span of the timeline and of the Operations chart above it. */
+const DAY = 24 * 60;
+
+/**
+ * Ages run left to right towards the sample clock, so the latest error sits at zero. The scale is
+ * logarithmic near zero and linear through it (symlog), so the last hour, where an owner looks
+ * first, takes more than half the width, and errors minutes apart stay apart.
+ */
+const ageScale = () => scaleSymlog().constant(1).domain([-DAY, 0]);
+
+const AGE_TICKS = [-DAY, -6 * 60, -60, -10, 0];
+
+const tickHours = new Intl.NumberFormat("en", {
+  style: "unit",
+  unit: "hour",
+  unitDisplay: "narrow",
+});
+
+/** A tick as short as it gets: "24h", "6h", "1h", "10m" and "Now", as the axis above says hours. */
+const ageTick = (value: number): string => {
+  if (value === 0) {
+    return "Now";
+  }
+  return value <= -60 ? tickHours.format(-value / 60) : shortSpan(-value);
+};
+
+const lastDay = recentErrors.filter((error) => minutesAgo(error.at) <= DAY);
+const agePosition = (error: OperationError): number => -minutesAgo(error.at);
+
+/** The paths of each cause's picture, worked out once. */
+const glyphsOf = new Map(lastDay.map((error) => [error.id, glyphPaths(causeOf(error).glyph)]));
+
+const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) => {
+  const id = `errors-${markIndex}`;
+  return {
+    id,
+    channels: { x: { scale: "x", values: lastDay.map(agePosition) } },
+    render: ({ chart, scales }) => {
+      const x = scales["x"];
+      if (x === undefined) {
+        return { nodes: [] };
+      }
+      const axis = chart.y + chart.height;
+      const centers = lastDay.map((error) => x.map(agePosition(error)));
+      const lanes = lanesFor(centers, LANE_STEP, LANES);
+      const heightOf = (index: number): number =>
+        axis - STEM - MARKER - (lanes[index] ?? 0) * LANE_STEP;
+      // Every stem lies under every marker, so a stem rising to the upper lane passes behind a
+      // marker on the lower one rather than across its picture.
+      const stems = lastDay.map((error, index): SceneNode => ({
+        kind: "rule",
+        key: `${id}:${error.id}:stem`,
+        x1: centers[index] ?? 0,
+        y1: axis,
+        x2: centers[index] ?? 0,
+        y2: heightOf(index) + MARKER,
+        ariaHidden: true,
+        style: { stroke: AXIS_LINE, strokeWidth: 1 },
+      }));
+      const markers: SceneNode[] = lastDay.flatMap((error, index): SceneNode[] => {
+        const cx = centers[index] ?? 0;
+        const cy = heightOf(index);
+        const key = `${id}:${error.id}`;
+        const point: ChartPoint<OperationError, number, number> = {
+          key,
+          markId: id,
+          group: null,
+          groupLabel: id,
+          datum: error,
+          datumIndex: index,
+          xValue: agePosition(error),
+          yValue: lanes[index] ?? 0,
+          x: cx,
+          y: cy,
+          color: GLYPH,
+        };
+        return [
+          {
+            // The card's color under the marker and its ring hides a stem behind it, which the
+            // error color's muted shade lets through where it is translucent, as in dark mode.
+            kind: "dot",
+            key: `${key}:base`,
+            x: cx,
+            y: cy,
+            radius: MARKER + RING / 2,
+            ariaHidden: true,
+            style: { fill: SURFACE },
+          },
+          {
+            kind: "dot",
+            key,
+            x: cx,
+            y: cy,
+            radius: MARKER,
+            interaction: { point },
+            // A ring of the card's color keeps markers apart where they come close.
+            style: { fill: DISC, stroke: SURFACE, strokeWidth: RING },
+          },
+          {
+            kind: "group",
+            key: `${key}:glyph`,
+            className: GLYPH_CLASS,
+            translateX: cx - GLYPH_BOX / 2,
+            translateY: cy - GLYPH_BOX / 2,
+            ariaHidden: true,
+            children: (glyphsOf.get(error.id) ?? []).map((path, part): SceneNode => ({
+              kind: "polyline",
+              key: `${key}:glyph:${part}`,
+              points: [],
+              path,
+              style: {
+                fill: "none",
+                stroke: GLYPH,
+                strokeWidth: 2,
+                lineCap: "round",
+                lineJoin: "round",
+              },
+            })),
+          },
+        ];
+      });
+      return {
+        nodes: [
+          {
+            kind: "group",
+            key: id,
+            ariaHidden: true,
+            children: [
+              {
+                kind: "rule",
+                key: `${id}:axis`,
+                // The axis runs the panel's whole width, from the title's line, while the scale
+                // keeps half a marker inside each end of the day.
+                x1: chart.x - INSET,
+                y1: axis,
+                x2: chart.x + chart.width + INSET,
+                y2: axis,
+                style: { stroke: AXIS_LINE, strokeWidth: 1 },
+              },
+              ...stems,
+              ...markers,
+            ],
+          },
+        ],
+      };
+    },
+  };
+});
+
+const errorRows = (error: OperationError) => [
+  { label: "Status", value: `${error.status} ${causeOf(error).label}` },
+  { label: "Request", value: `${error.method} ${error.path}` },
+  { label: "Reason", value: error.message },
+  { label: "When", value: formatRelative(error.at) },
+];
+
+const defineErrorTimeline = (isFinger: boolean) =>
+  defineChart({
+    marks: [errorMarkers],
+    scales: {
+      x: {
+        scale: ageScale(),
+        axis: {
+          line: false,
+          ticks: {
+            values: AGE_TICKS,
+            line: false,
+            format: ageTick,
+          },
+          tickLabels: { fontSize: TEXT_SIZE },
+        },
+      },
+      // The markers stack in pixels above the axis, so the vertical scale only spans the plot.
+      y: { scale: scaleLinear().domain([0, 1]), axis: false },
+    },
+    margin: { top: 4, left: INSET, right: INSET },
+    theme,
+    focus: "nearest",
+    // A pointer shows an error once it is on its marker; a finger, which covers what it holds,
+    // once it is near it.
+    maxFocusDistance: isFinger ? 2 * MARKER : MARKER + 4,
+    focusRing: { radius: MARKER + 4, fill: "none", stroke: INK, strokeWidth: 2 },
+    // The details show above the plot for every pointer: the timeline ends the page, so there is
+    // no room below it, and beside a marker they would cover its neighbors.
+    tooltip: {
+      use: tooltip,
+      ...ABOVE_THE_PLOT,
+      content: (points) => {
+        const error = points[0]?.datum;
+        return error === undefined
+          ? { rows: [] }
+          : { title: nameOf(error), rows: errorRows(error) };
+      },
+    },
+  });
+
+const timelineDefinition = defineErrorTimeline(false);
+const timelineForFinger = defineErrorTimeline(true);
+
+// What the timeline shows, in words, for assistive technology: each error's file, cause and age,
+// oldest first, as the markers run from left to right.
+const timelineDescription = [
+  `${formatCount(lastDay.length)} ${lastDay.length === 1 ? "operation" : "operations"} failed in the last 24 hours.`,
+  ...lastDay
+    .toSorted((first, second) => agePosition(first) - agePosition(second))
+    .map(
+      (error) =>
+        `${nameOf(error)}: ${causeOf(error).label.toLowerCase()}, ${formatRelative(error.at)}.`,
+    ),
+].join(" ");
+
+/** The recent operation errors along the last 24 hours, each a marker of its cause. */
+export const ErrorTimeline = () => {
+  const isFinger = useMediaQuery(FINGER);
+  return (
+    <TouchHold>
+      <ChartWithBody
+        {...stylex.props(styles.chart)}
+        definition={isFinger ? timelineForFinger : timelineDefinition}
+        height={TIMELINE_HEIGHT}
+        ariaLabel="Operation errors, last 24 hours"
+        ariaDescription={timelineDescription}
+        renderTooltipBody={({ primaryPoint }) =>
+          primaryPoint === undefined ? null : (
+            <VStack gap={3} xstyle={styles.errorTooltip}>
+              <ErrorSubject error={primaryPoint.datum} />
+              <ErrorDetails error={primaryPoint.datum} />
+            </VStack>
+          )
+        }
       />
     </TouchHold>
   );

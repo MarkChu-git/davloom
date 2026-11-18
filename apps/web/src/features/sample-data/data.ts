@@ -117,6 +117,8 @@ export interface OperationError extends Record<string, unknown> {
   id: string;
   method: string;
   path: string;
+  /** Whether the operation was on a file or a folder, which WebDAV calls a collection. */
+  kind: EntryKind;
   status: number;
   message: string;
   at: string;
@@ -127,6 +129,7 @@ export const recentErrors: OperationError[] = [
     id: "e1",
     method: "PUT",
     path: "/archive/2026-11-16.tar.zst",
+    kind: "file",
     status: 504,
     message: "RustFS archive did not answer within 30\u00a0s.",
     at: minutesAgo(12),
@@ -135,6 +138,7 @@ export const recentErrors: OperationError[] = [
     id: "e2",
     method: "MOVE",
     path: "/documents/Drafts → /shared/Drafts",
+    kind: "folder",
     status: 412,
     message: "/shared already has Drafts, and the client asked not to overwrite it.",
     at: minutesAgo(47),
@@ -143,6 +147,7 @@ export const recentErrors: OperationError[] = [
     id: "e3",
     method: "PUT",
     path: "/documents/budget-2027.xlsx",
+    kind: "file",
     status: 423,
     message: "The file is locked by another client.",
     at: minutesAgo(95),
@@ -151,6 +156,7 @@ export const recentErrors: OperationError[] = [
     id: "e4",
     method: "PUT",
     path: "/photos/2026/holiday.mov",
+    kind: "file",
     status: 413,
     message: "Uploads over 100\u00a0MB do not fit one request on Cloudflare Free.",
     at: minutesAgo(310),

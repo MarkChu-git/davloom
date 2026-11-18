@@ -25,6 +25,48 @@ const onScreen = (page: Page, text: string | RegExp) =>
 
 const selectFirstRow = (page: Page) => page.getByRole("row").nth(1).getByRole("checkbox").check();
 
+/** The Overview's card of recent operation errors. */
+const errorsPanel = (page: Page) =>
+  page
+    .getByRole("main")
+    .locator(".astryx-card")
+    .filter({ has: page.getByRole("heading", { name: "Recent operation errors" }) });
+
+/** The timeline view of the recent operation errors. */
+const errorTimeline = (page: Page) =>
+  page.getByRole("img", { name: "Operation errors, last 24 hours" });
+
+/** The timeline's markers, 20 px in radius; the ring around a marker in focus is larger. */
+const errorMarkers = (page: Page) => errorTimeline(page).locator('circle[r="20"]');
+
+/** The center and radius of each marker on the timeline, in the order of the sample errors. */
+const markerCenters = async (page: Page) =>
+  Promise.all(
+    (await errorMarkers(page).all()).map(async (marker) => {
+      const { x, y, width } = await marker.evaluate((node) =>
+        node.getBoundingClientRect().toJSON(),
+      );
+      return { x: x + width / 2, y: y + width / 2, radius: width / 2 };
+    }),
+  );
+
+/**
+ * The markers' centers once the timeline has drawn again for a new width, read when they stay
+ * where they are from one frame to the next.
+ */
+const settledMarkerCenters = async (page: Page) => {
+  let centers = await markerCenters(page);
+  await expect
+    .poll(async () => {
+      const before = JSON.stringify(centers);
+      await nextFrame(page);
+      centers = await markerCenters(page);
+      return JSON.stringify(centers) === before;
+    })
+    .toBe(true);
+  return centers;
+};
+
 /** Opens a Selector, in the dialog unless `scope` says where. One with a search field is a button. */
 const openList = async (
   page: Page,
@@ -149,6 +191,35 @@ const STATES: readonly PageState[] = [
     },
     still: (page) =>
       expect(page.getByRole("img", { name: "Operations per hour, last 24 hours" })).toBeFocused(),
+  },
+  {
+    name: "Overview with an error open in the list, in a narrow window",
+    path: "/",
+    width: 375,
+    show: async (page) => {
+      await page.getByRole("button", { name: "Details for 2026-11-16.tar.zst" }).click();
+      await shown(page.getByRole("group", { name: "Details for 2026-11-16.tar.zst" }));
+    },
+  },
+  {
+    name: "Overview with an error's details on the timeline",
+    path: "/",
+    show: async (page) => {
+      await page.getByRole("radio", { name: "Timeline" }).click();
+      await errorMarkers(page).first().hover();
+      await shown(page.getByRole("status", { name: /^2026-11-16\.tar\.zst/ }));
+    },
+    still: (page) => shown(page.getByRole("status", { name: /^2026-11-16\.tar\.zst/ })),
+  },
+  {
+    name: "Overview with an error's tile open",
+    path: "/",
+    show: async (page) => {
+      await page.getByRole("radio", { name: "Tiles" }).click();
+      // The tile's face lies over its button and takes the click, as it takes a tap.
+      await page.getByRole("button", { name: /^Drafts, / }).click({ force: true });
+      await shown(page.getByRole("dialog", { name: "Drafts" }));
+    },
   },
   {
     name: "the folded side navigation",
@@ -1884,6 +1955,168 @@ test.describe("on a touch screen", () => {
     await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   });
 
+  test("Opening an error in the list: a tap shows an error's details under its line, and another hides them", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: PHONE_WIDTH, height: 812 });
+    await page.goto("/");
+    const panel = errorsPanel(page);
+    const toggle = (name: string) =>
+      panel.getByRole("button", { name: `Details for ${name}`, exact: true });
+    const rows = panel.getByRole("listitem");
+    await expect(rows).toHaveCount(4);
+    const title = await boxOf(panel.getByRole("heading", { name: "Recent operation errors" }));
+    // Each error keeps to one line in the window, starting where the title does: its cause and
+    // its age share the line with its name.
+    for (const row of await rows.all()) {
+      expect(await insideWindow(row, PHONE_WIDTH)).toBe(true);
+      const start = await row
+        .getByRole("img")
+        .first()
+        .evaluate((icon) => (icon.closest(".astryx-stack") ?? icon).getBoundingClientRect().left);
+      expect(Math.abs(start - title.x), "the line starts where the title does").toBeLessThanOrEqual(
+        1,
+      );
+      const cause = await middleOf(row.getByRole("img").first());
+      expect(Math.abs(cause - (await middleOf(row.getByText(/^\d+[mh]$/))))).toBeLessThanOrEqual(2);
+      // Every line starts closed.
+      await expect(row.getByRole("button", { name: /^Details for / })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    }
+    // A name cut short keeps its extension whole.
+    const extension = panel.getByText(".zst", { exact: true });
+    await expect(extension).toBeVisible();
+    expect(await extension.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await insideWindow(extension, PHONE_WIDTH)).toBe(true);
+
+    // A tap anywhere on the line opens it, not only on its chevron.
+    await panel.getByRole("img", { name: "Timed out", exact: true }).tap();
+    const archive = await detailsOf(toggle("2026-11-16.tar.zst"));
+    await expect(archive).toBeVisible();
+    await expect(
+      panel.getByRole("group", { name: "Details for 2026-11-16.tar.zst" }),
+    ).toBeVisible();
+    for (const words of ["504", "Timed out", "/archive/2026-11-16.tar.zst"]) {
+      await expect(archive.getByText(words, { exact: true })).toBeVisible();
+    }
+    await expect(archive.getByRole("img", { name: "PUT", exact: true })).toBeVisible();
+    await expect(archive.getByText(/did not answer within 30/)).toBeVisible();
+    await settle(page);
+    expect(await insideWindow(archive, PHONE_WIDTH)).toBe(true);
+
+    // Several stay open at once, and a second tap closes its own line alone.
+    await panel.getByRole("img", { name: "Too large", exact: true }).tap();
+    await expect(toggle("holiday.mov")).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle("2026-11-16.tar.zst")).toHaveAttribute("aria-expanded", "true");
+    await panel.getByRole("img", { name: "Timed out", exact: true }).tap();
+    await expect(toggle("2026-11-16.tar.zst")).toHaveAttribute("aria-expanded", "false");
+    await expect(toggle("holiday.mov")).toHaveAttribute("aria-expanded", "true");
+    await expect(archive).toBeHidden();
+
+    // A held line draws a rounded background inside the card, not a band across it.
+    const budget = rows.filter({ hasText: "budget-2027.xlsx" });
+    const box = await boxOf(budget);
+    const touch = await page.context().newCDPSession(page);
+    await touch.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+    });
+    await expect.poll(() => budget.evaluate(pressedBackground)).not.toBeNull();
+    const pressed = await budget.evaluate(pressedBackground);
+    expect(pressed?.radius).toBeGreaterThan(0);
+    expect(pressed?.inset).toBeGreaterThan(0);
+    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  });
+
+  test("Opening a tile: a tap shows an error's details beside its tile, and Escape returns to the tile", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const panel = errorsPanel(page);
+    await panel.getByRole("radio", { name: "Tiles" }).tap();
+    const tile = (name: RegExp) => panel.getByRole("button", { name });
+    // A tile is the card that holds its button. The button itself is hidden, a pixel wide.
+    const card = (name: RegExp) => tile(name).locator("..");
+    const tiles = [
+      /^2026-11-16\.tar\.zst, /,
+      /^Drafts, /,
+      /^budget-2027\.xlsx, /,
+      /^holiday\.mov, /,
+    ];
+    const [first, second, third] = await Promise.all(tiles.map((name) => boxOf(card(name))));
+    if (first === undefined || second === undefined || third === undefined) {
+      throw new Error("The tiles are missing.");
+    }
+    // Two tiles side by side, and the next two under them.
+    expect(Math.abs(first.y - second.y)).toBeLessThanOrEqual(1);
+    expect(second.x).toBeGreaterThanOrEqual(first.x + first.width);
+    expect(third.y).toBeGreaterThanOrEqual(first.y + first.height);
+    // Each name keeps its extension whole inside the window. The details of each tile wait in the
+    // page, hidden, until it opens, so only the tiles' own names are on screen.
+    for (const extension of [".zst", ".xlsx", ".mov"]) {
+      const text = panel.getByText(extension, { exact: true }).filter({ visible: true });
+      expect(await text.evaluate((node) => node.scrollWidth <= node.clientWidth), extension).toBe(
+        true,
+      );
+      expect(await insideWindow(text, 375), extension).toBe(true);
+    }
+
+    // The tile's face lies over its button and takes the tap.
+    const drafts = tile(/^Drafts, Already exists, 47 minutes ago$/);
+    await drafts.tap({ force: true });
+    const details = page.getByRole("dialog", { name: "Drafts" });
+    await expect(details).toBeVisible();
+    for (const words of ["412", "Already exists", "/documents/Drafts → /shared/Drafts"]) {
+      await expect(details.getByText(words, { exact: true })).toBeVisible();
+    }
+    await expect(details.getByRole("img", { name: "MOVE", exact: true })).toBeVisible();
+    await expect(details.getByText(/already has Drafts/)).toBeVisible();
+    // Beside the tile: just above or just below it, over the same columns.
+    const at = await boxOf(details);
+    const of = await boxOf(card(/^Drafts, Already exists, 47 minutes ago$/));
+    const apart = Math.min(Math.abs(at.y + at.height - of.y), Math.abs(of.y + of.height - at.y));
+    expect(apart).toBeLessThanOrEqual(16);
+    expect(at.x).toBeLessThan(of.x + of.width);
+    expect(at.x + at.width).toBeGreaterThan(of.x);
+
+    await page.keyboard.press("Escape");
+    await expect(details).toBeHidden();
+    await expect(drafts).toBeFocused();
+  });
+
+  test("Holding a marker: a finger shows an error's details above the timeline while it holds", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await errorsPanel(page).getByRole("radio", { name: "Timeline" }).tap();
+    const chart = errorTimeline(page);
+    await chart.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await expect(errorMarkers(page)).toHaveCount(4);
+    // The fourth sample error, the holiday video, is the oldest and lies furthest left.
+    const { x, y, width } = await boxOf(errorMarkers(page).nth(3));
+    const holiday = { x: x + width / 2, y: y + width / 2 };
+    const session = await page.context().newCDPSession(page);
+    const finger = (type: "touchStart" | "touchEnd", at?: { x: number; y: number }) =>
+      session.send("Input.dispatchTouchEvent", { type, touchPoints: at === undefined ? [] : [at] });
+    const details = page.getByRole("status", { name: /^holiday\.mov\s+Status: 413 Too large/ });
+
+    await finger("touchStart", holiday);
+    await expect(details).toBeVisible();
+    await expect(details.getByText("413", { exact: true })).toBeVisible();
+    const top = (await boxOf(chart)).y;
+    // Once placed, they sit above the plot, where the finger does not cover them.
+    await expect
+      .poll(async () => {
+        const shownAt = await boxOf(details);
+        return shownAt.y + shownAt.height;
+      })
+      .toBeLessThanOrEqual(top);
+    await finger("touchEnd");
+    await expect(details).toBeHidden();
+  });
+
   test("Holding a chart: a finger shows a bar's values only while it holds the chart, above the chart", async ({
     page,
   }) => {
@@ -2184,11 +2417,63 @@ test("Status colors: statuses, failed hours and destructive actions take their s
     expect(await computed(ring, "stroke")).toBe(await tokenColor(page, "--color-error"));
   }
 
-  // The status code of each recent operation error.
+  // The status code of each recent operation error, in its details.
+  for (const name of ["2026-11-16.tar.zst", "Drafts", "budget-2027.xlsx", "holiday.mov"]) {
+    await main.getByRole("button", { name: `Details for ${name}`, exact: true }).click();
+  }
   for (const code of ["504", "412", "423", "413"]) {
     expect(await computed(main.getByText(code, { exact: true }), "color"), code).toBe(
       await tokenColor(page, "--color-text-error"),
     );
+  }
+  // The disc of each error's cause takes the error color's muted shade under its own ink, and so
+  // does each marker of the timeline.
+  for (const cause of ["Timed out", "Already exists", "Locked", "Too large"]) {
+    const disc = await main.getByRole("img", { name: cause, exact: true }).evaluate((icon) => {
+      const style = getComputedStyle(icon.closest(".astryx-stack") ?? icon);
+      return { background: style.backgroundColor, ink: style.color };
+    });
+    expect(disc, cause).toEqual({
+      background: await tokenColor(page, "--color-error-muted"),
+      ink: await tokenColor(page, "--color-on-error-muted"),
+    });
+  }
+  // Each marker draws the picture of its own error's cause, the one its line shows in the list:
+  // as many shapes, and the same data in each path, where the list's icon keeps shapes such as a
+  // rectangle that the timeline draws as paths. The markers' keys carry the sample errors' ids.
+  const pictures = new Map<string, { shapes: number; paths: string[] }>();
+  for (const [id, cause] of [
+    ["e1", "Timed out"],
+    ["e2", "Already exists"],
+    ["e3", "Locked"],
+    ["e4", "Too large"],
+  ] as const) {
+    const icon = main.getByRole("img", { name: cause, exact: true });
+    pictures.set(
+      id,
+      await icon.evaluate((node) => ({
+        shapes: node.querySelectorAll("path, line, circle, ellipse, rect, polyline, polygon")
+          .length,
+        paths: [...node.querySelectorAll("path")].map((path) => path.getAttribute("d") ?? ""),
+      })),
+    );
+  }
+  await main.getByRole("radio", { name: "Timeline" }).click();
+  await expect(errorMarkers(page)).toHaveCount(4);
+  for (const marker of await errorMarkers(page).all()) {
+    expect(await computed(marker, "fill")).toBe(await tokenColor(page, "--color-error-muted"));
+  }
+  for (const [id, picture] of pictures) {
+    const drawn = errorTimeline(page).locator(`path[data-ts-key*=":${id}:glyph:"]`);
+    await expect(drawn, id).toHaveCount(picture.shapes);
+    const data = await drawn.evaluateAll((paths) => paths.map((path) => path.getAttribute("d")));
+    expect(data, id).toEqual(expect.arrayContaining(picture.paths));
+  }
+  // The picture of each cause is drawn in lines of the ink, with nothing filled.
+  const glyphs = errorTimeline(page).locator('path[data-ts-key*=":glyph:"]');
+  for (const glyph of await glyphs.all()) {
+    expect(await computed(glyph, "fill")).toBe("none");
+    expect(await computed(glyph, "stroke")).toBe(await tokenColor(page, "--color-on-error-muted"));
   }
 
   // Astryx fills a destructive button with the error color's muted shade, under its own text:
@@ -2278,6 +2563,276 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
   expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toBe(
     "RustFS archive stores 212 GB, R2 photos stores 41.2 GB, and Durable Objects stores 1.9 GB.",
+  );
+});
+
+test("A rejected upload: an error shows its cause, its name and its age, and its details on demand", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const panel = errorsPanel(page);
+  const row = panel.getByRole("listitem").filter({ hasText: "holiday.mov" });
+  await expect(row.getByRole("img", { name: "Too large", exact: true })).toBeVisible();
+  await expect(row.getByText("5h", { exact: true })).toBeVisible();
+  // Assistive technology hears the age in words, and not its short form.
+  await expect(row).toMatchAriaSnapshot(`
+    - listitem:
+      - img "Too large"
+      - text: holiday.mov 5 hours ago
+  `);
+  // The details wait for a tap: no status code, request or reason shows before it.
+  await expect(panel.getByText("413", { exact: true })).toHaveCount(0);
+  await expect(panel.getByText(/Cloudflare Free/)).toHaveCount(0);
+
+  const toggle = panel.getByRole("button", { name: "Details for holiday.mov", exact: true });
+  await toggle.click();
+  const details = await detailsOf(toggle);
+  const code = details.getByText("413", { exact: true });
+  await expect(code).toBeVisible();
+  expect(await computed(code, "color")).toBe(await tokenColor(page, "--color-text-error"));
+  await expect(details.getByText("Too large", { exact: true })).toBeVisible();
+  await expect(details.getByRole("img", { name: "PUT", exact: true })).toBeVisible();
+  await expect(details.getByText("/photos/2026/holiday.mov", { exact: true })).toBeVisible();
+  await expect(
+    details.getByText(/^Uploads over 100\sMB do not fit one request on Cloudflare Free\.$/),
+  ).toBeVisible();
+  await expect(details.getByText("5 hours ago", { exact: true })).toBeVisible();
+});
+
+test("Choosing a view: the list shows first, and the view chosen lasts for the visit", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const panel = errorsPanel(page);
+  const views = panel.getByRole("radiogroup", { name: "Show errors as" });
+  const view = (name: string) => views.getByRole("radio", { name, exact: true });
+  await expect(view("List")).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByRole("button", { name: "Details for holiday.mov" })).toBeVisible();
+  await expect(errorTimeline(page)).toHaveCount(0);
+  // Each choice is a picture, named for assistive technology and in a tooltip. The tooltip repeats
+  // the name, so it does not describe the choice too, and a screen reader reads the word once.
+  for (const name of ["List", "Timeline", "Tiles"]) {
+    await expect(view(name)).toHaveText("");
+    await view(name).hover();
+    await expect(page.getByRole("tooltip").filter({ hasText: name })).toBeVisible();
+    await expect(view(name)).toHaveAccessibleDescription("");
+  }
+
+  await view("Timeline").click();
+  await expect(errorTimeline(page)).toBeVisible();
+  await expect(panel.getByRole("listitem")).toHaveCount(0);
+  await sideNavigation(page).getByRole("link", { name: "Files" }).click();
+  await expect(levelOne(page)).toHaveText("Files");
+  await sideNavigation(page).getByRole("link", { name: "Overview" }).click();
+  await expect(view("Timeline")).toHaveAttribute("aria-checked", "true");
+  await expect(errorTimeline(page)).toBeVisible();
+
+  await page.reload();
+  await expect(view("List")).toHaveAttribute("aria-checked", "true");
+  await expect(panel.getByRole("button", { name: "Details for holiday.mov" })).toBeVisible();
+  await expect(errorTimeline(page)).toHaveCount(0);
+});
+
+/**
+ * The timeline's axis runs on the panel's grid: from the line where the panel's title starts to the
+ * end of the panel's content, which the chart spans. A horizontal line has no height, so its edges
+ * are read from the page rather than from a visible box.
+ */
+const expectAxisOnGrid = async (page: Page): Promise<void> => {
+  const panel = errorsPanel(page);
+  const title = await boxOf(panel.getByRole("heading", { name: "Recent operation errors" }));
+  const chart = await boxOf(errorTimeline(page));
+  const axis = await errorTimeline(page)
+    .locator('line[data-ts-key$=":axis"]')
+    .evaluate((line) => {
+      const edges = line.getBoundingClientRect();
+      return { start: edges.left, end: edges.right };
+    });
+  expect(
+    Math.abs(axis.start - title.x),
+    "the axis starts where the title does",
+  ).toBeLessThanOrEqual(1);
+  expect(
+    Math.abs(axis.end - (chart.x + chart.width)),
+    "the axis ends with the panel",
+  ).toBeLessThanOrEqual(1);
+};
+
+/** Moves keyboard focus with Tab until `target` has it, as a keyboard user reaches it. */
+const tabTo = async (page: Page, target: Locator): Promise<void> => {
+  for (let step = 0; step < 40; step += 1) {
+    if (await target.evaluate((node) => node === document.activeElement)) {
+      return;
+    }
+    await page.keyboard.press("Tab");
+  }
+  await expect(target).toBeFocused();
+};
+
+test("Reading the timeline: the errors lie along the last day, the last hour over half of it, and each shows its details", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await errorsPanel(page).getByRole("radio", { name: "Timeline" }).click();
+  const chart = errorTimeline(page);
+  await chart.scrollIntoViewIfNeeded();
+  await expect(errorMarkers(page)).toHaveCount(4);
+  const centers = await markerCenters(page);
+  // The markers keep the order of the sample errors: 12, 47, 95 and 310 minutes ago.
+  const [archive, drafts, budget, holiday] = centers;
+  if (
+    archive === undefined ||
+    drafts === undefined ||
+    budget === undefined ||
+    holiday === undefined
+  ) {
+    throw new Error("The timeline has fewer than four markers.");
+  }
+  expect(holiday.x).toBeLessThan(budget.x);
+  expect(budget.x).toBeLessThan(drafts.x);
+  expect(drafts.x).toBeLessThan(archive.x);
+  // The last hour, from the tick marked 1h to Now, takes more than half of the width, with the
+  // two errors of the last hour in it and the older ones before it.
+  const hour = await boxOf(chart.getByText("1h", { exact: true }));
+  const now = await boxOf(chart.getByText("Now", { exact: true }));
+  const hourAt = hour.x + hour.width / 2;
+  const plot = await boxOf(chart);
+  expect(hourAt).toBeLessThan(plot.x + plot.width / 2);
+  expect(now.x + now.width).toBeGreaterThan(plot.x + plot.width * 0.9);
+  for (const recent of [archive, drafts]) {
+    expect(recent.x, "an error of the last hour").toBeGreaterThan(hourAt);
+  }
+  for (const older of [budget, holiday]) {
+    expect(older.x, "an older error").toBeLessThan(hourAt);
+  }
+  centers.forEach((one, first) => {
+    for (const other of centers.slice(first + 1)) {
+      expect(Math.hypot(one.x - other.x, one.y - other.y)).toBeGreaterThanOrEqual(
+        one.radius + other.radius,
+      );
+    }
+  });
+  await expectAxisOnGrid(page);
+  // Every stem is drawn before every marker, so a stem rising to the upper lane passes behind a
+  // marker on the lower one. Each marker lies on a disc of the card's color that reaches as far as
+  // the marker and its ring, which hides that stem where the error color's muted shade is
+  // translucent, as in dark mode.
+  const layers = await chart.evaluate((svg) =>
+    [
+      ...svg.querySelectorAll(
+        'line[data-ts-key$=":stem"], circle[data-ts-key$=":base"], circle[r="20"]',
+      ),
+    ].map((node) => {
+      if (node.tagName === "line") {
+        return "stem";
+      }
+      return node.getAttribute("r") === "20" ? "marker" : "base";
+    }),
+  );
+  expect(layers).toEqual([
+    ...Array.from({ length: 4 }, () => "stem"),
+    ...Array.from({ length: 4 }, () => ["base", "marker"]).flat(),
+  ]);
+  const card = await tokenColor(page, "--color-background-card");
+  for (const marker of await errorMarkers(page).all()) {
+    const key = await marker.getAttribute("data-ts-key");
+    const base = chart.locator(`circle[data-ts-key="${key}:base"]`);
+    const [under, over] = await Promise.all(
+      [base, marker].map((circle) =>
+        circle.evaluate((node) => {
+          const style = getComputedStyle(node);
+          const ring = style.stroke === "none" ? 0 : Number.parseFloat(style.strokeWidth) / 2;
+          return {
+            center: `${node.getAttribute("cx")},${node.getAttribute("cy")}`,
+            reach: Number(node.getAttribute("r")) + ring,
+          };
+        }),
+      ),
+    );
+    expect(under, `the base under ${key}`).toEqual(over);
+    expect(await computed(base, "fill"), `the base under ${key}`).toBe(card);
+  }
+
+  // Pointing at a marker shows its error's name and details.
+  await page.mouse.move(budget.x, budget.y);
+  const details = page.getByRole("status", { name: /^budget-2027\.xlsx\s+Status: 423 Locked/ });
+  await expect(details).toBeVisible();
+  await expect(details).toContainText("budget-2027.xlsx");
+  for (const words of ["423", "Locked", "/documents/budget-2027.xlsx"]) {
+    await expect(details.getByText(words, { exact: true })).toBeVisible();
+  }
+  // They show above the plot, once placed, on a surface of the popover's color, as the charts'
+  // tooltips do.
+  await expect
+    .poll(async () => {
+      const shownAt = await boxOf(details);
+      return shownAt.y + shownAt.height;
+    })
+    .toBeLessThanOrEqual(plot.y);
+  const surface = await details.evaluate((node) => {
+    const painted = [node, ...node.querySelectorAll("*")].find(
+      (element) => getComputedStyle(element).backgroundColor !== "rgba(0, 0, 0, 0)",
+    );
+    return painted === undefined ? null : getComputedStyle(painted).backgroundColor;
+  });
+  expect(surface).toBe(await tokenColor(page, "--color-background-popover"));
+
+  // The keyboard reaches the oldest error first, and each arrow key the next one.
+  await page.mouse.move(0, 0);
+  await tabTo(page, chart);
+  for (const [step, name] of [
+    [0, /^holiday\.mov\s/],
+    [1, /^budget-2027\.xlsx\s/],
+    [2, /^Drafts\s/],
+    [3, /^2026-11-16\.tar\.zst\s/],
+  ] as const) {
+    if (step > 0) {
+      await page.keyboard.press("ArrowRight");
+    }
+    await expect(page.getByRole("status", { name })).toBeVisible();
+  }
+
+  // In a window 375 px wide the two oldest errors fall between 40 and 46 px apart. Their discs
+  // would not touch, but they come within 46 px, a marker's width and a gap, so the later one
+  // takes the second lane. The chart draws again for its new width, so the markers are read once
+  // they stay where they are.
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(375);
+  const [, , budgetAt375, holidayAt375] = await settledMarkerCenters(page);
+  if (budgetAt375 === undefined || holidayAt375 === undefined) {
+    throw new Error("The timeline has fewer than four markers at 375 px.");
+  }
+  const apart = budgetAt375.x - holidayAt375.x;
+  expect(apart, "the oldest errors' distance at 375 px").toBeGreaterThan(
+    budgetAt375.radius + holidayAt375.radius,
+  );
+  expect(apart, "the oldest errors' distance at 375 px").toBeLessThan(46);
+  // A whole marker higher, as markers on one lane differ by a fraction of a pixel.
+  expect(holidayAt375.y - budgetAt375.y, "the later of them a lane higher").toBeGreaterThan(
+    budgetAt375.radius + holidayAt375.radius,
+  );
+
+  // In the narrowest window the markers stack rather than cover each other.
+  await page.setViewportSize({ width: PHONE_WIDTH, height: 812 });
+  await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(PHONE_WIDTH);
+  const narrow = await settledMarkerCenters(page);
+  expect(narrow).toHaveLength(4);
+  narrow.forEach((one, first) => {
+    for (const other of narrow.slice(first + 1)) {
+      expect(Math.hypot(one.x - other.x, one.y - other.y)).toBeGreaterThanOrEqual(
+        one.radius + other.radius,
+      );
+    }
+  });
+  await expectAxisOnGrid(page);
+});
+
+test("The timeline in words: it names each error's file, cause and age", async ({ page }) => {
+  await page.goto("/");
+  await errorsPanel(page).getByRole("radio", { name: "Timeline" }).click();
+  await expect(errorTimeline(page)).toBeVisible();
+  expect((await imageDescriptions(page)).get("Operation errors, last 24 hours")).toBe(
+    "4 operations failed in the last 24 hours. holiday.mov: too large, 5 hours ago. budget-2027.xlsx: locked, 2 hours ago. Drafts: already exists, 47 minutes ago. 2026-11-16.tar.zst: timed out, 12 minutes ago.",
   );
 });
 

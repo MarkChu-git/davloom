@@ -7,16 +7,16 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
-import { colorVars, spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
+import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { HardDrive, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { backends, instance, recentErrors } from "../sample-data/data";
-import { formatBytes, formatCount, formatRelative } from "../sample-data/format";
+import { backends, instance } from "../sample-data/data";
+import { formatBytes, formatCount } from "../sample-data/format";
 import { useDefaultBackendId } from "../settings/settingsStore";
 import { CopyField } from "../shell/CopyField";
 import { PageHeader } from "../shell/PageHeader";
-import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
+import { usePageGutter } from "../shell/pageWidth";
 import { StatusLabel } from "../shell/StatusLabel";
 import { TitleAction, TitleRow } from "../shell/TitleRow";
 import { BACKEND_STATUS } from "../storage/backendStatus";
@@ -24,6 +24,7 @@ import { useMounts } from "../storage/mountStore";
 import { knownCapacity, knownUsed, objectCount, unreachable, usedBytes } from "../storage/summary";
 import { OperationsChart, StorageChart } from "./charts";
 import { failedOperations, totalOperations } from "./operations";
+import { ErrorViewSwitch, RecentErrors } from "./RecentErrors";
 
 const share = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
 
@@ -35,10 +36,6 @@ const styles = stylex.create({
   // all of it.
   tiles: {
     gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 11rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
-  },
-  // A failed operation's status code takes the error color, as the failed count above it does.
-  errorCode: {
-    color: colorVars["--color-text-error"],
   },
 });
 
@@ -87,7 +84,6 @@ export const OverviewPage = () => {
   const mounts = useMounts();
   const defaultBackendId = useDefaultBackendId();
   const toast = useToast();
-  const isNarrowPage = useIsNarrowPage();
   const gutter = usePageGutter();
   const [isChecking, setIsChecking] = useState(false);
   // Leaving the page ends the check, so its answer never shows on another page.
@@ -228,39 +224,8 @@ export const OverviewPage = () => {
               </Panel>
             </Grid>
 
-            <Panel title="Recent operation errors">
-              <List density="compact" edge="flush" hasDividers>
-                {recentErrors.map((error) => {
-                  const when = (
-                    <Text type="supporting" color="secondary">
-                      {formatRelative(error.at)}
-                    </Text>
-                  );
-                  return (
-                    // The request keeps to one line. On a narrow page its time moves under the
-                    // message, so the request has the row's width.
-                    <ListItem
-                      key={error.id}
-                      align="first-line"
-                      startContent={
-                        <Text hasTabularNumbers weight="semibold" xstyle={styles.errorCode}>
-                          {error.status}
-                        </Text>
-                      }
-                      label={`${error.method} ${error.path}`}
-                      description={
-                        <VStack gap={0.5}>
-                          <Text type="supporting" color="secondary" maxLines={2}>
-                            {error.message}
-                          </Text>
-                          {isNarrowPage ? when : null}
-                        </VStack>
-                      }
-                      endContent={isNarrowPage ? undefined : when}
-                    />
-                  );
-                })}
-              </List>
+            <Panel title="Recent operation errors" action={<ErrorViewSwitch />}>
+              <RecentErrors />
             </Panel>
           </VStack>
         </LayoutContent>
