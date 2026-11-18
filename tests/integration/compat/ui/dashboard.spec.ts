@@ -1310,6 +1310,35 @@ test("Backend cards on one grid: with room, each status stands on its name's lin
       }
     }
   }
+
+  // Verified at 1440 px, RustFS archive's answer wraps under its button and makes the row of
+  // actions taller. Every card's button keeps the top of that row, so none of them moves.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/storage");
+  const buttons = names.map((name) =>
+    cardWith(page, page.getByRole("heading", { level: 3, name, exact: true })).getByRole("button", {
+      name: "Verify connection",
+    }),
+  );
+  const tops = async () => Promise.all(buttons.map(async (button) => (await boxOf(button)).y));
+  const before = await tops();
+  const archive = cardWith(
+    page,
+    page.getByRole("heading", { level: 3, name: "RustFS archive", exact: true }),
+  );
+  await archive.getByRole("button", { name: "Verify connection" }).click();
+  const answer = archive.getByText(/^Still unreachable/);
+  await shown(answer);
+  const verify = await boxOf(archive.getByRole("button", { name: "Verify connection" }));
+  expect((await boxOf(answer)).y, "the answer under its button").toBeGreaterThanOrEqual(
+    verify.y + verify.height,
+  );
+  for (const [index, top] of (await tops()).entries()) {
+    expect(top, `${names[index]}'s button once RustFS archive is verified`).toBeCloseTo(
+      before[index] ?? Number.NaN,
+      0,
+    );
+  }
 });
 
 // Runs in the page: what scrolls or reaches past the window sideways. That is the main landmark

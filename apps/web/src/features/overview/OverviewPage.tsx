@@ -40,12 +40,14 @@ const styles = stylex.create({
   // A tile spans three rows of the tiles' grid: its label, its number with any meter under it, and
   // what the number is measured in. The tile takes the grid's rows as its own (subgrid), so the
   // last lines of the tiles share a line where one tile has a meter, and its own gap keeps its
-  // parts 4 px apart rather than the 16 px between tiles.
+  // parts 4 px apart rather than the 16 px between tiles. Each part keeps its own height at the top
+  // of its row, as a backend card's parts do.
   tile: {
     display: "grid",
     gridRow: "span 3",
     gridTemplateRows: "subgrid",
     rowGap: spacingVars["--spacing-1"],
+    alignItems: "start",
   },
   // Words beside a headline number, such as a status, sit on the number's baseline.
   onBaseline: {

@@ -55,11 +55,14 @@ const styles = stylex.create({
   // A backend card spans three rows of the backend grid, one for each part: the name and status,
   // the details, and Verify connection. The card takes the grid's rows as its own (subgrid), so
   // each part starts on the same line as the parts of the cards beside it, and the actions line up
-  // along the bottom of a row of cards where one card has no capacity bar.
+  // along the bottom of a row of cards where one card has no capacity bar. Each part keeps its own
+  // height at the top of its row: stretched to the row, a line of actions whose words fit beside
+  // Verify connection would center the button below the button of a card whose words wrap.
   card: {
     display: "grid",
     gridRow: "span 3",
     gridTemplateRows: "subgrid",
+    alignItems: "start",
   },
   // The status's words sit on the line of the name's. Stack's vAlign offers no baseline.
   onBaseline: {
