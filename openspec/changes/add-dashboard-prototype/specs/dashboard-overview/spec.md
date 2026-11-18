@@ -50,6 +50,13 @@ On a touch screen, a chart SHALL show a point's values only while a finger holds
 - **WHEN** a user on a phone taps the storage chart, then holds a finger on the RustFS archive bar, slides it to R2 photos, lifts it, and swipes up from the chart
 - **THEN** the tap shows nothing at any moment, the hold shows RustFS archive's values above the chart, the slide shows R2 photos' values while the page stays still, the values hide when the finger lifts, and the swipe scrolls the page without showing any values at any moment
 
+### Requirement: Charts with a mouse
+A chart SHALL show a point's values while a mouse is over the chart and SHALL hide them when the mouse leaves it, unless a finger holds the chart.
+
+#### Scenario: Pointing at a chart
+- **WHEN** a user with a mouse points at the storage chart, then moves the mouse off the chart
+- **THEN** the values of a bar show while the mouse is over the chart, and they hide when the mouse leaves
+
 ### Requirement: Focus on a chart
 A chart SHALL draw the theme's focus ring when the keyboard moves focus to it, as every Astryx control does, and SHALL draw no ring when a click focuses it.
 
