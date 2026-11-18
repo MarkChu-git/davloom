@@ -71,10 +71,6 @@ const styles = stylex.create({
     color: AXIS,
     fontFamily: typographyVars["--font-family-body"],
     fontSize: textSizeVars["--font-size-xs"],
-    // The labels kern on every system, as their measure does. Left to the browser, Chromium on
-    // Linux kerned the canvas a label was measured on but not the label, and drew Now wider than
-    // its measure.
-    fontKerning: "normal",
     "--ts-chart-1": INK,
     "--ts-chart-2": INK,
     "--ts-chart-3": INK,
@@ -132,12 +128,11 @@ const STRETCHES = [
 
 /**
  * Measures a label as TanStack Charts does in a browser, on a canvas in the font the chart draws
- * it in, with two changes. TanStack takes a label's ink, which set the longest label on the y axis
- * a side bearing out from where the card's title starts; this takes the label's advance, the box a
- * line of text fills, so the label and the title line up as two lines of text do. And it kerns the
- * label, as the chart draws it. The height stays the ink's, as TanStack measures it, so each chart
- * keeps its vertical layout. Where there is no canvas, as on a server, it estimates from the font
- * size.
+ * it in, except for its width. TanStack takes a label's ink, which set the longest label on the y
+ * axis a side bearing out from where the card's title starts. This takes the label's advance, the
+ * box a line of text fills, so the label and the title line up as two lines of text do. The height
+ * stays the ink's, as TanStack measures it, so each chart keeps its vertical layout. Where there is
+ * no canvas, as on a server, it estimates from the font size.
  */
 const measureLabel: ChartTextMeasurer = (label, options) => {
   const scale = Number.isFinite(options.fontScale) && options.fontScale > 0 ? options.fontScale : 1;
@@ -165,9 +160,6 @@ const measureLabel: ChartTextMeasurer = (label, options) => {
   if ("fontStretch" in labelCanvas) {
     labelCanvas.fontStretch =
       STRETCHES.find((stretch) => stretch === options.fontStretch) ?? "normal";
-  }
-  if ("fontKerning" in labelCanvas) {
-    labelCanvas.fontKerning = "normal";
   }
   labelCanvas.textBaseline = options.baseline === "auto" ? "alphabetic" : options.baseline;
   labelCanvas.direction = options.direction;
