@@ -1523,6 +1523,13 @@ const watchStoredValues = async (page: Page): Promise<() => Promise<boolean>> =>
 const nextFrame = (page: Page) =>
   page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 
+// Runs in the page: where an element's words end, sideways.
+const wordsEnd = (element: Element): number => {
+  const words = document.createRange();
+  words.selectNodeContents(element);
+  return words.getBoundingClientRect().right;
+};
+
 // WCAG 1.4.10 asks content to reflow to 320 px without scrolling sideways, narrower than any
 // common phone.
 const PHONE_WIDTH = 320;
@@ -1643,6 +1650,35 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     await page.keyboard.press("Escape");
     await expect(dropdown).toBeHidden();
     await expect(menu).toBeFocused();
+  });
+
+  test("The Menu button on the grid: its word ends on the gutter the page's content keeps, and so does its dropdown", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    // The page's content starts as far in from the window's left edge as it ends from the right.
+    const gutter = (await boxOf(levelOne(page))).x;
+    const menu = page.getByRole("button", { name: "Menu" });
+    const word = menu.getByText("Menu", { exact: true });
+    expect(await word.evaluate(wordsEnd)).toBeCloseTo(PHONE_WIDTH - gutter, 0);
+
+    await menu.click();
+    const dropdown = page.getByRole("dialog", { name: "Menu" });
+    await shown(dropdown);
+    // It grows into place, so it is measured once its entrance has finished.
+    await dropdown.evaluate(async (element) => {
+      await Promise.all(
+        element
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity)
+          .map((animation) => animation.finished),
+      );
+    });
+    const { x, width } = await boxOf(dropdown);
+    expect(x + width).toBeCloseTo(PHONE_WIDTH - gutter, 0);
+    // The click focused the button. The bar scrolls sideways to show a focused button whole, which
+    // would carry the word off the gutter if the button reached past the bar.
+    expect(await word.evaluate(wordsEnd)).toBeCloseTo(PHONE_WIDTH - gutter, 0);
   });
 
   test("Buttons beside a title: they stay on its row and show only their icons where their words do not fit", async ({
