@@ -58,20 +58,18 @@ jobs:
       - run: bun run test:compat
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
-      # test source) is the one file a failed test writes, and the log shows only its path. A broken
-      # page fails hundreds of runs at once, so only the first 10 print.
+      # test source) is the one file a failed test writes, and the log shows only its path. Every
+      # file prints, in a collapsed group, because each failed test can have its own cause.
       - name: Print the Playwright failure context
         if: failure()
         run: |
           dir=tests/integration/compat/test-results
-          limit=10
           total=0
           while IFS= read -r file; do
             total=$((total + 1))
-            [ "$total" -le "$limit" ] || continue
             echo "::group::$file"
             cat "$file"
             echo
             echo "::endgroup::"
           done < <(find "$dir" -name error-context.md 2>/dev/null | sort)
-          echo "Found $total error-context.md under $dir, printed at most $limit"
+          echo "Found $total error-context.md under $dir"
