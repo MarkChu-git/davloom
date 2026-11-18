@@ -7,7 +7,7 @@ Gives a one-page summary of the instance: what it stores and where, how busy it 
 ## ADDED Requirements
 
 ### Requirement: Headline figures
-The Overview SHALL show the bytes stored with the number of objects, the share of known capacity in use with the bytes it measures, and the number of mounts with how many of the backends hold them. The three figures SHALL sit side by side, or one above another where the row is too narrow for three, and never two above one. Side by side, their labels, the figures and the lines under them SHALL each stand on a shared line, whether or not a figure has a bar.
+The Overview SHALL show the bytes stored with the number of objects, the share of known capacity in use with the bytes it measures, and the number of mounts with how many of the backends hold them. The three figures SHALL sit side by side, or one above another where the row is too narrow for three, and never two above one.
 
 #### Scenario: Figures of the sample data
 - **WHEN** a user opens the Overview
@@ -16,6 +16,9 @@ The Overview SHALL show the bytes stored with the number of objects, the share o
 #### Scenario: Figures at two widths
 - **WHEN** a user opens the Overview in a window 900 px wide and then narrows the window to 800 px
 - **THEN** the three figures sit side by side at 900 px and one above another at 800 px
+
+### Requirement: Figures on one grid
+Side by side, the headline figures' labels, the figures and the lines under them SHALL each stand on a shared line, whether or not a figure has a bar, and each label SHALL stand 4 px above its figure.
 
 #### Scenario: Figures on one grid
 - **WHEN** a user opens the Overview in a window 1280 px wide, and in one 900 px wide
