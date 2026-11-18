@@ -1725,7 +1725,8 @@ test.describe("on a touch screen", () => {
     ] as const;
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 812 });
-      // The rows glide to the new width, so where they rest is measured once they stop.
+      // The page lays itself out for the new width two frames after the window changes, so the
+      // rows are measured once it has.
       await settle(page);
       const ends = new Set<number>();
       for (const [name, state] of KEYS) {
