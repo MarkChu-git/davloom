@@ -19,10 +19,30 @@ const readStoredMode = (): AppearanceMode => {
 
 const appearanceStore = new Store<AppearanceMode>(readStoredMode());
 
+/**
+ * Keeps `color-scheme` on <html> in step with the mode, as the first-paint script sets it. System
+ * clears it, so the stylesheet's "light dark" applies.
+ */
+const syncColorScheme = (mode: AppearanceMode): void => {
+  document.documentElement.style.colorScheme = mode === "system" ? "" : mode;
+};
+
+// A choice made in another tab applies here too. The prerender has no window.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (event.key === APPEARANCE_STORAGE_KEY || event.key === null) {
+      const mode = readStoredMode();
+      appearanceStore.setState(() => mode);
+      syncColorScheme(mode);
+    }
+  });
+}
+
 export const useAppearanceMode = (): AppearanceMode => useStore(appearanceStore, (mode) => mode);
 
 export const setAppearanceMode = (mode: AppearanceMode): void => {
   appearanceStore.setState(() => mode);
+  syncColorScheme(mode);
   try {
     if (mode === "system") {
       localStorage.removeItem(APPEARANCE_STORAGE_KEY);

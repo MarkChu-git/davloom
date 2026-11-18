@@ -8,3 +8,55 @@ body {
   color: var(--color-text-primary);
   min-height: 100dvh;
 }
+
+/* Checkboxes, radio buttons and sliders that the browser draws use the theme's gray, not blue. */
+:root {
+  accent-color: var(--color-accent);
+}
+
+/* Browsers highlight selected text in their own blue; the theme's inverse keeps it gray. */
+::selection {
+  background-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+/*
+ * Browsers paint autofilled fields blue or yellow with rules a page cannot override. A transition
+ * that never starts keeps the field's own background, and Firefox's tint is a filter.
+ */
+input:-webkit-autofill {
+  transition: background-color 0s 31536000s;
+}
+
+input:autofill {
+  transition: background-color 0s 31536000s;
+  filter: none;
+}
+
+/*
+ * TanStack Charts make a chart's SVG focusable, so its values can be read from the keyboard, and
+ * leave its focus ring to the browser. Chromium draws that ring in the system's blue around any
+ * SVG with focus, even one a click focused, since its rule for SVG is :focus, not :focus-visible.
+ * The chart shows the theme's ring instead, the one every Astryx control draws, and only where the
+ * keyboard moved focus.
+ */
+.ts-chart:focus {
+  outline: none;
+}
+
+.ts-chart:focus-visible {
+  outline: var(--focus-outline-width) var(--focus-outline-style) var(--focus-outline-color);
+  outline-offset: var(--focus-outline-offset);
+}
+
+/*
+ * Misspelled words take the error color and grammar mistakes the information color, wherever the
+ * browser lets a page style the marks (Chromium does). Fields that hold names turn spell check off.
+ */
+::spelling-error {
+  text-decoration: underline wavy var(--color-text-error);
+}
+
+::grammar-error {
+  text-decoration: underline wavy var(--color-text-info);
+}
