@@ -299,15 +299,15 @@ Alternative: the icons of lucide-react inside the chart. Rejected, because TanSt
 On 2026-11-18 the owner found the Overview's three tiles stacked on `vite dev`, while the build reviewed the day before kept them in one row. Every page differed, for two reasons:
 
 - `@stylexjs/unplugin` adds its dev stylesheet, `/virtual:stylex.css`, and the runtime that refetches it as modules compile, through Vite's `transformIndexHtml`. TanStack Start renders the shell itself and never calls that hook, so `vite dev` never loaded Davloom's own StyleX rules, and the tiles kept the one column of Astryx Grid. The root route now names both while `import.meta.env.DEV` holds, and the build, which appends the rules to its own stylesheet, drops them.
-- StyleX's `debug` option follows `dev` and puts each property's name in front of its key, such as `gridTemplateColumns-kumcoG`. Astryx ships compiled without it, with keys such as `kumcoG`, so `stylex.props` kept the design system's class next to Davloom's instead of replacing it, and the cascade chose between the two rules. On Files both `display` rules sit in the same layer and the design system's comes later, so the names of files and folders took `inline-flex` and shrank to their text. `debug: false` gives the dev server the build's keys. StyleX's dev class names, such as `OverviewPage__styles.tiles`, stay.
+- StyleX's `debug` option follows `dev` and puts each property's name in front of its key, such as `gridTemplateColumns-kumcoG`. Astryx ships compiled without it, with keys such as `kumcoG`, so `stylex.props` kept the design system's class next to Davloom's instead of replacing it, and the cascade chose between the two rules. On Files both `display` rules sit in the same layer and the design system's comes later, so the names of files and folders took `inline-flex` and shrank to their text. `debug: false` gives the dev server the build's keys, and leaves out the `data-style-src` attributes that debug adds. StyleX's dev class names, such as `OverviewPage__styles.tiles`, stay.
 
-"The same page on both servers" opens five pages on the build that Bun delivers and on `vite dev`, which Playwright starts on port 4312, and compares every element that draws by its box and seven computed styles. It fails on all five pages without the dev stylesheet, and on Files with `debug` left on.
+"The same page on both servers" opens five pages on the build that Bun delivers and on `vite dev`, which Playwright starts on port 4312, and compares every element that draws by its box and seven computed styles. Its warm-up visit leaves every rule in the plugin's store, so a page drawn from the stylesheet alone, or from the runtime alone, would still match. The test therefore also requires the stylesheet's link and the element the runtime fills on each page of the dev server. It fails on every page without either of them, and on Files with `debug` left on. The first review found the gap, which let the test pass with either tag removed, though without the runtime the first visit after `vite dev` starts stacked the tiles again.
 
 Alternative: review only on the build. Rejected, because the owner reviews on `vite dev`, where a change shows without a rebuild.
 
 ## Cloudflare Workers and Bun
 
-They do not differ for this change. Everything runs in the browser, both runtimes serve the same `apps/web/dist/client` build, and no server code changes.
+They do not differ for this change. Everything runs in the browser, both runtimes serve the same `apps/web/dist/client` build, and no server code changes. The comparison of `vite dev` with the build runs on Bun only, since Workers serves the same build (Decision 16).
 
 ## Risks / Trade-offs
 
