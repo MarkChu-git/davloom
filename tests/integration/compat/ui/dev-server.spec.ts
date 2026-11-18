@@ -37,19 +37,30 @@ interface Shape {
 // no other test's page. A failure still lets the remaining pages run.
 test.describe.configure({ mode: "default" });
 
+/** The element that the StyleX plugin's dev runtime fills with the rules compiled so far. */
+const DEV_RULES = "#__stylex_virtual__";
+
 /** Opens a page and waits until it stops loading and, on the dev server, StyleX stops adding rules. */
-const open = async (page: Page, url: string) => {
+const open = async (page: Page, url: string, { isWarmUp = false } = {}) => {
   await page.goto(url);
   await page.waitForLoadState("networkidle");
   await page.evaluate(() => document.fonts.ready);
-  // The plugin's dev runtime writes the rules compiled so far into this element and adds more as
-  // modules compile. The build has no such element, so its size stays 0.
+  if (url.startsWith(DEV_SERVER_ORIGIN) && !isWarmUp) {
+    // The warm-up visits leave every rule in the plugin's store, so the comparison alone would
+    // pass with either tag missing from the root route. The stylesheet draws the first paint, and
+    // the runtime adds the rules of modules that compile later, as on the first visit after
+    // `vite dev` starts or after an edit.
+    await expect(page.locator('link[rel="stylesheet"][href="/virtual:stylex.css"]')).toHaveCount(1);
+    await expect(page.locator(DEV_RULES)).toHaveCount(1);
+  }
+  // The runtime adds rules as modules compile. The build has no such element, so its size stays 0.
   let previous = -1;
   await expect
     .poll(
       async () => {
         const size = await page.evaluate(
-          () => document.getElementById("__stylex_virtual__")?.textContent?.length ?? 0,
+          (selector) => document.querySelector(selector)?.textContent?.length ?? 0,
+          DEV_RULES,
         );
         const settled = size === previous;
         previous = size;
@@ -82,7 +93,8 @@ const shapesOf = (page: Page): Promise<Record<string, Shape>> =>
         const computed = getComputedStyle(element);
         shapes[pathOf(element)] = {
           text: (element.textContent ?? "").trim().slice(0, 24),
-          box: [box.x, box.y, box.width, box.height].map((value) => Math.round(value)),
+          // Tenths keep the failure readable without rounding a near miss into a match.
+          box: [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 10) / 10),
           styles: styles.map((name) => computed.getPropertyValue(name)),
         };
       }
@@ -107,7 +119,7 @@ const differences = (build: Record<string, Shape>, dev: Record<string, Shape>): 
       lines.push(`${nameOf(path, expected)}: missing on the dev server`);
       continue;
     }
-    // Text can land half a pixel apart where a box is centered, so allow a pixel.
+    // Text can land half a pixel apart where a box is centered, so allow a pixel and no more.
     const moved = expected.box.some((value, index) => Math.abs(value - actual.box[index]!) > 1);
     const styled = STYLES.flatMap((name, index) =>
       expected.styles[index] === actual.styles[index]
@@ -131,7 +143,7 @@ test.beforeAll(async ({ browser }) => {
   // The first visit makes Vite compile each page's modules and optimize their dependencies.
   const page = await browser.newPage();
   for (const path of PAGES) {
-    await open(page, `${DEV_SERVER_ORIGIN}${path}`);
+    await open(page, `${DEV_SERVER_ORIGIN}${path}`, { isWarmUp: true });
   }
   await page.close();
 });

@@ -9,8 +9,9 @@ const WORKERS_PORT = 4311;
 // Lets a machine reuse a browser it already has instead of `playwright install chromium`.
 const executablePath = process.env.DAVLOOM_CHROMIUM_PATH;
 
-// Every spec runs against the production build, delivered both ways. `dev-server.spec.ts` also
-// opens `vite dev` and compares it with the build that Bun delivers.
+// Every spec runs against the production build, delivered both ways, except `dev-server.spec.ts`,
+// which runs in the `bun` project only and compares `vite dev` with the build that Bun delivers.
+// Playwright starts all three servers for every run, so `vite dev` must start for any spec to run.
 export default defineConfig({
   testDir: "./ui",
   forbidOnly: true,
