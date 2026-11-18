@@ -38,6 +38,8 @@ export const Route = createRootRoute({
       // The plugin adds both through index.html, which TanStack Start does not use, so the shell
       // has to name them.
       ...(import.meta.env.DEV ? [{ rel: "stylesheet", href: "/virtual:stylex.css" }] : []),
+      // Davloom's mark, in the accent of the scheme the browser prefers.
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
     ],
     scripts: import.meta.env.DEV ? [{ type: "module", src: "/@id/virtual:stylex:runtime" }] : [],
   }),

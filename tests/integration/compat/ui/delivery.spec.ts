@@ -78,3 +78,94 @@ test("the bare API path is the API's own 404", async ({ request }) => {
 
   expect(response.status()).toBe(404);
 });
+
+/**
+ * The shapes of an SVG drawing: its viewBox, then every element under its root but a style, with
+ * its attributes sorted and each id named by the order it first appears in, so that React's
+ * generated ids compare equal to the favicon's.
+ */
+const shapesOf = (root: Element) => {
+  const names = new Map<string, string>();
+  const name = (id: string) => names.get(id) ?? names.set(id, `#${names.size + 1}`).get(id);
+  return [
+    `viewBox=${root.getAttribute("viewBox")}`,
+    ...[...root.querySelectorAll("*")]
+      .filter((element) => element.localName !== "style")
+      .map((element) =>
+        [
+          element.localName,
+          ...[...element.attributes]
+            .map(({ name: attribute, value }) =>
+              attribute === "id"
+                ? `id=${name(value)}`
+                : `${attribute}=${value.replace(/^url\(#(.+)\)$/, (_, id: string) => `url(${name(id)})`)}`,
+            )
+            .toSorted(),
+        ].join(" "),
+      ),
+  ];
+};
+
+/**
+ * Draws the favicon at `source` and a copy of the mark, with the mark's color written in, at 96 px
+ * each, and counts the color channels of their pixels that differ. A style in the favicon, such as
+ * one that hides a shape, shows here, where the list of shapes above would miss it.
+ */
+const differingChannels = async (mark: Element, source: string) => {
+  const size = 96;
+  const draw = async (url: string) => {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    context?.drawImage(image, 0, 0, size, size);
+    return context?.getImageData(0, 0, size, size).data;
+  };
+  const copy = mark.cloneNode(true);
+  if (!(copy instanceof Element)) {
+    return Number.NaN;
+  }
+  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  copy.removeAttribute("class");
+  copy.setAttribute("style", `color: ${getComputedStyle(mark).color}`);
+  const [drawn, favicon] = await Promise.all([
+    draw(`data:image/svg+xml,${encodeURIComponent(copy.outerHTML)}`),
+    draw(source),
+  ]);
+  if (drawn === undefined || favicon === undefined) {
+    return Number.NaN;
+  }
+  return drawn.filter((channel, index) => channel !== favicon[index]).length;
+};
+
+test("the favicon is the mark: the same shapes, drawn pixel for pixel alike in either scheme", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute("type", "image/svg+xml");
+  const href = (await icon.getAttribute("href")) ?? "";
+  const response = await request.get(href);
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("image/svg+xml");
+
+  const mark = page.getByRole("link", { name: "Davloom" }).locator("svg").first();
+  const favicon = await page.evaluateHandle(
+    (source) => new DOMParser().parseFromString(source, "image/svg+xml").documentElement,
+    await response.text(),
+  );
+  expect(await favicon.evaluate(shapesOf)).toEqual(await mark.evaluate(shapesOf));
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+
+    await expect
+      .poll(() => mark.evaluate(differingChannels, `${href}?scheme=${colorScheme}`))
+      .toBe(0);
+  }
+});

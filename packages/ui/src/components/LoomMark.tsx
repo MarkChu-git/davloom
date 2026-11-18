@@ -1,57 +1,70 @@
 import { Icon } from "@astryxdesign/core/Icon";
-import { colorVars } from "@astryxdesign/core/theme/tokens.stylex";
-import * as stylex from "@stylexjs/stylex";
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
-const styles = stylex.create({
-  tile: {
-    fill: colorVars["--color-accent"],
-  },
-  layer: {
-    fill: colorVars["--color-on-accent"],
-  },
-  // A third of the way from the tile's ink to the core's, then half of what is left, so the
-  // three steps between the tile and the core are even.
-  outer: {
-    fillOpacity: 0.333,
-  },
-  middle: {
-    fillOpacity: 0.5,
-  },
-});
+// The ring is an ellipse with radii of 14.6 and 3.5 about the planet's center, tilted 22 degrees up
+// to the right. Before the tilt, its front half runs below the center. The favicon,
+// apps/web/public/favicon.svg, draws the same shapes, and a delivery test fails when a pixel of it
+// differs from the mark's in either mode.
+const TILT = "rotate(-22 16 16)";
+const FRONT = "M1.4 16A14.6 3.5 0 0 0 30.6 16";
 
-/** The mark's artwork. Icon sets its size and hides it from assistive technology. */
-const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => (
-  <svg viewBox="0 0 32 32" {...props}>
-    <rect {...stylex.props(styles.tile)} width="32" height="32" rx="8" />
-    <g {...stylex.props(styles.layer)}>
-      <rect
-        {...stylex.props(styles.outer)}
-        x="4.5"
-        y="4.5"
-        width="23"
-        height="23"
-        rx="6"
-        transform="rotate(12 16 16)"
-      />
-      <rect
-        {...stylex.props(styles.middle)}
-        x="8.25"
-        y="8.25"
-        width="15.5"
-        height="15.5"
-        rx="4.2"
-        transform="rotate(24 16 16)"
-      />
-      <rect x="11.5" y="11.5" width="9" height="9" rx="2.6" transform="rotate(36 16 16)" />
-    </g>
-  </svg>
-);
+/** The mark's artwork. Icon sets its size and color and hides it from assistive technology. */
+const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
+  const id = useId();
+  const fade = `${id}fade`;
+  const behind = `${id}behind`;
+  const seam = `${id}seam`;
+  return (
+    <svg viewBox="0 0 32 32" {...props}>
+      <defs>
+        {/* Across the ring: 22% of the ink at the back, the full ink at the front. */}
+        <linearGradient
+          id={fade}
+          gradientUnits="userSpaceOnUse"
+          x1="16"
+          y1="12.5"
+          x2="16"
+          y2="19.5"
+        >
+          <stop offset="0.38" stopColor="currentColor" stopOpacity="0.22" />
+          <stop offset="0.62" stopColor="currentColor" />
+        </linearGradient>
+        {/* The ring hides behind the planet and its seam, and shows where it passes in front. */}
+        <mask id={behind} maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+          <rect width="32" height="32" fill="white" />
+          <circle cx="16" cy="16" r="7.8" fill="black" stroke="black" strokeWidth="2.3" />
+          <path d={FRONT} transform={TILT} fill="none" stroke="white" strokeWidth="2.7" />
+        </mask>
+        {/* The planet gives way to the front of the ring and a seam on either side of it. */}
+        <mask id={seam} maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+          <rect width="32" height="32" fill="white" />
+          <path d={FRONT} transform={TILT} fill="none" stroke="black" strokeWidth="4.6" />
+        </mask>
+      </defs>
+      <g mask={`url(#${behind})`}>
+        <g transform={TILT}>
+          <ellipse
+            cx="16"
+            cy="16"
+            rx="14.6"
+            ry="3.5"
+            fill="none"
+            stroke={`url(#${fade})`}
+            strokeWidth="2.3"
+          />
+        </g>
+      </g>
+      <g mask={`url(#${seam})`}>
+        <circle cx="16" cy="16" r="7.8" fill="currentColor" />
+      </g>
+    </svg>
+  );
+};
 
 /**
- * Davloom's mark: a tile and three rounded squares, each turned 12 degrees past the one around it,
- * so separate layers twist into one core the way fibres twist into a thread. Their shades step
- * evenly from the tile's accent to the ink drawn on it, so the mark inverts with the mode. It is
- * decorative; the product name beside it names the link.
+ * Davloom's mark: a planet with a ring around it, tilted up to the right. The ring fades from 22%
+ * of the ink behind the planet to the full ink in front of it, where a seam parts it from the
+ * planet. It is drawn in the accent, which Icon sets as its color, so the mark inverts with the
+ * mode. It is decorative; the product name beside it names the link.
  */
-export const LoomMark = () => <Icon icon={LoomGlyph} size="lg" />;
+export const LoomMark = () => <Icon icon={LoomGlyph} size="lg" color="accent" />;
