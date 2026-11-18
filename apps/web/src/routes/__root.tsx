@@ -33,6 +33,8 @@ export const Route = createRootRoute({
     ],
     links: [
       { rel: "stylesheet", href: globals },
+      // Davloom's mark, in the accent of the scheme the browser prefers.
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       // The build appends Davloom's own StyleX rules to the stylesheet above. `vite dev` serves
       // them at this address instead, and the plugin's runtime refetches them as modules compile.
       // The plugin adds both through index.html, which TanStack Start does not use, so the shell

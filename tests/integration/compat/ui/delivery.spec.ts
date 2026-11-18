@@ -78,3 +78,67 @@ test("the bare API path is the API's own 404", async ({ request }) => {
 
   expect(response.status()).toBe(404);
 });
+
+/**
+ * The shapes of an SVG drawing: every element under its root but a style, with its attributes
+ * sorted and each id named by the order it first appears in, so that React's generated ids compare
+ * equal to the favicon's.
+ */
+const shapesOf = (root: Element) => {
+  const names = new Map<string, string>();
+  const name = (id: string) => names.get(id) ?? names.set(id, `#${names.size + 1}`).get(id);
+  return [...root.querySelectorAll("*")]
+    .filter((element) => element.localName !== "style")
+    .map((element) =>
+      [
+        element.localName,
+        ...[...element.attributes]
+          .map(({ name: attribute, value }) =>
+            attribute === "id"
+              ? `id=${name(value)}`
+              : `${attribute}=${value.replace(/^url\(#(.+)\)$/, (_, id: string) => `url(${name(id)})`)}`,
+          )
+          .toSorted(),
+      ].join(" "),
+    );
+};
+
+test("the favicon is the mark: an SVG of its shapes, in its color in either scheme", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/");
+  const icon = page.locator('link[rel="icon"]');
+  await expect(icon).toHaveAttribute("type", "image/svg+xml");
+  const href = (await icon.getAttribute("href")) ?? "";
+  const response = await request.get(href);
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("image/svg+xml");
+
+  const mark = page.getByRole("link", { name: "Davloom" }).locator("svg").first();
+  const favicon = await page.evaluateHandle(
+    (source) => new DOMParser().parseFromString(source, "image/svg+xml").documentElement,
+    await response.text(),
+  );
+  expect(await favicon.evaluate(shapesOf)).toEqual(await mark.evaluate(shapesOf));
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    // A pixel inside the planet, with the favicon drawn the way the browser draws an image.
+    const ink = await page.evaluate(async (source) => {
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = 32;
+      canvas.height = 32;
+      const context = canvas.getContext("2d");
+      context?.drawImage(image, 0, 0, 32, 32);
+      const [red, green, blue] = context?.getImageData(13, 13, 1, 1).data ?? [];
+      return `rgb(${red}, ${green}, ${blue})`;
+    }, `${href}?scheme=${colorScheme}`);
+
+    await expect.poll(() => mark.evaluate((svg) => getComputedStyle(svg).color)).toBe(ink);
+  }
+});
