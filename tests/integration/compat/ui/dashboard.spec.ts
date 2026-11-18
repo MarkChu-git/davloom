@@ -2742,7 +2742,9 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   );
 });
 
-// Runs in the page: where the labels of a chart start and end, sideways.
+// Runs in the page: where the labels of a chart start and end, sideways. The y axis's labels all end
+// where the plot starts, so the one that starts furthest left is the longest of them; the one that
+// ends furthest right is the x axis's last. A label's box is the box its words fill, not their ink.
 const labelEdges = (chart: Element): { start: number; end: number } => {
   const boxes = [...chart.querySelectorAll("text")]
     .map((label) => label.getBoundingClientRect())
@@ -2776,10 +2778,11 @@ test("Charts on their card's grid: the longest label on the y axis starts where 
       const heading = page.getByRole("heading", { name: title, exact: true });
       const card = cardWith(page, heading);
       const { start, end } = await card.getByRole("img", { name }).evaluate(labelEdges);
-      expect(start, `${title} at ${width} px`).toBeCloseTo((await boxOf(heading)).x, 0);
+      // Within 0.05 px: a label measured by its ink, as TanStack measures it, starts 0.69 px out.
+      expect(start, `${title} at ${width} px`).toBeCloseTo((await boxOf(heading)).x, 1);
       // The storage chart's last labels are its bars' values, which end where the bars do.
       if (title === "Operations") {
-        expect(end, `${title} at ${width} px`).toBeCloseTo(await card.evaluate(contentRight), 0);
+        expect(end, `${title} at ${width} px`).toBeCloseTo(await card.evaluate(contentRight), 1);
       }
     }
   }

@@ -58,7 +58,10 @@ const RULE = colorVars["--color-border"];
 const LABEL = colorVars["--color-text-primary"];
 const AXIS = colorVars["--color-text-secondary"];
 
-/** The room TanStack Charts keeps between a chart's edge and its outermost labels, in pixels. */
+/**
+ * The room TanStack Charts keeps between a chart's edge and its outermost labels, in pixels: its
+ * `automaticGuideInset`, which it does not export.
+ */
 const GUIDE_INSET = 4;
 
 const styles = stylex.create({
@@ -103,48 +106,78 @@ const styles = stylex.create({
   },
   // A chart with axes reaches past its card's padding by the room TanStack Charts keeps outside
   // its labels, so the longest label on the y axis starts where the card's title does, and the
-  // last label on the x axis ends at the card's edge.
+  // last label on the x axis ends at the edge of the card's content.
   reach: {
     marginInline: -GUIDE_INSET,
   },
 });
 
 let labelCanvas: CanvasRenderingContext2D | null | undefined;
-let labelFont = "";
+
+const STRETCHES = [
+  "ultra-condensed",
+  "extra-condensed",
+  "condensed",
+  "semi-condensed",
+  "normal",
+  "semi-expanded",
+  "expanded",
+  "extra-expanded",
+  "ultra-expanded",
+] as const;
 
 /**
- * Measures a label in the font the chart draws it in. TanStack Charts otherwise sizes the room for
- * its axes from a guess at each character's width, which left the longest label on the y axis up
- * to a pixel off the card's edge. Only the width is measured: the height stays TanStack's own
- * guess, so the charts keep their vertical layout.
+ * Measures a label as TanStack Charts does in a browser, on a canvas in the font the chart draws
+ * it in, except for its width. TanStack takes a label's ink, which set the longest label on the y
+ * axis a side bearing out from where the card's title starts. This takes the label's advance, the
+ * box a line of text fills, so the label and the title line up as two lines of text do. The height
+ * stays the ink's, as TanStack measures it, so each chart keeps its vertical layout. Where there is
+ * no canvas, as on a server, it estimates from the font size.
  */
 const measureLabel: ChartTextMeasurer = (label, options) => {
-  const size = options.fontSize * options.fontScale;
+  const scale = Number.isFinite(options.fontScale) && options.fontScale > 0 ? options.fontScale : 1;
+  const size = options.fontSize * scale;
   if (labelCanvas === undefined && typeof document !== "undefined") {
     labelCanvas = document.createElement("canvas").getContext("2d");
-    const probe = document.createElement("span");
-    probe.className = stylex.props(styles.chart).className ?? "";
-    document.body.append(probe);
-    labelFont = getComputedStyle(probe).fontFamily;
-    probe.remove();
-  }
-  let width = label.length * size * 0.55;
-  if (labelCanvas) {
-    labelCanvas.font = `${options.fontStyle} ${options.fontWeight ?? 400} ${size}px ${labelFont}`;
-    width =
-      labelCanvas.measureText(label).width +
-      Math.max(0, Array.from(label).length - 1) * options.letterSpacing * options.fontScale;
   }
   const startsAtLeft = options.direction !== "rtl";
-  const x =
+  const offset = (width: number) =>
     options.anchor === "middle"
       ? -width / 2
       : (options.anchor === "start") === startsAtLeft
         ? 0
         : -width;
-  const y =
-    options.baseline === "middle" ? -size / 2 : options.baseline === "hanging" ? 0 : -size * 0.8;
-  return { x, y, width, height: size };
+  const estimate = {
+    y: options.baseline === "middle" ? -size / 2 : options.baseline === "hanging" ? 0 : -size * 0.8,
+    height: size,
+  };
+  if (!labelCanvas) {
+    const width = Array.from(label).length * size * 0.55;
+    return { x: offset(width), width, ...estimate };
+  }
+  // Where a label names no weight, TanStack takes the chart's own, which is the body's 400.
+  labelCanvas.font = `${options.fontStyle} ${options.fontWeight ?? 400} ${size}px ${options.fontFamily}`;
+  if ("fontStretch" in labelCanvas) {
+    labelCanvas.fontStretch =
+      STRETCHES.find((stretch) => stretch === options.fontStretch) ?? "normal";
+  }
+  labelCanvas.textBaseline = options.baseline === "auto" ? "alphabetic" : options.baseline;
+  labelCanvas.direction = options.direction;
+  if ("letterSpacing" in labelCanvas) {
+    labelCanvas.letterSpacing = `${options.letterSpacing * scale}px`;
+  }
+  const measured = labelCanvas.measureText(label);
+  const ascent = measured.actualBoundingBoxAscent;
+  const descent = measured.actualBoundingBoxDescent;
+  const inked =
+    Number.isFinite(ascent) &&
+    Number.isFinite(descent) &&
+    (ascent + descent > 0 || measured.width === 0);
+  return {
+    x: offset(measured.width),
+    width: measured.width,
+    ...(inked ? { y: -ascent, height: ascent + descent } : estimate),
+  };
 };
 
 const GLYPH_CLASS = stylex.props(styles.glyph).className ?? "";
