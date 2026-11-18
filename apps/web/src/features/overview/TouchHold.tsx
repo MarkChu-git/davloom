@@ -123,6 +123,13 @@ export const TouchHold = ({ children }: { children: ReactNode }) => {
         event.preventDefault();
       }
     };
+    // Chromium can send the chart a mouseleave just after the values appear, and the chart hides
+    // them on it, under a finger that still holds the chart.
+    const keepValuesUp = (event: MouseEvent) => {
+      if (isHolding.current) {
+        event.stopPropagation();
+      }
+    };
 
     const capture = { capture: true };
     element.addEventListener("pointerdown", guardPress, capture);
@@ -135,6 +142,7 @@ export const TouchHold = ({ children }: { children: ReactNode }) => {
     element.addEventListener("touchend", end, { passive: true });
     element.addEventListener("touchcancel", end, { passive: true });
     element.addEventListener("contextmenu", keepMenuShut);
+    element.addEventListener("mouseleave", keepValuesUp, capture);
     return () => {
       element.removeEventListener("pointerdown", guardPress, capture);
       element.removeEventListener("pointermove", guard, capture);
@@ -146,6 +154,7 @@ export const TouchHold = ({ children }: { children: ReactNode }) => {
       element.removeEventListener("touchend", end);
       element.removeEventListener("touchcancel", end);
       element.removeEventListener("contextmenu", keepMenuShut);
+      element.removeEventListener("mouseleave", keepValuesUp, capture);
     };
   }, [element]);
 
