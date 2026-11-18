@@ -1243,16 +1243,22 @@ test("Figures on one grid: side by side, the tiles' labels, figures and captions
     const lines = await Promise.all(
       tiles.map(async ({ label, figure, caption }) => {
         const tile = cardWith(page, page.getByText(label, { exact: true }));
+        const labelBox = await boxOf(tile.getByText(label, { exact: true }));
         return {
           label: await tile.getByText(label, { exact: true }).evaluate(baselineOf),
           figure: await tile.getByText(figure, { exact: true }).evaluate(baselineOf),
           caption: await tile.getByText(caption, { exact: true }).evaluate(baselineOf),
+          gap:
+            (await boxOf(tile.getByText(figure, { exact: true }))).y - labelBox.y - labelBox.height,
           bars: await tile.getByRole("progressbar").count(),
         };
       }),
     );
     expect(lines.map(({ bars }) => bars)).toEqual([0, 1, 0]);
     for (const [index, line] of lines.entries()) {
+      // A tile keeps its parts 4 px apart, the gap it had before it took the grid's rows, rather
+      // than the 16 px between tiles.
+      expect(line.gap, `${tiles[index]?.label}'s gap at ${width} px`).toBeCloseTo(4, 0);
       for (const part of ["label", "figure", "caption"] as const) {
         expect(line[part], `${tiles[index]?.label}'s ${part} at ${width} px`).toBeCloseTo(
           lines[0]?.[part] ?? Number.NaN,
