@@ -64,7 +64,8 @@ const styles = stylex.create({
     gridTemplateRows: "subgrid",
     alignItems: "start",
   },
-  // The status's words sit on the line of the name's. Stack's vAlign offers no baseline.
+  // The status's words sit on the line of the name's. Stack's vAlign offers no baseline, so a wide
+  // card's header takes this in its place.
   onBaseline: {
     alignItems: "baseline",
   },
@@ -101,7 +102,7 @@ const BackendCard = ({ backend, mountCount }: { backend: StorageBackend; mountCo
       <Stack
         direction={isNarrow ? "vertical" : "horizontal"}
         hAlign={isNarrow ? "start" : "between"}
-        vAlign="start"
+        vAlign={isNarrow ? "start" : undefined}
         gap={isNarrow ? 2 : 3}
         xstyle={isNarrow ? undefined : styles.onBaseline}
       >
