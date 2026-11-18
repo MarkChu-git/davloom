@@ -19,7 +19,7 @@ The Overview SHALL show the bytes stored with the number of objects, the share o
 
 #### Scenario: Figures on one grid
 - **WHEN** a user opens the Overview in a window 1280 px wide, and in one 900 px wide
-- **THEN** Stored, Known capacity and Mounts stand on one line, 255.1 GB, 10.7% and 4 on another, and 24,597 objects, 213.9 GB of 2 TB and On 3 of 3 backends on a third, although only Known capacity has a bar
+- **THEN** Stored, Known capacity and Mounts stand on one line, 255.1 GB, 10.7% and 4 on another, and 24,597 objects, 213.9 GB of 2 TB and On 3 of 3 backends on a third, although only Known capacity has a bar, and each tile keeps 4 px between its label and its figure
 
 ### Requirement: Operations
 The Overview SHALL show how many operations the instance handled in the last 24 hours and how many of them failed, and SHALL chart the operations of each hour, marking each hour in which an operation failed. Pointing at an hour SHALL show its operations, and its failures when it had any. The chart SHALL also say in words how many operations failed, in which hours, and which hour was busiest, and it SHALL call the latest hour "now", as its axis and tooltip do.
@@ -55,7 +55,7 @@ The Overview SHALL chart the bytes stored on each backend, largest first, with e
 - **THEN** its description says that RustFS archive stores 212 GB, R2 photos 41.2 GB and Durable Objects 1.9 GB
 
 ### Requirement: Charts on their card's grid
-The longest label on a chart's y axis SHALL start where its card's title starts, and the last label on the operations chart's x axis SHALL end at its card's right edge.
+The longest label on a chart's y axis SHALL start where its card's title starts, and the last label on the operations chart's x axis SHALL end where its card's content ends on the right.
 
 #### Scenario: Charts on their card's grid
 - **WHEN** a user opens the Overview in windows 1280, 800 and 320 px wide

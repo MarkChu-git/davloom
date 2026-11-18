@@ -7,15 +7,19 @@ Shows where Davloom stores bytes and whether each backend answers, and decides w
 ## ADDED Requirements
 
 ### Requirement: Backends
-Storage & Mounts SHALL show each backend with its kind, its connection status in an icon and words, its endpoint, its object count, the bytes it stores, its capacity when that is known, and the number of mounts it serves. Backend cards side by side SHALL start their names and statuses, their details and their Verify connection buttons on shared lines, whether or not a card has a capacity bar, and a status beside a backend's name SHALL stand on the name's line.
+Storage & Mounts SHALL show each backend with its kind, its connection status in an icon and words, its endpoint, its object count, the bytes it stores, its capacity when that is known, and the number of mounts it serves.
 
 #### Scenario: The sample backends
 - **WHEN** a user opens Storage & Mounts
 - **THEN** Durable Objects shows 1.9 GB of 5 GB with a bar, R2 photos shows 41.2 GB with no fixed limit, and RustFS archive is marked Unreachable
 
+### Requirement: Backend cards on one grid
+Backend cards side by side SHALL start their names and statuses, their details and their Verify connection buttons on shared lines, whether or not a card has a capacity bar or an answer that wraps under its button, and a status beside a backend's name SHALL stand on the name's line.
+
 #### Scenario: Backend cards on one grid
 - **WHEN** a user opens Storage & Mounts in a window 1440 px wide, and in one 1280 px wide
 - **THEN** the three backend cards sit in a row and start their names, statuses, details and Verify connection buttons on shared lines, although R2 photos has no capacity bar, and at 1440 px each status stands on the line of its backend's name
+- **AND** when the user then verifies RustFS archive at 1440 px, and its answer wraps under its button, the Verify connection buttons of all three cards stay where they were
 
 ### Requirement: Verifying a connection
 Verifying a backend SHALL show the result next to the button and announce it to assistive technology, assertively when the backend still does not answer.
