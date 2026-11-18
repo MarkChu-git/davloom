@@ -7,6 +7,11 @@ export default defineConfig({
   plugins: [
     stylex({
       useCSSLayers: true,
+      // Astryx ships compiled without debug, so its style keys are bare hashes. Debug, which
+      // `vite dev` turns on by default, puts the property name in front of ours, and then
+      // `stylex.props` keeps Astryx's class next to ours instead of replacing it. Where the two
+      // rules share a layer, Astryx's can win on the dev server and lose in the build.
+      debug: false,
       unstable_moduleResolution: { type: "commonJS" },
     }),
     tanstackStart({
