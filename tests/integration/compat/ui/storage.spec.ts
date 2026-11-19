@@ -10,9 +10,9 @@ import {
 } from "./helpers";
 
 // The Storage & Mounts scenarios about the backends, checking one, adding, editing and removing a
-// mount. The ones about the backend cards on one grid, the lists on a phone and the status in the
-// navigation have their tests in dashboard.spec.ts. The Overview's scenario of the same name as
-// "The sample backends" has its test in overview.spec.ts.
+// mount. The ones about the backend cards on one grid and about opening the form again have their
+// tests in dashboard.spec.ts. The Overview's scenario of the same name as "The sample backends"
+// has its test in overview.spec.ts.
 
 /** The card of a backend, found by its name. */
 const backendCard = (page: Page, name: string) =>
@@ -122,7 +122,10 @@ test("Editing a mount: the form for /photos shows R2 photos and davloom-photos, 
   const folder = dialog.getByLabel("Folder name");
   await expect(folder).toHaveValue("photos");
   await expect(folder).toBeDisabled();
-  await expect(folder).not.toBeEditable();
+  // Typing does nothing, which the attributes alone do not prove.
+  await folder.focus();
+  await page.keyboard.type("x");
+  await expect(folder).toHaveValue("photos");
   await expect(dialog.getByRole("combobox", { name: /^Backend/ })).toContainText("R2 photos");
   await expect(dialog.getByLabel("Bucket")).toHaveValue("davloom-photos");
   await expect(dialog.getByLabel("Prefix")).toHaveValue("");
