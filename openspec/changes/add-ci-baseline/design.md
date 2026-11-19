@@ -89,6 +89,12 @@ Dependency Review relies on the dependency graph and so cannot see `bun.lock` ei
 
 Every PR scans the whole lockfile, so a newly published vulnerability fails all PRs. The way to deal with it is to fix it, or to register an exception in `IgnoredVulns` in `osv-scanner.toml` with a `reason` and an `ignoreUntil` expiry date. Once that date passes, the scan fails again.
 
+Implemented for tasks 4.1 and 4.4 on 2026-11-19:
+
+- `bun run scan:deps` runs OSV-Scanner 2.7.1 as `scan source --config=osv-scanner.toml --lockfile=bun.lock`, through the pinned-tool runner of Decision 5. It read 627 packages from `bun.lock` in 18 ms. The `dependencies` job runs it after the setup action, and `.github/workflows/dependency-scan.yml` runs the same steps on `main` every Monday at 04:23 UTC and whenever a maintainer starts it.
+- The first scan found GHSA-67mh-4wv8-2f99, of moderate severity, in esbuild 0.18.20. `drizzle-kit` 0.31.11, the npm `latest` while 1.0.0 is a release candidate, depends on `@esbuild-kit/esm-loader`, whose `@esbuild-kit/core-utils` 3.3.2 requires `esbuild ~0.18.20`; drizzle-kit's own esbuild is 0.25. The advisory concerns the CORS headers of esbuild's development server, and drizzle-kit uses esbuild only to transpile `drizzle.config.ts`, so `osv-scanner.toml` holds an exception for it until 2027-02-19.
+- Locally, the scan without the exception exited with status 1 and printed GHSA-67mh-4wv8-2f99 with the package, its version and the fixed version. With the exception it passed and printed the reason. With `ignoreUntil` set to 2026-11-18 it failed again with the same ID.
+
 ### 5. Use CLIs at pinned versions for third-party tools
 
 Gitleaks, OSV-Scanner, actionlint and zizmor all run as CLIs at pinned versions, downloaded and then checked against a checksum, and not through third-party actions. This keeps third-party code in the workflow to a minimum and makes the tools easy to reproduce locally. Look up the versions at implementation time, following the project's dependency rules.
@@ -105,6 +111,14 @@ The default rules of zizmor 1.32.0 already cover the requirements of `workflow-s
 | Triggered by `pull_request_target` | `dangerous-triggers`, high |
 
 The Gitleaks author has [declared that only security issues will be fixed](https://github.com/gitleaks/gitleaks), so GitHub native secret scanning is turned on as well. The test fixture `compatibility-test-secret-not-used-anywhere-else` goes into the Gitleaks allowlist.
+
+Implemented for tasks 4.2 and 4.5 on 2026-11-19:
+
+- `scripts/lib/tools.ts` pins OSV-Scanner 2.7.1 and Gitleaks 8.30.1 for macOS and Linux on arm64 and x64, each download with the SHA-256 that GitHub records for it. For every asset that value matched the release's own checksum file. `bun scripts/tool.ts <name>` downloads the asset for the current machine, refuses one whose SHA-256 differs from the pin without caching anything, keeps the executable under `~/.cache/davloom/tools`, which every checkout shares, and runs it. Its unit tests cover a bare executable, one inside a directory of a `.tar.gz`, a mismatched SHA-256, a failed download and an archive without the executable.
+- `bun run scan:secrets` runs `gitleaks git --config=.gitleaks.toml --redact --no-banner --verbose`. The `secrets` job checks out the whole history; on a pull request it adds `--log-opts=<base>..<head>`, so Gitleaks reads only the commits that the pull request adds, and after a push to `main` it reads the whole history. Both SHAs reach the shell through `env`, never through an expression inside the script.
+- Gitleaks scanned the 291 commits of the history in 245 ms and found nothing, with the allowlist and without it: its default rules do not flag `compatibility-test-secret-not-used-anywhere-else`. The allowlist keeps the fixture anyway, so a later rule cannot fail every pull request over it.
+- In a throwaway repository, a commit with a random 40-character `CLOUDFLARE_API_TOKEN` failed the scan with status 1. The output named the rule `cloudflare-api-key`, the file and the commit, and showed `REDACTED` where the value was; the value appeared nowhere in it. A `gitleaks:allow` comment on that line made the scan pass, and so did the finding's fingerprint in `.gitleaksignore`, as `docs/ci.md` describes.
+- The scan jobs pass `install: "false"` to the setup action, which then installs Bun and skips Bun's cache and `bun install`, because `scripts/tool.ts` imports nothing from `node_modules`.
 
 ### 6. Two approvals, which the owner can bypass
 
