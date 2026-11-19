@@ -50,7 +50,7 @@
 
 ## 4. Browser tests for the page flows
 
-- [ ] 4.1 Once the owner has reviewed the prototype, add a Playwright test, named after its scenario, for every other scenario in the specs of the Overview, Files, Credentials, Storage & Mounts and Settings (Decision 6). Verify that each of those scenarios has a test and that `bun run test:compat` passes on Bun and on Workers
+- [x] 4.1 Once the owner has reviewed the prototype, add a Playwright test, named after its scenario, for every other scenario in the specs of the Overview, Files, Credentials, Storage & Mounts and Settings (Decision 6). Verify that each of those scenarios has a test and that `bun run test:compat` passes on Bun and on Workers. The owner approved the prototype on 2026-11-19. The tests came in six pull requests, one for each page and two for Files, and each test failed when a deliberate break in the app contradicted its scenario
 
 ## 5. Integration
 
