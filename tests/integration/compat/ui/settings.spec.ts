@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  boxOf,
   installClock,
   levelOne,
   onScreen,
@@ -12,11 +13,19 @@ import {
 
 // The Settings scenarios about the sections, the profile, the sessions, the appearance, the
 // WebDAV address, the default backend, the export and the instance. The ones about a wider side
-// navigation, folding it and a profile without a name have their tests in dashboard.spec.ts.
+// navigation, folding it, a profile without a name and the name of the address field have their
+// tests in dashboard.spec.ts.
 
 const sectionList = (page: Page) => page.getByRole("navigation", { name: "Settings sections" });
 
 const sectionSelector = (page: Page) => page.getByRole("combobox", { name: "Section" });
+
+/** Checks that the selector of sections ends above the heading of the section that is open. */
+const expectSelectorAbove = async (page: Page, section: string) => {
+  const selector = await boxOf(sectionSelector(page));
+  const heading = await boxOf(page.getByRole("heading", { level: 2, name: section }));
+  expect(selector.y + selector.height).toBeLessThanOrEqual(heading.y);
+};
 
 /** Opens the selector of sections and chooses one. */
 const chooseSection = async (page: Page, name: string) => {
@@ -55,6 +64,7 @@ test("A phone-sized window: the selector shows WebDAV, choosing Storage shows th
   await expect(selector).toHaveText("WebDAV");
   await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
   await expect(sectionList(page)).toHaveCount(0);
+  await expectSelectorAbove(page, "WebDAV");
 
   await chooseSection(page, "Storage");
   await shown(page.getByRole("heading", { level: 2, name: "Storage" }));
@@ -71,6 +81,7 @@ test("A tablet-sized window: a selector above the section shows WebDAV in place 
   await expect(sectionSelector(page)).toHaveText("WebDAV");
   await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
   await expect(sectionList(page)).toHaveCount(0);
+  await expectSelectorAbove(page, "WebDAV");
   expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
 });
 
@@ -111,8 +122,8 @@ test("Signing out another session: Firefox on Windows leaves the list, and the c
   await shown(page.getByText("Safari on macOS", { exact: true }));
   // Only the other session can be signed out.
   const signOut = page.getByRole("button", { name: /^Sign out/ });
-  await expect(signOut).toHaveText("Sign out");
   await expect(signOut).toHaveCount(1);
+  await expect(signOut).toHaveText("Sign out");
   await expect(signOut).toHaveAccessibleName("Sign out Firefox on Windows");
 
   await signOut.click();
@@ -170,14 +181,17 @@ test("Exporting: the button shows the export running, then a notification names 
   await page.goto("/settings?section=export");
   const button = page.getByRole("button", { name: "Export", exact: true });
   await shown(button);
+  const notice = onScreen(page, "Exported davloom-export-2026-11-16.json.");
 
   await button.click();
   await expect(button).toHaveAttribute("aria-busy", "true");
+  // The notification comes when the export ends, not when it starts.
+  await expect(notice).toHaveCount(0);
 
   // The export ends after a short pause, as it would while the data is gathered.
   await page.clock.runFor(1000);
   await expect(button).not.toHaveAttribute("aria-busy", "true");
-  await shown(onScreen(page, "Exported davloom-export-2026-11-16.json."));
+  await shown(notice);
 });
 
 test("The sample instance: About this instance shows the deployment Cloudflare Free, the runtime Cloudflare Workers and the database Cloudflare D1", async ({

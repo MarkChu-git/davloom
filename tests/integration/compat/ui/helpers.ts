@@ -1,7 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 // What the Dashboard's page specs share: how to find what a page shows, the clock and the
-// clipboard a state needs, and the address of a file's preview.
+// clipboard a state needs, the address of a file's preview and the check that a page does not
+// scroll sideways.
 
 export const PREVIEW = "/files?path=%2Fshared&file=wifi-guest.txt";
 
