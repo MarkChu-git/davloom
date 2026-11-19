@@ -1,0 +1,9 @@
+# Configuration of the secret scan, `bun run scan:secrets` (add-ci-baseline, Decision 5): the
+# default Gitleaks rules, and an allowlist that holds only the compatibility tests' fixture secret.
+# docs/ci.md says how to handle a false positive without growing the allowlist.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "The secret the compatibility tests give Better Auth, which nothing else uses"
+regexes = ['''compatibility-test-secret-not-used-anywhere-else''']

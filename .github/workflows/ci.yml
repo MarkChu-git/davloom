@@ -45,6 +45,45 @@ jobs:
         shell: bash
         run: bun run coverage:summary | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # OSV-Scanner reads every package in bun.lock, transitive ones included (Decision 4).
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - run: bun run scan:deps
+
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Gitleaks reads commits, so it needs the history behind the checked-out merge commit.
+          fetch-depth: 0
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      # A pull request scans the commits it adds; a push to main scans the whole history.
+      - name: Scan the commits for secrets
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            bun run scan:secrets --log-opts="$BASE_SHA..$HEAD_SHA"
+          else
+            bun run scan:secrets
+          fi
+
   compat:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

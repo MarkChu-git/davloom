@@ -1,7 +1,15 @@
 name: Set up Bun
 description: >-
-  Makes every call to node fail, installs the Bun that packageManager names, and
-  installs the dependencies in bun.lock without running their lifecycle scripts.
+  Makes every call to node fail, installs the Bun that packageManager names, and,
+  unless install is false, installs the dependencies in bun.lock without running
+  their lifecycle scripts.
+
+inputs:
+  install:
+    description: >-
+      Whether to install the dependencies. Jobs that only run a pinned CLI
+      through scripts/tool.ts, which imports nothing from node_modules, skip it.
+    default: "true"
 
 runs:
   using: composite
@@ -17,6 +25,7 @@ runs:
       with:
         bun-version-file: package.json
     - name: Cache Bun's install cache
+      if: inputs.install == 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
@@ -25,5 +34,6 @@ runs:
     # --ignore-scripts skips the workerd postinstall, the one dependency script
     # Bun would run. It calls node, and nothing in the repository needs it.
     - name: Install dependencies from bun.lock
+      if: inputs.install == 'true'
       shell: bash
       run: bun install --frozen-lockfile --ignore-scripts
