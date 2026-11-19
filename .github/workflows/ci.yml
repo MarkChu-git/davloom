@@ -36,10 +36,13 @@ jobs:
       - name: Set up Bun and install dependencies
         uses: ./.github/actions/setup
       - run: bun run test:coverage
-      # Also after a threshold failure, so the summary names the package below its threshold.
+      # Also after a threshold failure, so the summary names the package below its threshold. tee
+      # prints the table to the log as well, which anyone can read, while a job summary needs a
+      # GitHub sign-in. shell: bash adds pipefail, so the step still fails when a package is below.
       - name: Write each package's coverage to the job summary
         if: ${{ !cancelled() }}
-        run: bun run coverage:summary >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
+        run: bun run coverage:summary | tee -a "$GITHUB_STEP_SUMMARY"
 
   compat:
     runs-on: ubuntu-24.04
