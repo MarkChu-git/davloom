@@ -77,22 +77,43 @@ export const readFileSummaries = (report: unknown): Record<string, FileSummary> 
   return files;
 };
 
-// Vitest matches threshold globs with picomatch, whose `**` skips names that start with a dot.
-// Bun.Glob's `**` does not, so a path with such a segment is left out here too.
-const matcher = (pattern: string) => {
-  const glob = new Bun.Glob(pattern);
-  return (path: string): boolean =>
-    glob.match(path) && !path.split("/").some((segment) => segment.startsWith("."));
+// The directories a glob spells out before its first wildcard, such as `packages/core/src/`.
+const literalPrefix = (pattern: string): string => {
+  const wildcard = pattern.search(/[*?[{!\\]/);
+  return wildcard === -1 ? pattern : pattern.slice(0, pattern.lastIndexOf("/", wildcard) + 1);
 };
 
-// Vitest reads a negative threshold as a maximum count of uncovered items, which the table does
-// not show, so the summary refuses it rather than report a percentage the gate does not check.
+// Vitest matches threshold globs with picomatch, whose wildcards skip names that start with a dot,
+// while Bun.Glob's `**` matches them. A path is left out when such a name falls after the glob's
+// literal prefix; a name like `.legacy` that the glob spells out still matches, as in picomatch.
+// Every threshold key is `<package>/src/**` (scripts/coverage-thresholds.test.ts), so the glob's
+// only wildcard comes after its literal prefix.
+const matcher = (pattern: string) => {
+  const glob = new Bun.Glob(pattern);
+  const prefix = literalPrefix(pattern);
+  return (path: string): boolean =>
+    glob.match(path) &&
+    !path
+      .slice(prefix.length)
+      .split("/")
+      .some((segment) => segment.startsWith("."));
+};
+
+const isMetric = (key: string): key is Metric => (METRICS as readonly string[]).includes(key);
+
+// The table sums each package's files per metric. Vitest also reads `perFile` and `100` in a
+// glob's entry, and a negative threshold as a maximum count of uncovered items, and the table
+// shows none of these, so the summary refuses them rather than pass what the gate fails.
 const checkLimits = (pattern: string, limits: Limits): void => {
-  for (const metric of METRICS) {
-    const limit = limits[metric];
+  for (const [key, limit] of Object.entries(limits)) {
+    if (!isMetric(key)) {
+      throw new Error(
+        `${pattern} sets ${key}, but coverage:summary reports only ${METRICS.join(", ")} per package`,
+      );
+    }
     if (limit !== undefined && limit < 0) {
       throw new Error(
-        `${pattern} sets ${metric} to ${limit}, a count of uncovered items, which coverage:summary does not report`,
+        `${pattern} sets ${key} to ${limit}, a count of uncovered items, which coverage:summary does not report`,
       );
     }
   }

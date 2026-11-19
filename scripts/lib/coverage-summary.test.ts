@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type FileSummary,
+  type Limits,
   percent,
   readFileSummaries,
   renderMarkdown,
@@ -114,9 +115,28 @@ describe("summarize", () => {
     expect([row?.files, row?.counts.lines]).toEqual([2, { covered: 4, total: 8 }]);
   });
 
+  it("keeps a name that starts with a dot when the glob spells it out, as picomatch does", () => {
+    const dotted = {
+      "/repo/packages/.legacy/src/a.ts": file([1, 2]),
+      "/repo/packages/.legacy/src/.hidden.ts": file([0, 10]),
+      "/repo/packages/.legacy/src/deep/.x/b.ts": file([0, 10]),
+    };
+    const [row] = summarize(dotted, root, { "packages/.legacy/src/**": { lines: 50 } });
+    expect([row?.files, row?.counts.lines]).toEqual([1, { covered: 1, total: 2 }]);
+  });
+
   it("refuses a negative threshold, which Vitest reads as a count of uncovered items", () => {
     expect(() => summarize(files, root, { "packages/a/src/**": { lines: -10 } })).toThrow(
       "packages/a/src/** sets lines to -10, a count of uncovered items",
+    );
+  });
+
+  // Vitest reads both in a glob's entry: perFile checks each file on its own, and 100 sets every
+  // metric to 100. The table sums the package, so neither would show there.
+  it.each(["perFile", "100"])("refuses %s, which the table does not show", (key) => {
+    const limits = { lines: 50, [key]: true } as unknown as Limits;
+    expect(() => summarize(files, root, { "packages/a/src/**": limits })).toThrow(
+      `packages/a/src/** sets ${key}, but coverage:summary reports only lines, branches, functions, statements per package`,
     );
   });
 });
