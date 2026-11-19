@@ -106,11 +106,11 @@ Automated now:
 
 Playwright runs in UTC, so the dates on the pages read the same on every machine.
 
-The owner approved the prototype on 2026-11-19, and its specs describe the flows as they stand. The other page-flow scenarios of Overview, Files, Credentials, Storage & Mounts and Settings then got their tests (task 4.1), one pull request for each page, each test named after its scenario and run on Bun and on Workers. The change is archived once every page has them.
+The owner approved the prototype on 2026-11-19, and its specs describe the flows as they stand. The page-flow scenarios of Overview, Files, Credentials, Storage & Mounts and Settings then get their tests (task 4.1), one pull request for each page, each test named after its scenario and run on Bun and on Workers. The bullets above list the pages that have them so far, and the change is archived once every page has them.
 
 "A dropped folder" cannot drop a real folder through Playwright, so its test will send the drop through the Chrome DevTools Protocol, which the hand check of this change also used.
 
-Alternative: write every page-flow test now. Rejected for now: that is about 50 browser tests against sample data that the review may change, and PRD §11 schedules UI-specific tests for Phase 4.
+Alternative: write every page-flow test before the review. Rejected: that was about 50 browser tests against sample data that the review could still change, and PRD §11 schedules UI-specific tests for Phase 4.
 
 ### 7. Appearance control, color scheme and tabs
 
