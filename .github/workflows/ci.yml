@@ -105,8 +105,8 @@ jobs:
           install: "false"
       - name: Check the workflows with actionlint
         run: bun run scan:actionlint
-      # Also after an actionlint failure, so one run reports what both tools find. actionlint reads
-      # a local action's action.yml only for its inputs, so zizmor is the one check on its steps.
+      # Also after an actionlint failure, so one run reports what both tools find. actionlint does
+      # not check the steps of a local action, so zizmor is the one check on them.
       - name: Check the workflows and local actions with zizmor
         if: ${{ !cancelled() }}
         run: bun run scan:zizmor
