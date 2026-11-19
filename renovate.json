@@ -20,7 +20,7 @@
   },
   "packageRules": [
     {
-      "description": "A pre-release version counts once the npm latest tag points to it. respectLatest still stops at latest, and with separateMajorMinor off each package gets one update, straight to latest, instead of a second one inside its current major that could stop at a pre-release.",
+      "description": "A pre-release version counts once the npm latest tag points to it. respectLatest still stops at latest, and with separateMajorMinor off each package gets one update, straight to latest, instead of a second one inside its current major that could stop at a pre-release. A package above latest skips that limit and needs a followTag rule of its own, as Miniflare has.",
       "matchDatasources": ["npm"],
       "ignoreUnstable": false,
       "separateMajorMinor": false
