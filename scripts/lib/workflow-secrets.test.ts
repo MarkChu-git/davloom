@@ -44,6 +44,11 @@ describe("foreignSecrets", () => {
       ["NPM_TOKEN"],
     ],
     [
+      "an escaped line break inside the context's name",
+      'env:\n  T: "${{ secr\\\n    ets.NPM_TOKEN }}"\n',
+      ["NPM_TOKEN"],
+    ],
+    [
       "secrets: inherit",
       "jobs:\n  call:\n    uses: ./.github/workflows/x.yml\n    secrets: inherit\n",
       ["inherit"],
