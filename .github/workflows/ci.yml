@@ -37,8 +37,9 @@ jobs:
         uses: ./.github/actions/setup
       - run: bun run test:coverage
       # Also after a threshold failure, so the summary names the package below its threshold. tee
-      # prints the table to the log as well, which anyone can read, while a job summary needs a
-      # GitHub sign-in. shell: bash adds pipefail, so the step still fails when a package is below.
+      # prints the table to the log as well, where `gh run view --log` shows it next to Vitest's
+      # own errors; a job summary shows only on the run's page. shell: bash adds pipefail, so the
+      # step still fails when a package is below.
       - name: Write each package's coverage to the job summary
         if: ${{ !cancelled() }}
         shell: bash
