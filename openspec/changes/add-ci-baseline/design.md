@@ -185,6 +185,8 @@ Task 7.2 makes the `main` Ruleset require `check`, `compat`, `coverage`, `workfl
 
 Implemented for task 7.1 on 2026-11-20: `.github/CODEOWNERS` gives every path to the owner, `@MarkChu-git`, and says in a comment that code owner review is not required. GitHub's `codeowners/errors` endpoint reported no errors for the file on the pull request's branch. GitHub reads CODEOWNERS from a pull request's base branch, so the check that the pull request page shows the owner of each directory waits for the first pull request opened after the file reaches `main`, and task 7.1 stays open until then.
 
+Checked for task 7.3 on 2026-11-20: `gh api repos/MarkChu-git/davloom --jq .security_and_analysis` reports `secret_scanning` and `secret_scanning_push_protection` as `enabled`. GitHub turns both on for a public repository, so nothing had to change. The settings page needs a signed-in session, so the check used the API, which returns the same settings. The `secrets` job keeps running Gitleaks on every pull request, because push protection blocks only the secret types that GitHub supports for it.
+
 ### 7. Bun only
 
 The maintainer ruled out Node on 2026-11-07: every script, test, tool and CI job runs on Bun. `oven-sh/setup-bun` reads `packageManager`, no job installs Node, and no step lets the Node that the runner image ships run anything. Tools whose launchers start with `#!/usr/bin/env node` run on Bun under `bun --bun run`, which puts a `node` that points to Bun first on `PATH`.
