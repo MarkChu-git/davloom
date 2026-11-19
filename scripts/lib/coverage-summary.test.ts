@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   type FileSummary,
-  type Limits,
   percent,
   readFileSummaries,
   renderMarkdown,
@@ -133,8 +132,10 @@ describe("summarize", () => {
 
   // Vitest reads both in a glob's entry: perFile checks each file on its own, and 100 sets every
   // metric to 100. The table sums the package, so neither would show there.
-  it.each(["perFile", "100"])("refuses %s, which the table does not show", (key) => {
-    const limits = { lines: 50, [key]: true } as unknown as Limits;
+  it.each([
+    ["perFile", { lines: 50, perFile: true }],
+    ["100", { lines: 50, 100: true }],
+  ])("refuses %s, which the table does not show", (key, limits) => {
     expect(() => summarize(files, root, { "packages/a/src/**": limits })).toThrow(
       `packages/a/src/** sets ${key}, but coverage:summary reports only lines, branches, functions, statements per package`,
     );
