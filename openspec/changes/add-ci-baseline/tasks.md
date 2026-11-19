@@ -22,15 +22,15 @@
 
 ## 4. Security scans
 
-- [ ] 4.1 Add the `dependencies` job: download a pinned version of OSV-Scanner and verify its checksum, scan `bun.lock`, and record exceptions in `osv-scanner.toml`. Verify that the scan passes on the current lockfile; that it fails and prints the vulnerability ID on a throwaway lockfile that contains a version with a published vulnerability; and that it passes after an unexpired exception is registered and fails again after the exception expires
-- [ ] 4.2 Add the `secrets` job: download a pinned version of Gitleaks and verify its checksum, scan the commits that a pull request adds, redact secrets in the output, and keep only the test fixture in the allowlist. Verify that a scan of the full history passes, and that after a fake cloud service secret is committed on a throwaway branch the scan fails and the output does not contain the full secret
+- [x] 4.1 Add the `dependencies` job: download a pinned version of OSV-Scanner and verify its checksum, scan `bun.lock`, and record exceptions in `osv-scanner.toml`. Verify that the scan passes on the current lockfile; that it fails and prints the vulnerability ID on a throwaway lockfile that contains a version with a published vulnerability; and that it passes after an unexpired exception is registered and fails again after the exception expires
+- [x] 4.2 Add the `secrets` job: download a pinned version of Gitleaks and verify its checksum, scan the commits that a pull request adds, redact secrets in the output, and keep only the test fixture in the allowlist. Verify that a scan of the full history passes, and that after a fake cloud service secret is committed on a throwaway branch the scan fails and the output does not contain the full secret
 - [ ] 4.3 Create `.github/workflows/codeql.yml` and grant `security-events: write` only to its job. Verify that CodeQL analysis results appear on `main` and that the log shows no TypeScript extraction errors
-- [ ] 4.4 Add a weekly scheduled run and a manual trigger to the dependency scan. Verify that one manual trigger succeeds
-- [ ] 4.5 Document in `docs/ci.md` how to register a vulnerability exception and how to handle a secret false positive. Verify that following the steps in the text reproduces the results of 4.1 and 4.2 locally
+- [x] 4.4 Add a weekly scheduled run and a manual trigger to the dependency scan. Verify that one manual trigger succeeds
+- [x] 4.5 Document in `docs/ci.md` how to register a vulnerability exception and how to handle a secret false positive. Verify that following the steps in the text reproduces the results of 4.1 and 4.2 locally
 
 ## 5. Workflow security
 
-- [ ] 5.1 Add the `workflows` job: download pinned versions of actionlint and zizmor and verify their checksums, run both on `.github/workflows/`, and run zizmor on `.github/actions/` as well, since actionlint does not check the steps of a composite action. Verify that all workflows and local actions in the repository pass, and that the four throwaway workflows (one that references an action by tag, one that does not declare `permissions`, one triggered by `pull_request_target`, and one with a syntax error) all fail
+- [x] 5.1 Add the `workflows` job: download pinned versions of actionlint and zizmor and verify their checksums, run both on `.github/workflows/`, and run zizmor on `.github/actions/` as well, since actionlint does not check the steps of a composite action. Verify that all workflows and local actions in the repository pass, and that the four throwaway workflows (one that references an action by tag, one that does not declare `permissions`, one triggered by `pull_request_target`, and one with a syntax error) all fail
 - [ ] 5.2 Confirm that no workflow references any secrets other than `GITHUB_TOKEN`, and have the maintainer open a test pull request from a fork with another account. Verify that all required checks run and that the results match those of a branch in the repository
 
 ## 6. Dependency updates
