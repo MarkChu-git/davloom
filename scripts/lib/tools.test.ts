@@ -82,9 +82,12 @@ describe("toolCacheDir", () => {
     expect(toolCacheDir({ XDG_CACHE_HOME: "/x" })).toBe("/x/davloom/tools");
   });
 
-  it("treats an empty variable as unset, and ignores a relative XDG_CACHE_HOME", () => {
+  it("treats an empty or relative variable as unset", () => {
     const fallback = join(homedir(), ".cache", "davloom", "tools");
     expect(toolCacheDir({ DAVLOOM_TOOL_CACHE: "", XDG_CACHE_HOME: "/x" })).toBe("/x/davloom/tools");
+    expect(toolCacheDir({ DAVLOOM_TOOL_CACHE: "tools", XDG_CACHE_HOME: "/x" })).toBe(
+      "/x/davloom/tools",
+    );
     expect(toolCacheDir({ XDG_CACHE_HOME: "" })).toBe(fallback);
     expect(toolCacheDir({ XDG_CACHE_HOME: "cache" })).toBe(fallback);
     expect(toolCacheDir({})).toBe(fallback);

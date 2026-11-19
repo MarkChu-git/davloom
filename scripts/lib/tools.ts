@@ -108,18 +108,21 @@ export const platformOf = (os: string, arch: string): Platform => {
   );
 };
 
+const isAbsolutePath = (value: string | undefined): value is string =>
+  value !== undefined && isAbsolute(value);
+
 /**
- * `$DAVLOOM_TOOL_CACHE`, or `davloom/tools` under `$XDG_CACHE_HOME` or `~/.cache`. An empty
- * variable counts as unset, and so does a relative `$XDG_CACHE_HOME`, as the XDG spec says;
- * either would otherwise put the cache inside the checkout.
+ * `$DAVLOOM_TOOL_CACHE`, or `davloom/tools` under `$XDG_CACHE_HOME` or `~/.cache`. A variable
+ * that is empty or holds a relative path counts as unset, as the XDG spec says for
+ * `$XDG_CACHE_HOME`, because a relative path would put the cache under the current directory.
  */
 export const toolCacheDir = (env: Readonly<Record<string, string | undefined>>): string => {
-  const own = env.DAVLOOM_TOOL_CACHE;
-  if (own !== undefined && own !== "") {
-    return own;
+  if (isAbsolutePath(env.DAVLOOM_TOOL_CACHE)) {
+    return env.DAVLOOM_TOOL_CACHE;
   }
-  const xdg = env.XDG_CACHE_HOME;
-  const cacheHome = xdg !== undefined && isAbsolute(xdg) ? xdg : join(homedir(), ".cache");
+  const cacheHome = isAbsolutePath(env.XDG_CACHE_HOME)
+    ? env.XDG_CACHE_HOME
+    : join(homedir(), ".cache");
   return join(cacheHome, "davloom", "tools");
 };
 
