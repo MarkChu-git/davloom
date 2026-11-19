@@ -72,16 +72,22 @@ jobs:
         uses: ./.github/actions/setup
         with:
           install: "false"
-      # A pull request scans the commits it adds; a push to main scans the whole history.
+      # A pull request scans the commits it adds, and a push to main scans main's history. Without
+      # --log-opts Gitleaks reads every ref, and fetch-depth: 0 fetches every branch and tag, so an
+      # unmerged branch would fail main. Gitleaks passes, having scanned nothing, when git log
+      # fails, so the step first checks that each SHA names a commit.
       - name: Scan the commits for secrets
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
+            git cat-file -e "$BASE_SHA^{commit}"
+            git cat-file -e "$HEAD_SHA^{commit}"
             bun run scan:secrets --log-opts="$BASE_SHA..$HEAD_SHA"
           else
-            bun run scan:secrets
+            git cat-file -e "$GITHUB_SHA^{commit}"
+            bun run scan:secrets --log-opts="$GITHUB_SHA"
           fi
 
   compat:
