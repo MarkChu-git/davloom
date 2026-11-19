@@ -77,3 +77,56 @@ export const listed = (page: Page): Promise<string[]> =>
         );
       }),
     );
+
+// Runs in the page: what scrolls or reaches past the window sideways. That is the main landmark
+// and each element around it, up to the root, when it is wider inside than it is; each element in
+// it that scrolls sideways, as a page does inside its layout and a table inside its frame; and each
+// element whose visible part, after whatever clips it, reaches past an edge of the window. Text cut
+// off with an ellipsis is cut off on purpose, so it does not count. Astryx renders the landmark as
+// an element with role="main", not as <main>.
+export const sidewaysOverflow = (): string[] => {
+  const main = document.querySelector('[role="main"]');
+  if (main === null) {
+    return ["no main landmark"];
+  }
+  const found: string[] = [];
+  for (let element: Element | null = main; element !== null; element = element.parentElement) {
+    if (element.scrollWidth > element.clientWidth) {
+      found.push(`${element.tagName}: ${element.scrollWidth} > ${element.clientWidth}`);
+    }
+  }
+  const windowWidth = document.documentElement.clientWidth;
+  for (const element of main.querySelectorAll("*")) {
+    const style = getComputedStyle(element);
+    // Labels kept for screen readers alone sit in a box 1 px wide that cuts them off on purpose.
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      element.getBoundingClientRect().width <= 1
+    ) {
+      continue;
+    }
+    const name = `${element.tagName.toLowerCase()} "${(element.textContent ?? "").trim().slice(0, 30)}"`;
+    const truncates = style.textOverflow === "ellipsis" || style.webkitLineClamp !== "none";
+    if (
+      style.overflowX !== "visible" &&
+      !truncates &&
+      element.scrollWidth > element.clientWidth + 1
+    ) {
+      found.push(`scrolls ${element.scrollWidth} > ${element.clientWidth}: ${name}`);
+    }
+    // The part of the element that what clips it leaves in sight.
+    let { left: start, right: end } = element.getBoundingClientRect();
+    for (let clip = element.parentElement; clip !== null; clip = clip.parentElement) {
+      if (getComputedStyle(clip).overflowX !== "visible") {
+        const box = clip.getBoundingClientRect();
+        start = Math.max(start, box.left);
+        end = Math.min(end, box.right);
+      }
+    }
+    if (end - start > 1 && (start < -0.5 || end > windowWidth + 0.5)) {
+      found.push(`reaches ${Math.round(start)} to ${Math.round(end)}: ${name}`);
+    }
+  }
+  return found;
+};
