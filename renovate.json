@@ -20,9 +20,10 @@
   },
   "packageRules": [
     {
-      "description": "A pre-release version counts once the npm latest tag points to it, and respectLatest still stops at latest.",
+      "description": "A pre-release version counts once the npm latest tag points to it. respectLatest still stops at latest, and with separateMajorMinor off each package gets one update, straight to latest, instead of a second one inside its current major that could stop at a pre-release.",
       "matchDatasources": ["npm"],
-      "ignoreUnstable": false
+      "ignoreUnstable": false,
+      "separateMajorMinor": false
     },
     {
       "description": "The Astryx packages move together.",
