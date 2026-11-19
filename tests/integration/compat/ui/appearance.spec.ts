@@ -151,6 +151,9 @@ test("Two open tabs: a mode chosen in one tab reaches the other without a reload
   for (const tab of [first, second]) {
     await tab.emulateMedia({ colorScheme: "light" });
     await tab.goto("/design-check");
+    // The page renders after `load`, and the store hears other tabs only from then on. A tab that
+    // renders after another tab's choice reads it from storage and never takes that path.
+    await expect(tab.getByRole("radio", { name: "System" })).toBeChecked();
   }
   // A reload starts a new document, which has a new time origin.
   const origin = await second.evaluate(() => performance.timeOrigin);
@@ -163,19 +166,20 @@ test("Two open tabs: a mode chosen in one tab reaches the other without a reload
 
   await expect.poll(() => bodyColor(second)).toBe(darkBody);
   await expect(second.getByRole("radio", { name: "Dark" })).toBeChecked();
-  expect(await rootScheme(second)).toBe("dark");
+  await expect.poll(() => rootScheme(second)).toBe("dark");
   expect(await second.evaluate(() => performance.timeOrigin)).toBe(origin);
 
   // A third tab opens with Dark stored, so its first-paint script wrote the scheme into the root's
-  // own style. A mode chosen elsewhere must replace it there.
+  // own style. A mode chosen elsewhere must replace it there, so the tab has to be listening.
   const third = await context.newPage();
   await third.emulateMedia({ colorScheme: "light" });
   await third.goto("/design-check");
+  await expect(third.getByRole("radio", { name: "Dark" })).toBeChecked();
   expect(await rootScheme(third)).toBe("dark");
 
   await first.getByRole("radio", { name: "Light" }).click();
   await expect.poll(() => bodyColor(third)).toBe(lightBody);
-  expect(await rootScheme(third)).toBe("light");
+  await expect.poll(() => rootScheme(third)).toBe("light");
   await first.getByRole("radio", { name: "System" }).click();
   await expect.poll(() => rootScheme(third)).toBe("light dark");
   await expect(third.getByRole("radio", { name: "System" })).toBeChecked();
