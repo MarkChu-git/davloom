@@ -17,7 +17,9 @@ const columnOf = (row: Locator, column: "Scope" | "Expires" | "Status"): Locator
 const openForm = async (page: Page): Promise<Locator> => {
   await page.goto("/credentials");
   await page.getByRole("button", { name: "Create key" }).click();
-  return page.getByRole("dialog");
+  const dialog = page.getByRole("dialog");
+  await shown(dialog.getByLabel("Name"));
+  return dialog;
 };
 
 test("The sample keys: the list shows five keys, with Phone photo backup on /photos, Old tablet revoked and Conference laptop expired", async ({
@@ -81,10 +83,13 @@ test("Creating a key: the dialog shows the whole key once, and after Done the li
   // The page no longer holds the key, beyond its first characters in the list.
   const held = await page.evaluate(
     (secret) => ({
-      inText: document.body.innerHTML.includes(secret.slice(0, 9)),
+      inText:
+        document.body.innerHTML.includes(secret.slice(0, 9)) ||
+        (document.body.textContent ?? "").includes(secret.slice(0, 9)),
       inField: [...document.querySelectorAll("input, textarea")].some(
         (element) =>
-          element instanceof HTMLInputElement && element.value.includes(secret.slice(0, 9)),
+          (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) &&
+          element.value.includes(secret.slice(0, 9)),
       ),
     }),
     key,
@@ -97,7 +102,7 @@ test("Creating a key: the dialog shows the whole key once, and after Done the li
   await expect(columnOf(first, "Expires")).toHaveText("Feb 14, 2027");
 });
 
-test("Revoking a key: the confirmation warns that access ends for good, and the revoked key offers no Revoke", async ({
+test("Revoking a key: the confirmation warns that access ends for good, and the revoked key offers Revoke only as unavailable", async ({
   page,
 }) => {
   await page.goto("/credentials");
