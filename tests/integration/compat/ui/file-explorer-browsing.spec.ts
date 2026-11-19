@@ -19,10 +19,19 @@ const QUARTERLY_REPORT = "Quarterly report — Q3 2026, final version (signed by
 const EXPORTED_LOG =
   "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
 
-/** What `/documents` holds, folders first. */
+/** The folders of `/documents`, which come before its files. */
 const DOCUMENTS_FOLDERS = ["Contracts", "Drafts", "Invoices 2026", "Scans"];
 
-/** The files of `/documents`, smallest first. */
+/** The files of `/documents` by name, the order the listing opens in. */
+const DOCUMENTS_BY_NAME = [
+  EXPORTED_LOG,
+  "budget-2027.xlsx",
+  "meeting-notes-2026-11-14.md",
+  QUARTERLY_REPORT,
+  "README.txt",
+];
+
+/** The same files, smallest first. */
 const DOCUMENTS_BY_SIZE = [
   "README.txt",
   "meeting-notes-2026-11-14.md",
@@ -37,8 +46,7 @@ test("Opening a folder by its address: the breadcrumb names the folder and the l
   await page.goto("/files?path=%2Fdocuments");
   const breadcrumb = page.getByRole("navigation", { name: "Folder" });
   await expect(breadcrumb).toHaveText("Files / documents", { useInnerText: true });
-  await expect.poll(() => listed(page)).toHaveLength(9);
-  expect((await listed(page)).slice(0, 4)).toEqual(DOCUMENTS_FOLDERS);
+  await expect.poll(() => listed(page)).toEqual([...DOCUMENTS_FOLDERS, ...DOCUMENTS_BY_NAME]);
 
   // Every folder above the one open is a link.
   const hrefs = () =>
@@ -70,9 +78,22 @@ test("The top level: the mounts are the folders, Manage mounts replaces the butt
   page,
 }) => {
   await page.goto("/files");
+  // A folder's row links to the folder, and a file's to its details.
   await expect
-    .poll(async () => (await listed(page)).toSorted())
-    .toEqual(["archive", "documents", "photos", "shared"]);
+    .poll(async () =>
+      (
+        await page
+          .getByRole("row")
+          .getByRole("link")
+          .evaluateAll((links) => links.map((link) => link.getAttribute("href") ?? ""))
+      ).toSorted(),
+    )
+    .toEqual([
+      "/files?path=%2Farchive",
+      "/files?path=%2Fdocuments",
+      "/files?path=%2Fphotos",
+      "/files?path=%2Fshared",
+    ]);
   await shown(page.getByRole("link", { name: "Manage mounts" }));
   await expect(page.getByRole("button", { name: "New folder" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Upload" })).toHaveCount(0);
@@ -144,8 +165,9 @@ test("Matching names: REPORT leaves the quarterly report, and a polite announcem
 }) => {
   await page.goto("/files?path=%2Fdocuments");
   await page.getByRole("searchbox", { name: "Search this folder" }).fill("REPORT");
-  await expect.poll(() => listed(page)).toEqual([QUARTERLY_REPORT]);
+  // The announcement clears after a while, so it is read before the list.
   await expect(page.locator('[data-astryx-live-region="polite"]')).toHaveText("1 item matches");
+  await expect.poll(() => listed(page)).toEqual([QUARTERLY_REPORT]);
 });
 
 test("No match: the page says nothing matches and clearing the search brings the list back", async ({
@@ -165,6 +187,7 @@ test("No match: the page says nothing matches and clearing the search brings the
 test("Details beside the list: a panel gives the size as 120 bytes and previews the file's text", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(PREVIEW);
   const details = page.locator('[aria-label="Details"]');
   await expect(details).toContainText(/Size\s+120 bytes/, { useInnerText: true });
@@ -221,12 +244,15 @@ test("A long log file name: the stem ends in an ellipsis and .log stays whole be
           isCut: start.scrollWidth > start.clientWidth,
           hasEllipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
           gap: endBox.left - stemBox.right,
+          extensionWidth: endBox.width,
           overhang: endBox.right - (link.closest("td")?.getBoundingClientRect().right ?? 0),
         };
       }, EXPORTED_LOG);
     expect(name, `the stem and the extension at ${width} px`).toBeDefined();
     expect.soft(name?.hasEllipsis, `an ellipsis at ${width} px`).toBe(true);
-    // The extension follows the stem directly and ends inside the cell.
+    // The extension is on screen, follows the stem directly and ends inside the cell.
+    expect.soft(name?.extensionWidth, `the extension's width at ${width} px`).toBeGreaterThan(0);
+    expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeGreaterThan(-1);
     expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeLessThan(2);
     expect
       .soft(name?.overhang, `the extension inside the cell at ${width} px`)
@@ -253,6 +279,9 @@ test("Opening the archive: an error says RustFS archive gave no answer and offer
     await expect(button).toBeDisabled();
     await button.hover();
     await expect(page.getByRole("tooltip")).toHaveText("RustFS archive is not answering.");
+    // A tooltip stays for a moment after the pointer leaves, so the next button's own is waited for.
+    await page.mouse.move(0, 0);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
   }
 });
 
