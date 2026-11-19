@@ -1,4 +1,19 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  PREVIEW,
+  blockClipboard,
+  boxOf,
+  cardWith,
+  installClock,
+  levelOne,
+  onScreen,
+  openList,
+  placeholderRows,
+  selectFirstRow,
+  shown,
+  sideNavigation,
+  stopTimers,
+} from "./helpers";
 
 // The Dashboard prototype: its pages, how they are reached, and the colors they render.
 const PAGES = [
@@ -8,22 +23,6 @@ const PAGES = [
   { path: "/storage", name: "Storage & Mounts" },
   { path: "/settings", name: "Settings" },
 ] as const;
-
-const PREVIEW = "/files?path=%2Fshared&file=wifi-guest.txt";
-
-const levelOne = (page: Page) => page.getByRole("heading", { level: 1 });
-const sideNavigation = (page: Page) => page.getByRole("navigation", { name: "Side navigation" });
-const shown = (locator: Locator) => expect(locator).toBeVisible();
-/**
- * Text on the screen, without the live regions that repeat it for screen readers: the page's own,
- * and the one a dialog keeps for its alerts.
- */
-const onScreen = (page: Page, text: string | RegExp) =>
-  page
-    .getByText(text)
-    .and(page.locator(":not([data-astryx-live-region], [data-astryx-modal-live-region])"));
-
-const selectFirstRow = (page: Page) => page.getByRole("row").nth(1).getByRole("checkbox").check();
 
 /** The Overview's card of recent operation errors. */
 const errorsPanel = (page: Page) =>
@@ -66,35 +65,6 @@ const settledMarkerCenters = async (page: Page) => {
     .toBe(true);
   return centers;
 };
-
-/** Opens a Selector, in the dialog unless `scope` says where. One with a search field is a button. */
-const openList = async (
-  page: Page,
-  role: "combobox" | "button",
-  name: string | RegExp,
-  scope: Page | Locator = page.getByRole("dialog"),
-) => {
-  await scope.getByRole(role, { name }).click();
-  await shown(page.getByRole("option").first());
-};
-
-/** Makes the browser refuse to copy, as it does on a plain-HTTP origin. */
-const blockClipboard = (page: Page) =>
-  page.evaluate(() => {
-    navigator.clipboard.writeText = () =>
-      Promise.reject(new DOMException("Copying is blocked here.", "NotAllowedError"));
-  });
-
-const CLOCK_START = new Date("2026-11-16T12:00:00Z");
-
-/** Gives the page a clock the test can stop. Installed alone, it keeps running. */
-const installClock = (page: Page) => page.clock.install({ time: CLOCK_START });
-
-/** Stops the page's timers, so a passing state stays while the scan reads it. */
-const stopTimers = (page: Page) => page.clock.pauseAt(new Date(CLOCK_START.getTime() + 60_000));
-
-/** The placeholder rows of a listing, by the component class Astryx documents for Skeleton. */
-const placeholderRows = (page: Page) => page.locator(".astryx-skeleton");
 
 interface PageState {
   name: string;
@@ -1224,10 +1194,6 @@ const baselineOf = (element: Element): number => {
   return Number.NaN;
 };
 
-/** A card in the page's main region, found by something in it. */
-const cardWith = (page: Page, has: Locator) =>
-  page.getByRole("main").locator(".astryx-card").filter({ has });
-
 test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line, with a capacity bar or without", async ({
   page,
 }) => {
@@ -1398,15 +1364,6 @@ const sidewaysOverflow = (): string[] => {
     }
   }
   return found;
-};
-
-/** The box of an element that must be on screen. */
-const boxOf = async (target: Locator) => {
-  const box = await target.boundingBox();
-  if (box === null) {
-    throw new Error("The element has no box.");
-  }
-  return box;
 };
 
 /** The height of an element's middle, to tell whether two elements share a row. */
