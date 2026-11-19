@@ -54,7 +54,8 @@ test("A name already in use: New folder shows no error until Drafts is submitted
   await expect(onScreen(page, taken)).toHaveCount(0);
 
   await dialog.getByRole("button", { name: "Create folder" }).click();
-  // The dialog stays open and its field says so.
+  // The dialog stays open and says so on screen, in the field that holds the name.
+  await shown(onScreen(page, taken));
   await expect(name).toHaveAttribute("aria-invalid", "true");
   await expect(name).toHaveAccessibleDescription(taken);
   await expect(dialog).toBeVisible();
