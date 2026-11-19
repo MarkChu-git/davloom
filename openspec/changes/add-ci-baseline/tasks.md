@@ -36,7 +36,7 @@
 ## 6. Dependency updates
 
 - [x] 6.1 Create `renovate.json` per Decision 3 in design.md. Verify that `renovate-config-validator` passes
-- [ ] 6.2 Have the maintainer install the Renovate App on GitHub. Verify that the Dependency Dashboard appears and lists the OSV vulnerability summary, and that the version specifier in the first update pull request is still an exact version and its checks pass
+- [ ] 6.2 Have the maintainer install the Renovate App on GitHub. Verify that the Dependency Dashboard appears and lists the OSV vulnerability summary, that the version specifier in the first update pull request is still an exact version and its checks pass, and that the App's job log shows Renovate 44.232.0 or later; record that version in design.md
 - [x] 6.3 Document in `docs/ci.md` the Renovate rules and the steps for upgrading StyleX along with Astryx. Verify that the steps in the text match `renovate.json`
 
 ## 7. Repository configuration
