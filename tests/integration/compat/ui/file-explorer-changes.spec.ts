@@ -1,6 +1,6 @@
 import { closeSync, ftruncateSync, mkdirSync, openSync, writeFileSync } from "node:fs";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { cardWith, listed, onScreen, openList, shown } from "./helpers";
+import { boxOf, cardWith, listed, onScreen, openList, shown } from "./helpers";
 
 // The File Explorer's scenarios about changing content: names, moving and copying, deleting,
 // uploading and downloading. The ones about finding things have their tests in
@@ -17,8 +17,11 @@ const textFile = (testInfo: TestInfo, name: string, text: string): string => {
 const sparseFile = (testInfo: TestInfo, name: string, bytes: number): string => {
   const path = testInfo.outputPath(name);
   const file = openSync(path, "w");
-  ftruncateSync(file, bytes);
-  closeSync(file);
+  try {
+    ftruncateSync(file, bytes);
+  } finally {
+    closeSync(file);
+  }
   return path;
 };
 
@@ -40,13 +43,20 @@ test("A name already in use: New folder shows no error until Drafts is submitted
   await page.goto("/files?path=%2Fdocuments");
   await page.getByRole("button", { name: "New folder" }).click();
   const dialog = page.getByRole("dialog");
+  const name = dialog.getByLabel("Name");
+  await shown(name);
+  // No error shows before the submit, whatever the field holds.
+  await expect(name).not.toHaveAttribute("aria-invalid", "true");
   await expect(onScreen(page, taken)).toHaveCount(0);
 
-  await dialog.getByLabel("Name").fill("Drafts");
+  await name.fill("Drafts");
+  await expect(name).not.toHaveAttribute("aria-invalid", "true");
   await expect(onScreen(page, taken)).toHaveCount(0);
 
   await dialog.getByRole("button", { name: "Create folder" }).click();
-  await shown(onScreen(page, taken));
+  // The dialog stays open and its field says so.
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await expect(name).toHaveAccessibleDescription(taken);
   await expect(dialog).toBeVisible();
 });
 
@@ -88,8 +98,13 @@ test("A name already at the destination: copying README.txt into Drafts a second
   await expect(dialog).toHaveCount(0);
 
   await copyReadmeToDrafts();
-  await shown(onScreen(page, "“README.txt” is already in /documents/Drafts."));
+  const taken = "“README.txt” is already in /documents/Drafts.";
+  await shown(onScreen(page, taken));
   await expect(dialog).toBeVisible();
+  // The dialog says it, at the destination it refused.
+  await expect(dialog.getByRole("button", { name: /^Destination/ })).toHaveAccessibleDescription(
+    taken,
+  );
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
   // The listing is reached from inside the page, since a reload would bring the samples back.
@@ -112,8 +127,8 @@ test("Deleting two files: the confirmation names 2 items and says it cannot be u
 
   await expect(confirmation).toHaveCount(0);
   await shown(onScreen(page, "Deleted 2 items."));
+  await expect.poll(() => listed(page)).toHaveLength(7);
   const left = await listed(page);
-  expect(left).toHaveLength(7);
   expect(left).not.toContain("budget-2027.xlsx");
   expect(left).not.toContain("README.txt");
 });
@@ -128,9 +143,12 @@ test("One file too large: the 2 KB file is stored with a preview, the 150 MB fil
   await shown(
     uploadPanel(page).getByText("Over the 100 MB limit for one request on Cloudflare Free."),
   );
+  // The listing has rendered once notes.txt is in it, and only then can huge.bin be missing.
+  const stored = page.getByRole("link", { name: "notes.txt", exact: true });
+  await shown(stored);
   await expect(page.getByRole("link", { name: "huge.bin", exact: true })).toHaveCount(0);
 
-  await page.getByRole("link", { name: "notes.txt", exact: true }).click();
+  await stored.click();
   const details = page.locator('[aria-label="Details"]');
   await expect(details).toContainText(/Size\s+2 kB/, { useInnerText: true });
   await expect(details).toContainText("Receipts for the accountant.");
@@ -172,11 +190,8 @@ test("A dropped folder: its upload fails and says to upload the files inside it"
   await page.getByRole("button", { name: "Upload", exact: true }).click();
   const target = page.getByText("Drop files here or choose them");
   await shown(target);
-  const box = await target.boundingBox();
-  const at = {
-    x: (box?.x ?? Number.NaN) + (box?.width ?? 0) / 2,
-    y: (box?.y ?? Number.NaN) + (box?.height ?? 0) / 2,
-  };
+  const box = await boxOf(target);
+  const at = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   const session = await page.context().newCDPSession(page);
   const data = { items: [], files: [folder], dragOperationsMask: 1 };
   for (const type of ["dragEnter", "dragOver", "drop"] as const) {
