@@ -77,6 +77,27 @@ export const readFileSummaries = (report: unknown): Record<string, FileSummary> 
   return files;
 };
 
+// Vitest matches threshold globs with picomatch, whose `**` skips names that start with a dot.
+// Bun.Glob's `**` does not, so a path with such a segment is left out here too.
+const matcher = (pattern: string) => {
+  const glob = new Bun.Glob(pattern);
+  return (path: string): boolean =>
+    glob.match(path) && !path.split("/").some((segment) => segment.startsWith("."));
+};
+
+// Vitest reads a negative threshold as a maximum count of uncovered items, which the table does
+// not show, so the summary refuses it rather than report a percentage the gate does not check.
+const checkLimits = (pattern: string, limits: Limits): void => {
+  for (const metric of METRICS) {
+    const limit = limits[metric];
+    if (limit !== undefined && limit < 0) {
+      throw new Error(
+        `${pattern} sets ${metric} to ${limit}, a count of uncovered items, which coverage:summary does not report`,
+      );
+    }
+  }
+};
+
 /** Groups the files by the package globs that carry thresholds, in the order of `thresholds`. */
 export const summarize = (
   files: Readonly<Record<string, FileSummary>>,
@@ -84,9 +105,10 @@ export const summarize = (
   thresholds: Thresholds,
 ): PackageCoverage[] =>
   Object.entries(thresholds).map(([pattern, limits]) => {
-    const glob = new Bun.Glob(pattern);
+    checkLimits(pattern, limits);
+    const matches = matcher(pattern);
     const matched = Object.entries(files)
-      .filter(([file]) => glob.match(relative(root, file).split(sep).join("/")))
+      .filter(([file]) => matches(relative(root, file).split(sep).join("/")))
       .map(([, summary]) => summary);
     const counts = byMetric((metric) =>
       matched.reduce<Counts>(

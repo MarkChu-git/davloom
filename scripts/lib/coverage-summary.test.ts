@@ -102,6 +102,23 @@ describe("summarize", () => {
     const [row] = summarize(files, root, { "packages/c/src/**": { lines: 0 } });
     expect([row?.files, row?.counts.lines]).toEqual([0, { covered: 0, total: 0 }]);
   });
+
+  // Vitest's picomatch skips them under `**`, so the gate never counts these files.
+  it("leaves out files under a name that starts with a dot, as Vitest's matcher does", () => {
+    const withHidden = {
+      ...files,
+      "/repo/packages/a/src/.extra/hidden.ts": file([0, 10]),
+      "/repo/packages/a/src/.hidden.ts": file([0, 10]),
+    };
+    const [row] = summarize(withHidden, root, { "packages/a/src/**": { lines: 50 } });
+    expect([row?.files, row?.counts.lines]).toEqual([2, { covered: 4, total: 8 }]);
+  });
+
+  it("refuses a negative threshold, which Vitest reads as a count of uncovered items", () => {
+    expect(() => summarize(files, root, { "packages/a/src/**": { lines: -10 } })).toThrow(
+      "packages/a/src/** sets lines to -10, a count of uncovered items",
+    );
+  });
 });
 
 describe("renderMarkdown", () => {
