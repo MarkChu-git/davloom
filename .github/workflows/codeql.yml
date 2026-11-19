@@ -1,0 +1,46 @@
+name: CodeQL
+
+on:
+  # No branch filter, as in ci.yml: stacked pull requests target each other's branches.
+  pull_request:
+  push:
+    branches: [main]
+  # CodeQL releases add queries, so main is analyzed again every week.
+  schedule:
+    - cron: "37 4 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The one job in the repository that writes, and only to code scanning.
+    permissions:
+      contents: read
+      security-events: write # uploads the analysis to code scanning
+    # CodeQL's TypeScript extractor runs its parser on the `node` on PATH unless this variable
+    # names another runtime. Bun runs it, and the setup action makes every call to node fail.
+    env:
+      SEMMLE_TYPESCRIPT_NODE_RUNTIME: bun
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The dependencies give the extractor the types that imported packages declare.
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: javascript-typescript
+          build-mode: none
+      - name: Analyze the code
+        uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: /language:javascript-typescript
