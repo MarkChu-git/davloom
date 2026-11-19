@@ -24,7 +24,7 @@
 
 - [x] 4.1 Add the `dependencies` job: download a pinned version of OSV-Scanner and verify its checksum, scan `bun.lock`, and record exceptions in `osv-scanner.toml`. Verify that the scan passes on the current lockfile; that it fails and prints the vulnerability ID on a throwaway lockfile that contains a version with a published vulnerability; and that it passes after an unexpired exception is registered and fails again after the exception expires
 - [x] 4.2 Add the `secrets` job: download a pinned version of Gitleaks and verify its checksum, scan the commits that a pull request adds, redact secrets in the output, and keep only the test fixture in the allowlist. Verify that a scan of the full history passes, and that after a fake cloud service secret is committed on a throwaway branch the scan fails and the output does not contain the full secret
-- [ ] 4.3 Create `.github/workflows/codeql.yml` and grant `security-events: write` only to its job. Verify that CodeQL analysis results appear on `main` and that the log shows no TypeScript extraction errors
+- [x] 4.3 Create `.github/workflows/codeql.yml` and grant `security-events: write` only to its job. Verify that CodeQL analysis results appear on `main` and that the log shows no TypeScript extraction errors
 - [x] 4.4 Add a weekly scheduled run and a manual trigger to the dependency scan. Verify that one manual trigger succeeds
 - [x] 4.5 Document in `docs/ci.md` how to register a vulnerability exception and how to handle a secret false positive. Verify that following the steps in the text reproduces the results of 4.1 and 4.2 locally
 
@@ -35,9 +35,9 @@
 
 ## 6. Dependency updates
 
-- [ ] 6.1 Create `renovate.json` per Decision 3 in design.md. Verify that `renovate-config-validator` passes
-- [ ] 6.2 Have the maintainer install the Renovate App on GitHub. Verify that the Dependency Dashboard appears and lists the OSV vulnerability summary, and that the version specifier in the first update pull request is still an exact version and its checks pass
-- [ ] 6.3 Document in `docs/ci.md` the Renovate rules and the steps for upgrading StyleX along with Astryx. Verify that the steps in the text match `renovate.json`
+- [x] 6.1 Create `renovate.json` per Decision 3 in design.md. Verify that `renovate-config-validator` passes
+- [ ] 6.2 Have the maintainer install the Renovate App on GitHub. Verify that the Dependency Dashboard appears and lists the OSV vulnerability summary, that the version specifier in the first update pull request is still an exact version and its checks pass, and that the App's job log shows Renovate 44.232.0 or later; record that version in design.md
+- [x] 6.3 Document in `docs/ci.md` the Renovate rules and the steps for upgrading StyleX along with Astryx. Verify that the steps in the text match `renovate.json`
 
 ## 7. Repository configuration
 
@@ -47,7 +47,7 @@
 
 ## 8. Project rules
 
-- [ ] 8.1 Add the rule "every change's tasks.md includes a task that wires the new tests into CI" to the tasks rules of `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml`, and point to `docs/ci.md` in Commands. Verify that the output of `openspec instructions tasks` contains this rule
+- [x] 8.1 Add the rule "every change's tasks.md includes a task that wires the new tests into CI" to the tasks rules of `AGENTS.md`, `CLAUDE.md` and `openspec/config.yaml`, and point to `docs/ci.md` in Commands. Verify that the output of `openspec instructions tasks` contains this rule
 
 ## Workflow follow-up
 

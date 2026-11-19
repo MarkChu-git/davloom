@@ -55,6 +55,7 @@ rules:
     - List the logic the change adds that decides an outcome without IO and the Bend laws that prove it; for any such logic left in TypeScript, give the reason
   tasks:
     - Each task states how it is verified
+    - Every change's tasks.md includes a task that wires the new tests into CI
 
 # Per-operation guidance (optional)
 # Add advisory guidance for how apply and archive work should be conducted.

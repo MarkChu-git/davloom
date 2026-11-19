@@ -4,6 +4,8 @@
 
 Run everything on Bun: no script, test, tool or CI job installs, pins or calls Node. Start commands from the repository root, where `bunfig.toml` makes `bun run` start tools whose launchers name Node on Bun. That setting does not reach `bunx` or `bun run` inside a package directory, so give those `--bun`: wherever this file or a skill gives `bunx <tool>`, run `bunx --bun <tool>`.
 
+`docs/ci.md` lists the CI jobs with the local command for each, the required checks, and what to do when a scan finds something.
+
 - `bun install --frozen-lockfile`: install exactly what `bun.lock` records. It runs one dependency script, the `workerd` postinstall `node install.js`, on the first `node` on `PATH`, and on Bun when there is none.
 - `bun run check`: run lint, format check, pinned dependency check, typecheck, unit tests and production builds, then name any step that failed.
 - `bun run format`: rewrite files with Oxfmt.
@@ -25,7 +27,7 @@ The owner approved one standing exception on 2026-11-16: a direct `miniflare` de
 
 ## Spec workflow
 
-Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Those skills call the CLI as `openspec <command>`; run it as `bunx --bun @fission-ai/openspec <command>`, because the global `openspec` launcher names Node and the npm package named `openspec` is a different project. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
+Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Every change's `tasks.md` includes a task that wires the new tests into CI. Those skills call the CLI as `openspec <command>`; run it as `bunx --bun @fission-ai/openspec <command>`, because the global `openspec` launcher names Node and the npm package named `openspec` is a different project. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
 
 ## Pull requests
 

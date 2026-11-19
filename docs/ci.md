@@ -72,6 +72,39 @@ reason = "Why the vulnerable code does not run in Davloom, and what will remove 
 
 The `id` comes from the log. `effectiveUntil` is the date when someone has to look again, a few months out; once it has passed, the scan fails again, and the exception is either renewed with a current reason or removed. With the exception in place, `bun run scan:deps` prints the vulnerability with the words "has been filtered out because" and the reason, and passes. OSV-Scanner 2.7.1 deprecates the older key `ignoreUntil` and warns on every scan that uses it. The repository keeps one exception today: GHSA-67mh-4wv8-2f99 in esbuild 0.18.20, which `drizzle-kit` 0.31.11 brings in through `@esbuild-kit/esm-loader` but never loads. drizzle-kit bundles tsx and runs esbuild 0.25.12, which has the fix.
 
+## Dependency updates
+
+Renovate opens the pull requests that move dependencies to their npm `latest` releases, following `renovate.json` (Decision 3 of `add-ci-baseline`). It runs as the Renovate App once a maintainer has installed it on the repository, which is task 6.2, and it reads `renovate.json` from `main`.
+
+- A dependency moves on Renovate's first run after its release, with no waiting period and no schedule, and its version stays exact, as `exact = true` in `bunfig.toml` keeps it for `bun add`. A pre-release version counts once the npm `latest` tag points to it, as Dependencies in `CLAUDE.md` says. Each npm package gets one update, straight to `latest` even across a major version, so an update never stops at a pre-release inside the current major. Nothing merges itself: a Renovate pull request needs two approvals or the owner's merge (Pull requests in `CLAUDE.md`). Renovate keeps at most 10 update pull requests open, sets no limit on vulnerability fixes, and has no hourly limit.
+- The Dependency Dashboard, an issue that Renovate keeps up to date, lists every pending update and the OSV vulnerabilities of the direct dependencies. Transitive dependencies get their fixes through Lock File Maintenance, which refreshes `bun.lock` every Monday before 04:00 UTC, and the `dependencies` job reports whatever is left.
+- A vulnerable direct dependency gets a pull request of its own, with `[security]` at the end of its title, which moves it to its newest version rather than the first fixed one. Renovate opens every vulnerability fix outside its group and outside the group's `allowedVersions`. So before a fix to a package in any group merges, a monorepo group such as Vitest's included, the group's other packages join it at matching versions, or the fix is closed in favor of the group's own update; a StyleX fix outside the Astryx range fails `check` as any StyleX update outside it would.
+- An action stays pinned to a full commit SHA, and Renovate updates the SHA and the version comment after it together.
+- Some packages move together, one pull request per group: the Astryx packages; the StyleX packages; Wrangler, Miniflare and `@cloudflare/vitest-plugin`; and the packages of each monorepo that Renovate's `group:monorepos` preset lists, among them Effect, Vitest, Playwright, Better Auth, and TanStack Router with TanStack Start. `@tanstack/react-store` and `@tanstack/charts` belong to no group and move on their own.
+- StyleX stays inside the range of `@stylexjs/stylex` that `@astryxdesign/core` declares, `^0.19.0` today, through `allowedVersions` in `renovate.json`.
+- Miniflare follows its `beta` tag, under which each Wrangler release publishes the Miniflare it pins. The group therefore gives Miniflare the version that the new Wrangler pins, as the standing exception in Dependencies in `CLAUDE.md` asks. A Renovate run in the minutes between a Miniflare beta and its Wrangler release proposes Miniflare alone, and the next run adds Wrangler. Once Miniflare's own `latest` tag reaches the version that Wrangler pins, remove the rule, because a followed tag that stops moving would leave Miniflare on its last beta.
+- `renovate.json` extends `config:recommended`, but replaces its `ignorePaths` with `**/node_modules/**` alone. The preset skips every `tests/` directory, and `tests/integration/compat` is a workspace with dependencies of its own.
+- Commit subjects and pull request titles read `fix(deps): update <package> to v<version>` for runtime dependencies and `chore(deps): ...` for the rest, all in lower case. A group's subject names the group, as in `chore(deps): update wrangler`, and leaves the version out when the group's packages move to different versions. A long package name or the `[security]` suffix of a vulnerability fix can still take a subject past the 50 characters that `.gitmessage` allows.
+
+Renovate does not update the tools that `scripts/lib/tools.ts` pins, because they are not npm packages; Pinned tools above says how to move one.
+
+After changing `renovate.json`, validate it from the repository root:
+
+```bash
+bunx --bun --ignore-scripts -p renovate renovate-config-validator --strict
+```
+
+`--strict` also fails on an option that Renovate has renamed or moved. `--ignore-scripts` keeps the install from building the native `re2` module, which crashes Bun 1.4.4 when it loads; without that module the validator falls back to JavaScript regular expressions and prints a warning saying so. `dependencyDashboard` is an object, the form that Renovate has read since 44.232.0.
+
+### Upgrading StyleX with Astryx
+
+When an Astryx release changes the StyleX range of `@astryxdesign/core`, its Renovate pull request fails the `check` job, because the installed StyleX no longer satisfies the new range. The fix goes into that pull request:
+
+1. Set `allowedVersions` of the StyleX rule in `renovate.json` to the new range.
+2. Set `@stylexjs/stylex` in `apps/web/package.json` and `packages/ui/package.json`, and `@stylexjs/unplugin` in `apps/web/package.json`, to the newest version inside the new range.
+3. Run `bun install`, then `bunx --bun astryx upgrade --from <the Astryx version before the update> --apply`.
+4. Run `bun run check` and `bun run test:compat`, and push to the same pull request.
+
 ## Secret findings
 
 The `secrets` job fails when Gitleaks finds something that looks like a credential in a commit. The log names the rule, the file, the line and the commit, shows `REDACTED` in place of the value, and gives the finding's fingerprint.

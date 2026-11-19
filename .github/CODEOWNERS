@@ -1,0 +1,4 @@
+# The repository owner owns every path. Code owner review is not required: the Rulesets let the
+# owner merge once the checks pass and ask everyone else for two approvals (add-ci-baseline,
+# Decision 6).
+* @MarkChu-git

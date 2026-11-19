@@ -1,0 +1,50 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "ignorePaths": ["**/node_modules/**"],
+  "dependencyDashboard": {
+    "enabled": true,
+    "osvVulnerabilitySummary": "all"
+  },
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "vulnerabilityFixStrategy": "highest"
+  },
+  "rangeStrategy": "pin",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "semanticCommits": "enabled",
+  "commitMessageTopic": "{{depName}}",
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "A pre-release version counts once the npm latest tag points to it. respectLatest still stops at latest, and with separateMajorMinor off each package gets one update, straight to latest, instead of a second one inside its current major that could stop at a pre-release.",
+      "matchDatasources": ["npm"],
+      "ignoreUnstable": false,
+      "separateMajorMinor": false
+    },
+    {
+      "description": "The Astryx packages move together.",
+      "matchPackageNames": ["@astryxdesign/**"],
+      "groupName": "Astryx"
+    },
+    {
+      "description": "StyleX stays inside the @stylexjs/stylex range of @astryxdesign/core. When an Astryx update changes that range, the same pull request moves StyleX and this range.",
+      "matchPackageNames": ["@stylexjs/**"],
+      "groupName": "StyleX",
+      "allowedVersions": "^0.19.0"
+    },
+    {
+      "description": "Wrangler pins one Miniflare, and the Vitest plugin pins both, so the three move together. The short name keeps the commit subject short.",
+      "matchPackageNames": ["wrangler", "miniflare", "@cloudflare/vitest-plugin"],
+      "groupName": "Wrangler"
+    },
+    {
+      "description": "Each Wrangler release pins the Miniflare published minutes before it under the beta tag, while Miniflare's latest tag lags months behind. Remove this rule once Miniflare's latest tag reaches the version Wrangler pins.",
+      "matchPackageNames": ["miniflare"],
+      "followTag": "beta"
+    }
+  ]
+}
