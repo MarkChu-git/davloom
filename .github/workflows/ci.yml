@@ -92,6 +92,25 @@ jobs:
             bun run scan:secrets --log-opts="$GITHUB_SHA"
           fi
 
+  workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - name: Check the workflows with actionlint
+        run: bun run scan:actionlint
+      # Also after an actionlint failure, so one run reports what both tools find. actionlint does
+      # not read composite actions, so zizmor is the one check on .github/actions.
+      - name: Check the workflows and local actions with zizmor
+        if: ${{ !cancelled() }}
+        run: bun run scan:zizmor
+
   compat:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

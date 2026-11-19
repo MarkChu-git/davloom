@@ -92,6 +92,68 @@ export const TOOLS: Readonly<Record<string, Tool>> = {
       ),
     },
   },
+  // Checked against actionlint_1.7.12_checksums.txt of the release.
+  actionlint: {
+    version: "1.7.12",
+    executable: "actionlint",
+    assets: {
+      "darwin-arm64": release(
+        "rhysd/actionlint",
+        "v1.7.12",
+        "actionlint_1.7.12_darwin_arm64.tar.gz",
+        "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f",
+      ),
+      "darwin-x64": release(
+        "rhysd/actionlint",
+        "v1.7.12",
+        "actionlint_1.7.12_darwin_amd64.tar.gz",
+        "5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644",
+      ),
+      "linux-arm64": release(
+        "rhysd/actionlint",
+        "v1.7.12",
+        "actionlint_1.7.12_linux_arm64.tar.gz",
+        "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6",
+      ),
+      "linux-x64": release(
+        "rhysd/actionlint",
+        "v1.7.12",
+        "actionlint_1.7.12_linux_amd64.tar.gz",
+        "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+      ),
+    },
+  },
+  // The release publishes no checksum file; these are the digests GitHub records for its assets.
+  zizmor: {
+    version: "1.32.0",
+    executable: "zizmor",
+    assets: {
+      "darwin-arm64": release(
+        "zizmorcore/zizmor",
+        "v1.32.0",
+        "zizmor-aarch64-apple-darwin.tar.gz",
+        "6efed18c4539a663fd3c851a2be9533fd8456c4e646d9416206da059154a0d3c",
+      ),
+      "darwin-x64": release(
+        "zizmorcore/zizmor",
+        "v1.32.0",
+        "zizmor-x86_64-apple-darwin.tar.gz",
+        "6983143c719ada6845a69cc4dd2bacc215f971662fecd8bbd2678388e5ce5969",
+      ),
+      "linux-arm64": release(
+        "zizmorcore/zizmor",
+        "v1.32.0",
+        "zizmor-aarch64-unknown-linux-gnu.tar.gz",
+        "cb152b207f815116d7fa1c1ee4614f61578803351395052908095e79adfd9fd0",
+      ),
+      "linux-x64": release(
+        "zizmorcore/zizmor",
+        "v1.32.0",
+        "zizmor-x86_64-unknown-linux-gnu.tar.gz",
+        "bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b",
+      ),
+    },
+  },
 };
 
 const isPlatform = (value: string): value is Platform =>
