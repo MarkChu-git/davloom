@@ -39,7 +39,7 @@ export const blockClipboard = (page: Page) =>
       Promise.reject(new DOMException("Copying is blocked here.", "NotAllowedError"));
   });
 
-export const CLOCK_START = new Date("2026-11-16T12:00:00Z");
+const CLOCK_START = new Date("2026-11-16T12:00:00Z");
 
 /** Gives the page a clock the test can stop. Installed alone, it keeps running. */
 export const installClock = (page: Page) => page.clock.install({ time: CLOCK_START });

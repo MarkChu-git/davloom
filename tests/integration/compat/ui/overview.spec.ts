@@ -125,7 +125,7 @@ test("The sample backends: the storage chart lists RustFS archive, R2 photos and
 
   await page.getByRole("link", { name: "Manage storage" }).click();
   await expect(levelOne(page)).toHaveText("Storage & Mounts");
-  expect(new URL(page.url()).pathname).toBe("/storage");
+  await expect(page).toHaveURL(/\/storage$/);
 });
 
 test("An unreachable backend: the connections list marks the default backend with its mounts, and RustFS archive unreachable", async ({
@@ -174,9 +174,12 @@ test("Copying the address: the clipboard holds the WebDAV address and the button
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
+  const copy = page.getByRole("button", { name: "Copy address" });
+  await shown(copy);
+  // Before the click the button offers to copy, and does not yet say it did.
   await expect(page.getByRole("button", { name: "Copied" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Copy address" }).click();
+  await copy.click();
   await shown(page.getByRole("button", { name: "Copied" }));
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     "https://files.example.com/dav/",
@@ -190,8 +193,11 @@ test("Copying is blocked: the field says the browser blocked copying and asks th
   await blockClipboard(page);
   await page.getByRole("button", { name: "Copy address" }).click();
 
-  await shown(
-    onScreen(page, "This browser blocked copying here. Select the text and copy it yourself."),
+  const blocked = "This browser blocked copying here. Select the text and copy it yourself.";
+  await shown(onScreen(page, blocked));
+  // The field says it: the message describes the group of the field and its button.
+  await expect(page.getByRole("group", { name: "WebDAV address" })).toHaveAccessibleDescription(
+    blocked,
   );
   await expect(page.getByRole("button", { name: "Copied" })).toHaveCount(0);
 });
