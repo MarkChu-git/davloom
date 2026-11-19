@@ -1,0 +1,9 @@
+# zizmor's configuration (add-ci-baseline, Decision 5). The default rules cover the
+# requirements of the workflow-security spec; this file turns one rule off.
+rules:
+  # self-repository asks for `uses: $/...` in place of `uses: ./...` for the local setup
+  # action. actionlint 1.7.12, the newest release, rejects `$/` ("ref is missing"), and with
+  # `./` it also checks a step's inputs against the action's action.yml. Turn the rule back on
+  # once a pinned actionlint accepts the syntax.
+  self-repository:
+    disable: true
