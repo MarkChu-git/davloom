@@ -151,8 +151,9 @@ test("Two open tabs: a mode chosen in one tab reaches the other without a reload
   for (const tab of [first, second]) {
     await tab.emulateMedia({ colorScheme: "light" });
     await tab.goto("/design-check");
-    // The page renders after `load`, and the store hears other tabs only from then on. A tab that
-    // renders after another tab's choice reads it from storage and never takes that path.
+    // The store hears other tabs once its code has run, a little after `load`. A tab that starts
+    // later reads another tab's choice from storage and never takes the path under test, so wait
+    // until the app has drawn.
     await expect(tab.getByRole("radio", { name: "System" })).toBeChecked();
   }
   // A reload starts a new document, which has a new time origin.
@@ -184,3 +185,37 @@ test("Two open tabs: a mode chosen in one tab reaches the other without a reload
   await expect.poll(() => rootScheme(third)).toBe("light dark");
   await expect(third.getByRole("radio", { name: "System" })).toBeChecked();
 });
+
+// A tab can still be loading when another tab chooses. Its first-paint script has run, so the root
+// carries the scheme of the stored mode, and the store then starts from the new one. Holding the
+// bundles back makes that order certain.
+for (const [choice, scheme] of [
+  ["Light", "light"],
+  ["System", "light dark"],
+] as const) {
+  test(`Two open tabs: a tab still loading takes ${choice} and its scheme`, async ({ context }) => {
+    const first = await context.newPage();
+    await first.emulateMedia({ colorScheme: "light" });
+    await first.goto("/design-check");
+    await first.getByRole("radio", { name: "Dark" }).click();
+
+    const loading = await context.newPage();
+    await loading.emulateMedia({ colorScheme: "light" });
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await loading.route("**/assets/*.js", async (route) => {
+      await released;
+      await route.continue();
+    });
+    await loading.goto("/design-check", { waitUntil: "domcontentloaded" });
+    expect(await rootScheme(loading)).toBe("dark");
+
+    await first.getByRole("radio", { name: choice }).click();
+    release();
+
+    await expect(loading.getByRole("radio", { name: choice })).toBeChecked();
+    await expect.poll(() => rootScheme(loading)).toBe(scheme);
+  });
+}
