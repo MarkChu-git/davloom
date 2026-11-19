@@ -29,6 +29,9 @@ const syncColorScheme = (mode: AppearanceMode): void => {
 
 // A choice made in another tab applies here too. The prerender has no window.
 if (typeof window !== "undefined") {
+  // The first-paint script wrote the scheme it found, and another tab may have changed the mode
+  // while the bundles loaded, so start the root from the mode the store read.
+  syncColorScheme(appearanceStore.state);
   window.addEventListener("storage", (event) => {
     if (event.key === APPEARANCE_STORAGE_KEY || event.key === null) {
       const mode = readStoredMode();
