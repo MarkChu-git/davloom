@@ -119,6 +119,7 @@ Implemented for tasks 4.2 and 4.5 on 2026-11-19:
 - Gitleaks scanned the 291 commits of the history in 245 ms and found nothing, with the allowlist and without it: its default rules do not flag `compatibility-test-secret-not-used-anywhere-else`. The allowlist keeps the fixture anyway, so a later rule cannot fail every pull request over it.
 - In a throwaway repository, a commit with a random 40-character `CLOUDFLARE_API_TOKEN` failed the scan with status 1. The output named the rule `cloudflare-api-key`, the file and the commit, and showed `REDACTED` where the value was; the value appeared nowhere in it. A `gitleaks:allow` comment on that line made the scan pass, and so did the finding's fingerprint in `.gitleaksignore`, as `docs/ci.md` describes.
 - The scan jobs pass `install: "false"` to the setup action, which then installs Bun and skips Bun's cache and `bun install`, because `scripts/tool.ts` imports nothing from `node_modules`.
+- `platformOf` and the comparison of a download's SHA-256 with its pin decide outcomes without IO, and they stay in TypeScript rather than Bend. They belong to the repository's tooling in `scripts/`, which the owner left outside section 4 of the PRD on 2026-11-16, the comparison sits inside the download code that does the IO, and the Bend toolchain arrives with `packages/laws` only in Phase 1.
 
 ### 6. Two approvals, which the owner can bypass
 
