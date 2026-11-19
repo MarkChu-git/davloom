@@ -9,9 +9,10 @@ import {
   stopTimers,
 } from "./helpers";
 
-// The Storage & Mounts scenarios about checking a backend, adding, editing and removing a mount.
-// The ones about the backend cards, the lists on a phone and the status in the navigation have
-// their tests in dashboard.spec.ts and overview.spec.ts.
+// The Storage & Mounts scenarios about the backends, checking one, adding, editing and removing a
+// mount. The ones about the backend cards on one grid, the lists on a phone and the status in the
+// navigation have their tests in dashboard.spec.ts. The Overview's scenario of the same name as
+// "The sample backends" has its test in overview.spec.ts.
 
 /** The card of a backend, found by its name. */
 const backendCard = (page: Page, name: string) =>
@@ -30,6 +31,29 @@ const openEditForm = async (page: Page, path: string) => {
   await page.getByRole("menuitem", { name: "Edit" }).click();
   return page.getByRole("dialog");
 };
+
+test("The sample backends: Durable Objects shows 1.9 GB of 5 GB with a bar, R2 photos shows 41.2 GB with no fixed limit, and RustFS archive is marked Unreachable", async ({
+  page,
+}) => {
+  await page.goto("/storage");
+  const durable = backendCard(page, "Durable Objects");
+  const photos = backendCard(page, "R2 photos");
+  const archive = backendCard(page, "RustFS archive");
+  await shown(durable);
+
+  await expect(durable).toContainText("1.9 GB of 5 GB");
+  const bar = durable.getByRole("progressbar", { name: "Durable Objects capacity used" });
+  await expect(bar).toBeVisible();
+  await expect(bar).toHaveAttribute("aria-valuenow", "1860000000");
+  await expect(bar).toHaveAttribute("aria-valuemax", "5000000000");
+
+  await expect(photos).toContainText("41.2 GB, no fixed limit");
+  await expect(photos.getByRole("progressbar")).toHaveCount(0);
+
+  await expect(archive).toContainText("Unreachable");
+  await expect(durable).not.toContainText("Unreachable");
+  await expect(photos).not.toContainText("Unreachable");
+});
 
 test("A backend that still does not answer: the button shows the check running, then the card and an assertive announcement say RustFS archive is still unreachable", async ({
   page,
@@ -63,10 +87,15 @@ test("A folder name already in use: adding a mount named documents keeps the for
 
   await shown(onScreen(page, "Another mount already uses this folder."));
   await expect(dialog).toBeVisible();
-  // Nothing was added: the header row and the four mounts.
+  // Nothing was added or replaced: the header row and the four mounts, and /documents as it was.
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
   await expect(page.getByRole("row")).toHaveCount(5);
+  await expect(
+    page.getByRole("row").filter({
+      has: page.getByRole("button", { name: "Actions for mount /documents" }),
+    }),
+  ).toContainText("default/documents/");
 });
 
 test("A dot segment: adding a mount named .. keeps the form open and asks for another folder name", async ({
@@ -78,6 +107,10 @@ test("A dot segment: adding a mount named .. keeps the form open and asks for an
 
   await shown(onScreen(page, "Choose another folder name."));
   await expect(dialog).toBeVisible();
+  // Nothing was added: the header row and the four mounts.
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("row")).toHaveCount(5);
 });
 
 test("Editing a mount: the form for /photos shows R2 photos and davloom-photos, the one for /archive shows its prefix, and the folder name cannot change", async ({
@@ -89,6 +122,7 @@ test("Editing a mount: the form for /photos shows R2 photos and davloom-photos, 
   const folder = dialog.getByLabel("Folder name");
   await expect(folder).toHaveValue("photos");
   await expect(folder).toBeDisabled();
+  await expect(folder).not.toBeEditable();
   await expect(dialog.getByRole("combobox", { name: /^Backend/ })).toContainText("R2 photos");
   await expect(dialog.getByLabel("Bucket")).toHaveValue("davloom-photos");
   await expect(dialog.getByLabel("Prefix")).toHaveValue("");
