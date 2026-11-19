@@ -1,13 +1,13 @@
 # Exceptions for the dependency scan, `bun run scan:deps` (add-ci-baseline, Decision 4).
 # Each exception names one vulnerability, says why Davloom accepts it for now, and ends on
-# `ignoreUntil`, after which the scan fails again. docs/ci.md says when to add one.
+# `effectiveUntil`, after which the scan fails again. docs/ci.md says when to add one.
 #
 # [[IgnoredVulns]]
 # id = "GHSA-xxxx-xxxx-xxxx"
-# ignoreUntil = 2026-12-31
+# effectiveUntil = 2026-12-31
 # reason = "Why the vulnerable code does not run in Davloom, and what will remove it"
 
 [[IgnoredVulns]]
 id = "GHSA-67mh-4wv8-2f99"
-ignoreUntil = 2027-02-19
-reason = "drizzle-kit 0.31.11, the npm latest, loads esbuild 0.18.20 through @esbuild-kit/esm-loader only to transpile drizzle.config.ts. The advisory concerns esbuild's development server, which neither starts. Remove the exception once drizzle-kit drops @esbuild-kit."
+effectiveUntil = 2027-02-19
+reason = "esbuild 0.18.20 is installed but never loaded. drizzle-kit 0.31.11, the npm latest, declares @esbuild-kit/esm-loader, which brings it in, but no installed code loads that package: drizzle-kit bundles tsx and requires esbuild 0.25.12, which has the fix. Remove the exception once drizzle-kit drops @esbuild-kit."
