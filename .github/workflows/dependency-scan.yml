@@ -1,0 +1,30 @@
+name: Dependency scan
+
+# The same scan as the dependencies job of ci.yml, run on main every week, so that a vulnerability
+# published for a dependency already on main fails a run even when no pull request is open
+# (add-ci-baseline, task 4.4). A maintainer can also start it from the Actions tab.
+on:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - run: bun run scan:deps

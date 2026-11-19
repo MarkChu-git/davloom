@@ -16,6 +16,8 @@
     "test": "bun --bun vitest run",
     "test:coverage": "bun --bun vitest run --coverage",
     "coverage:summary": "bun scripts/coverage-summary.ts",
+    "scan:deps": "bun scripts/tool.ts osv-scanner scan source --config=osv-scanner.toml --lockfile=bun.lock",
+    "scan:secrets": "bun scripts/tool.ts gitleaks git --config=.gitleaks.toml --redact --no-banner --verbose",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test"
   },
