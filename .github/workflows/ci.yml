@@ -72,19 +72,19 @@ jobs:
         uses: ./.github/actions/setup
         with:
           install: "false"
-      # A pull request scans the commits it adds, and a push to main scans main's history. Without
-      # --log-opts Gitleaks reads every ref, and fetch-depth: 0 fetches every branch and tag, so an
-      # unmerged branch would fail main. Gitleaks passes, having scanned nothing, when git log
-      # fails, so the step first checks that each SHA names a commit.
+      # A pull request scans the commits it adds, and a push to main scans main's history. A pull
+      # request checks out GitHub's merge commit, whose parents are the base branch and the head,
+      # so HEAD^1..HEAD^2 holds the pull request's own commits; the event's base SHA can be older
+      # than the base branch of a stacked pull request. Without --log-opts Gitleaks reads every
+      # ref, and fetch-depth: 0 fetches every branch and tag, so an unmerged branch would fail
+      # main. Gitleaks passes, having scanned nothing, when git log fails, so the step first
+      # checks that the range's ends are commits.
       - name: Scan the commits for secrets
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ -n "$BASE_SHA" ]; then
-            git cat-file -e "$BASE_SHA^{commit}"
-            git cat-file -e "$HEAD_SHA^{commit}"
-            bun run scan:secrets --log-opts="$BASE_SHA..$HEAD_SHA"
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            git cat-file -e "HEAD^1^{commit}"
+            git cat-file -e "HEAD^2^{commit}"
+            bun run scan:secrets --log-opts="HEAD^1..HEAD^2"
           else
             git cat-file -e "$GITHUB_SHA^{commit}"
             bun run scan:secrets --log-opts="$GITHUB_SHA"

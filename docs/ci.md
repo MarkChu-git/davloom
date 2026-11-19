@@ -77,7 +77,7 @@ If the value is a real credential, revoke it at its provider first. The reposito
 
 If the value only looks like a credential, such as a test value, change it to one that Gitleaks does not flag, or end its line with a `gitleaks:allow` comment, which makes Gitleaks skip that line. The job scans every commit that the pull request adds, so the change goes into the commit that added the value, by amending it; a later commit that changes the line leaves the finding in place. A finding in a commit already on `main` goes into `.gitleaksignore` as its fingerprint, on a line of its own, with a comment above it that says why. A fingerprint names the commit's SHA, so it stops matching once GitHub rebases a pull request, and it suits only commits on `main`. The allowlist in `.gitleaks.toml` holds only the secret that the compatibility tests give Better Auth, and nothing else goes there.
 
-Before pushing, `bun run scan:secrets --log-opts=origin/main..HEAD` scans the commits that are not on `main` yet, as the job scans a pull request.
+Before pushing, `bun run scan:secrets --log-opts=origin/main..HEAD` scans the commits that are not on `main` yet. That covers what the job scans for a pull request, and on a stacked branch also the commits of the pull requests below it.
 
 ## Test budget
 

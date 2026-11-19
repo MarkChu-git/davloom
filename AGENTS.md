@@ -10,7 +10,7 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 - `bun run test:compat`: run the compatibility tests on local Bun and workerd, including Playwright against the production build. It needs no Cloudflare account, and reports what only a real deployment can test as skipped. Run `bun run --filter @davloom/compat-tests playwright:install` once first, or set `DAVLOOM_CHROMIUM_PATH` to a Chromium you already have.
 - `bun run test:coverage`: run the unit tests with Istanbul coverage, print each package's coverage, and fail when a package falls below its thresholds in `vitest.config.ts`.
 - `bun run scan:deps`: scan every package in `bun.lock` for published vulnerabilities with the pinned OSV-Scanner. Exceptions go in `osv-scanner.toml`, and `docs/ci.md` says when one is allowed.
-- `bun run scan:secrets --log-opts=origin/main..HEAD`: scan the commits not yet on `main` for secrets with the pinned Gitleaks, as CI scans a pull request.
+- `bun run scan:secrets --log-opts=origin/main..HEAD`: scan the commits not yet on `main` for secrets with the pinned Gitleaks, which covers what CI scans for a pull request.
 - `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
 - `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
 - `bunx --bun @fission-ai/openspec list`: show active changes.
