@@ -91,7 +91,7 @@ The `workflows` job runs two tools on `.github`, and fails when either finds a p
 
 A finding that is a false positive gets an inline `# zizmor: ignore[<audit>]` on its line, with a comment above it that says why, as the `GITHUB_PATH` line in `.github/actions/setup/action.yml` has. Fix every other finding.
 
-`scripts/workflow-secrets.test.ts`, which runs with the unit tests in `check`, fails when a workflow or a local action reads a secret other than `GITHUB_TOKEN`: by name inside an expression, through any other use of the `secrets` context inside one, such as `secrets[matrix.name]`, or with `secrets: inherit`. GitHub accepts the `secrets` context only inside `${{ }}`, so a path such as `config/secrets.txt` in a script does not count. A pull request from a fork gets no repository secrets, so a check that read one would pass on a branch and fail on a fork.
+`scripts/workflow-secrets.test.ts`, which runs with the unit tests in `check`, fails when a workflow or a local action reads a secret other than `GITHUB_TOKEN`: by name inside an expression, through any other use of the `secrets` context inside one, such as `secrets[matrix.name]`, or with `secrets: inherit`. GitHub accepts the `secrets` context only inside `${{ }}`, so a path such as `config/secrets.txt` in a script does not count. The test reads each file as YAML, as GitHub does: an expression in a shell comment inside `run:` counts, because GitHub expands it before the shell starts, while a YAML comment does not, and a file that is not YAML fails the test under its own name. A pull request from a fork gets no repository secrets, so a check that read one would pass on a branch and fail on a fork.
 
 ## Test budget
 

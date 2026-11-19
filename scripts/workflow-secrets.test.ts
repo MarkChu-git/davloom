@@ -22,10 +22,8 @@ describe("the workflows", () => {
     );
   });
 
-  it("read no secret other than GITHUB_TOKEN", () => {
-    const reads = actionFiles()
-      .map((file) => [file, foreignSecrets(readFileSync(join(root, file), "utf8"))] as const)
-      .filter(([, secrets]) => secrets.length > 0);
-    expect(reads).toEqual([]);
+  // One test per file, so a file that is not YAML fails under its own name.
+  it.each(actionFiles())("%s reads no secret other than GITHUB_TOKEN", (file) => {
+    expect(foreignSecrets(readFileSync(join(root, file), "utf8"))).toEqual([]);
   });
 });
