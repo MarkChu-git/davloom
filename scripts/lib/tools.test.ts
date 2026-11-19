@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -80,6 +80,14 @@ describe("toolCacheDir", () => {
   it("prefers DAVLOOM_TOOL_CACHE, then XDG_CACHE_HOME", () => {
     expect(toolCacheDir({ DAVLOOM_TOOL_CACHE: "/c", XDG_CACHE_HOME: "/x" })).toBe("/c");
     expect(toolCacheDir({ XDG_CACHE_HOME: "/x" })).toBe("/x/davloom/tools");
+  });
+
+  it("treats an empty variable as unset, and ignores a relative XDG_CACHE_HOME", () => {
+    const fallback = join(homedir(), ".cache", "davloom", "tools");
+    expect(toolCacheDir({ DAVLOOM_TOOL_CACHE: "", XDG_CACHE_HOME: "/x" })).toBe("/x/davloom/tools");
+    expect(toolCacheDir({ XDG_CACHE_HOME: "" })).toBe(fallback);
+    expect(toolCacheDir({ XDG_CACHE_HOME: "cache" })).toBe(fallback);
+    expect(toolCacheDir({})).toBe(fallback);
   });
 });
 

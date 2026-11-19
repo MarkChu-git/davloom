@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 
 // Third-party CLIs that CI and contributors run at pinned versions (add-ci-baseline, Decision 5).
 // Each asset is one platform's release download with the SHA-256 that GitHub records for it, which
@@ -108,10 +108,20 @@ export const platformOf = (os: string, arch: string): Platform => {
   );
 };
 
-/** `$DAVLOOM_TOOL_CACHE`, or `davloom/tools` under `$XDG_CACHE_HOME` or `~/.cache`. */
-export const toolCacheDir = (env: Readonly<Record<string, string | undefined>>): string =>
-  env.DAVLOOM_TOOL_CACHE ??
-  join(env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "davloom", "tools");
+/**
+ * `$DAVLOOM_TOOL_CACHE`, or `davloom/tools` under `$XDG_CACHE_HOME` or `~/.cache`. An empty
+ * variable counts as unset, and so does a relative `$XDG_CACHE_HOME`, as the XDG spec says;
+ * either would otherwise put the cache inside the checkout.
+ */
+export const toolCacheDir = (env: Readonly<Record<string, string | undefined>>): string => {
+  const own = env.DAVLOOM_TOOL_CACHE;
+  if (own !== undefined && own !== "") {
+    return own;
+  }
+  const xdg = env.XDG_CACHE_HOME;
+  const cacheHome = xdg !== undefined && isAbsolute(xdg) ? xdg : join(homedir(), ".cache");
+  return join(cacheHome, "davloom", "tools");
+};
 
 export const sha256Of = (bytes: Uint8Array): string =>
   new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
