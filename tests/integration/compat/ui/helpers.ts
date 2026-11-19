@@ -63,3 +63,17 @@ export const cardWith = (page: Page, has: Locator) =>
 
 /** The placeholder rows of a listing, by the component class Astryx documents for Skeleton. */
 export const placeholderRows = (page: Page) => page.locator(".astryx-skeleton");
+
+/** The names in a file listing, top to bottom, read from the links of its rows. */
+export const listed = (page: Page): Promise<string[]> =>
+  page
+    .getByRole("row")
+    .getByRole("link")
+    .evaluateAll((links) =>
+      links.map((link) => {
+        const url = new URL(link.getAttribute("href") ?? "", location.origin);
+        return (
+          url.searchParams.get("file") ?? url.searchParams.get("path")?.split("/").at(-1) ?? ""
+        );
+      }),
+    );
