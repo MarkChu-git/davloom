@@ -1,0 +1,41 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "ignorePaths": ["**/node_modules/**"],
+  "dependencyDashboard": {
+    "enabled": true,
+    "osvVulnerabilitySummary": "all"
+  },
+  "osvVulnerabilityAlerts": true,
+  "rangeStrategy": "pin",
+  "prHourlyLimit": 0,
+  "prConcurrentLimit": 10,
+  "semanticCommits": "enabled",
+  "commitMessageTopic": "{{depName}}",
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "The Astryx packages move together.",
+      "matchPackageNames": ["@astryxdesign/**"],
+      "groupName": "Astryx"
+    },
+    {
+      "description": "StyleX stays inside the @stylexjs/stylex range of @astryxdesign/core. When an Astryx update changes that range, the same pull request moves StyleX and this range.",
+      "matchPackageNames": ["@stylexjs/**"],
+      "groupName": "StyleX",
+      "allowedVersions": "^0.19.0"
+    },
+    {
+      "description": "Wrangler pins one Miniflare, and the Vitest plugin pins both, so the three move together.",
+      "matchPackageNames": ["wrangler", "miniflare", "@cloudflare/vitest-plugin"],
+      "groupName": "Wrangler, Miniflare and the Vitest plugin"
+    },
+    {
+      "description": "Each Wrangler release pins the Miniflare published with it under the beta tag, while Miniflare's latest tag lags months behind.",
+      "matchPackageNames": ["miniflare"],
+      "followTag": "beta"
+    }
+  ]
+}
