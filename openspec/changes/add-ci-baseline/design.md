@@ -168,7 +168,8 @@ Implemented on 2026-11-11. `vitest.config.ts` keys each threshold by the package
 Implemented for task 3.3 on 2026-11-19:
 
 - The `coverage` job runs the setup action and `bun run test:coverage`, then `bun run coverage:summary` with its output appended to `$GITHUB_STEP_SUMMARY`. The summary step runs unless the job was cancelled, so a threshold failure still leaves the table.
-- Vitest's `json-summary` reporter writes `coverage/coverage-summary.json`. `scripts/lib/coverage-summary.ts` groups its files the way Vitest groups them for a threshold: by the glob, matched against the file's path relative to the repository root, summed per metric, with Istanbul's rounding to two decimals down. The table therefore shows the numbers the gate compares, and `coverage:summary` also exits with status 1 when a package is below a threshold. Vitest writes no report when a test fails, and the summary then says so.
+- Vitest's `json-summary` reporter writes `coverage/coverage-summary.json`. `scripts/lib/coverage-summary.ts` groups its files the way Vitest groups them for a threshold: by the glob, matched against the file's path relative to the repository root, summed per metric, with Istanbul's rounding to two decimals down. Vitest matches with picomatch, whose `**` skips names that start with a dot, while `Bun.Glob`'s does not, so the script leaves such paths out as well. The table therefore shows the numbers the gate compares, and `coverage:summary` also exits with status 1 when a package is below a threshold. Vitest writes no report when a test fails, and the summary then says so. A negative threshold, which Vitest reads as a maximum count of uncovered items, makes the script fail instead of showing a percentage that the gate does not check.
+- These are pure functions that decide an outcome, and they stay in TypeScript rather than Bend. They report on the repository's own tests, and on 2026-11-16 the owner limited section 4 of the PRD to code shipped in `apps/` and `packages/`, which leaves logic in `scripts/` and `tests/` in TypeScript. The percentages are floating point, which Bend proves nothing about, and the Bend toolchain arrives with `packages/laws` only in Phase 1.
 - The dashboard prototype's unit tests had raised `apps/web` to 18.04% of lines and 14.55% of branches, and `packages/ui` to 34.37% of lines, since task 2.5. Their thresholds rise to those values, because a threshold left at 0 would let those tests be deleted without any check failing.
 - Locally, with the `apps/web` lines threshold at 18.05, `bun run test:coverage` exited with status 1 and printed `ERROR: Coverage for lines (18.04%) does not meet "apps/web/src/**" threshold (18.05%)`, and `bun run coverage:summary` exited with status 1 and named `apps/web`. Without a report it exited with status 1 and said why.
 
@@ -178,17 +179,17 @@ The baseline adds the jobs in Decision 1. By V1 a pull request runs about 20 job
 
 | Jobs | Contents | Estimate per job |
 | --- | --- | --- |
-| `check` | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 4–5 min, more once the Bend proofs land |
-| `coverage` | Unit tests with the coverage gates | 2.5–3 min |
-| 2 contract jobs | Storage and database contracts | 2.5–3 min |
-| 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus | 6.5–8 min |
+| `check` | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 4–4.5 min, more once the Bend proofs land |
+| `coverage` | Unit tests with the coverage gates | 2–3 min |
+| 2 contract jobs | Storage and database contracts | 2–3 min |
+| 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus | 6–7.5 min |
 | Migration | Data migration | About 3 min |
 | 6 browser shards | Playwright, 2 workers per shard | 4–6 min |
 | `compat` | Phase 0 compatibility tests | 6.5 min today, while it still runs the dashboard's browser tests |
 | CodeQL | Static analysis | 8–10 min |
 | `dependencies`, `secrets`, `workflows` | Scans | About 2 min |
 
-A pull request takes about 11 to 13 minutes of wall-clock time, because the browser shards and the deployment jobs wait for the web build from `check`, and about an hour and a half of runner time, and each push to `main` costs the same again. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same time, such as one from Renovate, queues part of its jobs and finishes 6 to 8 minutes later. If queueing becomes a problem, the scans and `coverage` can fold into fewer jobs.
+A pull request takes about 10 to 12 minutes of wall-clock time, because the browser shards and the deployment jobs wait for the web build from `check`, and about an hour and a half of runner time, and each push to `main` costs the same again. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same time, such as one from Renovate, queues part of its jobs and finishes 6 to 7.5 minutes later. If queueing becomes a problem, the scans and `coverage` can fold into fewer jobs.
 
 To reach these times:
 
@@ -220,8 +221,9 @@ Implemented for task 3.2 on 2026-11-16, and measured again on 2026-11-18 with th
 Corrected for task 3.4 on 2026-11-19, with the measurements in `docs/ci.md`:
 
 - The first runs could not give the factor: `bun run check` took 12 s on the runner on 2026-11-16 against 5 s on the M4 Pro on 2026-11-07, and `bun run test:compat` 61 s against 32 s, but the code had grown between the two measurements. The factor therefore comes from one commit measured on both: `b572cf1` on the M4 Pro and CI run 44508446051 on `ebdca58`, which differs from it only in documents.
-- Stages that run in one process took 1.5 to 2.1 times as long on the runner: `bun run check` 21 s against 14 s, the 118 HTTP tests 32.3 s against 18.0 s, and the Cloud Free tests 9.1 s against 5.9 s. The single-process estimates in the table are therefore scaled by 0.8, the ratio of the measured factor to the assumed one.
-- Playwright took 3.6 times as long, 5.0 min against 1.4 min for 484 runs, because it starts one worker for every two CPUs: 2 on the runner and 6 on the M4 Pro. One browser run costs a CI worker about 1.2 s, against the 2 to 3 s per test that the estimate above assumed, so the browser shards drop from 8–9 to 4–6 minutes. WebKit and Firefox have not run on CI yet, and the shards keep a margin for them.
+- Outside Playwright, every stage took 1.5 to 1.8 times as long on the runner, whether it runs one test file at a time, as the HTTP, database and Cloud Free tests do, or spreads its work over workers and threads, as `bun run check` does: `bun run check` 21 s against 14 s, the 118 HTTP tests 32.3 s against 18.0 s, and the Cloud Free tests 9.1 s against 5.9 s. The estimates in the table outside the browser shards are therefore scaled by 0.73, the ratio of the measured factor's midpoint to the assumed one's.
+- The brand change check is left out of the factor. Two builds take most of its 12 to 13 s on both machines, and its Playwright part took 2.2 s in one local run and 5.8 s in the next.
+- Playwright took 3.6 times as long, 5.0 min against 1.4 min for 485 runs, one of them skipped by design, because it starts one worker for every two CPUs: 2 on the runner and 6 on the M4 Pro. One browser run costs a CI worker about 1.2 s, against the 2 to 3 s per test that the estimate above assumed, so the browser shards drop from 8–9 to 4–6 minutes. WebKit and Firefox have not run on CI yet, and the shards keep a margin for them.
 - `compat` took 6 min 29 s, more than its 4–5 minute estimate, because it holds all 245 browser tests, most of them the dashboard's, until the browser shards take them over. That leaves the 20-minute timeout three times the run.
 - CodeQL and the three scans have not run yet; groups 4 and 5 measure them.
 
@@ -235,6 +237,7 @@ CI runs on Linux, and both runtimes start locally, with no account needed.
 | Type environment | `tsconfig.workers.json` | `tsconfig.bun.json` |
 | Browser tests | Miniflare serves the static assets | The Bun process serves them |
 | What only a real deployment can verify | CPU and request body limits, shown as skipped in CI | Nothing |
+| Coverage | Not measured: the compatibility tests on workerd do not count toward any threshold | Only the unit tests count, which run on Bun. Code that only the compatibility tests reach, such as `packages/database/src/d1.ts` and `bun-sqlite.ts`, shows 0% |
 
 ## Risks / Trade-offs
 

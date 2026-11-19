@@ -26,7 +26,7 @@ Install the way CI does:
 bun install --frozen-lockfile --ignore-scripts
 ```
 
-A frozen install fails when `package.json` and `bun.lock` disagree, locally as in CI. `--ignore-scripts` skips the postinstall of `workerd`, the one dependency script, which calls Node and which nothing needs.
+A frozen install fails when `package.json` and `bun.lock` disagree, locally as in CI. `--ignore-scripts` skips the postinstall of `workerd`, the one dependency script that Bun would run, which calls Node and which nothing needs.
 
 To catch a call to Node before CI does, put the same guard first on `PATH`:
 
@@ -44,7 +44,7 @@ PATH="$PWD/.github/actions/setup/no-node:$PATH" bun run check
 
 ## Test budget
 
-Section 11 of the PRD sets a budget of at least 8,000 unique test cases at V1. The plan holds about 9,500, and a full CI run executes about 18,000, because a case runs once for every runtime, backend or browser in its matrix. One `it` or `test` is one case, and each row of an `it.each` table is one more. On `b572cf1` (2026-11-19) the repository held 630 cases:
+Section 11 of the PRD sets a budget of at least 8,000 unique test cases at V1. The plan holds about 9,500, and a full CI run executes about 18,000, because a case runs once for every runtime, backend or browser in its matrix. One `it` or `test` is one case, and so is each row of an `it.each` table. On `b572cf1` (2026-11-19) the repository held 630 cases:
 
 | Layer (PRD §11)                               |   V1 budget | On 2026-11-19 |
 | --------------------------------------------- | ----------: | ------------: |
@@ -71,35 +71,34 @@ The 163 unit cases of other packages are 116 in `apps/web`, 38 in `packages/ui` 
 
 These pairs ran on the same code: `b572cf1` on an M4 Pro with 12 CPUs, and CI run 44508446051 on `ebdca58`, which differs from `b572cf1` only by the Phase 1 proposal documents.
 
-| Stage                            |  M4 Pro |      CI | Factor |
-| -------------------------------- | ------: | ------: | -----: |
-| `bun run check`                  |    14 s |    21 s |    1.5 |
-| HTTP compatibility tests (118)   |  18.0 s |  32.3 s |    1.8 |
-| Better Auth on D1 (6)            |   2.1 s |   3.8 s |    1.8 |
-| Better Auth on Bun SQLite (6)    |  0.27 s |  0.49 s |    1.8 |
-| Playwright (484 runs)            | 1.4 min | 5.0 min |    3.6 |
-| Brand change check               |   2.2 s |   4.6 s |    2.1 |
-| Cloud Free, local (35)           |   5.9 s |   9.1 s |    1.5 |
-| `bun run test:compat` as a whole |   122 s |   373 s |    3.1 |
+| Stage                                      | How it runs                                                                    |  M4 Pro |      CI | Factor |
+| ------------------------------------------ | ------------------------------------------------------------------------------ | ------: | ------: | -----: |
+| `bun run check`                            | Vitest with a pool of workers, lint and typecheck on several threads           |    14 s |    21 s |    1.5 |
+| HTTP compatibility tests (118)             | One test file at a time                                                        |  18.0 s |  32.3 s |    1.8 |
+| Better Auth on D1 (6)                      | One test file                                                                  |   2.1 s |   3.8 s |    1.8 |
+| Better Auth on Bun SQLite (6)              | One test file                                                                  |  0.27 s |  0.49 s |    1.8 |
+| Cloud Free, local (35)                     | One test file at a time                                                        |   5.9 s |   9.1 s |    1.5 |
+| Playwright (485 runs, 1 skipped by design) | One worker for every two CPUs                                                  | 1.4 min | 5.0 min |    3.6 |
+| `bun run test:compat` as a whole           | The stages above other than `check`, the brand change check and two web builds |   122 s |   373 s |    3.1 |
 
-On CI the whole `check` job took 40 s and `compat` took 6 min 29 s. Stages that run in a single process take 1.5 to 2.1 times as long on the runner as on the M4 Pro. Playwright takes 3.6 times as long because it starts one worker for every two CPUs, which gives 6 workers on the M4 Pro and 2 on the runner's 4 CPUs. One browser run costs a CI worker about 1.2 s.
+On CI the whole `check` job took 40 s and `compat` took 6 min 29 s. Outside Playwright, every stage took 1.5 to 1.8 times as long on the runner as on the M4 Pro, whether it runs one test file at a time or spreads its work over workers and threads as `bun run check` does. Playwright took 3.6 times as long, because one worker for every two CPUs gives it 6 workers on the M4 Pro and 2 on the runner's 4 CPUs. One browser run costs a CI worker about 1.2 s. The brand change check has no row: two builds take most of its 12 to 13 s on both machines, and its Playwright part took 2.2 s in one local run and 5.8 s in the next.
 
 The first runs, on 2026-11-16, were shorter because the suite was smaller. The `check` job of task 3.1 took 31 s with a cold cache, 12 s of it in `bun run check`, and the `compat` job of task 3.2 took 86 s, 61 s of it in `bun run test:compat`. The dashboard prototype has since added about 220 browser tests.
 
 ## Target job layout
 
-By V1 a pull request runs about 20 jobs (Decision 10 of `add-ci-baseline`). The estimates below scale measurements on the M4 Pro by the factors above, 1.5 to 2.1 for one process instead of the 2 to 2.5 that Decision 10 first assumed. Browser jobs are estimated at 1.2 s per run for each of their 2 workers, against the 2 to 3 s per test first assumed.
+By V1 a pull request runs about 20 jobs (Decision 10 of `add-ci-baseline`). The estimates below scale measurements on the M4 Pro by the factors above: 1.5 to 1.8 outside Playwright, instead of the 2 to 2.5 that Decision 10 first assumed, which multiplies each of its estimates by about 0.73. Browser jobs are estimated at 1.2 s per run for each of their 2 workers, against the 2 to 3 s per test first assumed.
 
 | Jobs                                   | Contents                                                                                                                                                  | Estimate per job                                                 |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `check`                                | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 4–5 min, more once the Bend proofs land                          |
-| `coverage`                             | Unit tests with the coverage gates                                                                                                                        | 2.5–3 min                                                        |
-| 2 contract jobs                        | Storage and database contracts                                                                                                                            | 2.5–3 min                                                        |
-| 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus                                                                                 | 6.5–8 min                                                        |
+| `check`                                | Lint, format, types, unit tests and build, plus the Bend proofs and the requirement coverage check from Phase 1; uploads the web build for the other jobs | 4–4.5 min, more once the Bend proofs land                        |
+| `coverage`                             | Unit tests with the coverage gates                                                                                                                        | 2–3 min                                                          |
+| 2 contract jobs                        | Storage and database contracts                                                                                                                            | 2–3 min                                                          |
+| 4 deployment jobs, one per combination | Protocol, security, management API, quota, concurrency, rclone and litmus                                                                                 | 6–7.5 min                                                        |
 | Migration                              | Data migration                                                                                                                                            | About 3 min                                                      |
 | 6 browser shards                       | Playwright, 2 workers per shard                                                                                                                           | 4–6 min                                                          |
 | `compat`                               | Phase 0 compatibility tests                                                                                                                               | 6.5 min today, while it still runs the dashboard's browser tests |
 | CodeQL                                 | Static analysis                                                                                                                                           | 8–10 min                                                         |
 | `dependencies`, `secrets`, `workflows` | Scans                                                                                                                                                     | About 2 min                                                      |
 
-The browser shards and the deployment jobs wait for the web build from `check`, so a pull request should take about 11 to 13 minutes of wall-clock time and about an hour and a half of runner time. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same moment queues part of its jobs. Each phase that adds tests measures its jobs again and updates this page.
+The browser shards and the deployment jobs wait for the web build from `check`, so a pull request should take about 10 to 12 minutes of wall-clock time and about an hour and a half of runner time. Standard runners are free for public repositories, but a free account runs at most 20 jobs at once, so a second pull request at the same moment queues part of its jobs. Each phase that adds tests measures its jobs again and updates this page.
