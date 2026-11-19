@@ -26,6 +26,21 @@ jobs:
         uses: ./.github/actions/setup
       - run: bun run check
 
+  coverage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      - run: bun run test:coverage
+      # Also after a threshold failure, so the summary names the package below its threshold.
+      - name: Write each package's coverage to the job summary
+        if: ${{ !cancelled() }}
+        run: bun run coverage:summary >> "$GITHUB_STEP_SUMMARY"
+
   compat:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

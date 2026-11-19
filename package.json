@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/integration/compat' typecheck",
     "test": "bun --bun vitest run",
     "test:coverage": "bun --bun vitest run --coverage",
+    "coverage:summary": "bun scripts/coverage-summary.ts",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test"
   },
