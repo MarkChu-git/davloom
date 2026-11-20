@@ -40,6 +40,12 @@ const parameters = (ruleset: Record<string, unknown>, type: string): unknown =>
 const jobs = (workflow: Record<string, unknown>): [string, Record<string, unknown>][] =>
   Object.entries(record(workflow["jobs"], "jobs")).map(([id, job]) => [id, record(job, id)]);
 
+// Every workflow but ci.yml. Bun.Glob does not expand braces that hold a `/`.
+const otherWorkflows = (): string[] =>
+  [...new Bun.Glob(".github/workflows/*.{yml,yaml}").scanSync({ cwd: root, dot: true })]
+    .filter((file) => file !== ".github/workflows/ci.yml")
+    .toSorted();
+
 // A job's check run carries its name, or its ID when it has none.
 const checkNames = (workflow: Record<string, unknown>): string[] =>
   jobs(workflow)
@@ -97,7 +103,14 @@ describe("the exported Rulesets", () => {
     );
   });
 
-  it("main holds a pull request back until CodeQL finds no High alert and no error", () => {
+  // Every other open pull request would have to rebase and run CI again after each merge.
+  it("main asks for no branch that is up to date with main", () => {
+    expect(parameters(main, "required_status_checks")).toMatchObject({
+      strict_required_status_checks_policy: false,
+    });
+  });
+
+  it("main holds a pull request back until CodeQL finds no alert at High or higher and no error", () => {
     expect(parameters(main, "code_scanning")).toEqual({
       code_scanning_tools: [
         { tool: "CodeQL", security_alerts_threshold: "high_or_higher", alerts_threshold: "errors" },
@@ -132,8 +145,18 @@ describe("the required jobs", () => {
     expect(job).not.toHaveProperty("if");
   });
 
-  // A matrix job reports one check per combination, under a name that adds the matrix values.
+  // A matrix job reports one check per combination, under a name that adds the matrix values, and
+  // a job that calls a reusable workflow reports its checks as `<job> / <called job>`.
   it.each(jobs(ci))("%s reports one check under its own name", (_id, job) => {
     expect(job["strategy"] ?? {}).not.toHaveProperty("matrix");
+    expect(job).not.toHaveProperty("uses");
+  });
+
+  // GitHub's documentation asks for job names that are unique across workflows, because a required
+  // check is matched by its name alone.
+  it.each(otherWorkflows())("%s has no job with the name of a required check", (file) => {
+    const required = checkNames(ci);
+    const names = checkNames(record(Bun.YAML.parse(read(file)), file));
+    expect(names.filter((name) => required.includes(name))).toEqual([]);
   });
 });
