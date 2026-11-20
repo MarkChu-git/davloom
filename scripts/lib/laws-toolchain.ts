@@ -252,7 +252,7 @@ const fetchInto = async (
   for (;;) {
     const controller = new AbortController();
     const handle = await open(file, size > 0 ? "a" : "w");
-    // The clock starts once the file is open, so a slow disk does not count as a stall.
+    // The clock starts once the file is open, so a slow open does not count as a stall.
     let timer = setTimeout(() => controller.abort(), stallMs);
     try {
       const response = await fetchArchive(archive.url, {
