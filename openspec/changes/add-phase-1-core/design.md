@@ -324,6 +324,7 @@ Left in TypeScript, each with its reason:
 - Parsing an endpoint URL. The runtime's `URL` parser is the one that later sends the requests, and a second parser in Bend could disagree with it; Bend decides on the parsed parts.
 - Refusing to remove a Durable Objects backend whose root is not empty. It compares the result of one query with nothing, and no rule is left once that IO is done.
 - The `laws-approved` decision and the requirement coverage matching. They are CI scripts, and the owner decided on 2026-11-16 that the proofs cover shipped code in `apps/` and `packages/`.
+- How `bun run laws:setup` validates `packages/laws/toolchain.json`, and when its download resumes, retries or stops. It is a repository script, and the owner decided on 2026-11-16 that the proofs cover shipped code in `apps/` and `packages/`, not scripts.
 
 ## Risks / Trade-offs
 
