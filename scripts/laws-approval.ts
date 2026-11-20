@@ -34,6 +34,12 @@ export interface Records {
   timeline: unknown[];
   /** The `workflow_runs` of every page of this workflow's runs for the head branch. */
   runs: unknown[];
+  /**
+   * Every page of GET /repos/{repository}/pulls?state=all&head={owner}:{branch}: the pull requests
+   * in every state from the head branch of the head repository, whose owner's login is {owner}.
+   * Empty when the head repository no longer exists.
+   */
+  fromHead: unknown[];
 }
 
 export interface Context {
@@ -203,10 +209,11 @@ const runsOf = (runs: unknown[], branch: string, repository: string): Run[] =>
 
 /**
  * Decides the check from GitHub's records. A pull request that changes no guarded file passes.
- * One that does passes only when the label is on it, the latest event that added the label came
- * from the owner, and that event came strictly after the head became the head: the creation of the
- * first run of this workflow for the head that comes strictly after both the latest run for
- * another head and the latest reset. Throws on a record of another shape.
+ * One that does passes only when no other pull request came from its head branch, the label is on
+ * it, the latest event that added the label came from the owner, and that event came strictly
+ * after the head became the head: the creation of the first run of this workflow for the head
+ * that comes strictly after both the latest run for another head and the latest reset. Throws on
+ * a record of another shape.
  */
 export const decide = (records: Records, context: Context): Verdict => {
   const pull = records.pullRequest;
@@ -225,6 +232,34 @@ export const decide = (records: Records, context: Context): Verdict => {
   if (sha !== context.headSha) {
     return fail(
       `Its head is ${sha} now, not ${context.headSha}, which this run checks; the run for the new head decides.`,
+    );
+  }
+  const repo = field(head, "repo", "the head");
+  if (!isFields(repo)) {
+    return fail(
+      "Its head repository no longer exists, so its runs cannot be told from those of other branches.",
+    );
+  }
+  const branch = text(head, "ref", "the head");
+  const repository = text(repo, "full_name", "the head repository");
+  // The runs of a fork's pull request name no pull request, so the runs of the head branch show
+  // when this pull request's head became its head only when no other pull request ever came from
+  // that branch.
+  const number = whole(pull, "number", "the pull request");
+  const fromHead = new Set(
+    records.fromHead.map((item, index) =>
+      whole(item, "number", `pull request ${index + 1} from the head`),
+    ),
+  );
+  const others = [...fromHead].filter((other) => other !== number);
+  if (others.length > 0) {
+    return fail(
+      `${others.length === 1 ? "Pull request" : "Pull requests"} ${listed(others.map((other) => `#${other}`))} also came from the branch ${branch} of ${repository}, and this workflow's runs do not show which pull request they ran for. Open the pull request again from a new branch, and close this one.`,
+    );
+  }
+  if (!fromHead.has(number)) {
+    return fail(
+      `GitHub does not list it among the pull requests from the branch ${branch} of ${repository}, so the check cannot tell whether another one came from there.`,
     );
   }
   const labels = items(pull, "labels", "the pull request").map((label, index) =>
@@ -248,17 +283,7 @@ export const decide = (records: Records, context: Context): Verdict => {
   if (label.actorId !== context.ownerId) {
     return fail(`${label.actor} added the label, not the owner.`);
   }
-  const repo = field(head, "repo", "the head");
-  if (!isFields(repo)) {
-    return fail(
-      "Its head repository no longer exists, so its runs cannot be told from those of other branches.",
-    );
-  }
-  const runs = runsOf(
-    records.runs,
-    text(head, "ref", "the head"),
-    text(repo, "full_name", "the head repository"),
-  );
+  const runs = runsOf(records.runs, branch, repository);
   const after = Math.max(
     -Infinity,
     ...timeline.filter((mark) => RESETS.includes(mark.event)).map((mark) => mark.at),
@@ -328,10 +353,12 @@ export const settings = (variables: Record<string, string | undefined>): Setting
 const PAGE = 100;
 const ATTEMPTS = 3;
 // GitHub lists at most 3,000 changed files, and at most 1,000 runs for a filtered list. The
-// timeline has no such limit, so the check reads up to 10,000 events of it.
+// timeline and the list of the pull requests from a head have no such limit, so the check reads up
+// to 10,000 events of the timeline and up to 1,000 of those pull requests.
 const FILE_PAGES = 30;
 const TIMELINE_PAGES = 100;
 const RUN_PAGES = 10;
+const PULL_PAGES = 10;
 
 /**
  * Reads the pull request's records from GitHub's REST API and decides. A request that fails or
@@ -422,7 +449,8 @@ export const check = async (options: Settings, retryMs = 1000): Promise<Verdict>
     "workflow_id",
     "this run",
   );
-  const branch = text(field(pullRequest, "head", "the pull request"), "ref", "the head");
+  const head = field(pullRequest, "head", "the pull request");
+  const branch = text(head, "ref", "the head");
   const runs = await pages(
     `${repository}/actions/workflows/${workflow}/runs`,
     { branch, event: "pull_request" },
@@ -430,7 +458,21 @@ export const check = async (options: Settings, retryMs = 1000): Promise<Verdict>
     true,
     (body) => field(body, "workflow_runs", "a page of runs"),
   );
-  return decide({ pullRequest, files, timeline, runs }, options);
+  // GitHub names a head by the login of its repository's owner. A head repository that no longer
+  // exists names none, and decide fails on it.
+  const repo = field(head, "repo", "the head");
+  const fromHead = isFields(repo)
+    ? await pages(
+        `${repository}/pulls`,
+        {
+          state: "all",
+          head: `${text(field(repo, "owner", "the head repository"), "login", "the owner of the head repository")}:${branch}`,
+        },
+        PULL_PAGES,
+        true,
+      )
+    : [];
+  return decide({ pullRequest, files, timeline, runs, fromHead }, options);
 };
 
 // A workflow command, which GitHub shows as an error on the run and on the pull request.

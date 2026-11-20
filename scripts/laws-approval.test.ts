@@ -31,8 +31,9 @@ const payload = (value: unknown, what: string): Payload => {
 
 // One payload of each kind that GitHub's REST API returned, trimmed of its URLs: pull request #78,
 // one of its changed files, a labeled event of oven-sh/bun#41151, a force-push of #71, a reopening
-// of #39, a commit of #77's timeline and a CodeQL run on #78. Each case below copies them and sets
-// the times, accounts, branches and commits it needs.
+// of #39, a commit of #77's timeline, a CodeQL run on #78, and #52 in the list of the pull
+// requests from its head branch, which #47 came from too. Each case below copies them and sets the
+// times, accounts, branches and commits it needs.
 const fixture = payload(JSON.parse(read("scripts/fixtures/laws-approval.json")), "the fixture");
 const part = (key: string): Payload => payload(fixture[key], key);
 const recorded = {
@@ -43,16 +44,20 @@ const recorded = {
   reopened: part("reopened"),
   committed: part("committed"),
   run: part("run"),
+  listed: part("listed"),
 };
 const recordedHead = payload(recorded.pullRequest["head"], "pullRequest.head");
 const recordedLabel = payload(recorded.labeled["label"], "labeled.label");
 const recordedActor = payload(recorded.labeled["actor"], "labeled.actor");
 const recordedRepository = payload(recorded.run["head_repository"], "run.head_repository");
+const recordedOwner = payload(recordedRepository["owner"], "run.head_repository.owner");
 
 const OWNER = { login: "MarkChu-git", id: 182319871, type: "User" };
 const REPOSITORY = "MarkChu-git/davloom";
 const FORK = "contributor/davloom";
 const BRANCH = "phase-1-laws-approval";
+// The pull request that each case checks.
+const NUMBER = 7;
 // Three heads, oldest first.
 const A = "1".repeat(40);
 const B = "2".repeat(40);
@@ -66,6 +71,7 @@ const repository = (fullName: string): Payload => ({
   ...recordedRepository,
   full_name: fullName,
   fork: fullName !== REPOSITORY,
+  owner: { ...recordedOwner, login: fullName.split("/")[0] ?? "" },
 });
 
 const changed = (filename: string, change: Payload = {}): Payload => ({
@@ -122,6 +128,10 @@ interface Case {
   branch?: string;
   // The head of the event that started the run, when it is not the pull request's head.
   eventHead?: string;
+  // The other pull requests from the head branch, which GitHub lists after this one, or the whole
+  // list of the pull requests from it when `fromHead` is set.
+  others?: Payload[];
+  fromHead?: Payload[];
 }
 
 const pullRequest = (c: Case): Payload => {
@@ -130,6 +140,7 @@ const pullRequest = (c: Case): Payload => {
   const branch = c.branch ?? BRANCH;
   return {
     ...recorded.pullRequest,
+    number: NUMBER,
     labels: (c.labels ?? []).map((name, index) => ({ id: index + 1, name, color: "0e8a16" })),
     changed_files: c.changedFiles ?? (c.files ?? [LAWS]).length,
     head: {
@@ -142,6 +153,22 @@ const pullRequest = (c: Case): Payload => {
   };
 };
 
+// The states of a pull request in GitHub's list of the pull requests from a head.
+const OPEN = { state: "open", closed_at: null, merged_at: null, merge_commit_sha: null };
+const CLOSED = { state: "closed", closed_at: at(-60), merged_at: null, merge_commit_sha: null };
+const MERGED = { state: "closed", closed_at: at(-60), merged_at: at(-60) };
+
+// Pull request `number`, from the head of `pull`, as GitHub lists the pull requests from a head.
+const listing = (number: number, pull: Payload, state: Payload = OPEN): Payload => ({
+  ...recorded.listed,
+  number,
+  head: pull["head"],
+  base: pull["base"],
+  ...state,
+});
+const fromHead = (c: Case): Payload[] =>
+  c.fromHead ?? [listing(NUMBER, pullRequest(c)), ...(c.others ?? [])];
+
 const verdict = (c: Case = {}): Verdict =>
   decide(
     {
@@ -149,6 +176,7 @@ const verdict = (c: Case = {}): Verdict =>
       files: c.files ?? [LAWS],
       timeline: c.timeline ?? [],
       runs: c.runs ?? [],
+      fromHead: fromHead(c),
     },
     { headSha: c.eventHead ?? c.head ?? A, ownerId: OWNER.id },
   );
@@ -455,12 +483,80 @@ describe("when the head became the head", () => {
   });
 });
 
+// The reason the check gives when `others` came from the head branch too.
+const reused = (others: string): string =>
+  `${others} also came from the branch ${BRANCH} of ${REPOSITORY}, and this workflow's runs do not show which pull request they ran for. Open the pull request again from a new branch, and close this one.`;
+
+// A run names no pull request for a fork, so the runs of a head branch belong to one pull request
+// only when no other pull request came from that branch.
+describe("other pull requests from the head branch", () => {
+  it("a head that another pull request from the branch ran before", () => {
+    // #5 came from the branch with head C, whose run came at 0, and was closed. A force-push took
+    // the branch back to A, C's parent, which conflicts with main, so opening this pull request
+    // from it started no run. The owner added the label at 20. C was pushed at 30, a fast-forward
+    // that the timeline does not show, and its run came at 32.
+    const c: Case = { head: C, timeline: [labeled(20)], runs: [run(C, 32), run(C, 0)] };
+    // The runs alone would show C as the head since 0.
+    expect(approved({ ...c, fromHead: [listing(NUMBER, pullRequest(c))] }).pass).toBe(true);
+    const result = approved({ ...c, others: [listing(5, pullRequest(c), CLOSED)] });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(reused("Pull request #5"));
+  });
+
+  it.each([
+    ["closed", CLOSED],
+    ["merged", MERGED],
+    ["open", OPEN],
+  ])("another pull request from the branch, %s", (_state, state) => {
+    const others = [listing(5, pullRequest({}), state)];
+    const result = approved({ timeline: [labeled(10)], runs: [run(A, 0)], others });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(reused("Pull request #5"));
+  });
+
+  it("several other pull requests from the branch", () => {
+    // #52 comes twice, as when a pull request opens between the reads of two pages of the list.
+    const pull = pullRequest({});
+    const others = [
+      listing(52, pull, MERGED),
+      listing(47, pull, CLOSED),
+      listing(52, pull, MERGED),
+    ];
+    const result = approved({ timeline: [labeled(10)], runs: [run(A, 0)], others });
+    expect(result.message).toContain(reused("Pull requests #52 and #47"));
+  });
+
+  it("another pull request from a fork's branch", () => {
+    const c: Case = { from: FORK, timeline: [labeled(10)], runs: [forkRun(A, 0)] };
+    expect(approved(c).pass).toBe(true);
+    const result = approved({ ...c, others: [listing(5, pullRequest(c), MERGED)] });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(
+      `Pull request #5 also came from the branch ${BRANCH} of ${FORK}`,
+    );
+  });
+
+  it("names the other pull request before the label is on", () => {
+    const result = verdict({ runs: [run(A, 0)], others: [listing(5, pullRequest({}), CLOSED)] });
+    expect(result.message).toContain(reused("Pull request #5"));
+  });
+
+  it("a pull request that GitHub does not list among those from its head", () => {
+    const result = approved({ timeline: [labeled(10)], runs: [run(A, 0)], fromHead: [] });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(
+      `GitHub does not list it among the pull requests from the branch ${BRANCH} of ${REPOSITORY}, so the check cannot tell whether another one came from there.`,
+    );
+  });
+});
+
 describe("records of another shape", () => {
   const records = () => ({
     pullRequest: pullRequest({ labels: [LABEL] }),
     files: [LAWS],
     timeline: [labeled(10)],
     runs: [run(A, 0)],
+    fromHead: [listing(NUMBER, pullRequest({}))],
   });
   const context = { headSha: A, ownerId: OWNER.id };
 
@@ -508,6 +604,16 @@ describe("records of another shape", () => {
       "a reset with a time that is not one",
       { timeline: [labeled(10), { ...forcePushed(5, A), created_at: "yesterday" }] },
       "timeline event 2 has a created_at that is not a time",
+    ],
+    [
+      "a pull request without a number",
+      { pullRequest: { ...pullRequest({ labels: [LABEL] }), number: null } },
+      "the pull request has no number",
+    ],
+    [
+      "a pull request from the head without a number",
+      { fromHead: [{ ...listing(NUMBER, pullRequest({})), number: "7" }] },
+      "pull request 1 from the head has no number",
     ],
     ["a run without a head", { runs: [{ ...run(A, 0), head_sha: null }] }, "run 1 has no head_sha"],
     ["a run that is not an object", { runs: [[]] }, "run 1 is not an object"],
@@ -558,7 +664,6 @@ const fake = (answer: (url: URL, request: Request) => Response | Promise<Respons
   return made;
 };
 
-const NUMBER = 7;
 const RUN_ID = 555;
 const WORKFLOW_ID = 4242;
 const PREFIX = `/repos/${REPOSITORY}`;
@@ -586,11 +691,25 @@ const github = (c: {
   timeline?: unknown[];
   runs?: unknown[];
   branch?: string;
+  // The pull requests of every state and from every head, which GitHub lists by head.
+  pulls?: Payload[];
 }) => {
   const branch = c.branch ?? BRANCH;
   const pull = c.pull ?? pullRequest({ labels: [LABEL], branch });
+  const pulls = c.pulls ?? [listing(NUMBER, pull)];
   return (url: URL): Response => {
     switch (url.pathname) {
+      case `${PREFIX}/pulls`: {
+        // GitHub lists only the open pull requests unless it is asked for every state.
+        const state = url.searchParams.get("state") ?? "open";
+        const head = url.searchParams.get("head");
+        const all = pulls.filter(
+          (listed) =>
+            payload(listed["head"], "the head")["label"] === head &&
+            (state === "all" || listed["state"] === state),
+        );
+        return Response.json(page(url, all));
+      }
       case `${PREFIX}/pulls/${NUMBER}`:
         return Response.json(pull);
       case `${PREFIX}/pulls/${NUMBER}/files`:
@@ -609,8 +728,15 @@ const github = (c: {
   };
 };
 
+// The path and query of each request that a fake API saw.
+const asked = (api: Fake): string[] =>
+  api.requests.map((request) => {
+    const url = new URL(request.url);
+    return `${url.pathname}${url.search}`;
+  });
+
 describe("reading GitHub's records", () => {
-  it("reads every page, its own run's workflow and that workflow's runs for the head branch", async () => {
+  it("reads every page, its own run's workflow, that workflow's runs for the head branch and the pull requests from it", async () => {
     const unguarded = Array.from({ length: 100 }, (_, index) => changed(`docs/${index}.md`));
     // A branch name with characters that a query has to escape.
     const branch = "phase-1/laws+approval#2";
@@ -623,17 +749,14 @@ describe("reading GitHub's records", () => {
     );
     const result = await check(options(api.url), 0);
     expect(result.pass).toBe(true);
-    const asked = api.requests.map((request) => {
-      const url = new URL(request.url);
-      return `${url.pathname}${url.search}`;
-    });
-    expect(asked).toEqual([
+    expect(asked(api)).toEqual([
       `${PREFIX}/pulls/${NUMBER}`,
       `${PREFIX}/pulls/${NUMBER}/files?per_page=100&page=1`,
       `${PREFIX}/pulls/${NUMBER}/files?per_page=100&page=2`,
       `${PREFIX}/issues/${NUMBER}/timeline?per_page=100&page=1`,
       `${PREFIX}/actions/runs/${RUN_ID}`,
       `${PREFIX}/actions/workflows/${WORKFLOW_ID}/runs?branch=phase-1%2Flaws%2Bapproval%232&event=pull_request&per_page=100&page=1`,
+      `${PREFIX}/pulls?state=all&head=MarkChu-git%3Aphase-1%2Flaws%2Bapproval%232&per_page=100&page=1`,
     ]);
     for (const request of api.requests) {
       expect(request.method).toBe("GET");
@@ -650,6 +773,52 @@ describe("reading GitHub's records", () => {
     const result = await check(options(api.url), 0);
     expect(result.pass).toBe(false);
     expect(result.message).toContain("robobun added the label, not the owner.");
+  });
+
+  it("fails when GitHub lists another pull request from the head branch", async () => {
+    // The case of "a head that another pull request from the branch ran before", as GitHub serves
+    // it, with a pull request from another branch that the list leaves out.
+    const pull = pullRequest({ labels: [LABEL], head: C });
+    const api = fake(
+      github({
+        pull,
+        timeline: [labeled(20)],
+        runs: [run(C, 32), run(C, 0)],
+        pulls: [
+          listing(NUMBER, pull),
+          listing(9, pullRequest({ branch: "another-branch" })),
+          listing(5, pull, CLOSED),
+        ],
+      }),
+    );
+    const result = await check({ ...options(api.url), headSha: C }, 0);
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(
+      `Pull request #5 also came from the branch ${BRANCH} of ${REPOSITORY}`,
+    );
+  });
+
+  it("names a fork's head by the fork's owner", async () => {
+    // #5 came from this repository's branch of the same name, which is another head.
+    const pull = pullRequest({ labels: [LABEL], from: FORK });
+    const api = fake(
+      github({
+        pull,
+        runs: [forkRun(A, 0)],
+        pulls: [listing(NUMBER, pull), listing(5, pullRequest({}), MERGED)],
+      }),
+    );
+    expect((await check(options(api.url), 0)).pass).toBe(true);
+    expect(asked(api)).toContain(
+      `${PREFIX}/pulls?state=all&head=contributor%3A${BRANCH}&per_page=100&page=1`,
+    );
+  });
+
+  it("reads no pull requests from a head repository that no longer exists", async () => {
+    const api = fake(github({ pull: pullRequest({ labels: [LABEL], from: null }) }));
+    const result = await check(options(api.url), 0);
+    expect(result.message).toContain("Its head repository no longer exists");
+    expect(asked(api).filter((path) => path.startsWith(`${PREFIX}/pulls?`))).toEqual([]);
   });
 
   it("tries a request again after a server error", async () => {
