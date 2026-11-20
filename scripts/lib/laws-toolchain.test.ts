@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Archive,
   type FetchArchive,
@@ -21,6 +21,43 @@ import {
   toolchainPaths,
 } from "./laws-toolchain";
 import { PLATFORMS, type Platform, sha256Of } from "./tools";
+
+// Setup opens each archive file with this `open`, which a test can slow down, as a loaded runner
+// does, or whose writes it can slow down, cut short or make fail, as a busy or full disk does.
+const disk = vi.hoisted(
+  (): { openMs: number; writeMs: number; writeLimit?: number; writeError?: Error } => ({
+    openMs: 0,
+    writeMs: 0,
+  }),
+);
+
+vi.mock(import("node:fs/promises"), async (importOriginal) => {
+  const fs = await importOriginal();
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      if (disk.openMs > 0) {
+        await Bun.sleep(disk.openMs);
+      }
+      const handle = await fs.open(...args);
+      const { writeError, writeLimit, writeMs } = disk;
+      if (writeError !== undefined) {
+        handle.write = () => Promise.reject(writeError);
+      } else if (writeMs > 0 || writeLimit !== undefined) {
+        const write = handle.write.bind(handle);
+        // Defined, not assigned: only FileHandle's own write has every overload of its type.
+        Object.defineProperty(handle, "write", {
+          // At most `writeLimit` bytes a call, as a write(2) can take only part of its buffer.
+          value: async (buffer: Uint8Array, offset = 0, length = buffer.byteLength - offset) => {
+            await Bun.sleep(writeMs);
+            return write(buffer, offset, Math.min(length, writeLimit ?? length));
+          },
+        });
+      }
+      return handle;
+    },
+  };
+});
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -347,17 +384,74 @@ describe("setting up the toolchain", SETUP, () => {
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 
-  it("builds no kernel with a Lean that reports another version", async () => {
+  it("installs nothing from a Lean that reports another version", async () => {
     const other = archiveOf("lean-4.35.0-darwin_aarch64", fakeLean("4.35.0"), true);
     const toolchain = toolchainOf(bendArchive, other);
     const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: other });
     await expect(
       setupToolchain(toolchain, { cacheDir, platform: PLATFORM, fetchArchive }),
     ).rejects.toThrow(
-      "reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0",
+      `The Lean in ${LEAN_URL} reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0, so nothing was installed`,
     );
-    expect(existsSync(toolchainPaths(toolchain, cacheDir, PLATFORM).kernel)).toBe(false);
-    expect(readdirSync(cacheDir).toSorted()).toEqual(["bend", "lean"]);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("names a cached Lean that reports another version, for deleting", async () => {
+    await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive: server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive }).fetchArchive,
+    });
+    // As a setup that installed Lean before checking its version could leave it.
+    const { lean, kernel } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    writeFileSync(join(lean, "bin", "lean"), fakeLean("4.35.0")["bin/lean"] ?? "");
+    rmSync(kernel);
+    const again = server({});
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive: again.fetchArchive }),
+    ).rejects.toThrow(
+      `${join(lean, "bin", "lean")} reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0; delete ${lean} and run setup again`,
+    );
+    expect(again.requests).toEqual([]);
+  });
+
+  it("names a release directory that lacks one of its files, and downloads nothing", async () => {
+    const { lean } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    mkdirSync(join(lean, "bin"), { recursive: true });
+    writeFileSync(join(lean, "bin", "lean"), "");
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(`${lean} holds no bin/leanc; delete it and run setup again`);
+    expect(requests).toEqual([]);
+    expect(readdirSync(cacheDir)).toEqual(["lean"]);
+  });
+
+  it("installs a release into an empty directory where it belongs", async () => {
+    const { lean } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    mkdirSync(lean, { recursive: true });
+    const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+    expect(existsSync(join(lean, "bin", "leanc"))).toBe(true);
+  });
+
+  it("names a directory at the kernel's path instead of taking it for the kernel", async () => {
+    await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive: server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive }).fetchArchive,
+    });
+    const { kernel } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    rmSync(kernel);
+    mkdirSync(kernel);
+    await expect(
+      setupToolchain(TOOLCHAIN, {
+        cacheDir,
+        platform: PLATFORM,
+        fetchArchive: server({}).fetchArchive,
+      }),
+    ).rejects.toThrow(`${kernel} is not a file; delete it and run setup again`);
   });
 
   it("caches no kernel that refuses an empty input", async () => {
@@ -381,13 +475,39 @@ describe("setting up the toolchain", SETUP, () => {
   });
 });
 
+// Calls `then` once `signal` aborts. A signal that aborted before this call fires no event, so a
+// fake that a loaded runner calls late checks it first.
+const whenAborted = (signal: AbortSignal, then: () => void): void => {
+  if (signal.aborted) {
+    then();
+  } else {
+    signal.addEventListener("abort", then, { once: true });
+  }
+};
+
+// A response that sends `bytes` in four chunks and fails once its request is aborted, as the body
+// of a real fetch does.
+const abortable = (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal): Response =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const quarter = Math.ceil(bytes.length / 4);
+        for (let start = 0; start < bytes.length; start += quarter) {
+          controller.enqueue(bytes.slice(start, start + quarter));
+        }
+        controller.close();
+        whenAborted(signal, () => controller.error(signal.reason));
+      },
+    }),
+  );
+
 // A response that sends `bytes` and then nothing until its request is aborted, as a stalled proxy does.
 const stalling = (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal): Response =>
   new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(bytes);
-        signal.addEventListener("abort", () => controller.error(signal.reason));
+        whenAborted(signal, () => controller.error(signal.reason));
       },
     }),
   );
@@ -398,6 +518,33 @@ const partial = (bytes: Uint8Array<ArrayBuffer>, start: number): Response =>
     status: 206,
     headers: { "content-range": `bytes ${start}-${bytes.length - 1}/${bytes.length}` },
   });
+
+// Where a Range request asks the archive to start, or 0 for a request without one.
+const rangeStart = (headers: Readonly<Record<string, string>>): number =>
+  Number(/^bytes=(\d+)-$/.exec(headers["range"] ?? "")?.[1] ?? 0);
+
+// A response to a request from `start` on that sends `bytes` up to `end` and then fails, as a
+// proxy that drops the connection does, unless it reached the end of `bytes`.
+const dropping = (bytes: Uint8Array<ArrayBuffer>, start: number, end: number): Response => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes.slice(start, end));
+    },
+    pull(controller) {
+      if (end < bytes.length) {
+        controller.error(new Error("The socket connection was closed unexpectedly"));
+      } else {
+        controller.close();
+      }
+    },
+  });
+  return start === 0
+    ? new Response(body)
+    : new Response(body, {
+        status: 206,
+        headers: { "content-range": `bytes ${start}-${bytes.length - 1}/${bytes.length}` },
+      });
+};
 
 const HALF = Math.floor(leanArchive.length / 2);
 const HALF_MIB = `${(HALF / 2 ** 20).toFixed(1)} MiB`;
@@ -426,7 +573,7 @@ describe("a download that stops", SETUP, () => {
     });
     expect(ranges).toEqual([undefined, `bytes=${HALF}-`]);
     expect(lines).toContain(
-      `The download received nothing for 0.05 s after ${HALF_MIB}; resuming it`,
+      `After ${HALF_MIB}, the download received nothing for 0.05 s; resuming it`,
     );
     expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
   });
@@ -464,7 +611,7 @@ describe("a download that stops", SETUP, () => {
     });
     expect(calls).toBe(2);
     expect(lines).toContain(
-      `The download failed: The socket connection was closed unexpectedly after ${HALF_MIB}; resuming it`,
+      `After ${HALF_MIB}, the download failed: The socket connection was closed unexpectedly; resuming it`,
     );
   });
 
@@ -490,8 +637,182 @@ describe("a download that stops", SETUP, () => {
     });
     expect(statuses).toEqual([502, 200]);
     expect(lines).toContain(
-      `The download failed: Downloading ${LEAN_URL} failed with HTTP 502 after 0.0 MiB; resuming it`,
+      `After 0.0 MiB, the download failed: Downloading ${LEAN_URL} failed with HTTP 502; resuming it`,
     );
+  });
+
+  it("finishes when a resume after the last byte is answered with 416", async () => {
+    const ranges: (string | undefined)[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      ranges.push(headers["range"]);
+      if (headers["range"] !== undefined) {
+        return Promise.resolve(
+          new Response("Range Not Satisfiable", {
+            status: 416,
+            headers: { "content-range": `bytes */${leanArchive.length}` },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            // Every byte arrives, and then the connection fails.
+            start(controller) {
+              controller.enqueue(leanArchive);
+            },
+            pull(controller) {
+              controller.error(new Error("The socket connection was closed unexpectedly"));
+            },
+          }),
+        ),
+      );
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(ranges).toEqual([undefined, `bytes=${leanArchive.length}-`]);
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+  });
+
+  it.each([
+    ["the length of a longer archive", { "content-range": `bytes */${leanArchive.length}` }],
+    ["no length", {}],
+  ])("refuses a resume answered with 416 and %s", async (_case, rangeHeaders) => {
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      return Promise.resolve(
+        headers["range"] === undefined
+          ? dropping(leanArchive, 0, HALF)
+          : new Response("Range Not Satisfiable", { status: 416, headers: rangeHeaders }),
+      );
+    };
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(`Downloading ${LEAN_URL} failed with HTTP 416`);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("cancels the body of every response that it does not read", async () => {
+    const unread: Response[] = [];
+    const keep = (response: Response): Response => {
+      unread.push(response);
+      return response;
+    };
+    const { length } = leanArchive;
+    // Each Lean request gets the next of these: a retried server error and a retried range that
+    // starts elsewhere, then the rest of the archive over a connection that fails after its last
+    // byte, and a 416 that ends the download.
+    const answers = [
+      () => dropping(leanArchive, 0, HALF),
+      () => keep(new Response("Bad Gateway", { status: 502 })),
+      () => keep(partial(leanArchive, HALF + 10)),
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(leanArchive.slice(HALF));
+            },
+            pull(controller) {
+              controller.error(new Error("The socket connection was closed unexpectedly"));
+            },
+          }),
+          { status: 206, headers: { "content-range": `bytes ${HALF}-${length - 1}/${length}` } },
+        ),
+      () =>
+        keep(
+          new Response("Range Not Satisfiable", {
+            status: 416,
+            headers: { "content-range": `bytes */${length}` },
+          }),
+        ),
+    ];
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const answer = answers[calls] ?? (() => new Response("Not Found", { status: 404 }));
+      calls += 1;
+      return Promise.resolve(answer());
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(calls).toBe(answers.length);
+    expect(unread.map((response) => response.bodyUsed)).toEqual([true, true, true]);
+    expect(result.builtKernel).toBe(true);
+  });
+
+  it("retries a resume answered with a range that starts elsewhere", async () => {
+    const ranges: (string | undefined)[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      ranges.push(headers["range"]);
+      if (ranges.length === 1) {
+        return Promise.resolve(dropping(leanArchive, 0, HALF));
+      }
+      return Promise.resolve(partial(leanArchive, ranges.length === 2 ? HALF + 10 : HALF));
+    };
+    const lines: string[] = [];
+    const result = await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive,
+      log: (line) => lines.push(line),
+    });
+    expect(ranges).toEqual([undefined, `bytes=${HALF}-`, `bytes=${HALF}-`]);
+    expect(lines).toContain(
+      `After ${HALF_MIB}, the download failed: Downloading ${LEAN_URL} sent bytes ${HALF + 10}-${leanArchive.length - 1}/${leanArchive.length} instead of the bytes from ${HALF} on; resuming it`,
+    );
+    expect(result.builtKernel).toBe(true);
+  });
+
+  it("retries a body that ends short of its Content-Length, unless fetch decoded it", async () => {
+    const requests: string[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      requests.push(url);
+      if (url === BEND_URL) {
+        // A decoded body need not be as long as the encoded one that Content-Length counts.
+        return Promise.resolve(
+          new Response(bendArchive, {
+            headers: {
+              "content-encoding": "gzip",
+              "content-length": String(bendArchive.length + 100),
+            },
+          }),
+        );
+      }
+      if (headers["range"] !== undefined) {
+        return Promise.resolve(partial(leanArchive, HALF));
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            // Half of the archive, and then a clean end.
+            start(controller) {
+              controller.enqueue(leanArchive.slice(0, HALF));
+              controller.close();
+            },
+          }),
+          { headers: { "content-length": String(leanArchive.length) } },
+        ),
+      );
+    };
+    const lines: string[] = [];
+    const result = await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive,
+      log: (line) => lines.push(line),
+    });
+    expect(requests).toEqual([BEND_URL, LEAN_URL, LEAN_URL]);
+    expect(lines).toContain(
+      `After ${HALF_MIB}, the download failed: Downloading ${LEAN_URL} ended after ${HALF} of the ${leanArchive.length} bytes its Content-Length gave; resuming it`,
+    );
+    expect(result.builtKernel).toBe(true);
   });
 
   it("starts again from the beginning when the server ignores the Range request", async () => {
@@ -515,7 +836,70 @@ describe("a download that stops", SETUP, () => {
     expect(result.builtKernel).toBe(true);
   });
 
-  it("gives up after five attempts, and installs nothing", async () => {
+  it("resumes for as long as each attempt receives bytes", async () => {
+    const chunk = Math.ceil(leanArchive.length / 8);
+    const starts: number[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const start = rangeStart(headers);
+      starts.push(start);
+      return Promise.resolve(
+        dropping(leanArchive, start, Math.min(start + chunk, leanArchive.length)),
+      );
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(starts).toEqual(Array.from({ length: 8 }, (_, index) => index * chunk));
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+  });
+
+  it("counts only the attempts in a row that receive nothing", async () => {
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      calls += 1;
+      // Four server errors before each half of the archive, so eight attempts receive nothing.
+      if (calls % 5 !== 0) {
+        return Promise.resolve(new Response("Bad Gateway", { status: 502 }));
+      }
+      const start = rangeStart(headers);
+      return Promise.resolve(dropping(leanArchive, start, start === 0 ? HALF : leanArchive.length));
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(calls).toBe(10);
+    expect(result.builtKernel).toBe(true);
+  });
+
+  it("gives up on a server that ignores the Range request and drops at alternating points", async () => {
+    // In eighths of the archive. After the first, every attempt starts again from byte 0 and ends
+    // short of where the first one did, though often above where it started.
+    const drops = [4, 2, 3, 2, 3, 2, 3, 2, 3, 2];
+    const eighth = Math.floor(leanArchive.length / 8);
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const drop = drops[calls];
+      calls += 1;
+      // Then the whole archive, so a rule that never gives up ends the test instead of hanging it.
+      return Promise.resolve(
+        drop === undefined ? new Response(leanArchive) : dropping(leanArchive, 0, drop * eighth),
+      );
+    };
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(
+      `Downloading ${LEAN_URL} got no further in 5 attempts in a row, so nothing was installed. After 0.0 MiB, the last attempt failed: The socket connection was closed unexpectedly`,
+    );
+    expect(calls).toBe(6);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("gives up after five attempts in a row that receive nothing, and installs nothing", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {
       if (url === BEND_URL) {
@@ -523,15 +907,97 @@ describe("a download that stops", SETUP, () => {
       }
       calls += 1;
       return new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason));
+        whenAborted(signal, () => reject(signal.reason));
       });
     };
     await expect(
       setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 }),
     ).rejects.toThrow(
-      `Downloading ${LEAN_URL} stopped 5 times; the last attempt received nothing for 0.02 s after 0.0 MiB, so nothing was installed`,
+      `Downloading ${LEAN_URL} got no further in 5 attempts in a row, so nothing was installed. After 0.0 MiB, the last attempt received nothing for 0.02 s`,
     );
     expect(calls).toBe(5);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("does not count the time the file takes to open as a stall", async () => {
+    const requests: string[] = [];
+    // Like fetch, the fake fails at once when its request was aborted before the call.
+    const fetchArchive: FetchArchive = (url, { signal }) => {
+      requests.push(url);
+      return signal.aborted
+        ? Promise.reject(signal.reason)
+        : Promise.resolve(new Response(url === BEND_URL ? bendArchive : leanArchive));
+    };
+    disk.openMs = 100;
+    try {
+      await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 });
+    } finally {
+      disk.openMs = 0;
+    }
+    expect(requests).toEqual([BEND_URL, LEAN_URL]);
+  });
+
+  it("does not count the time a chunk takes to write as a stall", async () => {
+    const requests: string[] = [];
+    const fetchArchive: FetchArchive = (url, { signal }) => {
+      requests.push(url);
+      return Promise.resolve(abortable(url === BEND_URL ? bendArchive : leanArchive, signal));
+    };
+    disk.writeMs = 100;
+    try {
+      await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 });
+    } finally {
+      disk.writeMs = 0;
+    }
+    expect(requests).toEqual([BEND_URL, LEAN_URL]);
+  });
+
+  it("writes every byte of a chunk that the disk takes in parts", async () => {
+    const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeLimit = 7;
+    try {
+      const result = await setupToolchain(TOOLCHAIN, {
+        cacheDir,
+        platform: PLATFORM,
+        fetchArchive,
+      });
+      expect(result.builtKernel).toBe(true);
+    } finally {
+      delete disk.writeLimit;
+    }
+  });
+
+  it("stops at once when a write takes nothing", async () => {
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeLimit = 0;
+    const file = join(cacheDir, `.laws-setup-${process.pid}`, "bend-2.0.40-darwin-arm64.tar.gz");
+    try {
+      await expect(
+        setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+      ).rejects.toThrow(
+        `Setup could not write ${file}: a write took none of the ${bendArchive.length} bytes left of a chunk`,
+      );
+    } finally {
+      delete disk.writeLimit;
+    }
+    expect(requests).toEqual([BEND_URL]);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("stops at once when the archive cannot be written", async () => {
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeError = Object.assign(new Error("ENOSPC: no space left on device, write"), {
+      code: "ENOSPC",
+    });
+    const file = join(cacheDir, `.laws-setup-${process.pid}`, "bend-2.0.40-darwin-arm64.tar.gz");
+    try {
+      await expect(
+        setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+      ).rejects.toThrow(`Setup could not write ${file}: ENOSPC: no space left on device, write`);
+    } finally {
+      delete disk.writeError;
+    }
+    expect(requests).toEqual([BEND_URL]);
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 

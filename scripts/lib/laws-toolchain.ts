@@ -5,9 +5,10 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
-import { open } from "node:fs/promises";
+import { type FileHandle, open } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { PLATFORMS, type Platform } from "./tools";
 
@@ -150,11 +151,48 @@ export interface SetupOptions {
 // A proxy can keep a download's connection open without sending anything, and fetch then waits
 // forever: one stopped at 174 of 562 MB on 2026-11-20. Setup resumes such a download, one whose
 // connection fails and one that a server error ends, with a Range request, which GitHub's release
-// downloads answer. A refusal such as 404 ends setup at once.
+// downloads answer. It gives up once five attempts in a row end no further into the archive than
+// an earlier one, so a proxy that drops the connection every so often slows a download without
+// ending it, and one that also ignores the Range request cannot keep it going forever. A refusal
+// such as 404 ends setup at once, and so does an error writing the file: another attempt cannot
+// fix a full disk, and a write that failed partway would put the resumed bytes in the wrong place.
 const STALL_MS = 60_000;
 const ATTEMPTS = 5;
 
 class RefusedError extends Error {}
+
+class WriteError extends Error {}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/** Waits for `operation` on `file`, turning its error into a WriteError that names the file. */
+const writing = async (file: string, operation: Promise<unknown>): Promise<void> => {
+  try {
+    await operation;
+  } catch (error) {
+    throw new WriteError(`Setup could not write ${file}: ${messageOf(error)}`, { cause: error });
+  }
+};
+
+// Cancels the body of a response that setup does not read, so that its connection does not wait
+// for the garbage collector. A body that already failed has nothing left to cancel.
+const discard = async (response: Response): Promise<void> => {
+  await response.body?.cancel().catch(() => {});
+};
+
+/** Writes all of `chunk` to `handle`, since a write may take only part of what it is given. */
+const writeAll = async (handle: FileHandle, chunk: Uint8Array): Promise<void> => {
+  let offset = 0;
+  while (offset < chunk.byteLength) {
+    const left = chunk.byteLength - offset;
+    const { bytesWritten } = await handle.write(chunk, offset, left);
+    if (bytesWritten === 0) {
+      throw new Error(`a write took none of the ${left} bytes left of a chunk`);
+    }
+    offset += bytesWritten;
+  }
+};
 
 const mib = (bytes: number): string => `${(bytes / 2 ** 20).toFixed(1)} MiB`;
 
@@ -175,6 +213,30 @@ interface Install {
 const installed = (install: Install): boolean =>
   install.files.every((file) => existsSync(join(install.target, file)));
 
+/**
+ * Fails, naming what to delete, when a directory where a missing release belongs holds something
+ * but lacks one of the release's files, or when something other than a file holds the kernel's
+ * path. Setup could never move the release there, and would take that path for a built kernel.
+ */
+const refuseInTheWay = (missing: readonly Install[], kernel: string): void => {
+  for (const { target, files } of missing) {
+    // A release that another run has just moved into place lacks nothing.
+    const absent = files.filter((file) => !existsSync(join(target, file)));
+    // A rename replaces an empty directory, so only a file or a directory that holds something
+    // is in the way.
+    const stat = statSync(target, { throwIfNoEntry: false });
+    const occupied = stat !== undefined && (!stat.isDirectory() || readdirSync(target).length > 0);
+    if (absent.length > 0 && occupied) {
+      throw new Error(
+        `${target} holds no ${absent.join(" and no ")}; delete it and run setup again`,
+      );
+    }
+  }
+  if (statSync(kernel, { throwIfNoEntry: false })?.isFile() === false) {
+    throw new Error(`${kernel} is not a file; delete it and run setup again`);
+  }
+};
+
 /** Writes the bytes of `archive` to `file`, resuming after a stall or a failed connection. */
 const fetchInto = async (
   archive: Archive,
@@ -182,48 +244,85 @@ const fetchInto = async (
   { fetchArchive, stallMs, log }: Required<Pick<SetupOptions, "fetchArchive" | "stallMs" | "log">>,
 ): Promise<void> => {
   let size = 0;
-  for (let attempt = 1; ; attempt += 1) {
+  // The most bytes the file has held, and the attempts in a row that ended without passing it. A
+  // server that ignores the Range request starts the file again, so an attempt that ends above its
+  // own start may only win back part of what an earlier one lost.
+  let furthest = 0;
+  let stuck = 0;
+  for (;;) {
     const controller = new AbortController();
-    let timer = setTimeout(() => controller.abort(), stallMs);
     const handle = await open(file, size > 0 ? "a" : "w");
+    // The clock starts once the file is open, so a slow open does not count as a stall.
+    let timer = setTimeout(() => controller.abort(), stallMs);
     try {
       const response = await fetchArchive(archive.url, {
         signal: controller.signal,
         headers: size > 0 ? { range: `bytes=${size}-` } : {},
       });
+      if (
+        response.status === 416 &&
+        size > 0 &&
+        response.headers.get("content-range") === `bytes */${size}`
+      ) {
+        // A connection lost after the last byte leaves no range to resume, and the server gives
+        // the archive's length as the file's. The SHA-256 check decides whether the file is whole.
+        await discard(response);
+        return;
+      }
       if (!response.ok || response.body === null) {
+        await discard(response);
         const message = `Downloading ${archive.url} failed with HTTP ${response.status}`;
         throw response.status >= 500 ? new Error(message) : new RefusedError(message);
       }
-      const resumed =
-        response.status === 206 &&
-        response.headers.get("content-range")?.startsWith(`bytes ${size}-`) === true;
-      if (!resumed && size > 0) {
+      const range = response.headers.get("content-range");
+      if (response.status === 206 && range?.startsWith(`bytes ${size}-`) !== true) {
+        await discard(response);
+        throw new Error(
+          `Downloading ${archive.url} sent ${range ?? "a 206 without Content-Range"} instead of the bytes from ${size} on`,
+        );
+      }
+      if (response.status !== 206 && size > 0) {
         // The server sent the archive from its start instead of the range asked for.
-        await handle.truncate(0);
+        await writing(file, handle.truncate(0));
         size = 0;
       }
+      // Content-Length counts the bytes before fetch decodes a Content-Encoding, not those read.
+      const stated =
+        response.headers.get("content-encoding") === null
+          ? Number(response.headers.get("content-length") ?? Number.NaN)
+          : Number.NaN;
+      let received = 0;
       for await (const chunk of response.body) {
+        // The clock stops while the chunk is written, so a slow disk does not count as a stall.
         clearTimeout(timer);
-        timer = setTimeout(() => controller.abort(), stallMs);
-        await handle.write(chunk);
+        await writing(file, writeAll(handle, chunk));
         size += chunk.byteLength;
+        received += chunk.byteLength;
+        timer = setTimeout(() => controller.abort(), stallMs);
+      }
+      if (received < stated) {
+        throw new Error(
+          `Downloading ${archive.url} ended after ${received} of the ${stated} bytes its Content-Length gave`,
+        );
       }
       return;
     } catch (error) {
-      if (error instanceof RefusedError) {
+      if (error instanceof RefusedError || error instanceof WriteError) {
         throw error;
       }
       const why = controller.signal.aborted
         ? `received nothing for ${stallMs / 1000} s`
-        : `failed: ${error instanceof Error ? error.message : String(error)}`;
-      if (attempt === ATTEMPTS) {
+        : `failed: ${messageOf(error)}`;
+      stuck = size > furthest ? 0 : stuck + 1;
+      furthest = Math.max(furthest, size);
+      // The size comes before `why`, which runs long for an error such as Bun's ECONNRESET.
+      if (stuck === ATTEMPTS) {
         throw new Error(
-          `Downloading ${archive.url} stopped ${ATTEMPTS} times; the last attempt ${why} after ${mib(size)}, so nothing was installed`,
+          `Downloading ${archive.url} got no further in ${ATTEMPTS} attempts in a row, so nothing was installed. After ${mib(size)}, the last attempt ${why}`,
           { cause: error },
         );
       }
-      log(`The download ${why} after ${mib(size)}; resuming it`);
+      log(`After ${mib(size)}, the download ${why}; resuming it`);
     } finally {
       clearTimeout(timer);
       await handle.close();
@@ -255,7 +354,8 @@ const download = async (
 /** Unpacks the release in `file` into the new directory `into`, without its top directory. */
 const unpack = async (archive: Archive, file: string, into: string): Promise<void> => {
   mkdirSync(into);
-  // The bsdtar 3.5 of macOS reads no zstd, so Bun decompresses Lean's archive into tar's input.
+  // The bsdtar 3.5 of macOS has no zstd support of its own and needs a `zstd` program, which macOS
+  // does not ship, so Bun decompresses Lean's archive into tar's input.
   const zstd = archive.url.endsWith(".tar.zst");
   const tar = Bun.spawn(
     ["tar", zstd ? "-xf" : "-xzf", zstd ? "-" : file, "--strip-components", "1", "-C", into],
@@ -286,6 +386,10 @@ const run = (command: readonly string[], cwd: string): string => {
   return output;
 };
 
+/** The version that `lean --version` reports for the Lean in `dir`, run in `cwd`. */
+const leanVersion = (dir: string, cwd: string): string | undefined =>
+  run([join(dir, "bin", "lean"), "--version"], cwd).match(/^Lean \(version ([^,\s)]+)/m)?.[1];
+
 /**
  * Builds the kernel in the new directory `dir` with the steps `bend` takes when it builds its own:
  * `lean --version` must report the pinned version, then `lean -c bendtt.c bendtt.lean` and
@@ -299,10 +403,11 @@ const buildKernel = (
 ): void => {
   mkdirSync(dir);
   const lean = join(paths.lean, "bin", "lean");
-  const version = run([lean, "--version"], dir).match(/^Lean \(version ([^,\s)]+)/m)?.[1];
+  const version = leanVersion(paths.lean, dir);
   if (version !== toolchain.lean.version) {
+    // Setup checks each Lean it installs, so this one reached the cache another way.
     throw new Error(
-      `${lean} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}`,
+      `${lean} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}; delete ${paths.lean} and run setup again`,
     );
   }
   copyFileSync(join(bendDir, "bend2", "bendtt.lean"), join(dir, "bendtt.lean"));
@@ -369,6 +474,7 @@ export const setupToolchain = async (
     removeStaleStaging(cacheDir);
   }
   const missing = [bend, lean].filter((install) => !installed(install));
+  refuseInTheWay(missing, paths.kernel);
   if (missing.length === 0 && existsSync(paths.kernel)) {
     return { paths, downloaded: [], builtKernel: false };
   }
@@ -392,6 +498,16 @@ export const setupToolchain = async (
       const absent = install.files.filter((path) => !existsSync(join(dir, path)));
       if (absent.length > 0) {
         throw new Error(`${install.archive.url} holds no ${absent.join(" and no ")}`);
+      }
+      if (install === lean) {
+        // Checked before any release moves into place, so an archive of another Lean installs
+        // nothing that a corrected pin would then have to replace.
+        const version = leanVersion(dir, staging);
+        if (version !== toolchain.lean.version) {
+          throw new Error(
+            `The Lean in ${install.archive.url} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}, so nothing was installed`,
+          );
+        }
       }
       unpacked.push({ install, dir });
     }
