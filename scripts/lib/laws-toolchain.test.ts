@@ -718,6 +718,51 @@ describe("a download that stops", SETUP, () => {
     expect(result.builtKernel).toBe(true);
   });
 
+  it("retries a body that ends short of its Content-Length, unless fetch decoded it", async () => {
+    const requests: string[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      requests.push(url);
+      if (url === BEND_URL) {
+        // A decoded body need not be as long as the encoded one that Content-Length counts.
+        return Promise.resolve(
+          new Response(bendArchive, {
+            headers: {
+              "content-encoding": "gzip",
+              "content-length": String(bendArchive.length + 100),
+            },
+          }),
+        );
+      }
+      if (headers["range"] !== undefined) {
+        return Promise.resolve(partial(leanArchive, HALF));
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            // Half of the archive, and then a clean end.
+            start(controller) {
+              controller.enqueue(leanArchive.slice(0, HALF));
+              controller.close();
+            },
+          }),
+          { headers: { "content-length": String(leanArchive.length) } },
+        ),
+      );
+    };
+    const lines: string[] = [];
+    const result = await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive,
+      log: (line) => lines.push(line),
+    });
+    expect(requests).toEqual([BEND_URL, LEAN_URL, LEAN_URL]);
+    expect(lines).toContain(
+      `After ${HALF_MIB}, the download failed: Downloading ${LEAN_URL} ended after ${HALF} of the ${leanArchive.length} bytes its Content-Length gave; resuming it`,
+    );
+    expect(result.builtKernel).toBe(true);
+  });
+
   it("starts again from the beginning when the server ignores the Range request", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {

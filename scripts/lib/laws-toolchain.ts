@@ -264,12 +264,24 @@ const fetchInto = async (
         await writing(file, handle.truncate(0));
         size = 0;
       }
+      // Content-Length counts the bytes before fetch decodes a Content-Encoding, not those read.
+      const stated =
+        response.headers.get("content-encoding") === null
+          ? Number(response.headers.get("content-length") ?? Number.NaN)
+          : Number.NaN;
+      let received = 0;
       for await (const chunk of response.body) {
         // The clock stops while the chunk is written, so a slow disk does not count as a stall.
         clearTimeout(timer);
         await writing(file, handle.write(chunk));
         size += chunk.byteLength;
+        received += chunk.byteLength;
         timer = setTimeout(() => controller.abort(), stallMs);
+      }
+      if (received < stated) {
+        throw new Error(
+          `Downloading ${archive.url} ended after ${received} of the ${stated} bytes its Content-Length gave`,
+        );
       }
       return;
     } catch (error) {
