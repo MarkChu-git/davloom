@@ -426,6 +426,33 @@ const partial = (bytes: Uint8Array<ArrayBuffer>, start: number): Response =>
     headers: { "content-range": `bytes ${start}-${bytes.length - 1}/${bytes.length}` },
   });
 
+// Where a Range request asks the archive to start, or 0 for a request without one.
+const rangeStart = (headers: Readonly<Record<string, string>>): number =>
+  Number(/^bytes=(\d+)-$/.exec(headers["range"] ?? "")?.[1] ?? 0);
+
+// A response to a request from `start` on that sends `bytes` up to `end` and then fails, as a
+// proxy that drops the connection does, unless it reached the end of `bytes`.
+const dropping = (bytes: Uint8Array<ArrayBuffer>, start: number, end: number): Response => {
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes.slice(start, end));
+    },
+    pull(controller) {
+      if (end < bytes.length) {
+        controller.error(new Error("The socket connection was closed unexpectedly"));
+      } else {
+        controller.close();
+      }
+    },
+  });
+  return start === 0
+    ? new Response(body)
+    : new Response(body, {
+        status: 206,
+        headers: { "content-range": `bytes ${start}-${bytes.length - 1}/${bytes.length}` },
+      });
+};
+
 const HALF = Math.floor(leanArchive.length / 2);
 const HALF_MIB = `${(HALF / 2 ** 20).toFixed(1)} MiB`;
 
@@ -542,7 +569,44 @@ describe("a download that stops", SETUP, () => {
     expect(result.builtKernel).toBe(true);
   });
 
-  it("gives up after five attempts, and installs nothing", async () => {
+  it("resumes for as long as each attempt receives bytes", async () => {
+    const chunk = Math.ceil(leanArchive.length / 8);
+    const starts: number[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const start = rangeStart(headers);
+      starts.push(start);
+      return Promise.resolve(
+        dropping(leanArchive, start, Math.min(start + chunk, leanArchive.length)),
+      );
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(starts).toEqual(Array.from({ length: 8 }, (_, index) => index * chunk));
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+  });
+
+  it("counts only the attempts in a row that receive nothing", async () => {
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      calls += 1;
+      // Four server errors before each half of the archive, so eight attempts receive nothing.
+      if (calls % 5 !== 0) {
+        return Promise.resolve(new Response("Bad Gateway", { status: 502 }));
+      }
+      const start = rangeStart(headers);
+      return Promise.resolve(dropping(leanArchive, start, start === 0 ? HALF : leanArchive.length));
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(calls).toBe(10);
+    expect(result.builtKernel).toBe(true);
+  });
+
+  it("gives up after five attempts in a row that receive nothing, and installs nothing", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {
       if (url === BEND_URL) {
@@ -556,7 +620,7 @@ describe("a download that stops", SETUP, () => {
     await expect(
       setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 }),
     ).rejects.toThrow(
-      `Downloading ${LEAN_URL} stopped 5 times; the last attempt received nothing for 0.02 s after 0.0 MiB, so nothing was installed`,
+      `Downloading ${LEAN_URL} got no further in 5 attempts in a row; the last attempt received nothing for 0.02 s after 0.0 MiB, so nothing was installed`,
     );
     expect(calls).toBe(5);
     expect(readdirSync(cacheDir)).toEqual([]);

@@ -150,7 +150,9 @@ export interface SetupOptions {
 // A proxy can keep a download's connection open without sending anything, and fetch then waits
 // forever: one stopped at 174 of 562 MB on 2026-11-20. Setup resumes such a download, one whose
 // connection fails and one that a server error ends, with a Range request, which GitHub's release
-// downloads answer. A refusal such as 404 ends setup at once.
+// downloads answer. It gives up once five attempts in a row add nothing to the file, so a proxy
+// that drops the connection every so often slows a download without ending it. A refusal such as
+// 404 ends setup at once.
 const STALL_MS = 60_000;
 const ATTEMPTS = 5;
 
@@ -182,7 +184,10 @@ const fetchInto = async (
   { fetchArchive, stallMs, log }: Required<Pick<SetupOptions, "fetchArchive" | "stallMs" | "log">>,
 ): Promise<void> => {
   let size = 0;
-  for (let attempt = 1; ; attempt += 1) {
+  // Attempts in a row that added nothing to the file.
+  let stuck = 0;
+  for (;;) {
+    const start = size;
     const controller = new AbortController();
     const handle = await open(file, size > 0 ? "a" : "w");
     // The clock starts once the file is open, so a slow disk does not count as a stall.
@@ -218,9 +223,10 @@ const fetchInto = async (
       const why = controller.signal.aborted
         ? `received nothing for ${stallMs / 1000} s`
         : `failed: ${error instanceof Error ? error.message : String(error)}`;
-      if (attempt === ATTEMPTS) {
+      stuck = size > start ? 0 : stuck + 1;
+      if (stuck === ATTEMPTS) {
         throw new Error(
-          `Downloading ${archive.url} stopped ${ATTEMPTS} times; the last attempt ${why} after ${mib(size)}, so nothing was installed`,
+          `Downloading ${archive.url} got no further in ${ATTEMPTS} attempts in a row; the last attempt ${why} after ${mib(size)}, so nothing was installed`,
           { cause: error },
         );
       }
