@@ -4,7 +4,7 @@ Every test that covers a scenario of this change's specs is named after it: its 
 
 ## 1. Tools on Bun
 
-- [ ] 1.1 In a throwaway workspace, start `rustfs/rustfs:1.0.6` through Testcontainers 12.2.1 from a Vitest run under `bun --bun`, once with Ryuk pinned by digest and once with Ryuk turned off, and run StrykerJS 10.1.1 with its Vitest runner on `packages/core`, all with a logging `node` first on `PATH`. Verify that RustFS answers a `ListBuckets` request and is removed after the run, that Stryker prints a mutation score, and that the log records no `node` call. Record the outcome and the Ryuk choice under Decision 15 of design.md; if either tool fails, stop and bring the options to the owner before groups 5 and 8 start
+- [x] 1.1 In a throwaway workspace, start `rustfs/rustfs:1.0.6` through Testcontainers 12.2.1 from a Vitest run under `bun --bun`, once with Ryuk pinned by digest and once with Ryuk turned off, and run StrykerJS 10.1.1 with its Vitest runner on `packages/core`, all with a logging `node` first on `PATH`. Verify that RustFS answers a `ListBuckets` request and is removed after the run, that Stryker prints a mutation score, and that the log records no `node` call. Record the outcome and the Ryuk choice under Decision 15 of design.md; if either tool fails, stop and bring the options to the owner before groups 5 and 8 start
 
 ## 2. The Bend toolchain and its checks
 
