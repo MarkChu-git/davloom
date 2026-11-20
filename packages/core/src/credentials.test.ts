@@ -87,6 +87,8 @@ describe("the credential cipher", () => {
     ["an empty secret key", ""],
     ["a secret key with Unicode", "clé-秘密-🔑"],
     ["a long secret key", "k".repeat(4096)],
+    // Longer than the arguments that one call of String.fromCharCode takes on either runtime.
+    ["a secret key of a mebibyte", "k".repeat(2 ** 20)],
   ])("round-trips %s", async (_what, secretKey) => {
     const sealed = await sealWith(INSTANCE, BACKEND, secretKey);
     expect(await openWith(INSTANCE, BACKEND, sealed)).toEqual(Exit.succeed(secretKey));

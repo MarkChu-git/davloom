@@ -35,11 +35,23 @@ const IV_BYTES = 12;
 const INFO = "davloom storage-backends secret-key v1";
 
 const encoder = new TextEncoder();
+// Fatal, so bytes that are not UTF-8 fail to open instead of becoming replacement characters.
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
-const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
+// `String.fromCharCode` takes one argument per byte, and the runtimes limit the arguments of one
+// call: 125,000 bytes threw a RangeError in workerd and 1,000,000 on Bun 1.4.4. So it gets slices.
+const SLICE = 0x8000;
 
-// The bytes of a base64 string. `atob` throws on anything else.
+const toBase64 = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (let start = 0; start < bytes.length; start += SLICE) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + SLICE));
+  }
+  return btoa(binary);
+};
+
+// The bytes of a base64 string. `atob` throws on a character outside base64, but it skips
+// whitespace and accepts missing padding, which is harmless because the tag authenticates the bytes.
 const fromBase64 = (text: string): Uint8Array<ArrayBuffer> =>
   Uint8Array.from(atob(text), (character) => character.charCodeAt(0));
 
