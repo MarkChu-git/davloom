@@ -14,6 +14,7 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 - `bun run scan:deps`: scan every package in `bun.lock` for published vulnerabilities with the pinned OSV-Scanner. Exceptions go in `osv-scanner.toml`, and `docs/ci.md` says when one is allowed.
 - `bun run scan:secrets --log-opts=origin/main..HEAD`: scan the commits not yet on `main` for secrets with the pinned Gitleaks, which covers what CI scans for a pull request.
 - `bun run scan:actionlint` and `bun run scan:zizmor`: check the workflows, and with zizmor the local actions, with the pinned actionlint and zizmor, as the `workflows` job does.
+- `bun run laws:setup`: install the Bend and Lean releases that `packages/laws/toolchain.json` pins into the tool cache that `docs/ci.md` describes, and build Bend's `--verdict` kernel there with that Lean. An archive whose SHA-256 differs from its pin stops the run before anything is installed. The first run downloads about 600 MB; a second run downloads nothing.
 - `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
 - `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
 - `bunx --bun @fission-ai/openspec list`: show active changes.

@@ -11,6 +11,7 @@ export const thresholds = {
   "packages/auth/src/**": { lines: 63.15, branches: 100 },
   "packages/core/src/**": { lines: 100, branches: 100, functions: 100 },
   "packages/database/src/**": { lines: 0, branches: 100 },
+  "packages/laws/src/**": { lines: 100, branches: 100 },
   "packages/ui/src/**": { lines: 34.37, branches: 100 },
   "packages/webdav/src/**": { lines: 0, branches: 100, functions: 0 },
 };

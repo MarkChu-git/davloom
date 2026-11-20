@@ -20,6 +20,7 @@
     "scan:secrets": "bun scripts/tool.ts gitleaks git --config=.gitleaks.toml --redact --no-banner --verbose",
     "scan:actionlint": "bun scripts/tool.ts actionlint -shellcheck= -pyflakes=",
     "scan:zizmor": "bun scripts/tool.ts zizmor --offline --strict-collection .",
+    "laws:setup": "bun scripts/laws-setup.ts",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test"
   },

@@ -86,6 +86,10 @@
         "drizzle-kit": "0.31.11",
       },
     },
+    "packages/laws": {
+      "name": "@davloom/laws",
+      "version": "0.0.0",
+    },
     "packages/ui": {
       "name": "@davloom/ui",
       "version": "0.0.0",
@@ -260,6 +264,8 @@
     "@davloom/core": ["@davloom/core@workspace:packages/core"],
 
     "@davloom/database": ["@davloom/database@workspace:packages/database"],
+
+    "@davloom/laws": ["@davloom/laws@workspace:packages/laws"],
 
     "@davloom/ui": ["@davloom/ui@workspace:packages/ui"],
 
