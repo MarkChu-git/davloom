@@ -1,0 +1,61 @@
+name: Laws approval
+
+# Holds a pull request that changes packages/laws/LAWS.bend, or a file this check runs with, until
+# the owner adds the laws-approved label after its head became its head (Decision 11 of
+# add-phase-1-core). PRD §11 forbids pull_request_target, so the check runs the pull request's own
+# copy of this file and of scripts/laws-approval.ts, and both are guarded files.
+on:
+  # No branch filter, as in ci.yml: stacked pull requests target each other's branches. labeled
+  # and unlabeled decide again when a label changes, and edited when the base changes.
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  laws-approval:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read # checks out the script
+      pull-requests: read # reads the pull request, its files and its timeline
+      actions: read # lists this workflow's runs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The setup action's first step, with the shim written here: a directory of the checkout on
+      # PATH could hold any program, such as a bash that every later step would run. It runs before
+      # setup-bun, so Bun's directory comes first on PATH.
+      - name: Make every call to node fail
+        run: |
+          mkdir -p "$RUNNER_TEMP/no-node"
+          cat > "$RUNNER_TEMP/no-node/node" <<'SHIM'
+          #!/bin/sh
+          echo "::error title=node called::Davloom runs on Bun only, but a step called: node $*" >&2
+          exit 1
+          SHIM
+          chmod +x "$RUNNER_TEMP/no-node/node"
+          echo "$RUNNER_TEMP/no-node" >> "$GITHUB_PATH"
+      # The Bun that packageManager names, set up here because the setup action reads package.json
+      # and installs dependencies. Its cache is off: every workflow of a pull request shares the pull
+      # request's cache scope, so another one could save a different program under setup-bun's key.
+      - name: Install Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+          no-cache: true
+      # No install, because the script imports nothing. --no-env-file keeps a .env file of the pull
+      # request from setting variables such as HTTPS_PROXY, which would redirect its requests.
+      - name: Check the owner's approval
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OWNER_ID: ${{ github.repository_owner_id }}
+        run: bun --no-env-file scripts/laws-approval.ts
