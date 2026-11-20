@@ -255,7 +255,8 @@ const download = async (
 /** Unpacks the release in `file` into the new directory `into`, without its top directory. */
 const unpack = async (archive: Archive, file: string, into: string): Promise<void> => {
   mkdirSync(into);
-  // The bsdtar 3.5 of macOS reads no zstd, so Bun decompresses Lean's archive into tar's input.
+  // The bsdtar 3.5 of macOS has no zstd support of its own and needs a `zstd` program, which macOS
+  // does not ship, so Bun decompresses Lean's archive into tar's input.
   const zstd = archive.url.endsWith(".tar.zst");
   const tar = Bun.spawn(
     ["tar", zstd ? "-xf" : "-xzf", zstd ? "-" : file, "--strip-components", "1", "-C", into],
