@@ -43,7 +43,7 @@ Every test that covers a scenario of this change's specs is named after it: its 
 
 ## 6. The database
 
-- [ ] 6.1 Add `storage_backends` to the Drizzle schema (Decision 7) and generate migration `0001` with `drizzle-kit`. Verify that exactly one migration is added and `bun run check` passes
+- [x] 6.1 Add `storage_backends` to the Drizzle schema (Decision 7) and generate migration `0001` with `drizzle-kit`. Verify that exactly one migration is added and `bun run check` passes
 - [ ] 6.2 Implement the backend records adapter with unit tests on Bun SQLite and on both databases' constraint errors (Decision 9), the database contract suite on D1 in the Workers pool and on Bun SQLite, and the `database-contracts` CI job. Verify "One contract on both databases", "Records after a restart" and "The schema on both databases", that `packages/database` keeps its coverage thresholds, that the job passes with a logging `node` that records no call, and record its run time where 4.3 records the other
 - [ ] 6.3 Add the upgrade tests (Decision 9). Verify "Upgrading a Phase 0 database" and "Applying migrations twice" on both databases
 
