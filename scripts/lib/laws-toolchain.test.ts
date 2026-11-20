@@ -424,6 +424,15 @@ describe("setting up the toolchain", SETUP, () => {
     expect(readdirSync(cacheDir)).toEqual(["lean"]);
   });
 
+  it("installs a release into an empty directory where it belongs", async () => {
+    const { lean } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    mkdirSync(lean, { recursive: true });
+    const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+    expect(existsSync(join(lean, "bin", "leanc"))).toBe(true);
+  });
+
   it("names a directory at the kernel's path instead of taking it for the kernel", async () => {
     await setupToolchain(TOOLCHAIN, {
       cacheDir,

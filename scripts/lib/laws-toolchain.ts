@@ -195,15 +195,19 @@ const installed = (install: Install): boolean =>
   install.files.every((file) => existsSync(join(install.target, file)));
 
 /**
- * Fails, naming what to delete, when a directory where a missing release belongs lacks one of its
- * files, or when something other than a file holds the kernel's path. Setup could never move the
- * release there, and would take that path for a built kernel.
+ * Fails, naming what to delete, when a directory where a missing release belongs holds something
+ * but lacks one of the release's files, or when something other than a file holds the kernel's
+ * path. Setup could never move the release there, and would take that path for a built kernel.
  */
 const refuseInTheWay = (missing: readonly Install[], kernel: string): void => {
   for (const { target, files } of missing) {
     // A release that another run has just moved into place lacks nothing.
     const absent = files.filter((file) => !existsSync(join(target, file)));
-    if (absent.length > 0 && existsSync(target)) {
+    // A rename replaces an empty directory, so only a file or a directory that holds something
+    // is in the way.
+    const stat = statSync(target, { throwIfNoEntry: false });
+    const occupied = stat !== undefined && (!stat.isDirectory() || readdirSync(target).length > 0);
+    if (absent.length > 0 && occupied) {
       throw new Error(
         `${target} holds no ${absent.join(" and no ")}; delete it and run setup again`,
       );
