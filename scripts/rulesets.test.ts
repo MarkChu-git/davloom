@@ -103,7 +103,7 @@ describe("the exported Rulesets", () => {
     );
   });
 
-  // Every other open pull request would have to rebase and run CI again after each merge.
+  // Every other open pull request to main would have to rebase and run CI again after each merge.
   it("main asks for no branch that is up to date with main", () => {
     expect(parameters(main, "required_status_checks")).toMatchObject({
       strict_required_status_checks_policy: false,
@@ -153,7 +153,8 @@ describe("the required jobs", () => {
   });
 
   // GitHub's documentation asks for job names that are unique across workflows, because a required
-  // check is matched by its name alone.
+  // check is matched by its name and the app that reports it, and every workflow reports as GitHub
+  // Actions.
   it.each(otherWorkflows())("%s has no job with the name of a required check", (file) => {
     const required = checkNames(ci);
     const names = checkNames(record(Bun.YAML.parse(read(file)), file));
