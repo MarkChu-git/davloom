@@ -236,9 +236,13 @@ const fetchInto = async (
         signal: controller.signal,
         headers: size > 0 ? { range: `bytes=${size}-` } : {},
       });
-      if (response.status === 416 && size > 0) {
-        // A connection lost after the last byte leaves no range to resume, so the file may be
-        // whole. The SHA-256 check decides.
+      if (
+        response.status === 416 &&
+        size > 0 &&
+        response.headers.get("content-range") === `bytes */${size}`
+      ) {
+        // A connection lost after the last byte leaves no range to resume, and the server gives
+        // the archive's length as the file's. The SHA-256 check decides whether the file is whole.
         return;
       }
       if (!response.ok || response.body === null) {

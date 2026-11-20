@@ -663,7 +663,10 @@ describe("a download that stops", SETUP, () => {
     expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
   });
 
-  it("refuses a partial archive by its SHA-256 when a resume is answered with 416", async () => {
+  it.each([
+    ["the length of a longer archive", { "content-range": `bytes */${leanArchive.length}` }],
+    ["no length", {}],
+  ])("refuses a resume answered with 416 and %s", async (_case, rangeHeaders) => {
     const fetchArchive: FetchArchive = (url, { headers }) => {
       if (url === BEND_URL) {
         return Promise.resolve(new Response(bendArchive));
@@ -671,12 +674,12 @@ describe("a download that stops", SETUP, () => {
       return Promise.resolve(
         headers["range"] === undefined
           ? dropping(leanArchive, 0, HALF)
-          : new Response("Range Not Satisfiable", { status: 416 }),
+          : new Response("Range Not Satisfiable", { status: 416, headers: rangeHeaders }),
       );
     };
     await expect(
       setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
-    ).rejects.toThrow(`The SHA-256 of ${LEAN_URL} is ${sha256Of(leanArchive.slice(0, HALF))}`);
+    ).rejects.toThrow(`Downloading ${LEAN_URL} failed with HTTP 416`);
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 
