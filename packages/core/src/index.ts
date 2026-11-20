@@ -5,3 +5,9 @@ export {
   type ErrorResponses,
   type ResponseOptions,
 } from "./http";
+export {
+  CredentialCipher,
+  credentialCipherLayer,
+  CredentialsError,
+  makeCredentialCipher,
+} from "./credentials";
