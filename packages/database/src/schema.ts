@@ -100,3 +100,17 @@ export const apikey = sqliteTable(
     index("apikey_key_idx").on(table.key),
   ],
 );
+
+// The storage backends of the instance (Decision 7 of add-phase-1-core). `config` holds the fields of
+// the backend's kind without any secret, as JSON, and `secret_key` holds an S3-compatible backend's
+// secret key as the credential cipher sealed it, or nothing for the other kinds. SQLite compares
+// text byte by byte in UTF-8, so the unique index on `name` compares names code point by code point.
+export const storageBackends = sqliteTable("storage_backends", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  kind: text("kind").notNull(),
+  config: text("config", { mode: "json" }).notNull(),
+  secretKey: text("secret_key"),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
