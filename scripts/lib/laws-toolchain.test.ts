@@ -364,17 +364,65 @@ describe("setting up the toolchain", SETUP, () => {
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 
-  it("builds no kernel with a Lean that reports another version", async () => {
+  it("installs nothing from a Lean that reports another version", async () => {
     const other = archiveOf("lean-4.35.0-darwin_aarch64", fakeLean("4.35.0"), true);
     const toolchain = toolchainOf(bendArchive, other);
     const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: other });
     await expect(
       setupToolchain(toolchain, { cacheDir, platform: PLATFORM, fetchArchive }),
     ).rejects.toThrow(
-      "reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0",
+      `The Lean in ${LEAN_URL} reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0, so nothing was installed`,
     );
-    expect(existsSync(toolchainPaths(toolchain, cacheDir, PLATFORM).kernel)).toBe(false);
-    expect(readdirSync(cacheDir).toSorted()).toEqual(["bend", "lean"]);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("names a cached Lean that reports another version, for deleting", async () => {
+    await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive: server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive }).fetchArchive,
+    });
+    // As a setup that installed Lean before checking its version could leave it.
+    const { lean, kernel } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    writeFileSync(join(lean, "bin", "lean"), fakeLean("4.35.0")["bin/lean"] ?? "");
+    rmSync(kernel);
+    const again = server({});
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive: again.fetchArchive }),
+    ).rejects.toThrow(
+      `${join(lean, "bin", "lean")} reports the version 4.35.0, but packages/laws/toolchain.json pins Lean 4.34.0; delete ${lean} and run setup again`,
+    );
+    expect(again.requests).toEqual([]);
+  });
+
+  it("names a release directory that lacks one of its files, and downloads nothing", async () => {
+    const { lean } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    mkdirSync(join(lean, "bin"), { recursive: true });
+    writeFileSync(join(lean, "bin", "lean"), "");
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(`${lean} holds no bin/leanc; delete it and run setup again`);
+    expect(requests).toEqual([]);
+    expect(readdirSync(cacheDir)).toEqual(["lean"]);
+  });
+
+  it("names a directory at the kernel's path instead of taking it for the kernel", async () => {
+    await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive: server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive }).fetchArchive,
+    });
+    const { kernel } = toolchainPaths(TOOLCHAIN, cacheDir, PLATFORM);
+    rmSync(kernel);
+    mkdirSync(kernel);
+    await expect(
+      setupToolchain(TOOLCHAIN, {
+        cacheDir,
+        platform: PLATFORM,
+        fetchArchive: server({}).fetchArchive,
+      }),
+    ).rejects.toThrow(`${kernel} is not a file; delete it and run setup again`);
   });
 
   it("caches no kernel that refuses an empty input", async () => {

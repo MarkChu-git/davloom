@@ -5,6 +5,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { open } from "node:fs/promises";
@@ -177,6 +178,26 @@ interface Install {
 const installed = (install: Install): boolean =>
   install.files.every((file) => existsSync(join(install.target, file)));
 
+/**
+ * Fails, naming what to delete, when a directory where a missing release belongs lacks one of its
+ * files, or when something other than a file holds the kernel's path. Setup could never move the
+ * release there, and would take that path for a built kernel.
+ */
+const refuseInTheWay = (missing: readonly Install[], kernel: string): void => {
+  for (const { target, files } of missing) {
+    // A release that another run has just moved into place lacks nothing.
+    const absent = files.filter((file) => !existsSync(join(target, file)));
+    if (absent.length > 0 && existsSync(target)) {
+      throw new Error(
+        `${target} holds no ${absent.join(" and no ")}; delete it and run setup again`,
+      );
+    }
+  }
+  if (statSync(kernel, { throwIfNoEntry: false })?.isFile() === false) {
+    throw new Error(`${kernel} is not a file; delete it and run setup again`);
+  }
+};
+
 /** Writes the bytes of `archive` to `file`, resuming after a stall or a failed connection. */
 const fetchInto = async (
   archive: Archive,
@@ -294,6 +315,10 @@ const run = (command: readonly string[], cwd: string): string => {
   return output;
 };
 
+/** The version that `lean --version` reports for the Lean in `dir`, run in `cwd`. */
+const leanVersion = (dir: string, cwd: string): string | undefined =>
+  run([join(dir, "bin", "lean"), "--version"], cwd).match(/^Lean \(version ([^,\s)]+)/m)?.[1];
+
 /**
  * Builds the kernel in the new directory `dir` with the steps `bend` takes when it builds its own:
  * `lean --version` must report the pinned version, then `lean -c bendtt.c bendtt.lean` and
@@ -307,10 +332,11 @@ const buildKernel = (
 ): void => {
   mkdirSync(dir);
   const lean = join(paths.lean, "bin", "lean");
-  const version = run([lean, "--version"], dir).match(/^Lean \(version ([^,\s)]+)/m)?.[1];
+  const version = leanVersion(paths.lean, dir);
   if (version !== toolchain.lean.version) {
+    // Setup checks each Lean it installs, so this one reached the cache another way.
     throw new Error(
-      `${lean} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}`,
+      `${lean} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}; delete ${paths.lean} and run setup again`,
     );
   }
   copyFileSync(join(bendDir, "bend2", "bendtt.lean"), join(dir, "bendtt.lean"));
@@ -377,6 +403,7 @@ export const setupToolchain = async (
     removeStaleStaging(cacheDir);
   }
   const missing = [bend, lean].filter((install) => !installed(install));
+  refuseInTheWay(missing, paths.kernel);
   if (missing.length === 0 && existsSync(paths.kernel)) {
     return { paths, downloaded: [], builtKernel: false };
   }
@@ -400,6 +427,16 @@ export const setupToolchain = async (
       const absent = install.files.filter((path) => !existsSync(join(dir, path)));
       if (absent.length > 0) {
         throw new Error(`${install.archive.url} holds no ${absent.join(" and no ")}`);
+      }
+      if (install === lean) {
+        // Checked before any release moves into place, so an archive of another Lean installs
+        // nothing that a corrected pin would then have to replace.
+        const version = leanVersion(dir, staging);
+        if (version !== toolchain.lean.version) {
+          throw new Error(
+            `The Lean in ${install.archive.url} reports the version ${version ?? "(none)"}, but ${TOOLCHAIN_FILE} pins Lean ${toolchain.lean.version}, so nothing was installed`,
+          );
+        }
       }
       unpacked.push({ install, dir });
     }
