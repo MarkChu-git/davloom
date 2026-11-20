@@ -20,9 +20,14 @@ export const GUARDED: readonly string[] = [
 export const LABEL = "laws-approved";
 
 // The timeline events after which the head counts as new, even when its commit was the head
-// before: a force-push can bring an older head back, a restored branch can hold any commit, and
-// reopening a pull request drops its approval.
-const RESETS: readonly string[] = ["head_ref_force_pushed", "head_ref_restored", "reopened"];
+// before: a force-push can bring an older head back, a restored branch can hold any commit,
+// reopening a pull request drops its approval, and a new base changes what it would merge.
+const RESETS: readonly string[] = [
+  "head_ref_force_pushed",
+  "head_ref_restored",
+  "reopened",
+  "base_ref_changed",
+];
 
 /** The records the check reads, as GitHub's REST API returns them. */
 export interface Records {
@@ -303,7 +308,7 @@ export const decide = (records: Records, context: Context): Verdict => {
     return fail(
       after === -Infinity
         ? `GitHub lists no run of this workflow for ${sha}, so its records do not show when it became the head.`
-        : `No run of this workflow for ${sha} comes after ${iso(after)}, the latest force-push, restored branch, reopening or run for another head, so GitHub's records do not show when it became the head.`,
+        : `No run of this workflow for ${sha} comes after ${iso(after)}, the latest force-push, restored branch, reopening, change of base or run for another head, so GitHub's records do not show when it became the head.`,
     );
   }
   if (label.at <= start) {

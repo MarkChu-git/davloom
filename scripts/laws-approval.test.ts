@@ -31,9 +31,9 @@ const payload = (value: unknown, what: string): Payload => {
 
 // One payload of each kind that GitHub's REST API returned, trimmed of its URLs: pull request #78,
 // one of its changed files, a labeled event of oven-sh/bun#41151, a force-push of #71, a reopening
-// of #39, a commit of #77's timeline, a CodeQL run on #78, and #52 in the list of the pull
-// requests from its head branch, which #47 came from too. Each case below copies them and sets the
-// times, accounts, branches and commits it needs.
+// of #39, a change of base and a commit of #77's timeline, a CodeQL run on #78, and #52 in the
+// list of the pull requests from its head branch, which #47 came from too. Each case below copies
+// them and sets the times, accounts, branches and commits it needs.
 const fixture = payload(JSON.parse(read("scripts/fixtures/laws-approval.json")), "the fixture");
 const part = (key: string): Payload => payload(fixture[key], key);
 const recorded = {
@@ -42,6 +42,7 @@ const recorded = {
   labeled: part("labeled"),
   forcePushed: part("forcePushed"),
   reopened: part("reopened"),
+  baseChanged: part("baseChanged"),
   committed: part("committed"),
   run: part("run"),
   listed: part("listed"),
@@ -97,6 +98,10 @@ const forcePushed = (seconds: number, commit: string): Payload => ({
   created_at: at(seconds),
 });
 const reopened = (seconds: number): Payload => ({ ...recorded.reopened, created_at: at(seconds) });
+const baseChanged = (seconds: number): Payload => ({
+  ...recorded.baseChanged,
+  created_at: at(seconds),
+});
 const restored = (seconds: number): Payload => ({
   ...recorded.reopened,
   event: "head_ref_restored",
@@ -399,7 +404,7 @@ describe("when the head became the head", () => {
     });
     expect(result.pass).toBe(false);
     expect(result.message).toContain(
-      `No run of this workflow for ${B} comes after ${at(20)}, the latest force-push, restored branch, reopening or run for another head`,
+      `No run of this workflow for ${B} comes after ${at(20)}, the latest force-push, restored branch, reopening, change of base or run for another head`,
     );
   });
 
@@ -432,6 +437,18 @@ describe("when the head became the head", () => {
     const runs = [run(A, 32), run(A, 0)];
     expect(approved({ timeline: [labeled(10), restored(30)], runs }).pass).toBe(false);
     expect(approved({ timeline: [restored(30), labeled(40)], runs }).pass).toBe(true);
+  });
+
+  it("a pull request whose base changed", () => {
+    // Approved at 10, and its base changed at 30, which changes what it would merge. The run that
+    // the edited event started came at 32.
+    const runs = [run(A, 32), run(A, 11), run(A, 0)];
+    const result = approved({ timeline: [labeled(10), baseChanged(30)], runs });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(`which is not after ${at(32)}, when ${A} became the head`);
+    // The owner approves it again after the change.
+    const again = [labeled(10), baseChanged(30), unlabeled(40), labeled(41)];
+    expect(approved({ timeline: again, runs }).pass).toBe(true);
   });
 
   it("a run that GitHub cancelled", () => {
