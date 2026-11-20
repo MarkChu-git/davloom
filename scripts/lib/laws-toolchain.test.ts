@@ -710,6 +710,32 @@ describe("a download that stops", SETUP, () => {
     expect(result.builtKernel).toBe(true);
   });
 
+  it("gives up on a server that ignores the Range request and drops at alternating points", async () => {
+    // In eighths of the archive. After the first, every attempt starts again from byte 0 and ends
+    // short of where the first one did, though often above where it started.
+    const drops = [4, 2, 3, 2, 3, 2, 3, 2, 3, 2];
+    const eighth = Math.floor(leanArchive.length / 8);
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const drop = drops[calls];
+      calls += 1;
+      // Then the whole archive, so a rule that never gives up ends the test instead of hanging it.
+      return Promise.resolve(
+        drop === undefined ? new Response(leanArchive) : dropping(leanArchive, 0, drop * eighth),
+      );
+    };
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(
+      `Downloading ${LEAN_URL} got no further in 5 attempts in a row, so nothing was installed. After 0.0 MiB, the last attempt failed: The socket connection was closed unexpectedly`,
+    );
+    expect(calls).toBe(6);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
   it("gives up after five attempts in a row that receive nothing, and installs nothing", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {

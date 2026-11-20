@@ -151,10 +151,11 @@ export interface SetupOptions {
 // A proxy can keep a download's connection open without sending anything, and fetch then waits
 // forever: one stopped at 174 of 562 MB on 2026-11-20. Setup resumes such a download, one whose
 // connection fails and one that a server error ends, with a Range request, which GitHub's release
-// downloads answer. It gives up once five attempts in a row add nothing to the file, so a proxy
-// that drops the connection every so often slows a download without ending it. A refusal such as
-// 404 ends setup at once, and so does an error writing the file: another attempt cannot fix a full
-// disk, and a write that failed partway would put the resumed bytes in the wrong place.
+// downloads answer. It gives up once five attempts in a row end no further into the archive than
+// an earlier one, so a proxy that drops the connection every so often slows a download without
+// ending it, and one that also ignores the Range request cannot keep it going forever. A refusal
+// such as 404 ends setup at once, and so does an error writing the file: another attempt cannot
+// fix a full disk, and a write that failed partway would put the resumed bytes in the wrong place.
 const STALL_MS = 60_000;
 const ATTEMPTS = 5;
 
@@ -220,10 +221,12 @@ const fetchInto = async (
   { fetchArchive, stallMs, log }: Required<Pick<SetupOptions, "fetchArchive" | "stallMs" | "log">>,
 ): Promise<void> => {
   let size = 0;
-  // Attempts in a row that added nothing to the file.
+  // The most bytes the file has held, and the attempts in a row that ended without passing it. A
+  // server that ignores the Range request starts the file again, so an attempt that ends above its
+  // own start may only win back part of what an earlier one lost.
+  let furthest = 0;
   let stuck = 0;
   for (;;) {
-    const start = size;
     const controller = new AbortController();
     const handle = await open(file, size > 0 ? "a" : "w");
     // The clock starts once the file is open, so a slow disk does not count as a stall.
@@ -264,7 +267,8 @@ const fetchInto = async (
       const why = controller.signal.aborted
         ? `received nothing for ${stallMs / 1000} s`
         : `failed: ${messageOf(error)}`;
-      stuck = size > start ? 0 : stuck + 1;
+      stuck = size > furthest ? 0 : stuck + 1;
+      furthest = Math.max(furthest, size);
       // The size comes before `why`, which runs long for an error such as Bun's ECONNRESET.
       if (stuck === ATTEMPTS) {
         throw new Error(
