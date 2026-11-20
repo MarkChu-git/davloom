@@ -1,10 +1,12 @@
-import { Context, Data, Effect, Layer } from "effect";
+import { Context, Data, Effect, Layer, Redacted } from "effect";
 
 // The credential cipher (Decision 7 of add-phase-1-core). An S3-compatible backend's secret key is
 // stored only encrypted, with AES-256-GCM under a key that HKDF-SHA-256 derives from the instance
 // secret `DAVLOOM_SECRET`. Each value gets a random 96-bit IV, and the backend's id is the
-// additional data, so a ciphertext copied to another backend's row fails to decrypt. Web Crypto
-// does the same on Workers and on Bun.
+// additional data, so a ciphertext copied to another backend's row fails to decrypt. The instance
+// secret and the secret key stay Redacted, whose text is <redacted>, so neither reaches a log or a
+// response by accident. Web Crypto does the same on Workers and on Bun, and
+// tests/integration/compat runs this file's tests in workerd as well as on Bun.
 
 /**
  * A stored secret key that does not decrypt: the instance secret differs from the one that
@@ -20,9 +22,12 @@ export class CredentialCipher extends Context.Service<
   CredentialCipher,
   {
     /** Encrypts a backend's secret key, bound to the backend's id. */
-    readonly seal: (backendId: string, secretKey: string) => Effect.Effect<string>;
+    readonly seal: (backendId: string, secretKey: Redacted.Redacted) => Effect.Effect<string>;
     /** Decrypts a value that `seal` returned for the same backend under the same instance secret. */
-    readonly open: (backendId: string, sealed: string) => Effect.Effect<string, CredentialsError>;
+    readonly open: (
+      backendId: string,
+      sealed: string,
+    ) => Effect.Effect<Redacted.Redacted, CredentialsError>;
   }
 >()("@davloom/core/CredentialCipher") {}
 
@@ -77,10 +82,10 @@ const deriveKey = async (instanceSecret: string): Promise<CryptoKey> => {
  * it (task 7.4 of add-phase-1-core).
  */
 export const makeCredentialCipher = (
-  instanceSecret: string,
+  instanceSecret: Redacted.Redacted,
 ): Effect.Effect<Context.Service.Shape<typeof CredentialCipher>> =>
   Effect.map(
-    Effect.promise(async () => await deriveKey(instanceSecret)),
+    Effect.promise(async () => await deriveKey(Redacted.value(instanceSecret))),
     (key) => ({
       seal: (backendId, secretKey) =>
         Effect.promise(async () => {
@@ -88,7 +93,7 @@ export const makeCredentialCipher = (
           const sealed = await crypto.subtle.encrypt(
             { name: "AES-GCM", iv, additionalData: encoder.encode(backendId) },
             key,
-            encoder.encode(secretKey),
+            encoder.encode(Redacted.value(secretKey)),
           );
           return [VERSION, toBase64(iv), toBase64(new Uint8Array(sealed))].join(".");
         }),
@@ -108,7 +113,7 @@ export const makeCredentialCipher = (
               key,
               fromBase64(data),
             );
-            return decoder.decode(plain);
+            return Redacted.make(decoder.decode(plain));
           },
           // The cause stays out of the error, so nothing of the value or the keys can reach it.
           catch: () =>
@@ -121,5 +126,7 @@ export const makeCredentialCipher = (
   );
 
 /** The cipher as a Layer, for the backend service. */
-export const credentialCipherLayer = (instanceSecret: string): Layer.Layer<CredentialCipher> =>
+export const credentialCipherLayer = (
+  instanceSecret: Redacted.Redacted,
+): Layer.Layer<CredentialCipher> =>
   Layer.effect(CredentialCipher, makeCredentialCipher(instanceSecret));

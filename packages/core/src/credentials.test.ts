@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 import {
   CredentialCipher,
@@ -16,13 +16,16 @@ const OTHER_BACKEND = "0193f3c2-7a11-7d42-9d2c-aaaaaaaaaaaa";
 // Each helper builds the cipher again, as an instance does when it starts, so a value that one
 // seals and another opens has also survived a restart.
 const cipher = async (instanceSecret = INSTANCE) =>
-  await Effect.runPromise(makeCredentialCipher(instanceSecret));
+  await Effect.runPromise(makeCredentialCipher(Redacted.make(instanceSecret)));
 
 const sealWith = async (instanceSecret: string, backendId: string, secretKey: string) =>
-  await Effect.runPromise((await cipher(instanceSecret)).seal(backendId, secretKey));
+  await Effect.runPromise((await cipher(instanceSecret)).seal(backendId, Redacted.make(secretKey)));
 
+// The opened secret key, taken out of its Redacted.
 const openWith = async (instanceSecret: string, backendId: string, sealed: string) =>
-  await Effect.runPromiseExit((await cipher(instanceSecret)).open(backendId, sealed));
+  await Effect.runPromiseExit(
+    Effect.map((await cipher(instanceSecret)).open(backendId, sealed), Redacted.value),
+  );
 
 // The error of a failed opening, which has to be a credentials error.
 const failure = (exit: Exit.Exit<string, CredentialsError>): CredentialsError => {
@@ -90,6 +93,19 @@ describe("the credential cipher", () => {
   ])("round-trips %s", async (_what, secretKey) => {
     const sealed = await sealWith(INSTANCE, BACKEND, secretKey);
     expect(await openWith(INSTANCE, BACKEND, sealed)).toEqual(Exit.succeed(secretKey));
+  });
+
+  it("keeps the secret key Redacted", async () => {
+    const service = await cipher();
+    const opened = await Effect.runPromise(
+      service.open(BACKEND, await sealWith(INSTANCE, BACKEND, SECRET_KEY)),
+    );
+    expect(Redacted.isRedacted(opened)).toBe(true);
+    // Redacted defines its own toString, which the type does not declare.
+    // oxlint-disable-next-line typescript/no-base-to-string
+    expect(String(opened)).toBe("<redacted>");
+    expect(JSON.stringify({ secretKey: opened })).toBe('{"secretKey":"<redacted>"}');
+    expect(Redacted.value(opened)).toBe(SECRET_KEY);
   });
 
   it("stores no part of the secret key in the plain", async () => {
@@ -197,12 +213,12 @@ describe("the credential cipher", () => {
   it("is a Port that its Layer provides", async () => {
     const program = Effect.gen(function* () {
       const service = yield* CredentialCipher;
-      const sealed = yield* service.seal(BACKEND, SECRET_KEY);
+      const sealed = yield* service.seal(BACKEND, Redacted.make(SECRET_KEY));
       return yield* service.open(BACKEND, sealed);
     });
     const opened = await Effect.runPromise(
-      Effect.provide(program, credentialCipherLayer(INSTANCE)),
+      Effect.provide(program, credentialCipherLayer(Redacted.make(INSTANCE))),
     );
-    expect(opened).toBe(SECRET_KEY);
+    expect(Redacted.value(opened)).toBe(SECRET_KEY);
   });
 });
