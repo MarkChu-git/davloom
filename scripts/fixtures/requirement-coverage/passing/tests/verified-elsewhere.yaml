@@ -1,0 +1,3 @@
+- scenario: Mounting by hand
+  verified: by hand
+  how: Mounted with Finder on macOS, which listed the fixture's files.

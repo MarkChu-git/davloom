@@ -1,0 +1,18 @@
+[
+  {
+    "name": "status colors > Status contrast: in light mode status text and the text on status fills reach 4.5:1",
+    "file": "packages/ui/src/themes/status.test.ts"
+  },
+  {
+    "name": "the workflows > are found",
+    "file": "scripts/workflow-secrets.test.ts"
+  },
+  {
+    "name": "the workflows > .github/workflows/ci.yml reads no secret other than GITHUB_TOKEN",
+    "file": "scripts/workflow-secrets.test.ts"
+  },
+  {
+    "name": "identity on Bun SQLite > admin login > a correct password starts a session",
+    "file": "tests/integration/compat/identity/bun-sqlite.test.ts"
+  }
+]

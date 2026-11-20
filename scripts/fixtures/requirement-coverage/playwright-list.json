@@ -1,0 +1,123 @@
+{
+  "config": {
+    "configFile": "tests/integration/compat/playwright.config.ts",
+    "rootDir": "tests/integration/compat/ui",
+    "version": "1.65.1"
+  },
+  "suites": [
+    {
+      "title": "dashboard.spec.ts",
+      "file": "dashboard.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "Rendered pages: Overview shows no hue but the status colors in light mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "bun",
+              "projectName": "bun",
+              "results": [],
+              "status": "skipped"
+            },
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "workers",
+              "projectName": "workers",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "90cda532ab82d274b30b-266e2fb2c3317bb00e33",
+          "file": "dashboard.spec.ts",
+          "line": 738,
+          "column": 5
+        },
+        {
+          "title": "Rendered pages: Overview with a toast shows no hue but the status colors in light mode",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "bun",
+              "projectName": "bun",
+              "results": [],
+              "status": "skipped"
+            },
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "workers",
+              "projectName": "workers",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "90cda532ab82d274b30b-261b454da49cbcd09baa",
+          "file": "dashboard.spec.ts",
+          "line": 738,
+          "column": 5
+        }
+      ],
+      "suites": [
+        {
+          "title": "on a touch tablet",
+          "file": "dashboard.spec.ts",
+          "line": 1128,
+          "column": 6,
+          "specs": [
+            {
+              "title": "The title line on a touch screen: each page's title stays on the mark's line in the larger type",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "bun",
+                  "projectName": "bun",
+                  "results": [],
+                  "status": "skipped"
+                },
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "workers",
+                  "projectName": "workers",
+                  "results": [],
+                  "status": "skipped"
+                }
+              ],
+              "id": "90cda532ab82d274b30b-72e8b644aa2014a7fb54",
+              "file": "dashboard.spec.ts",
+              "line": 1131,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-20T09:21:24.262Z",
+    "duration": 35.10499999999999,
+    "expected": 0,
+    "skipped": 485,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

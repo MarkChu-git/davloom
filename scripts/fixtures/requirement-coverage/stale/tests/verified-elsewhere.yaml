@@ -1,0 +1,4 @@
+# "Removing a backend" was a scenario of the fixture spec, which no longer has it.
+- scenario: Removing a backend
+  verified: on a real deployment
+  how: Removed a backend from the deployed fixture, which then listed none.
