@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type Archive,
   type FetchArchive,
@@ -21,6 +21,23 @@ import {
   toolchainPaths,
 } from "./laws-toolchain";
 import { PLATFORMS, type Platform, sha256Of } from "./tools";
+
+// Setup opens each archive file with this `open`, which a test can slow down, as a loaded runner
+// does.
+const disk = vi.hoisted(() => ({ openMs: 0 }));
+
+vi.mock(import("node:fs/promises"), async (importOriginal) => {
+  const fs = await importOriginal();
+  return {
+    ...fs,
+    open: async (...args: Parameters<typeof fs.open>) => {
+      if (disk.openMs > 0) {
+        await Bun.sleep(disk.openMs);
+      }
+      return fs.open(...args);
+    },
+  };
+});
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -381,13 +398,23 @@ describe("setting up the toolchain", SETUP, () => {
   });
 });
 
+// Calls `then` once `signal` aborts. A signal that aborted before this call fires no event, so a
+// fake that a loaded runner calls late checks it first.
+const whenAborted = (signal: AbortSignal, then: () => void): void => {
+  if (signal.aborted) {
+    then();
+  } else {
+    signal.addEventListener("abort", then, { once: true });
+  }
+};
+
 // A response that sends `bytes` and then nothing until its request is aborted, as a stalled proxy does.
 const stalling = (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal): Response =>
   new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(bytes);
-        signal.addEventListener("abort", () => controller.error(signal.reason));
+        whenAborted(signal, () => controller.error(signal.reason));
       },
     }),
   );
@@ -523,7 +550,7 @@ describe("a download that stops", SETUP, () => {
       }
       calls += 1;
       return new Promise((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(signal.reason));
+        whenAborted(signal, () => reject(signal.reason));
       });
     };
     await expect(
@@ -533,6 +560,24 @@ describe("a download that stops", SETUP, () => {
     );
     expect(calls).toBe(5);
     expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
+  it("does not count the time the file takes to open as a stall", async () => {
+    const requests: string[] = [];
+    // Like fetch, the fake fails at once when its request was aborted before the call.
+    const fetchArchive: FetchArchive = (url, { signal }) => {
+      requests.push(url);
+      return signal.aborted
+        ? Promise.reject(signal.reason)
+        : Promise.resolve(new Response(url === BEND_URL ? bendArchive : leanArchive));
+    };
+    disk.openMs = 100;
+    try {
+      await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 });
+    } finally {
+      disk.openMs = 0;
+    }
+    expect(requests).toEqual([BEND_URL, LEAN_URL]);
   });
 
   it("does not retry a download that the server refuses", async () => {
