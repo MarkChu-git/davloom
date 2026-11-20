@@ -596,6 +596,57 @@ describe("a download that stops", SETUP, () => {
     );
   });
 
+  it("finishes when a resume after the last byte is answered with 416", async () => {
+    const ranges: (string | undefined)[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      ranges.push(headers["range"]);
+      if (headers["range"] !== undefined) {
+        return Promise.resolve(
+          new Response("Range Not Satisfiable", {
+            status: 416,
+            headers: { "content-range": `bytes */${leanArchive.length}` },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            // Every byte arrives, and then the connection fails.
+            start(controller) {
+              controller.enqueue(leanArchive);
+            },
+            pull(controller) {
+              controller.error(new Error("The socket connection was closed unexpectedly"));
+            },
+          }),
+        ),
+      );
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(ranges).toEqual([undefined, `bytes=${leanArchive.length}-`]);
+    expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
+  });
+
+  it("refuses a partial archive by its SHA-256 when a resume is answered with 416", async () => {
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      return Promise.resolve(
+        headers["range"] === undefined
+          ? dropping(leanArchive, 0, HALF)
+          : new Response("Range Not Satisfiable", { status: 416 }),
+      );
+    };
+    await expect(
+      setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+    ).rejects.toThrow(`The SHA-256 of ${LEAN_URL} is ${sha256Of(leanArchive.slice(0, HALF))}`);
+    expect(readdirSync(cacheDir)).toEqual([]);
+  });
+
   it("starts again from the beginning when the server ignores the Range request", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {

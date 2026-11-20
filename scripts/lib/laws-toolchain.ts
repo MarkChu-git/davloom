@@ -218,6 +218,11 @@ const fetchInto = async (
         signal: controller.signal,
         headers: size > 0 ? { range: `bytes=${size}-` } : {},
       });
+      if (response.status === 416 && size > 0) {
+        // A connection lost after the last byte leaves no range to resume, so the file may be
+        // whole. The SHA-256 check decides.
+        return;
+      }
       if (!response.ok || response.body === null) {
         const message = `Downloading ${archive.url} failed with HTTP ${response.status}`;
         throw response.status >= 500 ? new Error(message) : new RefusedError(message);
