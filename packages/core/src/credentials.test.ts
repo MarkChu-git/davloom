@@ -13,6 +13,8 @@ const SECRET_KEY = "not-a-real-s3-secret-key/for-the-tests";
 const BACKEND = "0193f3c2-7a11-7d42-9d2c-1c2b3a4d5e6f";
 const OTHER_BACKEND = "0193f3c2-7a11-7d42-9d2c-aaaaaaaaaaaa";
 
+// Each helper builds the cipher again, as an instance does when it starts, so a value that one
+// seals and another opens has also survived a restart.
 const cipher = async (instanceSecret = INSTANCE) =>
   await Effect.runPromise(makeCredentialCipher(instanceSecret));
 
@@ -66,16 +68,12 @@ describe("the credential cipher", () => {
     expect(await openWith(INSTANCE, BACKEND, sealed)).toEqual(Exit.succeed(SECRET_KEY));
   });
 
-  it("opens a value after a restart with the same instance secret", async () => {
-    // Each call builds the cipher again, as an instance does when it starts.
-    const sealed = await sealWith(INSTANCE, BACKEND, SECRET_KEY);
-    const restarted = await cipher(INSTANCE);
-    expect(await Effect.runPromise(restarted.open(BACKEND, sealed))).toBe(SECRET_KEY);
-  });
-
-  it("opens a value that an earlier build sealed", async () => {
-    // Sealed on 2026-11-20 by the first version of this cipher. Stored secret keys have to stay
-    // readable, so a change to the derivation, the info or the format fails here.
+  it("opens a value that an independent implementation also opens", async () => {
+    // Sealed on 2026-11-20 by the first version of this cipher. pyca/cryptography 50.0.2 opens it
+    // too, with HKDF-SHA-256 over the instance secret's UTF-8 bytes, an empty salt and the info
+    // "davloom storage-backends secret-key v1", then AES-256-GCM with the backend's id as the
+    // additional data. Stored secret keys have to stay readable, so a change to the derivation,
+    // the info or the format fails here.
     const recorded =
       "v1.oOPxjeuyALHM2Xb/.7ls/mM9G079JCpOAdy+ZsPc1j5clAF+c9RonLIAufYL4BjDGFk2xUzI5Rt6DupzhBA==";
     expect(
@@ -97,11 +95,15 @@ describe("the credential cipher", () => {
   it("stores no part of the secret key in the plain", async () => {
     const sealed = await sealWith(INSTANCE, BACKEND, SECRET_KEY);
     expect(sealed).toMatch(/^v1\.[A-Za-z0-9+/]{16}\.[A-Za-z0-9+/]+=*$/);
-    expect(sealed).not.toContain(SECRET_KEY);
-    expect(sealed).not.toContain(btoa(SECRET_KEY).slice(0, 12));
-    // AES-GCM adds a 16-byte tag to a ciphertext as long as the plaintext.
     const [, , data = ""] = sealed.split(".");
-    expect(atob(data)).toHaveLength(SECRET_KEY.length + 16);
+    const bytes = atob(data);
+    // AES-GCM adds a 16-byte tag to a ciphertext as long as the plaintext.
+    expect(bytes).toHaveLength(SECRET_KEY.length + 16);
+    for (let start = 0; start + 6 <= SECRET_KEY.length; start += 1) {
+      const part = SECRET_KEY.slice(start, start + 6);
+      expect(bytes).not.toContain(part);
+      expect(sealed).not.toContain(part);
+    }
   });
 
   it("gives every value a new IV", async () => {
@@ -166,6 +168,23 @@ describe("the credential cipher", () => {
       expect(text).not.toContain(SECRET_KEY);
       expect(text).not.toContain(INSTANCE);
     }
+  });
+
+  // Sealed by pyca/cryptography 50.0.2 under INSTANCE for BACKEND, with the derivation and the
+  // additional data of "opens a value that an independent implementation also opens", so the tag
+  // of each is valid and only the format refuses it.
+  it.each([
+    [
+      "an IV of 8 bytes that the tag covers",
+      "v1.OC1ieXRlISE=.ikxSVY7xEo7LUHWYjAy2L6rFdKdwpRWcyagstrh+yrj+UowRJH0AEexHq6xHQljotWMvgijH",
+    ],
+    [
+      "a secret key whose bytes are not UTF-8",
+      "v1.AAECAwQFBgcICQoL.pwukpkKGVOHKKd99RfqluFcUORaPqGxv03aZ2A==",
+    ],
+  ])("refuses %s", async (_what, sealed) => {
+    const exit = await openWith(INSTANCE, BACKEND, sealed);
+    expect(failure(exit)).toMatchObject({ _tag: "CredentialsError", backendId: BACKEND });
   });
 
   it("refuses the IV of another value", async () => {
