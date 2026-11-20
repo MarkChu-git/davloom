@@ -695,6 +695,55 @@ describe("a download that stops", SETUP, () => {
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 
+  it("cancels the body of every response that it does not read", async () => {
+    const unread: Response[] = [];
+    const keep = (response: Response): Response => {
+      unread.push(response);
+      return response;
+    };
+    const { length } = leanArchive;
+    // Each Lean request gets the next of these: a retried server error and a retried range that
+    // starts elsewhere, then the rest of the archive over a connection that fails after its last
+    // byte, and a 416 that ends the download.
+    const answers = [
+      () => dropping(leanArchive, 0, HALF),
+      () => keep(new Response("Bad Gateway", { status: 502 })),
+      () => keep(partial(leanArchive, HALF + 10)),
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(leanArchive.slice(HALF));
+            },
+            pull(controller) {
+              controller.error(new Error("The socket connection was closed unexpectedly"));
+            },
+          }),
+          { status: 206, headers: { "content-range": `bytes ${HALF}-${length - 1}/${length}` } },
+        ),
+      () =>
+        keep(
+          new Response("Range Not Satisfiable", {
+            status: 416,
+            headers: { "content-range": `bytes */${length}` },
+          }),
+        ),
+    ];
+    let calls = 0;
+    const fetchArchive: FetchArchive = (url) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      const answer = answers[calls] ?? (() => new Response("Not Found", { status: 404 }));
+      calls += 1;
+      return Promise.resolve(answer());
+    };
+    const result = await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive });
+    expect(calls).toBe(answers.length);
+    expect(unread.map((response) => response.bodyUsed)).toEqual([true, true, true]);
+    expect(result.builtKernel).toBe(true);
+  });
+
   it("retries a resume answered with a range that starts elsewhere", async () => {
     const ranges: (string | undefined)[] = [];
     const fetchArchive: FetchArchive = (url, { headers }) => {

@@ -175,6 +175,12 @@ const writing = async (file: string, operation: Promise<unknown>): Promise<void>
   }
 };
 
+// Cancels the body of a response that setup does not read, so that its connection does not wait
+// for the garbage collector. A body that already failed has nothing left to cancel.
+const discard = async (response: Response): Promise<void> => {
+  await response.body?.cancel().catch(() => {});
+};
+
 /** Writes all of `chunk` to `handle`, since a write may take only part of what it is given. */
 const writeAll = async (handle: FileHandle, chunk: Uint8Array): Promise<void> => {
   let offset = 0;
@@ -260,14 +266,17 @@ const fetchInto = async (
       ) {
         // A connection lost after the last byte leaves no range to resume, and the server gives
         // the archive's length as the file's. The SHA-256 check decides whether the file is whole.
+        await discard(response);
         return;
       }
       if (!response.ok || response.body === null) {
+        await discard(response);
         const message = `Downloading ${archive.url} failed with HTTP ${response.status}`;
         throw response.status >= 500 ? new Error(message) : new RefusedError(message);
       }
       const range = response.headers.get("content-range");
       if (response.status === 206 && range?.startsWith(`bytes ${size}-`) !== true) {
+        await discard(response);
         throw new Error(
           `Downloading ${archive.url} sent ${range ?? "a 206 without Content-Range"} instead of the bytes from ${size} on`,
         );
