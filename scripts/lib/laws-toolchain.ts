@@ -265,13 +265,14 @@ const fetchInto = async (
         ? `received nothing for ${stallMs / 1000} s`
         : `failed: ${messageOf(error)}`;
       stuck = size > start ? 0 : stuck + 1;
+      // The size comes before `why`, which runs long for an error such as Bun's ECONNRESET.
       if (stuck === ATTEMPTS) {
         throw new Error(
-          `Downloading ${archive.url} got no further in ${ATTEMPTS} attempts in a row; the last attempt ${why} after ${mib(size)}, so nothing was installed`,
+          `Downloading ${archive.url} got no further in ${ATTEMPTS} attempts in a row, so nothing was installed. After ${mib(size)}, the last attempt ${why}`,
           { cause: error },
         );
       }
-      log(`The download ${why} after ${mib(size)}; resuming it`);
+      log(`After ${mib(size)}, the download ${why}; resuming it`);
     } finally {
       clearTimeout(timer);
       await handle.close();

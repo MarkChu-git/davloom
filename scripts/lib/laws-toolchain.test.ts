@@ -533,7 +533,7 @@ describe("a download that stops", SETUP, () => {
     });
     expect(ranges).toEqual([undefined, `bytes=${HALF}-`]);
     expect(lines).toContain(
-      `The download received nothing for 0.05 s after ${HALF_MIB}; resuming it`,
+      `After ${HALF_MIB}, the download received nothing for 0.05 s; resuming it`,
     );
     expect(result).toMatchObject({ downloaded: [BEND_URL, LEAN_URL], builtKernel: true });
   });
@@ -571,7 +571,7 @@ describe("a download that stops", SETUP, () => {
     });
     expect(calls).toBe(2);
     expect(lines).toContain(
-      `The download failed: The socket connection was closed unexpectedly after ${HALF_MIB}; resuming it`,
+      `After ${HALF_MIB}, the download failed: The socket connection was closed unexpectedly; resuming it`,
     );
   });
 
@@ -597,7 +597,7 @@ describe("a download that stops", SETUP, () => {
     });
     expect(statuses).toEqual([502, 200]);
     expect(lines).toContain(
-      `The download failed: Downloading ${LEAN_URL} failed with HTTP 502 after 0.0 MiB; resuming it`,
+      `After 0.0 MiB, the download failed: Downloading ${LEAN_URL} failed with HTTP 502; resuming it`,
     );
   });
 
@@ -724,7 +724,7 @@ describe("a download that stops", SETUP, () => {
     await expect(
       setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 }),
     ).rejects.toThrow(
-      `Downloading ${LEAN_URL} got no further in 5 attempts in a row; the last attempt received nothing for 0.02 s after 0.0 MiB, so nothing was installed`,
+      `Downloading ${LEAN_URL} got no further in 5 attempts in a row, so nothing was installed. After 0.0 MiB, the last attempt received nothing for 0.02 s`,
     );
     expect(calls).toBe(5);
     expect(readdirSync(cacheDir)).toEqual([]);
