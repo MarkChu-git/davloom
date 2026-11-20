@@ -253,7 +253,34 @@ StrykerJS 10.1.1 with its Vitest runner mutates `packages/core` and `packages/we
 
 ### 15. Tools that may not run on Bun
 
-Testcontainers 12.2.1 declares Node 22.22 or later, and StrykerJS 10.1.1 declares Node 22 or later. Neither has been tried on Bun, and CLAUDE.md allows no Node. The first task of the implementation tries both under Bun. If either fails, the work stops and the owner chooses among the options found, because the PRD names both tools.
+Testcontainers 12.2.2 declares Node 22.22 or later, and StrykerJS 10.1.1 declares Node 22 or later. Neither had been tried on Bun before task 1.1, and CLAUDE.md allows no Node. The first task of the implementation tries both under Bun. If either fails, the work stops and the owner chooses among the options found, because the PRD names both tools.
+
+Tried for task 1.1 on 2026-11-20 with Bun 1.4.4 and Docker 29.8.2 in OrbStack on macOS arm64, in a workspace outside the repository, with a `node` first on `PATH` that logged each call and then failed. The trial used Testcontainers 12.2.2 and `@aws-sdk/client-s3` 3.1173.0, npm's `latest` that day, with the repository's Vitest 5.1.0. The log recorded no `node` call in any of the runs below. Inside `bun --bun`, Bun puts its own `node` first on `PATH`, so the log catches only the calls that bypass Bun, as Decision 7 of `add-ci-baseline` describes.
+
+- Testcontainers runs on Bun unchanged. A Vitest global setup under `bun --bun` started `rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a` and waited for its listening ports, since the image has no health check. A test then created a bucket and found it with `ListBuckets`. With Ryuk pinned through `RYUK_CONTAINER_IMAGE` as `testcontainers/ryuk:0.14.0@sha256:7c1a8a9a47c780ed0f983770a662f80deb115d95cce3e2daa3d12115b8cd28f0`, and again with Ryuk turned off through `TESTCONTAINERS_RYUK_DISABLED=true`, the teardown's `stop()` removed RustFS and no container was left after the run. In a third run the teardown left RustFS running: Ryuk removed it 11 seconds after the run ended, and then exited and was removed itself.
+- The contract suites use Ryuk pinned by that digest, because it also removes the container of a run that crashes or is killed before its teardown, and the teardown still stops RustFS itself. Testcontainers reads `RYUK_CONTAINER_IMAGE` when it creates a container and when it starts Ryuk, so the global setup can set it before it creates the RustFS container. It also reuses a Ryuk that another session started, whatever that Ryuk's image, so the pin holds for certain only where no other session's Ryuk runs, as on a fresh CI runner.
+- Testcontainers finds Docker through `DOCKER_HOST`, through `docker.host` or `tc.host` in `~/.testcontainers.properties`, or at the default sockets, and it does not read Docker contexts. On the Mac of the trial, `/var/run/docker.sock` points at Docker Desktop's socket, which does not exist while OrbStack runs, so Testcontainers reported every strategy as not applicable until `DOCKER_HOST` named OrbStack's socket. GitHub's Ubuntu runners have `/var/run/docker.sock`. Task 8.5 documents the variable.
+- Testcontainers depends on `ssh2`, whose install script runs `node install.js`, and through it on the optional `cpu-features`, whose install script runs `node buildcheck.js > buildcheck.gypi && node-gyp rebuild`. Bun's default list of trusted dependencies lets both run, so with a failing `node` first on `PATH`, `bun install --frozen-lockfile` exits 1. `bun install --ignore-scripts`, as CI installs, or an empty `trustedDependencies` in `package.json` skips both without a `node` call; the scripts only build optional native bindings for SSH connections. An empty `trustedDependencies` also skips the `workerd` postinstall that a local install runs today (Decision 7 of `add-ci-baseline`). Task 5.3 makes the choice when it adds the package: without it, a local install runs Node where Node is installed, and fails under a failing `node` first on `PATH`.
+- StrykerJS 10.1.1 printed a mutation score for `packages/core`: 100%, with all 17 mutants killed by its 7 tests in test runner processes that Bun forked. It needed the four changes below, which task 8.3 carries over.
+- The repository's installs use Bun's isolated layout, which keeps `@stryker-mutator/core` under `node_modules/.bun`, and Stryker looks for `@stryker-mutator/*` plugins beside its own folder, so it found no Vitest runner. `plugins` names the runner by its path, `./node_modules/@stryker-mutator/vitest-runner/dist/src/index.js`.
+- Stryker rewrites `tsconfig.json` in its sandbox with `ts.parseConfigFileTextToJson`, which TypeScript 7.0.2 no longer exports, whatever the runtime. `tsconfigFile` names a file that does not exist, which skips the rewrite, and the sandbox keeps the repository's layout, so the paths in the tsconfig files stay valid.
+- Bun's native `Error.prepareStackTrace` throws "First argument must be an Error object" when a JavaScript wrapper hands it an object that only inherits from Error. This is oven-sh/bun#41151, open since 2026-09-02, and an eight-line script still reproduces it on Bun 1.4.5 of 2026-11-19. Loading `@stryker-mutator/core` installs `@babel/core`'s wrapper, and the Vite 8.3.8 that the Vitest runner loads builds such objects for the follow-redirects errors it bundles, so Stryker's main process could not load the runner, and the test runner processes then found no runner plugin. A preload that calls the native function, and formats the frames itself when it throws, lets the runner load. Only the main process needs it: `bun --bun --preload <file> node_modules/@stryker-mutator/core/bin/stryker.js run` scored the same, and the forked processes loaded the runner without it. Without the preload the run fails. The preload:
+
+  ```js
+  const native = Error.prepareStackTrace;
+  if (typeof native === "function") {
+    Error.prepareStackTrace = function prepareStackTrace(error, frames) {
+      try {
+        return native(error, frames);
+      } catch {
+        return [String(error), ...frames.map((frame) => `    at ${frame}`)].join("\n");
+      }
+    };
+  }
+  ```
+- Stryker also needs a Vitest configuration that lists the package's tests. `vitest.dir` with the root configuration found none, because the root's patterns start at the repository root. With such a configuration, `vitest.related` can stay on.
+
+Testcontainers therefore runs on Bun as it is. StrykerJS runs on Bun only with the preload, so, as task 1.1 asks, the owner chooses before groups 5 and 8 start: keep the preload in Stryker's main process until a Bun release fixes oven-sh/bun#41151, or wait for that release, which leaves task 8.3, the requirement "Weekly mutation testing" and the StrykerJS row of PRD §11 open without a date. Task 1.1 stays open until the owner has chosen.
 
 ## Differences between Cloudflare Workers and Bun
 
