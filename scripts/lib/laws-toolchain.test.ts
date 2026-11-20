@@ -23,11 +23,13 @@ import {
 import { PLATFORMS, type Platform, sha256Of } from "./tools";
 
 // Setup opens each archive file with this `open`, which a test can slow down, as a loaded runner
-// does, or whose writes it can slow down or make fail, as a busy or full disk does.
-const disk = vi.hoisted((): { openMs: number; writeMs: number; writeError?: Error } => ({
-  openMs: 0,
-  writeMs: 0,
-}));
+// does, or whose writes it can slow down, cut short or make fail, as a busy or full disk does.
+const disk = vi.hoisted(
+  (): { openMs: number; writeMs: number; writeLimit?: number; writeError?: Error } => ({
+    openMs: 0,
+    writeMs: 0,
+  }),
+);
 
 vi.mock(import("node:fs/promises"), async (importOriginal) => {
   const fs = await importOriginal();
@@ -38,16 +40,17 @@ vi.mock(import("node:fs/promises"), async (importOriginal) => {
         await Bun.sleep(disk.openMs);
       }
       const handle = await fs.open(...args);
-      const { writeError, writeMs } = disk;
+      const { writeError, writeLimit, writeMs } = disk;
       if (writeError !== undefined) {
         handle.write = () => Promise.reject(writeError);
-      } else if (writeMs > 0) {
+      } else if (writeMs > 0 || writeLimit !== undefined) {
         const write = handle.write.bind(handle);
         // Defined, not assigned: only FileHandle's own write has every overload of its type.
         Object.defineProperty(handle, "write", {
-          value: async (buffer: Uint8Array, offset?: number, length?: number) => {
+          // At most `writeLimit` bytes a call, as a write(2) can take only part of its buffer.
+          value: async (buffer: Uint8Array, offset = 0, length = buffer.byteLength - offset) => {
             await Bun.sleep(writeMs);
-            return write(buffer, offset, length);
+            return write(buffer, offset, Math.min(length, writeLimit ?? length));
           },
         });
       }
@@ -898,6 +901,38 @@ describe("a download that stops", SETUP, () => {
       disk.writeMs = 0;
     }
     expect(requests).toEqual([BEND_URL, LEAN_URL]);
+  });
+
+  it("writes every byte of a chunk that the disk takes in parts", async () => {
+    const { fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeLimit = 7;
+    try {
+      const result = await setupToolchain(TOOLCHAIN, {
+        cacheDir,
+        platform: PLATFORM,
+        fetchArchive,
+      });
+      expect(result.builtKernel).toBe(true);
+    } finally {
+      delete disk.writeLimit;
+    }
+  });
+
+  it("stops at once when a write takes nothing", async () => {
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeLimit = 0;
+    const file = join(cacheDir, `.laws-setup-${process.pid}`, "bend-2.0.40-darwin-arm64.tar.gz");
+    try {
+      await expect(
+        setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+      ).rejects.toThrow(
+        `Setup could not write ${file}: a write took none of the ${bendArchive.length} bytes left of a chunk`,
+      );
+    } finally {
+      delete disk.writeLimit;
+    }
+    expect(requests).toEqual([BEND_URL]);
+    expect(readdirSync(cacheDir)).toEqual([]);
   });
 
   it("stops at once when the archive cannot be written", async () => {

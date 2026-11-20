@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { open } from "node:fs/promises";
+import { type FileHandle, open } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { PLATFORMS, type Platform } from "./tools";
 
@@ -175,6 +175,19 @@ const writing = async (file: string, operation: Promise<unknown>): Promise<void>
   }
 };
 
+/** Writes all of `chunk` to `handle`, since a write may take only part of what it is given. */
+const writeAll = async (handle: FileHandle, chunk: Uint8Array): Promise<void> => {
+  let offset = 0;
+  while (offset < chunk.byteLength) {
+    const left = chunk.byteLength - offset;
+    const { bytesWritten } = await handle.write(chunk, offset, left);
+    if (bytesWritten === 0) {
+      throw new Error(`a write took none of the ${left} bytes left of a chunk`);
+    }
+    offset += bytesWritten;
+  }
+};
+
 const mib = (bytes: number): string => `${(bytes / 2 ** 20).toFixed(1)} MiB`;
 
 export interface SetupResult {
@@ -273,7 +286,7 @@ const fetchInto = async (
       for await (const chunk of response.body) {
         // The clock stops while the chunk is written, so a slow disk does not count as a stall.
         clearTimeout(timer);
-        await writing(file, handle.write(chunk));
+        await writing(file, writeAll(handle, chunk));
         size += chunk.byteLength;
         received += chunk.byteLength;
         timer = setTimeout(() => controller.abort(), stallMs);
