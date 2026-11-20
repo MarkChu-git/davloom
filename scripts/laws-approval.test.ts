@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   check,
   decide,
@@ -222,6 +222,19 @@ describe("the laws-approved decision", () => {
     const result = approved({ timeline: [labeled(10, recordedActor)], runs: [run(A, 0)] });
     expect(result.pass).toBe(false);
     expect(result.message).toContain("robobun added the label, not the owner.");
+  });
+
+  it("a label from an account with the owner's login and another ID", () => {
+    // A login that the owner gives up can pass to another account, so only the owner's ID counts.
+    const result = approved({
+      timeline: [labeled(10, { ...OWNER, id: OWNER.id + 1 })],
+      runs: [run(A, 0)],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.message).toContain(`${OWNER.login} added the label, not the owner.`);
+    // The owner keeps its ID under a new login.
+    const renamed = { ...OWNER, login: "renamed-owner" };
+    expect(approved({ timeline: [labeled(10, renamed)], runs: [run(A, 0)] }).pass).toBe(true);
   });
 
   it("A pull request that changes the check", () => {
@@ -479,6 +492,16 @@ describe("when the head became the head", () => {
     expect(approved({ from: FORK, head: B, timeline: [labeled(10)], runs: fromFork }).pass).toBe(
       false,
     );
+  });
+
+  it("runs of another branch", () => {
+    // GitHub lists the runs of the head branch, and the check keeps only those. A run of A on
+    // another branch at 5 would otherwise be A's start, before the label at 10.
+    const early = [run(A, 20), run(A, 5, { head_branch: "another-branch" })];
+    expect(approved({ timeline: [labeled(10)], runs: early }).pass).toBe(false);
+    // And a run of B on another branch at 5 would otherwise come after A's start at 0.
+    const between = [run(B, 5, { head_branch: "another-branch" }), run(A, 0)];
+    expect(approved({ timeline: [labeled(10)], runs: between }).pass).toBe(true);
   });
 
   it("runs of other events", () => {
@@ -861,10 +884,16 @@ describe("reading GitHub's records", () => {
   });
 
   it("gives up after three failed connections", async () => {
-    // Nothing listens on the discard port.
-    await expect(check(options("http://127.0.0.1:9"), 0)).rejects.toThrow(
-      `GET ${PREFIX}/pulls/${NUMBER} failed`,
-    );
+    // Nothing listens on the discard port, so every attempt fails before an answer.
+    const attempts = vi.spyOn(globalThis, "fetch");
+    try {
+      await expect(check(options("http://127.0.0.1:9"), 0)).rejects.toThrow(
+        `GET ${PREFIX}/pulls/${NUMBER} failed`,
+      );
+      expect(attempts).toHaveBeenCalledTimes(3);
+    } finally {
+      attempts.mockRestore();
+    }
   });
 
   it("stops at a refusal", async () => {
