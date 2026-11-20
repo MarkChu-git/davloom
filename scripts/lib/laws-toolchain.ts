@@ -153,11 +153,26 @@ export interface SetupOptions {
 // connection fails and one that a server error ends, with a Range request, which GitHub's release
 // downloads answer. It gives up once five attempts in a row add nothing to the file, so a proxy
 // that drops the connection every so often slows a download without ending it. A refusal such as
-// 404 ends setup at once.
+// 404 ends setup at once, and so does an error writing the file: another attempt cannot fix a full
+// disk, and a write that failed partway would put the resumed bytes in the wrong place.
 const STALL_MS = 60_000;
 const ATTEMPTS = 5;
 
 class RefusedError extends Error {}
+
+class WriteError extends Error {}
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/** Waits for `operation` on `file`, turning its error into a WriteError that names the file. */
+const writing = async (file: string, operation: Promise<unknown>): Promise<void> => {
+  try {
+    await operation;
+  } catch (error) {
+    throw new WriteError(`Setup could not write ${file}: ${messageOf(error)}`, { cause: error });
+  }
+};
 
 const mib = (bytes: number): string => `${(bytes / 2 ** 20).toFixed(1)} MiB`;
 
@@ -232,23 +247,23 @@ const fetchInto = async (
         response.headers.get("content-range")?.startsWith(`bytes ${size}-`) === true;
       if (!resumed && size > 0) {
         // The server sent the archive from its start instead of the range asked for.
-        await handle.truncate(0);
+        await writing(file, handle.truncate(0));
         size = 0;
       }
       for await (const chunk of response.body) {
         clearTimeout(timer);
         timer = setTimeout(() => controller.abort(), stallMs);
-        await handle.write(chunk);
+        await writing(file, handle.write(chunk));
         size += chunk.byteLength;
       }
       return;
     } catch (error) {
-      if (error instanceof RefusedError) {
+      if (error instanceof RefusedError || error instanceof WriteError) {
         throw error;
       }
       const why = controller.signal.aborted
         ? `received nothing for ${stallMs / 1000} s`
-        : `failed: ${error instanceof Error ? error.message : String(error)}`;
+        : `failed: ${messageOf(error)}`;
       stuck = size > start ? 0 : stuck + 1;
       if (stuck === ATTEMPTS) {
         throw new Error(

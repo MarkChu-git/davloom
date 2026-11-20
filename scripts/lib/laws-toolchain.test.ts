@@ -23,8 +23,8 @@ import {
 import { PLATFORMS, type Platform, sha256Of } from "./tools";
 
 // Setup opens each archive file with this `open`, which a test can slow down, as a loaded runner
-// does.
-const disk = vi.hoisted(() => ({ openMs: 0 }));
+// does, or whose writes it can make fail, as a full disk does.
+const disk = vi.hoisted((): { openMs: number; writeError?: Error } => ({ openMs: 0 }));
 
 vi.mock(import("node:fs/promises"), async (importOriginal) => {
   const fs = await importOriginal();
@@ -34,7 +34,12 @@ vi.mock(import("node:fs/promises"), async (importOriginal) => {
       if (disk.openMs > 0) {
         await Bun.sleep(disk.openMs);
       }
-      return fs.open(...args);
+      const handle = await fs.open(...args);
+      const { writeError } = disk;
+      if (writeError !== undefined) {
+        handle.write = () => Promise.reject(writeError);
+      }
+      return handle;
     },
   };
 });
@@ -741,6 +746,23 @@ describe("a download that stops", SETUP, () => {
       disk.openMs = 0;
     }
     expect(requests).toEqual([BEND_URL, LEAN_URL]);
+  });
+
+  it("stops at once when the archive cannot be written", async () => {
+    const { requests, fetchArchive } = server({ [BEND_URL]: bendArchive, [LEAN_URL]: leanArchive });
+    disk.writeError = Object.assign(new Error("ENOSPC: no space left on device, write"), {
+      code: "ENOSPC",
+    });
+    const file = join(cacheDir, `.laws-setup-${process.pid}`, "bend-2.0.40-darwin-arm64.tar.gz");
+    try {
+      await expect(
+        setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive }),
+      ).rejects.toThrow(`Setup could not write ${file}: ENOSPC: no space left on device, write`);
+    } finally {
+      delete disk.writeError;
+    }
+    expect(requests).toEqual([BEND_URL]);
+    expect(readdirSync(cacheDir)).toEqual([]);
   });
 
   it("does not retry a download that the server refuses", async () => {
