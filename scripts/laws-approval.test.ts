@@ -1171,6 +1171,8 @@ describe("the laws-approval workflow", () => {
 
   // The Ruleset matches a required check by its name and the app that reports it, and every
   // workflow reports as GitHub Actions, so a job of this name elsewhere could report the check.
+  // The test sees only literal names, so it refuses a name that an expression sets, such as
+  // ${{ 'laws-approval' }}.
   it("is the one workflow with a job that reports laws-approval", () => {
     const others = [
       ...new Bun.Glob(".github/workflows/*.{yml,yaml}").scanSync({ cwd: root, dot: true }),
@@ -1185,6 +1187,10 @@ describe("the laws-approval workflow", () => {
         return typeof name === "string" ? name : id;
       });
       expect(names, file).not.toContain("laws-approval");
+      expect(
+        names.filter((name) => name.includes("${{")),
+        file,
+      ).toEqual([]);
     }
   });
 });
