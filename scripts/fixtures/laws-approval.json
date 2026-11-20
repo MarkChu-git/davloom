@@ -1,0 +1,120 @@
+{
+  "pullRequest": {
+    "id": 5410177320,
+    "node_id": "PR_kwDOVlXhcs8AAAABQnjBKA",
+    "number": 78,
+    "state": "open",
+    "locked": false,
+    "title": "feat(laws): pin and set up the Bend toolchain",
+    "user": { "login": "MarkChu-git", "id": 182319871, "type": "User" },
+    "labels": [],
+    "draft": false,
+    "head": {
+      "label": "MarkChu-git:phase-1-laws-setup",
+      "ref": "phase-1-laws-setup",
+      "sha": "6a59c2bc1dd987fdc896e8ebf171f6394d993993",
+      "repo": {
+        "id": 1448468850,
+        "name": "davloom",
+        "full_name": "MarkChu-git/davloom",
+        "fork": false
+      }
+    },
+    "base": {
+      "label": "MarkChu-git:main",
+      "ref": "main",
+      "sha": "74ca7aed884d52673b3eef05027b145ec45befb5",
+      "repo": {
+        "id": 1448468850,
+        "name": "davloom",
+        "full_name": "MarkChu-git/davloom",
+        "fork": false
+      }
+    },
+    "author_association": "OWNER",
+    "merged": false,
+    "mergeable_state": "blocked",
+    "commits": 3,
+    "additions": 1076,
+    "deletions": 1,
+    "changed_files": 13,
+    "created_at": "2026-11-20T08:23:45Z",
+    "updated_at": "2026-11-20T08:23:56Z"
+  },
+  "file": {
+    "sha": "b9219b4fc9d71f0867be2eb7b1e01b966d0a4279",
+    "filename": "bun.lock",
+    "status": "modified",
+    "additions": 6,
+    "deletions": 0,
+    "changes": 6
+  },
+  "labeled": {
+    "id": 31474570985,
+    "node_id": "LE_lADOFVKCyc8AAAABPQqPBM8AAAAHVAfW6Q",
+    "actor": { "login": "robobun", "id": 117481402, "type": "User" },
+    "event": "labeled",
+    "commit_id": null,
+    "commit_url": null,
+    "created_at": "2026-09-20T07:31:03Z",
+    "label": { "name": "bug", "color": "d73a4a" },
+    "intent": null,
+    "performed_via_github_app": null
+  },
+  "forcePushed": {
+    "id": 36670940058,
+    "node_id": "HRFPE_lADOVlXhcs8AAAABgw1I888AAAAIicIjmg",
+    "actor": { "login": "MarkChu-git", "id": 182319871, "type": "User" },
+    "event": "head_ref_force_pushed",
+    "commit_id": "8677574f13f8a6170fda370514c5db28e127ae8f",
+    "created_at": "2026-11-19T16:01:59Z",
+    "performed_via_github_app": null
+  },
+  "reopened": {
+    "id": 36533192489,
+    "node_id": "REE_lADOVlXhcs8AAAABgYJA2c8AAAAIgYxHKQ",
+    "actor": { "login": "MarkChu-git", "id": 182319871, "type": "User" },
+    "event": "reopened",
+    "commit_id": null,
+    "created_at": "2026-11-18T13:39:32Z",
+    "performed_via_github_app": null
+  },
+  "committed": {
+    "sha": "311466cdfcf1abae6c7731563d1357a2ee0db3bc",
+    "node_id": "C_kwDOVlXhctoAKDMxMTQ2NmNkZmNmMWFiYWU2Yzc3MzE1NjNkMTM1N2EyZWUwZGIzYmM",
+    "author": { "name": "MarkChu-git", "date": "2026-11-20T07:16:01Z" },
+    "committer": { "name": "MarkChu-git", "date": "2026-11-20T07:16:01Z" },
+    "tree": { "sha": "01d2282c6b3ccec09c1ba498144aca59de1ed832" },
+    "message": "docs(openspec): record the Bun tool trial",
+    "parents": [{ "sha": "928c82d43b96cb95a914787a29ef3657172eba7b" }],
+    "verification": { "verified": false, "reason": "unsigned" },
+    "event": "committed"
+  },
+  "run": {
+    "id": 44702192422,
+    "name": "CodeQL",
+    "node_id": "WFR_kwLOVlXhcs8AAAAKaHVTJg",
+    "head_branch": "phase-1-laws-setup",
+    "head_sha": "6a59c2bc1dd987fdc896e8ebf171f6394d993993",
+    "path": ".github/workflows/codeql.yml",
+    "display_title": "feat(laws): pin and set up the Bend toolchain",
+    "run_number": 26,
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 424043291,
+    "check_suite_id": 120997742622,
+    "created_at": "2026-11-20T08:23:48Z",
+    "updated_at": "2026-11-20T08:25:00Z",
+    "actor": { "login": "MarkChu-git", "id": 182319871, "type": "User" },
+    "run_attempt": 1,
+    "run_started_at": "2026-11-20T08:23:48Z",
+    "head_repository": {
+      "id": 1448468850,
+      "name": "davloom",
+      "full_name": "MarkChu-git/davloom",
+      "fork": false,
+      "owner": { "login": "MarkChu-git", "id": 182319871 }
+    }
+  }
+}

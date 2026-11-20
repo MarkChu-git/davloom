@@ -1,0 +1,11 @@
+# The scenarios in openspec/specs that no test covers, because they were verified on a real
+# deployment, on GitHub or by hand (Decision 12 of add-phase-1-core). Each entry names the scenario
+# by its name, which is its ID, says where it was verified, and says how:
+#
+#   - scenario: The scenario's name, exactly as its spec writes it
+#     verified: on a real deployment | on GitHub | by hand
+#     how: What was done, and what showed that the scenario holds.
+#
+# The requirement coverage check reports each entry as verified where it says, and fails on an
+# entry whose scenario no longer exists.
+[]
