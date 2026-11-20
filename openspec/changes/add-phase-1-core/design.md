@@ -175,6 +175,8 @@ Removing a Durable Objects backend calls `destroyIfEmpty()` on its object and th
 
 Alternatives: reusing Better Auth's secret would tie two subsystems to one setting without a decision about either. Encrypting the whole configuration would hide the bucket and endpoint from the list for no gain.
 
+Implemented for task 7.2 on 2026-11-20. `packages/core/src/credentials.ts` holds the `CredentialCipher` Port, its Web Crypto implementation and its Layer. HKDF-SHA-256 takes the instance secret's UTF-8 bytes, an empty salt and the info `davloom storage-backends secret-key v1`, and gives a non-extractable AES-256-GCM key; the info keeps this key apart from any other that the instance secret may derive later. A stored value is `v1.<IV>.<ciphertext and tag>` in base64, whose alphabet holds no dot. The version names the derivation and the cipher, so a later scheme can still read these values. A value that does not decrypt, for whatever reason, gives a `CredentialsError` that names the backend and `DAVLOOM_SECRET` and holds nothing of the value or of either key. One test opens a value that the first version sealed, so a change to the derivation or the format that would leave stored secret keys unreadable fails it.
+
 ### 8. Effect services and Layers
 
 The backend service in `packages/core` saves, lists, reads, removes and opens backends. It needs three Ports: backend records, the credential cipher and an adapter factory. `packages/storage` provides a factory for Workers, which opens all three kinds from the Worker's bindings, and one for Bun, which opens S3-compatible backends and answers the others with an unsupported-runtime error. `packages/database` provides the backend records on D1 and on Bun SQLite.
