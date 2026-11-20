@@ -253,10 +253,13 @@ const fetchInto = async (
         const message = `Downloading ${archive.url} failed with HTTP ${response.status}`;
         throw response.status >= 500 ? new Error(message) : new RefusedError(message);
       }
-      const resumed =
-        response.status === 206 &&
-        response.headers.get("content-range")?.startsWith(`bytes ${size}-`) === true;
-      if (!resumed && size > 0) {
+      const range = response.headers.get("content-range");
+      if (response.status === 206 && range?.startsWith(`bytes ${size}-`) !== true) {
+        throw new Error(
+          `Downloading ${archive.url} sent ${range ?? "a 206 without Content-Range"} instead of the bytes from ${size} on`,
+        );
+      }
+      if (response.status !== 206 && size > 0) {
         // The server sent the archive from its start instead of the range asked for.
         await writing(file, handle.truncate(0));
         size = 0;

@@ -692,6 +692,32 @@ describe("a download that stops", SETUP, () => {
     expect(readdirSync(cacheDir)).toEqual([]);
   });
 
+  it("retries a resume answered with a range that starts elsewhere", async () => {
+    const ranges: (string | undefined)[] = [];
+    const fetchArchive: FetchArchive = (url, { headers }) => {
+      if (url === BEND_URL) {
+        return Promise.resolve(new Response(bendArchive));
+      }
+      ranges.push(headers["range"]);
+      if (ranges.length === 1) {
+        return Promise.resolve(dropping(leanArchive, 0, HALF));
+      }
+      return Promise.resolve(partial(leanArchive, ranges.length === 2 ? HALF + 10 : HALF));
+    };
+    const lines: string[] = [];
+    const result = await setupToolchain(TOOLCHAIN, {
+      cacheDir,
+      platform: PLATFORM,
+      fetchArchive,
+      log: (line) => lines.push(line),
+    });
+    expect(ranges).toEqual([undefined, `bytes=${HALF}-`, `bytes=${HALF}-`]);
+    expect(lines).toContain(
+      `After ${HALF_MIB}, the download failed: Downloading ${LEAN_URL} sent bytes ${HALF + 10}-${leanArchive.length - 1}/${leanArchive.length} instead of the bytes from ${HALF} on; resuming it`,
+    );
+    expect(result.builtKernel).toBe(true);
+  });
+
   it("starts again from the beginning when the server ignores the Range request", async () => {
     let calls = 0;
     const fetchArchive: FetchArchive = (url, { signal }) => {
