@@ -23,8 +23,11 @@ import {
 import { PLATFORMS, type Platform, sha256Of } from "./tools";
 
 // Setup opens each archive file with this `open`, which a test can slow down, as a loaded runner
-// does, or whose writes it can make fail, as a full disk does.
-const disk = vi.hoisted((): { openMs: number; writeError?: Error } => ({ openMs: 0 }));
+// does, or whose writes it can slow down or make fail, as a busy or full disk does.
+const disk = vi.hoisted((): { openMs: number; writeMs: number; writeError?: Error } => ({
+  openMs: 0,
+  writeMs: 0,
+}));
 
 vi.mock(import("node:fs/promises"), async (importOriginal) => {
   const fs = await importOriginal();
@@ -35,9 +38,18 @@ vi.mock(import("node:fs/promises"), async (importOriginal) => {
         await Bun.sleep(disk.openMs);
       }
       const handle = await fs.open(...args);
-      const { writeError } = disk;
+      const { writeError, writeMs } = disk;
       if (writeError !== undefined) {
         handle.write = () => Promise.reject(writeError);
+      } else if (writeMs > 0) {
+        const write = handle.write.bind(handle);
+        // Defined, not assigned: only FileHandle's own write has every overload of its type.
+        Object.defineProperty(handle, "write", {
+          value: async (buffer: Uint8Array, offset?: number, length?: number) => {
+            await Bun.sleep(writeMs);
+            return write(buffer, offset, length);
+          },
+        });
       }
       return handle;
     },
@@ -461,6 +473,22 @@ const whenAborted = (signal: AbortSignal, then: () => void): void => {
   }
 };
 
+// A response that sends `bytes` in four chunks and fails once its request is aborted, as the body
+// of a real fetch does.
+const abortable = (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal): Response =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        const quarter = Math.ceil(bytes.length / 4);
+        for (let start = 0; start < bytes.length; start += quarter) {
+          controller.enqueue(bytes.slice(start, start + quarter));
+        }
+        controller.close();
+        whenAborted(signal, () => controller.error(signal.reason));
+      },
+    }),
+  );
+
 // A response that sends `bytes` and then nothing until its request is aborted, as a stalled proxy does.
 const stalling = (bytes: Uint8Array<ArrayBuffer>, signal: AbortSignal): Response =>
   new Response(
@@ -770,6 +798,21 @@ describe("a download that stops", SETUP, () => {
       await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 });
     } finally {
       disk.openMs = 0;
+    }
+    expect(requests).toEqual([BEND_URL, LEAN_URL]);
+  });
+
+  it("does not count the time a chunk takes to write as a stall", async () => {
+    const requests: string[] = [];
+    const fetchArchive: FetchArchive = (url, { signal }) => {
+      requests.push(url);
+      return Promise.resolve(abortable(url === BEND_URL ? bendArchive : leanArchive, signal));
+    };
+    disk.writeMs = 100;
+    try {
+      await setupToolchain(TOOLCHAIN, { cacheDir, platform: PLATFORM, fetchArchive, stallMs: 20 });
+    } finally {
+      disk.writeMs = 0;
     }
     expect(requests).toEqual([BEND_URL, LEAN_URL]);
   });

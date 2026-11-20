@@ -254,10 +254,11 @@ const fetchInto = async (
         size = 0;
       }
       for await (const chunk of response.body) {
+        // The clock stops while the chunk is written, so a slow disk does not count as a stall.
         clearTimeout(timer);
-        timer = setTimeout(() => controller.abort(), stallMs);
         await writing(file, handle.write(chunk));
         size += chunk.byteLength;
+        timer = setTimeout(() => controller.abort(), stallMs);
       }
       return;
     } catch (error) {
