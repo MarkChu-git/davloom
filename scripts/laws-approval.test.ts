@@ -893,6 +893,26 @@ describe("reading GitHub's records", () => {
     expect(result.pass).toBe(false);
     expect(result.message).toContain("changes 1 file that GitHub does not list");
     expect(api.requests.filter((request) => request.url.includes("/files"))).toHaveLength(30);
+    expect(asked(api)).toContain(`${PREFIX}/issues/${NUMBER}/timeline?per_page=100&page=1`);
+  });
+
+  it("reads nothing more for a pull request that changes no guarded file", async () => {
+    // Every other read fails, as it would for a refused token or a branch with too many runs.
+    const answer = github({ files: [changed("README.md"), changed("docs/ci.md")] });
+    const api = fake((url) =>
+      url.pathname === `${PREFIX}/pulls/${NUMBER}` ||
+      url.pathname === `${PREFIX}/pulls/${NUMBER}/files`
+        ? answer(url)
+        : Response.json({ message: "Resource not accessible by integration" }, { status: 403 }),
+    );
+    expect(await check(options(api.url), 0)).toEqual({
+      pass: true,
+      message: "The pull request changes no guarded file, so it needs no label.",
+    });
+    expect(asked(api)).toEqual([
+      `${PREFIX}/pulls/${NUMBER}`,
+      `${PREFIX}/pulls/${NUMBER}/files?per_page=100&page=1`,
+    ]);
   });
 });
 

@@ -120,7 +120,7 @@ const listed = (parts: string[]): string =>
 
 // The guarded files that the pull request changes, under their new name or their old one, and the
 // files that GitHub leaves out of its list, which may be guarded too.
-const changes = (files: unknown[], changedFiles: number): string[] => {
+const changes = (pullRequest: unknown, files: unknown[]): string[] => {
   const names = new Set<string>();
   for (const [index, file] of files.entries()) {
     const what = `changed file ${index + 1}`;
@@ -131,12 +131,20 @@ const changes = (files: unknown[], changedFiles: number): string[] => {
     }
   }
   const found = GUARDED.filter((path) => names.has(path));
-  const unlisted = changedFiles - files.length;
+  const unlisted = whole(pullRequest, "changed_files", "the pull request") - files.length;
   if (unlisted > 0) {
     found.push(`${unlisted} ${unlisted === 1 ? "file" : "files"} that GitHub does not list`);
   }
   return found;
 };
+
+// The verdict when the pull request and its files decide alone: a pull request that changes no
+// guarded file passes, and no other record can change that. Undefined when it changes a guarded
+// file or when GitHub leaves files out of its list.
+const decideOnFiles = (pullRequest: unknown, files: unknown[]): Verdict | undefined =>
+  changes(pullRequest, files).length === 0
+    ? { pass: true, message: "The pull request changes no guarded file, so it needs no label." }
+    : undefined;
 
 interface Mark {
   event: string;
@@ -217,15 +225,13 @@ const runsOf = (runs: unknown[], branch: string, repository: string): Run[] =>
  */
 export const decide = (records: Records, context: Context): Verdict => {
   const pull = records.pullRequest;
+  const onFiles = decideOnFiles(pull, records.files);
+  if (onFiles !== undefined) {
+    return onFiles;
+  }
   const head = field(pull, "head", "the pull request");
   const sha = text(head, "sha", "the head");
-  const changed = changes(records.files, whole(pull, "changed_files", "the pull request"));
-  if (changed.length === 0) {
-    return {
-      pass: true,
-      message: "The pull request changes no guarded file, so it needs no label.",
-    };
-  }
+  const changed = changes(pull, records.files);
   const needs = `The pull request changes ${listed(changed)}, so it needs the owner's ${LABEL} label, added after its last commit.`;
   const fail = (why: string): Verdict => ({ pass: false, message: `${needs} ${why}` });
 
@@ -361,10 +367,11 @@ const RUN_PAGES = 10;
 const PULL_PAGES = 10;
 
 /**
- * Reads the pull request's records from GitHub's REST API and decides. A request that fails or
- * that a server error ends is tried again, up to three times, `retryMs` apart and then twice that;
- * any other answer that is not a success stops the check. Throws when a list is longer than the
- * check reads, except for the changed files, which `decide` treats as guarded.
+ * Reads the pull request's records from GitHub's REST API and decides. The pull request and its
+ * files come first, and when they decide alone the check reads nothing more. A request that fails
+ * or that a server error ends is tried again, up to three times, `retryMs` apart and then twice
+ * that; any other answer that is not a success stops the check. Throws when a list is longer than
+ * the check reads, except for the changed files, which `decide` treats as guarded.
  */
 export const check = async (options: Settings, retryMs = 1000): Promise<Verdict> => {
   const base = options.api.endsWith("/") ? options.api : `${options.api}/`;
@@ -437,6 +444,12 @@ export const check = async (options: Settings, retryMs = 1000): Promise<Verdict>
   const pull = `${repository}/pulls/${options.number}`;
   const pullRequest = await get(pull, {});
   const files = await pages(`${pull}/files`, {}, FILE_PAGES, false);
+  // A pull request that changes no guarded file passes on these two records, so a failed or
+  // incomplete read of the others cannot fail it.
+  const onFiles = decideOnFiles(pullRequest, files);
+  if (onFiles !== undefined) {
+    return onFiles;
+  }
   const timeline = await pages(
     `${repository}/issues/${options.number}/timeline`,
     {},
