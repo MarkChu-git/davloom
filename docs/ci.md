@@ -29,7 +29,11 @@ To move a tool to a newer release, take the version from its latest GitHub relea
 
 ## Required checks
 
-Decision 6 of `add-ci-baseline` makes the `main` Ruleset require `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies`, plus the CodeQL results at High or higher. A required check that has never run blocks every pull request, so task 7.2 adds each job only after it has run on `main`. Until then the Ruleset requires a pull request but no status check, and agents merge their own pull requests only once every check on them passes (Pull requests in `CLAUDE.md`).
+Since 2026-11-20 the `main` Ruleset requires `check`, `compat`, `coverage`, `workflows`, `secrets` and `dependencies` to pass, as the GitHub Actions app reports them, and holds a pull request back until CodeQL has analyzed it and found no alert at High or higher and no error (Decision 6 of `add-ci-baseline`). Nobody can bypass `main`, the owner included. The `main reviews` Ruleset asks for two approvals, which repository admins bypass on pull requests only. A branch does not have to be up to date with `main` to merge.
+
+`.github/rulesets/main.json` and `.github/rulesets/main-reviews.json` hold both Rulesets without the fields that GitHub sets itself, so `gh api -X PUT repos/MarkChu-git/davloom/rulesets/<id> --input <file>` restores either one: `main` is 26707024 and `main reviews` is 26707027. Keep each file in step with its Ruleset on GitHub. `scripts/rulesets.test.ts` fails when the required checks and the jobs of `ci.yml` drift apart, when a required job gets a job-level `if:` or a matrix, or when `ci.yml` or `codeql.yml` stops running on every pull request.
+
+GitHub waits for each required check by name, and a check that never reports blocks the pull request. To rename or remove a job, first drop it from the Ruleset on GitHub, then merge the pull request that changes `ci.yml` and the file. Require a new name only after its job has run on `main`.
 
 ## Running CI's commands locally
 
