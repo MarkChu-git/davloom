@@ -26,6 +26,11 @@ export const resolveRange = (spec: RangeSpec, size: number): Resolved => {
   if (!isNat(size)) {
     throw new RangeError(`not a size: ${size}`);
   }
+  // RFC 9110 §14.1.1: a range whose last position is below its first is invalid, and the law
+  // range_inside holds for valid ranges only. parseRange never builds one.
+  if (spec.kind === "from-to" && spec.last < spec.first) {
+    throw new RangeError(`an inverted range: ${spec.first}-${spec.last}`);
+  }
   const resolved = bend.resolve(toBend(spec), size);
   return resolved.$ === "Span" ? { start: resolved.start, stop: resolved.stop } : "unsatisfiable";
 };

@@ -1,0 +1,505 @@
+# Lemmas the hand-written proofs share.
+
+# --- Bool and Nat ---
+
+# Modus ponens on Bool-valued claims.
+def Lemma.mp(-x: Bool, -y: Bool, h: {x == True{} : Bool}, i: {L.implies(x, y) == True{} : Bool}) -> {y == True{} : Bool}:
+  %h : {L.implies(_, y) == True{} : Bool}
+  i
+
+def Lemma.implies_true(x: Bool) -> {L.implies(x, True{}) == True{} : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.and_intro(-x: Bool, -y: Bool, hx: {x == True{} : Bool}, hy: {y == True{} : Bool}) -> {Bool.and(x, y) == True{} : Bool}:
+  %Equal.sym(Bool, x, True{}, hx) : {Bool.and(_, y) == True{} : Bool}
+  hy
+
+def Lemma.le_refl(n: Nat) -> {Nat.is_le(n, n) == True{} : Bool}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      Lemma.le_refl(p)
+
+def Lemma.lt_succ(n: Nat) -> {Nat.is_lt(n, 1n+n) == True{} : Bool}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      Lemma.lt_succ(p)
+
+def Lemma.lt_mono(x: Nat, y: Nat) -> {L.implies(Nat.is_lt(x, y), Nat.is_lt(x, 1n+y)) == True{} : Bool}:
+  match x y:
+    case 0n 0n:
+      {==}
+    case 0n 1n+yp:
+      {==}
+    case 1n+xp 0n:
+      {==}
+    case 1n+xp 1n+yp:
+      Lemma.lt_mono(xp, yp)
+
+def Lemma.not_lt_ge(x: Nat, y: Nat) -> {Bool.not(Nat.is_lt(x, y)) == Nat.is_ge(x, y) : Bool}:
+  match x y:
+    case 0n 0n:
+      {==}
+    case 0n 1n+yp:
+      {==}
+    case 1n+xp 0n:
+      {==}
+    case 1n+xp 1n+yp:
+      Lemma.not_lt_ge(xp, yp)
+
+def Lemma.min_le_r(l: Nat, s: Nat) -> {Nat.is_le(Nat.min(l, s), s) == True{} : Bool}:
+  match l s:
+    case 0n 0n:
+      {==}
+    case 0n 1n+sp:
+      {==}
+    case 1n+lp 0n:
+      {==}
+    case 1n+lp 1n+sp:
+      Lemma.min_le_r(lp, sp)
+
+# Subtracting never gives more than one starts with.
+def Lemma.sub_lt(+b: Nat, +a: Nat) -> {Nat.is_lt(Nat.sub(b, a), 1n+b) == True{} : Bool}:
+  match b a:
+    case 0n _:
+      {==}
+    case 1n+bp 0n:
+      Lemma.lt_succ(bp)
+    case 1n+bp 1n+ap:
+      Lemma.mp(Nat.is_lt(Nat.sub(bp, ap), 1n+bp), Nat.is_lt(Nat.sub(bp, ap), 2n+bp), Lemma.sub_lt(bp, ap), Lemma.lt_mono(Nat.sub(bp, ap), 1n+bp))
+
+# --- Byte ranges ---
+
+# Each `span_*` helper of the ranges module, with its test abstracted as `c`.
+def Lemma.to_pick(c: Bool, -f: Nat, -l: Nat, -s: Nat) -> {L.implies(Nat.is_le(f, l), L.implies(c, Bool.and(Nat.is_lt(f, Nat.min(1n+l, s)), Nat.is_le(Nat.min(1n+l, s), s)))) == L.implies(Nat.is_le(f, l), L.span_ok(R.span_to(c, f, l, s), s)) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.from_pick(c: Bool, -f: Nat, -s: Nat) -> {L.implies(c, Bool.and(Nat.is_lt(f, s), Nat.is_le(s, s))) == L.span_ok(R.span_from(c, f, s), s) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.suffix_pick(c: Bool, -n: Nat, -s: Nat) -> {L.implies(Bool.not(c), Bool.and(Nat.is_lt(Nat.sub(s, Nat.min(n, s)), s), Nat.is_le(s, s))) == L.span_ok(R.span_suffix(c, n, s), s) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.to_inside(f: Nat, l: Nat, s: Nat) -> {L.implies(Nat.is_le(f, l), L.implies(Nat.is_lt(f, s), Bool.and(Nat.is_lt(f, Nat.min(1n+l, s)), Nat.is_le(Nat.min(1n+l, s), s)))) == True{} : Bool}:
+  match f l s:
+    case 0n 0n 0n:
+      {==}
+    case 0n 0n 1n+sp:
+      Lemma.min_le_r(0n, sp)
+    case 0n 1n+lp 0n:
+      {==}
+    case 0n 1n+lp 1n+sp:
+      Lemma.min_le_r(1n+lp, sp)
+    case 1n+fp 0n _:
+      {==}
+    case 1n+fp 1n+lp 0n:
+      Lemma.implies_true(Nat.is_le(fp, lp))
+    case 1n+fp 1n+lp 1n+sp:
+      Lemma.to_inside(fp, lp, sp)
+
+def Lemma.from_inside(f: Nat, s: Nat) -> {L.implies(Nat.is_lt(f, s), Bool.and(Nat.is_lt(f, s), Nat.is_le(s, s))) == True{} : Bool}:
+  match f s:
+    case 0n 0n:
+      {==}
+    case 0n 1n+sp:
+      Lemma.le_refl(sp)
+    case 1n+fp 0n:
+      {==}
+    case 1n+fp 1n+sp:
+      Lemma.from_inside(fp, sp)
+
+def Lemma.suffix_inside(+n: Nat, +s: Nat) -> {L.implies(Bool.not(Bool.or(Nat.is_eq(n, 0n), Nat.is_eq(s, 0n))), Bool.and(Nat.is_lt(Nat.sub(s, Nat.min(n, s)), s), Nat.is_le(s, s))) == True{} : Bool}:
+  match n s:
+    case 0n _:
+      {==}
+    case 1n+np 0n:
+      {==}
+    case 1n+np 1n+sp:
+      Lemma.and_intro(Nat.is_lt(Nat.sub(sp, Nat.min(np, sp)), 1n+sp), Nat.is_le(sp, sp), Lemma.sub_lt(sp, Nat.min(np, sp)), Lemma.le_refl(sp))
+
+def Lemma.to_unsatisfiable(c: Bool, -f: Nat, -l: Nat, -s: Nat) -> {Bool.not(c) == L.unsatisfiable(R.span_to(c, f, l, s)) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.from_unsatisfiable(c: Bool, -f: Nat, -s: Nat) -> {Bool.not(c) == L.unsatisfiable(R.span_from(c, f, s)) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.suffix_unsatisfiable(c: Bool, -n: Nat, -s: Nat) -> {c == L.unsatisfiable(R.span_suffix(c, n, s)) : Bool}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.suffix_empty(n: Nat, s: Nat) -> {Bool.or(Nat.is_eq(n, 0n), Nat.is_eq(s, 0n)) == Bool.or(L.zero(n), L.zero(s)) : Bool}:
+  match n s:
+    case 0n _:
+      {==}
+    case 1n+np 0n:
+      {==}
+    case 1n+np 1n+sp:
+      {==}
+
+# --- Names and paths ---
+
+# A code point that is NUL or `/` fails char_ok.
+def Lemma.sep_char(e0: Bool, e47: Bool, r: Bool) -> {L.implies(Bool.or(e0, e47), Bool.not(Bool.and(Bool.and(Bool.not(e0), Bool.not(e47)), r))) == True{} : Bool}:
+  match e0:
+    case False{}:
+      match e47:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case True{}:
+      {==}
+
+def Lemma.char_sep(+h: Nat) -> {L.implies(Bool.or(Nat.is_eq(h, 0n), Nat.is_eq(h, 47n)), Bool.not(N.char_ok(h))) == True{} : Bool}:
+  Lemma.sep_char(Nat.is_eq(h, 0n), Nat.is_eq(h, 47n), Bool.and(Bool.or(Nat.is_lt(h, 55296n), Nat.is_gt(h, 57343n)), Nat.is_le(h, 1114111n)))
+
+def Lemma.sep_step(e0: Bool, c0: Bool, e47: Bool, c47: Bool, a: Bool, b: Bool) -> {L.implies(L.implies(Bool.or(e0, e47), Bool.not(a)), L.implies(L.implies(Bool.or(c0, c47), Bool.not(b)), L.implies(Bool.or(Bool.or(e0, c0), Bool.or(e47, c47)), Bool.not(Bool.and(a, b))))) == True{} : Bool}:
+  match e0:
+    case False{}:
+      match c0:
+        case False{}:
+          match e47:
+            case False{}:
+              match c47:
+                case False{}:
+                  {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match e47:
+            case False{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+    case True{}:
+      match c0:
+        case False{}:
+          match e47:
+            case False{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match e47:
+            case False{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match c47:
+                case False{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match a:
+                    case False{}:
+                      match b:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      {==}
+
+# A list holding NUL or `/` fails chars_ok.
+def Lemma.chars_sep(+xs: +List<Nat>) -> {L.implies(Bool.or(L.contains(xs, 0n), L.contains(xs, 47n)), Bool.not(N.chars_ok(xs))) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      Lemma.mp(
+        L.implies(Bool.or(L.contains(t, 0n), L.contains(t, 47n)), Bool.not(N.chars_ok(t))),
+        L.implies(Bool.or(Bool.or(Nat.is_eq(h, 0n), L.contains(t, 0n)), Bool.or(Nat.is_eq(h, 47n), L.contains(t, 47n))), Bool.not(Bool.and(N.char_ok(h), N.chars_ok(t)))),
+        Lemma.chars_sep(t),
+        Lemma.mp(
+          L.implies(Bool.or(Nat.is_eq(h, 0n), Nat.is_eq(h, 47n)), Bool.not(N.char_ok(h))),
+          L.implies(L.implies(Bool.or(L.contains(t, 0n), L.contains(t, 47n)), Bool.not(N.chars_ok(t))), L.implies(Bool.or(Bool.or(Nat.is_eq(h, 0n), L.contains(t, 0n)), Bool.or(Nat.is_eq(h, 47n), L.contains(t, 47n))), Bool.not(Bool.and(N.char_ok(h), N.chars_ok(t))))),
+          Lemma.char_sep(h),
+          Lemma.sep_step(Nat.is_eq(h, 0n), L.contains(t, 0n), Nat.is_eq(h, 47n), L.contains(t, 47n), N.char_ok(h), N.chars_ok(t))))
+
+def Lemma.sep_name(s: Bool, a: Bool, b: Bool, c: Bool, d: Bool) -> {L.implies(L.implies(s, Bool.not(c)), L.implies(s, Bool.not(Bool.and(Bool.and(a, b), Bool.and(c, d))))) == True{} : Bool}:
+  match s:
+    case False{}:
+      {==}
+    case True{}:
+      match a:
+        case False{}:
+          match b:
+            case False{}:
+              match c:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match c:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          match b:
+            case False{}:
+              match c:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match c:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+
+def Lemma.and_r(x: Bool, y: Bool) -> {L.implies(Bool.and(x, y), y) == True{} : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      match y:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.name_bound_bool(x: Bool, y: Bool, z: Bool) -> {L.implies(Bool.and(x, Bool.and(y, z)), z) == True{} : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      match y:
+        case False{}:
+          {==}
+        case True{}:
+          match z:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+# The module's `utf8_width` and the specification's `utf8_bytes` agree.
+def Lemma.lt_zero(c: Nat) -> {Nat.is_lt(c, 0n) == False{} : Bool}:
+  match c:
+    case 0n:
+      {==}
+    case 1n+p:
+      {==}
+
+def Lemma.lt_le(+c: Nat, +n: Nat) -> {Nat.is_lt(c, 1n+n) == Nat.is_le(c, n) : Bool}:
+  match c n:
+    case 0n 0n:
+      {==}
+    case 0n 1n+np:
+      {==}
+    case 1n+cp 0n:
+      Lemma.lt_zero(cp)
+    case 1n+cp 1n+np:
+      Lemma.lt_le(cp, np)
+
+def Lemma.width_pick(x: Bool, y: Bool, z: Bool) -> {N.utf8_width_pick(x, y, z) == Bool.pick(Nat, x, 1n, Bool.pick(Nat, y, 2n, Bool.pick(Nat, z, 3n, 4n))) : Nat}:
+  match x y z:
+    case True{} _ _:
+      {==}
+    case False{} True{} _:
+      {==}
+    case False{} False{} True{}:
+      {==}
+    case False{} False{} False{}:
+      {==}
+
+def Lemma.width(+c: Nat) -> {N.utf8_width(c) == L.utf8_bytes(c) : Nat}:
+  %Lemma.lt_le(c, 127n) : {N.utf8_width(c) == Bool.pick(Nat, _, 1n, Bool.pick(Nat, Nat.is_le(c, 2047n), 2n, Bool.pick(Nat, Nat.is_le(c, 65535n), 3n, 4n))) : Nat}
+  %Lemma.lt_le(c, 2047n) : {N.utf8_width(c) == Bool.pick(Nat, Nat.is_lt(c, 1n+127n), 1n, Bool.pick(Nat, _, 2n, Bool.pick(Nat, Nat.is_le(c, 65535n), 3n, 4n))) : Nat}
+  %Lemma.lt_le(c, 65535n) : {N.utf8_width(c) == Bool.pick(Nat, Nat.is_lt(c, 1n+127n), 1n, Bool.pick(Nat, Nat.is_lt(c, 1n+2047n), 2n, Bool.pick(Nat, _, 3n, 4n))) : Nat}
+  Lemma.width_pick(Nat.is_lt(c, 128n), Nat.is_lt(c, 2048n), Nat.is_lt(c, 65536n))
+
+def Lemma.utf8(+xs: +List<Nat>) -> {N.utf8_length(xs) == L.utf8_size(xs) : Nat}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.utf8(t) : {Nat.add(N.utf8_width(h), N.utf8_length(t)) == Nat.add(L.utf8_bytes(h), _) : Nat}
+      %Lemma.width(h) : {Nat.add(N.utf8_width(h), N.utf8_length(t)) == Nat.add(_, N.utf8_length(t)) : Nat}
+      {==}
+
+def Lemma.path(+xss: +List<+List<Nat>>) -> {N.path_length(xss) == L.path_size(xss) : Nat}:
+  match xss:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.path(t) : {1n+Nat.add(N.utf8_length(h), N.path_length(t)) == 1n+Nat.add(L.utf8_size(h), _) : Nat}
+      %Lemma.utf8(h) : {1n+Nat.add(N.utf8_length(h), N.path_length(t)) == 1n+Nat.add(_, N.path_length(t)) : Nat}
+      {==}
+
+def Lemma.name_bound(+xs: +List<Nat>) -> {L.implies(N.name_ok(xs), Bool.and(L.nonempty(xs), Nat.is_le(N.utf8_length(xs), 255n))) == True{} : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      Lemma.name_bound_bool(Bool.not(N.is_dots(h <> t)), N.chars_ok(h <> t), Nat.is_le(N.utf8_length(h <> t), 255n))
