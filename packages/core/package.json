@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing/storage-contract.ts"
+    "./testing": "./src/testing/storage-contract.ts",
+    "./testing/property-store": "./src/testing/property-store-contract.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

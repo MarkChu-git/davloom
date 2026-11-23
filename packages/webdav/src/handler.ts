@@ -97,6 +97,7 @@ const FAILURE_STATUS: Record<StorageFailure, number> = {
   "too-large": 413,
   "size-mismatch": 400,
   unavailable: 503,
+  "hidden-objects": 409,
   "cross-backend": 502,
 };
 
