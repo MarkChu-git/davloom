@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { covers, parseIfHeader, type Lock } from "./locks";
+import { covers, createMemoryLockStore, parseIfHeader, type Lock, type LockScope } from "./locks";
 import { BASE, ORIGIN, setup } from "./test/harness";
 
 const lockBody = (scope: "exclusive" | "shared" = "exclusive", owner = "<D:href>me</D:href>") =>
@@ -255,4 +255,73 @@ describe("covers", () => {
       expect(covers(lock([...root], depth), path, descendants)).toBe(expected);
     },
   );
+});
+
+const held = (
+  token: string,
+  root: string[],
+  { depth = "infinity", scope = "exclusive", expires = 10_000, timeout = 10 }: Partial<Lock> = {},
+): Lock => ({ token, root, depth, scope, owner: "", timeout, expires });
+
+const tokensCovering = async (
+  store: ReturnType<typeof createMemoryLockStore>,
+  path: string[],
+  now: number,
+) => (await store.covering(path, { descendants: true, now })).map((l) => l.token).toSorted();
+
+describe("createMemoryLockStore", () => {
+  // Only two shared locks are compatible (RFC 4918 §6.1, §6.2).
+  it.each<[LockScope, LockScope, boolean]>([
+    ["exclusive", "exclusive", false],
+    ["exclusive", "shared", false],
+    ["shared", "exclusive", false],
+    ["shared", "shared", true],
+  ])("stores a %s lock and then a %s lock on it: %s", async (first, second, stored) => {
+    const store = createMemoryLockStore();
+    expect(await store.create(held("a", ["f"], { scope: first }), 0)).toBe(true);
+    expect(await store.create(held("b", ["f"], { scope: second }), 0)).toBe(stored);
+    expect(await tokensCovering(store, ["f"], 0)).toEqual(stored ? ["a", "b"] : ["a"]);
+  });
+
+  it("refuses a depth-infinity lock over a locked member and accepts a depth-0 one", async () => {
+    const store = createMemoryLockStore();
+    await store.create(held("member", ["d", "f"]), 0);
+    expect(await store.create(held("deep", ["d"]), 0)).toBe(false);
+    expect(await store.create(held("shallow", ["d"], { depth: "0" }), 0)).toBe(true);
+    expect(await store.create(held("under", ["d", "f", "g"]), 0)).toBe(false);
+  });
+
+  it("drops a lock at the moment it expires", async () => {
+    const store = createMemoryLockStore();
+    await store.create(held("a", ["f"], { expires: 1000 }), 0);
+    expect(await tokensCovering(store, ["f"], 999)).toEqual(["a"]);
+    expect(await tokensCovering(store, ["f"], 1000)).toEqual([]);
+    expect(await store.create(held("b", ["f"]), 1000)).toBe(true);
+  });
+
+  it("keeps a refreshed lock until its new expiry", async () => {
+    const store = createMemoryLockStore();
+    await store.create(held("a", ["f"], { expires: 1000 }), 0);
+    const refreshed = await store.refresh("a", 60, 61_000, 500);
+    expect(refreshed).toEqual(held("a", ["f"], { expires: 61_000, timeout: 60 }));
+    expect(await store.covering(["f"], { descendants: false, now: 5000 })).toEqual([refreshed]);
+    expect(await store.refresh("a", 60, 121_000, 61_000)).toBeNull();
+    expect(await store.refresh("none", 60, 1000, 0)).toBeNull();
+  });
+
+  it("removes one lock by token, and a tree by path", async () => {
+    const store = createMemoryLockStore();
+    for (const [token, root] of [
+      ["d", ["d"]],
+      ["df", ["d", "f"]],
+      ["e", ["e"]],
+      ["dx", ["dx"]],
+    ] as const) {
+      await store.create(held(token, [...root], { depth: "0" }), 0);
+    }
+    expect(await store.remove("e")).toBe(true);
+    expect(await store.remove("e")).toBe(false);
+    await store.removeTree(["d"]);
+    expect(await tokensCovering(store, [], 0)).toEqual(["dx"]);
+  });
 });
