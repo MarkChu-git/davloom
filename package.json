@@ -42,5 +42,8 @@
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   },
+  "overrides": {
+    "qs": "6.17.1"
+  },
   "packageManager": "bun@1.4.4"
 }

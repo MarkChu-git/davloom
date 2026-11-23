@@ -168,6 +168,9 @@
       },
     },
   },
+  "overrides": {
+    "qs": "6.17.1",
+  },
   "packages": {
     "@astryxdesign/cli": ["@astryxdesign/cli@0.7.16", "", { "dependencies": { "@babel/core": "7.29.7", "@babel/parser": "7.29.8", "@babel/plugin-transform-typescript": "7.29.7", "@babel/types": "7.29.8", "@csstools/css-syntax-patches-for-csstree": "1.1.6", "@stylexjs/babel-plugin": "^0.19.1", "ast-types": "0.16.3", "commander": "^12.1.0", "css-tree": "3.2.1", "ignore": "^7.0.14", "jiti": "^2.7.0", "jscodeshift": "^17.4.0", "linkedom": "^0.18.15", "node-diff3": "3.2.1", "postcss": "^8.5.23", "postcss-selector-parser": "^7.1.6", "recast": "0.23.21", "zod": "^4.6.7" }, "peerDependencies": { "@astryxdesign/core": "*" }, "optionalPeers": ["@astryxdesign/core"], "hasInstallScript": true, "bin": { "cli": "./clients/cli/bin/astryx.mjs", "astryx": "./clients/cli/bin/astryx.mjs" } }, "sha512-lksV0SdKjlE+Mi12VD1loDN3KE65NYnO7RqhLZ+tXaxQuUi+ccND2vLcLTZex3X/6j1FOH1cdZlhQc+LJIo73g=="],
 
@@ -1309,7 +1312,7 @@
 
     "pure-rand": ["pure-rand@8.4.2", "", {}, "sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng=="],
 
-    "qs": ["qs@6.15.1", "", { "dependencies": { "side-channel": "^1.1.0" } }, "sha512-6YHEFRL9mfgcAvql/XhwTvf5jKcOiiupt2FiJxHkiX1z4j7WL8J/jRHYLluORvc1XxB5rV20KoeK00gVJamspg=="],
+    "qs": ["qs@6.17.1", "", { "dependencies": { "es-define-property": "^1.0.1", "side-channel": "^1.1.1" } }, "sha512-jd3COkaKVgGUW+ZHyEHCG9bH7RoaaiWuMgzsIBjUMVjLAaWGWpoUAVwljVvBHxRu/2qEHnadLGZrkutYUBPQJA=="],
 
     "react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 
