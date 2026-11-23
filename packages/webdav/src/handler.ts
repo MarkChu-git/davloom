@@ -568,7 +568,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
 
     const responses: string[] = [];
     // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.
-    let quota: StorageResult<Quota> | null | undefined;
+    const quotas = new Map<string, StorageResult<Quota> | null>();
     for (const item of entries) {
       const lockDiscovery = await lockDiscoveryOf(item.path);
       const context = { lockDiscovery };
@@ -594,7 +594,11 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       } else {
         for (const prop of query.props) {
           if (prop.ns === DAV && QUOTA_NAMES.has(prop.local) && item.kind === "collection") {
-            quota ??= storage.quota ? await storage.quota(item.path) : null;
+            // One answer per top-level collection: each Mount has its own backend.
+            const scope = item.path[0] ?? "";
+            if (!quotas.has(scope))
+              quotas.set(scope, storage.quota ? await storage.quota(item.path) : null);
+            const quota = quotas.get(scope);
             const value = quota?.ok ? quotaValue(prop.local, quota.value) : null;
             if (value !== null) {
               found.push(liveElement(prop.local, value));

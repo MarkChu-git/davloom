@@ -286,3 +286,33 @@ law preconditions_in_rfc_order:
   for if_none_match: C.Check
   for if_modified: C.Check
   {C.evaluate(read, if_match, if_unmodified, if_none_match, if_modified) == spec_evaluate(read, if_match, if_unmodified, if_none_match, if_modified) : C.Verdict}
+
+# --- Full specifications of PUT, MKCOL and DELETE --------------------------------------------
+
+def spec_write(+target: T.Node, +parent: T.Node) -> T.Outcome:
+  Bool.pick(T.Outcome, folder(target), T.IsFolder{},
+    Bool.pick(T.Outcome, Bool.not(folder(parent)), T.NoParent{}, T.Proceed{exists(target)}))
+
+law write_decides_in_order:
+  for target: T.Node
+  for parent: T.Node
+  {T.decide_write(target, parent) == spec_write(target, parent) : T.Outcome}
+
+def spec_mkcol(+root: Bool, +target: T.Node, +parent: T.Node) -> T.Outcome:
+  Bool.pick(T.Outcome, Bool.or(root, exists(target)), T.Exists{},
+    Bool.pick(T.Outcome, Bool.not(folder(parent)), T.NoParent{}, T.Proceed{False{}}))
+
+law mkcol_decides_in_order:
+  for root: Bool
+  for target: T.Node
+  for parent: T.Node
+  {T.decide_mkcol(root, target, parent) == spec_mkcol(root, target, parent) : T.Outcome}
+
+def spec_remove(+root: Bool, +target: T.Node) -> T.Outcome:
+  Bool.pick(T.Outcome, root, T.Root{},
+    Bool.pick(T.Outcome, Bool.not(exists(target)), T.Missing{}, T.Proceed{False{}}))
+
+law remove_decides_in_order:
+  for root: Bool
+  for target: T.Node
+  {T.decide_remove(root, target) == spec_remove(root, target) : T.Outcome}

@@ -436,6 +436,19 @@ describe("PROPFIND", () => {
     },
   );
 
+  it("reports each Mount's own quota in a listing of the root", async () => {
+    const { createMemoryStorage, createMountedStorage } = await import("@davloom/core");
+    const storage = createMountedStorage([
+      { name: "a", backendId: "a", backend: createMemoryStorage({ capacity: 10 }), root: [] },
+      { name: "b", backendId: "b", backend: createMemoryStorage({ capacity: 20 }), root: [] },
+    ]);
+    const { dav } = setup({ storage });
+    const body = propfindBody("<D:prop><D:quota-available-bytes/></D:prop>");
+    const xml = await (await dav("PROPFIND", "/", { headers: { depth: "1" }, body })).text();
+    expect(xml).toContain("<D:quota-available-bytes>10</D:quota-available-bytes>");
+    expect(xml).toContain("<D:quota-available-bytes>20</D:quota-available-bytes>");
+  });
+
   it("propname lists names without values", async () => {
     const { put, dav } = setup();
     await put("/f", "abc");

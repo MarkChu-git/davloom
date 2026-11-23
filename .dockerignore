@@ -5,3 +5,9 @@
 .git
 .claude
 coverage
+# Secrets never enter the image.
+**/.env
+**/.env.*
+**/.dev.vars
+**/*.generated.jsonc
+.gitnexus

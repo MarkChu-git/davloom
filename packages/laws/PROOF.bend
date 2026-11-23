@@ -3633,3 +3633,104 @@ def L.preconditions_in_rfc_order(read, if_match, if_unmodified, if_none_match, i
                       {==}
                     case C.Fails{}:
                       {==}
+
+def L.write_decides_in_order(target, parent):
+  match target:
+    case T.Absent{}:
+      match parent:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+    case T.File{}:
+      match parent:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+    case T.Folder{}:
+      match parent:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+
+def L.mkcol_decides_in_order(root, target, parent):
+  match root:
+    case False{}:
+      match target:
+        case T.Absent{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+        case T.File{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+        case T.Folder{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+    case True{}:
+      match target:
+        case T.Absent{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+        case T.File{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+        case T.Folder{}:
+          match parent:
+            case T.Absent{}:
+              {==}
+            case T.File{}:
+              {==}
+            case T.Folder{}:
+              {==}
+
+def L.remove_decides_in_order(root, target):
+  match root:
+    case False{}:
+      match target:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+    case True{}:
+      match target:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
