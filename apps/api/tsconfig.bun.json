@@ -2,5 +2,5 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": { "types": ["bun"] },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/entry.workers.ts"]
+  "exclude": ["src/**/*.workers.ts"]
 }

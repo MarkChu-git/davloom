@@ -114,3 +114,31 @@ export const storageBackends = sqliteTable("storage_backends", {
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
+
+// A Mount publishes a path of a backend at /dav/<name>/. `root` is the path in the backend, its names
+// joined by "/", or empty for the backend's root.
+export const mounts = sqliteTable("mounts", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  backendId: text("backend_id")
+    .notNull()
+    .references(() => storageBackends.id),
+  root: text("root").notNull().default(""),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+// WebDAV locks (RFC 4918 §6). `root` is the locked path of the WebDAV namespace, names joined by "/".
+export const davLocks = sqliteTable(
+  "dav_locks",
+  {
+    token: text("token").primaryKey(),
+    root: text("root").notNull(),
+    depth: text("depth").notNull(),
+    scope: text("scope").notNull(),
+    owner: text("owner").notNull(),
+    timeout: integer("timeout").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+  },
+  (table) => [index("dav_locks_root_idx").on(table.root)],
+);

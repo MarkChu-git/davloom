@@ -24,10 +24,12 @@ test("a missing asset is a 404, not the Dashboard", async ({ request }, testInfo
 });
 
 for (const method of ["GET", "PROPFIND"]) {
-  test(`WebDAV routes still receive ${method}`, async ({ request }) => {
+  test(`WebDAV routes still receive ${method}`, async ({ request }, testInfo) => {
     const response = await request.fetch("/dav/a.txt", { method });
 
-    expect(response.status()).toBe(501);
+    // Bun serves no storage yet (501). This Worker runs without DAVLOOM_SECRET, so it answers that it
+    // is not configured (503) instead of handing the path to the Dashboard.
+    expect(response.status()).toBe(testInfo.project.name === "workers" ? 503 : 501);
   });
 }
 

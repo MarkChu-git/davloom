@@ -6,7 +6,8 @@
   "exports": {
     "./schema": "./src/schema.ts",
     "./d1": "./src/d1.ts",
-    "./bun-sqlite": "./src/bun-sqlite.ts"
+    "./bun-sqlite": "./src/bun-sqlite.ts",
+    "./repositories": "./src/repositories.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

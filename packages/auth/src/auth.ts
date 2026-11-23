@@ -23,6 +23,11 @@ export const createAuth = ({ database, secret, baseURL }: AuthOptions) =>
       apiKey({
         // The default allows 10 requests a day per key, and a WebDAV client makes far more.
         rateLimit: { enabled: false },
+        defaultPrefix: "dav_",
+        // Davloom keeps a key's access level, Read Only or Read / Write, in its metadata.
+        enableMetadata: true,
+        // Davloom shows a key's first characters so the admin can tell keys apart.
+        startingCharactersConfig: { shouldStore: true, charactersLength: 10 },
       }),
     ],
   });

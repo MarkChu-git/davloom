@@ -1,0 +1,114 @@
+import { env } from "cloudflare:workers";
+import { storageContract } from "@davloom/core/testing";
+import { describe, expect, it } from "vitest";
+import { CHUNK_BYTES, durableObjectStorage, type StorageObject } from "../src/durable-object";
+import type { FullStorageObject } from "./worker";
+
+declare global {
+  namespace Cloudflare {
+    interface Env {
+      readonly STORAGE: DurableObjectNamespace<StorageObject>;
+      readonly FULL: DurableObjectNamespace<FullStorageObject>;
+    }
+  }
+}
+
+const fresh = () => durableObjectStorage(env.STORAGE, crypto.randomUUID());
+
+storageContract("Durable Objects", { make: fresh, runs: 40 });
+
+const bytes = (length: number, seed = 1) =>
+  Uint8Array.from({ length }, (_, i) => (i * 31 + seed) % 251);
+const streamOf = (data: Uint8Array<ArrayBuffer>) => new Blob([data]).stream();
+const read = async (stream: ReadableStream<Uint8Array>) =>
+  new Uint8Array(await new Response(stream).arrayBuffer());
+
+describe("Durable Objects adapter", () => {
+  it.each([0, 1, CHUNK_BYTES - 1, CHUNK_BYTES, CHUNK_BYTES + 1, 3 * CHUNK_BYTES + 17])(
+    "stores %i bytes in chunks and reads them back",
+    async (length) => {
+      const storage = fresh();
+      const data = bytes(length);
+      const written = await storage.write(["f"], streamOf(data), { size: length });
+      expect(written.ok).toBe(true);
+      const result = await storage.read(["f"]);
+      expect(result.ok && (await read(result.value.body))).toEqual(data);
+    },
+  );
+
+  it.each([
+    [0, 10],
+    [CHUNK_BYTES - 5, CHUNK_BYTES + 5],
+    [CHUNK_BYTES, 2 * CHUNK_BYTES],
+    [2 * CHUNK_BYTES + 3, 2 * CHUNK_BYTES + 4],
+  ])("reads the range %i to %i across chunks", async (start, stop) => {
+    const storage = fresh();
+    const data = bytes(3 * CHUNK_BYTES);
+    await storage.write(["f"], streamOf(data), {});
+    const result = await storage.read(["f"], { start, stop });
+    expect(result.ok && (await read(result.value.body))).toEqual(data.slice(start, stop));
+  });
+
+  it("moving a collection keeps the content of everything under it", async () => {
+    const storage = fresh();
+    await storage.createCollection(["d"]);
+    await storage.createCollection(["d", "e"]);
+    await storage.write(["d", "e", "f"], streamOf(bytes(CHUNK_BYTES + 3)), {});
+    expect((await storage.move(["d"], ["m"], { overwrite: false })).ok).toBe(true);
+    const result = await storage.read(["m", "e", "f"]);
+    expect(result.ok && (await read(result.value.body)).length).toBe(CHUNK_BYTES + 3);
+  });
+
+  it("a full object refuses writes and still reads, lists and removes", async () => {
+    const id = env.FULL.idFromName(crypto.randomUUID());
+    const full = durableObjectStorage(
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a namespace that always reaches one object
+      {
+        get: () => env.FULL.get(id),
+        idFromName: () => id,
+      } as unknown as DurableObjectNamespace<StorageObject>,
+      "full",
+    );
+    expect((await full.write(["f"], streamOf(bytes(10)), {})).ok).toBe(true);
+    await env.FULL.get(id).setFull(true);
+    expect(await full.write(["g"], streamOf(bytes(10)), {})).toEqual({
+      ok: false,
+      failure: "insufficient-storage",
+    });
+    expect(await full.createCollection(["d"])).toEqual({
+      ok: false,
+      failure: "insufficient-storage",
+    });
+    expect(await full.copy(["f"], ["h"], { overwrite: false, shallow: false })).toEqual({
+      ok: false,
+      failure: "insufficient-storage",
+    });
+    expect((await full.list([])).ok).toBe(true);
+    expect((await full.read(["f"])).ok).toBe(true);
+    expect((await full.remove(["f"])).ok).toBe(true);
+  });
+
+  it("destroys only an empty object", async () => {
+    const name = crypto.randomUUID();
+    const stub = env.STORAGE.get(env.STORAGE.idFromName(name));
+    const storage = durableObjectStorage(env.STORAGE, name);
+    await storage.write(["f"], null, {});
+    expect(await stub.destroyIfEmpty()).toEqual({ ok: false, failure: "exists" });
+    await storage.remove(["f"]);
+    expect(await stub.destroyIfEmpty()).toEqual({ ok: true, value: null });
+  });
+
+  it("answers unavailable when the object cannot be reached", async () => {
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a namespace whose stubs cannot be made
+    const broken = {
+      get: () => {
+        throw new Error("down");
+      },
+      idFromName: () => ({}),
+    } as unknown as DurableObjectNamespace<StorageObject>;
+    expect(await durableObjectStorage(broken, "x").stat([])).toEqual({
+      ok: false,
+      failure: "unavailable",
+    });
+  });
+});

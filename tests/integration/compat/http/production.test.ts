@@ -32,42 +32,47 @@ const WEBDAV_METHODS = [
   "UNLOCK",
 ];
 
-describe.each(productionRuntimes)("production /dav on $name", ({ start }) => {
+// Bun serves no storage until the self-hosted milestone, so its /dav still answers 501. Workers
+// asks for credentials before anything else (http/davloom.test.ts covers the protocol itself).
+const EXPECTED: Record<string, number> = { Bun: 501, Workers: 401 };
+
+describe.each(productionRuntimes)("production /dav on $name", ({ name, start }) => {
   let server: Server;
+  const status = EXPECTED[name];
 
   beforeAll(async () => {
     server = await start();
   });
   afterAll(() => server?.stop());
 
-  it.each(WEBDAV_METHODS)("%s returns 501 with no DAV header", async (method) => {
+  it.each(WEBDAV_METHODS)("%s without credentials advertises no DAV capability", async (method) => {
     const response = await server.fetch("/dav/a.txt", { method });
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(status);
     expect(response.headers.has("dav")).toBe(false);
   });
 
-  it("OPTIONS on the root returns 501 with no DAV header", async () => {
+  it("OPTIONS on the root without credentials advertises no DAV capability", async () => {
     const response = await server.fetch("/dav/", { method: "OPTIONS" });
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(status);
     expect(response.headers.has("dav")).toBe(false);
   });
 
-  it("a method outside WebDAV also returns 501", async () => {
+  it("a method outside WebDAV gets the same answer", async () => {
     const response = await server.fetch("/dav/a.txt", { method: "PATCH" });
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(status);
   });
 
-  it("PUT with a body returns 501 without reading the body", async () => {
+  it("PUT with a body is refused without reading the body", async () => {
     const response = await server.fetch("/dav/a.txt", {
       method: "PUT",
       body: "not json",
       headers: { "content-type": "application/json" },
     });
 
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(status);
   });
 
   it("leaves /api/health alone", async () => {
