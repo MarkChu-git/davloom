@@ -1,7 +1,7 @@
 # Davloom — Product and Engineering Plan
 
-**Version:** v1.4  
-**Date:** November 7, 2026  
+**Version:** v1.5  
+**Date:** November 24, 2026  
 **Type:** Open-source · Self-hosted · WebDAV · Cloud Storage  
 **Product tagline:** *Your storage. Your rules.*  
 **Architecture principle:** Cloudflare-first, Vendor-neutral by design.
@@ -25,6 +25,7 @@ Users can turn storage such as Cloudflare Durable Objects, Cloudflare R2, AWS S3
 - **Secure-by-default:** Private storage and least privilege by default.
 - **Portable:** Support migration of configuration, databases and file data.
 - **Agent-friendly:** Code structure, component conventions and documentation are easy for AI coding agents to understand.
+- **Ship-first:** Each milestone reaches users within days. Process, tooling and documents stay only when they get the product out sooner or keep the code robust; proofs and tests do the second.
 
 ### Target Users
 
@@ -133,7 +134,7 @@ Better Auth manages identity centrally, while Effect decides file path and Mount
 | Dependency Updates | Renovate |
 | Release | Changesets |
 | Container | Docker + Docker Compose |
-| Spec Workflow | OpenSpec |
+| Requirements | `prd.md`, `LAWS.bend` and tests (OpenSpec paused since November 24, 2026) |
 | Issue Tracking | Linear |
 | Code Intelligence | GitNexus |
 
@@ -288,8 +289,8 @@ The laws also run as fast-check property tests against each compiled module. The
 
 Rules:
 
-- **TypeScript keeps only what Bend cannot do.** IO and integration code stays in TypeScript: storage and database Adapters, Elysia routes, Better Auth, XML parsing, streaming, cryptography and the UI. Pure logic stays in TypeScript only when Bend cannot express it or cannot meet the Workers CPU budget. The OpenSpec design of that change records the reason, and fast-check property tests check the same laws.
-- **The owner approves every law.** An AI agent may propose a law, but each change to `LAWS.bend` needs the owner's approval. GitHub does not let the owner approve a pull request they opened, so the approval is the `laws-approved` label: a required check fails on any pull request that changes `LAWS.bend` until the owner adds that label after its last commit, and the check reads from the pull request's events who added it. A law is never weakened or deleted to make a proof pass.
+- **TypeScript keeps only what Bend cannot do.** IO and integration code stays in TypeScript: storage and database Adapters, Elysia routes, Better Auth, XML parsing, streaming, cryptography and the UI. Pure logic stays in TypeScript only when Bend cannot express it or cannot meet the Workers CPU budget. The pull request that keeps it there gives the reason, and fast-check property tests check the same laws.
+- **Laws only get stronger.** Agents write and change the laws in `LAWS.bend` without asking the owner (owner decision, November 24, 2026). A law is never weakened or deleted to make a proof pass, and the review of every pull request that changes `LAWS.bend` checks that no law got weaker.
 - **Both checkers must pass.** `bend PROOF.bend` must print ALL PROOFS CHECK, and so must `bend PROOF.bend --verdict`. The second run rechecks every proof with a small kernel that has a proof in Lean, and it refuses proofs that rely on `@unsafe` or foreign code. That kernel is a Lean program, so `--verdict` needs the Lean release that the Bend release names (Lean v4.34.0 for Bend v2.0.40), or a kernel built earlier and named by `$BENDTT`.
 - **The boundary stays thin.** Effect Services call the compiled modules through typed wrappers that convert values at the boundary. An array passed to a Bend function is the caller's own array and may be updated in place, so a wrapper copies it whenever the caller keeps it. Bend does not yet write TypeScript declarations ([bendlang/bend#1144](https://github.com/bendlang/bend/issues/1144)), so each wrapper declares its module's types and its tests check them.
 - **Numbers are Nat or U32.** Nothing about F32 can be proven in Bend, so proven rules never depend on floating point. Sizes, offsets and timestamps use Nat, which reaches JavaScript as a plain number. Bend stops with an error when a Nat passes 2^48 − 1 and rejects host numbers above 2^53, so the wrappers bound client values such as `Range` offsets and `Content-Length` before calling Bend, and turn any error Bend throws into a typed error.
@@ -591,7 +592,7 @@ davloom/
 │   ├── deployment/
 │   └── security/
 │
-├── openspec/               # OpenSpec specs and changes
+├── openspec/               # OpenSpec specs and changes, kept as reference
 │   ├── config.yaml
 │   ├── specs/
 │   └── changes/
@@ -616,7 +617,7 @@ davloom/
 
 ## 11. CI/CD
 
-CI is added in layers that follow the phases, not all at once. The `tasks.md` of each phase includes a task to wire its new tests into CI. The detailed plan for the baseline is in the OpenSpec change `add-ci-baseline`. The repository has been public since it was created, because on a free account Rulesets, CodeQL and native secret scanning all require a public repository.
+CI is added in layers that follow the phases, not all at once. New tests run in CI from the pull request that adds them, and `docs/ci.md` describes the jobs. The repository has been public since it was created, because on a free account Rulesets, CodeQL and native secret scanning all require a public repository.
 
 ### Rollout Plan
 
@@ -626,9 +627,8 @@ CI is added in layers that follow the phases, not all at once. The `tasks.md` of
 | Required on PR | Frozen Lockfile, Oxlint + tsgolint, Oxfmt, TypeScript Typecheck, Vitest, Workers and Bun compatibility tests, Playwright, Build Verification, OSV-Scanner, Gitleaks, CodeQL, actionlint, zizmor | After Phase 0 |
 | Required on PR | Coverage gates per package (Vitest with Istanbul coverage), starting at the measured coverage | After Phase 0 |
 | Required on PR | Effect Service Tests, Database Contract Tests, Storage Contract Tests (Vitest + Testcontainers + RustFS), database upgrade tests (D1 and SQLite) | Phase 1 |
-| Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module, fast-check property tests of the laws against the compiled modules, and the `LAWS.bend` approval check | Phase 1 |
+| Required on PR | Bend 2 proof checks (`bend PROOF.bend`, plain and with `--verdict`), a rebuild of every compiled module and fast-check property tests of the laws against the compiled modules | Phase 1 |
 | Weekly, and required before release | StrykerJS on `packages/core` and `packages/webdav`, with a mutation score of at least 80% | Phase 1 |
-| Required on PR | Requirement coverage: every OpenSpec scenario maps to at least one test | Phase 1 |
 | Required on PR | WebDAV Protocol Tests (in-house RFC tests + litmus), rclone real-client tests, fast-check property tests (path normalization, the `If` header, XML limits) | Phase 2 |
 | Required on PR | UI-specific tests | Phase 4 |
 | Scheduled | Grafana k6, run only against local Bun or Docker, never against Cloud Free | Phase 5 |
@@ -682,10 +682,9 @@ Rules for tests at this size:
 | `apps/api`, `apps/web`, `packages/ui` | 80% | 75% | Not gated |
 
 - The table holds the V1 targets. Each package starts at the coverage measured when its gate is added, its thresholds rise every phase, and they reach the targets before V1.
-- Thresholds only go up. Lowering one needs a reason in the `design.md` of the change that lowers it.
+- Thresholds only go up. Lowering one needs a reason in the pull request that lowers it.
 - Coverage comes from Istanbul instrumentation through `@vitest/coverage-istanbul`, with Vitest running on Bun. Cloudflare's Vitest integration supports only Istanbul, so one provider measures the tests on both Bun and workerd.
 - StrykerJS keeps a mutation score of at least 80% on `packages/core` and `packages/webdav`. It runs weekly and must pass before a release.
-- From Phase 1, requirement coverage is a required check: every OpenSpec scenario maps to at least one test whose name carries the scenario's ID, and the check fails when a scenario has none. Scenarios that need a real deployment or manual verification are listed with how they were verified.
 
 ### Tooling Choices
 
@@ -744,20 +743,28 @@ Supports SBOM, build attestations and version rollback.
 
 ---
 
-## 13. Eight-Week Development Plan
+## 13. Milestones
 
-| Phase | Period | Goal |
+The first plan ran eight one-week phases from November 3, 2026. On November 24 the owner asked for a faster one: Davloom should go live within days. The phases stay as areas of work, and three milestones group them.
+
+| Milestone | Target | Contents |
 |---|---|---|
-| Phase 0 | Week 1 | Monorepo, framework, deployment and UI compatibility verification |
-| Phase 1 | Week 2 | Effect Core, D1/SQLite, Durable Objects/R2/S3 |
-| Phase 2 | Week 3 | Basic WebDAV protocol |
-| Phase 3 | Week 4 | Better Auth, API Key, permissions |
-| Phase 4 | Week 5 | Astryx + StyleX Dashboard |
-| Phase 5 | Week 6 | WebDAV compatibility and file locks |
-| Phase 6 | Week 7 | Docker, Cloudflare, data migration |
-| Phase 7 | Week 8 | Testing, security, documentation, release |
+| M1 — Cloud Free live | November 29, 2026 | Deployed with Wrangler on Workers + D1 + Durable Objects: Phase 1 without R2 and S3, Phase 2, Phase 3 with Read Only and Read / Write API Keys, the Phase 4 Dashboard on the real API, and Phase 5 locks. The admin signs in, creates an API Key, and mounts Davloom read-write in macOS Finder and in rclone. |
+| M2 — Self-hosted | December 6, 2026 | The R2 and S3 drivers of Phase 1, Docker with Bun + SQLite + S3-compatible storage and RustFS (Phase 6), and Mount and Path Prefix Scope on API Keys. |
+| M3 — V1 release | December 13, 2026 | Data export and migration (Phase 6), then Phase 7: every law proven, the test budget, the coverage and mutation gates, security checks, documentation and the release. |
 
-A feature ships only when the laws it needs are proven (Proven Domain Logic, §4), so a phase is done when every law of the features it ships is proven.
+A milestone is released only when the laws its features need are proven (Proven Domain Logic, §4). Before that, its features may run on the owner's Cloudflare account for trials. Decision logic is written in Bend from the start and tested on the compiled module at once, so a later proof changes none of the code that runs.
+
+| Phase | Area of work |
+|---|---|
+| Phase 0 | Monorepo, framework, deployment and UI compatibility verification (done November 7) |
+| Phase 1 | Effect Core, D1/SQLite, Durable Objects/R2/S3 |
+| Phase 2 | Basic WebDAV protocol |
+| Phase 3 | Better Auth, API Key, permissions |
+| Phase 4 | Astryx + StyleX Dashboard |
+| Phase 5 | WebDAV compatibility and file locks |
+| Phase 6 | Docker, Cloudflare, data migration |
+| Phase 7 | Testing, security, documentation, release |
 
 ### Phase 0 Must Verify
 
@@ -832,7 +839,6 @@ All of it uses the same design tokens.
 - [ ] Every law in `LAWS.bend` is proven: `bend PROOF.bend` and `bend PROOF.bend --verdict` both print ALL PROOFS CHECK.
 - [ ] At least 8,000 unique test cases pass, each on every combination in its matrix.
 - [ ] Coverage meets the V1 gates, and the mutation score of `packages/core` and `packages/webdav` is at least 80%.
-- [ ] Every OpenSpec scenario maps to a passing test or to a recorded manual verification.
 - [ ] Data export and migration pass their tests.
 - [ ] Cloudflare / Docker Smoke Tests pass.
 - [ ] No known Critical security vulnerabilities.
@@ -886,6 +892,6 @@ Multi-user support, teams, fine-grained permissions, PostgreSQL and optional dis
 
 **Design system:** Astryx Components + StyleX + Davloom Theme.
 
-**Development workflow:** OpenSpec (proposal → specs → design → tasks).
+**Development workflow:** build the next slice of the current milestone with its tests, prove its laws, and ship it.
 
 **Product goal:** An open-source WebDAV platform that works on a free plan, can be self-hosted, has no mandatory cloud vendor lock-in and has a modern file management experience.
