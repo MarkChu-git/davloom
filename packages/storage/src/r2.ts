@@ -105,6 +105,9 @@ export const createR2Driver = ({
         const stored = await bucket.put(key, value, options);
         return stored ? ok({ etag: unquote(stored.etag) }) : fail("exists");
       }
+      // R2 has no conditional multipart upload, so a create-only body of unknown length is checked
+      // before the upload starts: two such writes racing for one new key can both succeed. The
+      // WebDAV engine sends create-only writes only with an empty body, which is atomic above.
       if (ifNoneMatch && (await bucket.head(key))) {
         await body.cancel();
         return fail("exists");

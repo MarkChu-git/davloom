@@ -820,8 +820,24 @@ describe("hashApiKey", () => {
 });
 
 describe("key scopes", () => {
+  it("refuses a scope that names a Mount that does not exist", async () => {
+    const { run, calls } = makeWorld({ mounts: [mount("m-1", "files", "b-1")] });
+    const exit = await run(
+      createKey("user-1", {
+        name: "k",
+        access: "read-only",
+        expiresInDays: null,
+        paths: ["/files", "/later"],
+      }),
+    );
+    expect(errorOf(exit)).toMatchObject({ _tag: "InvalidInput", field: "paths" });
+    expect(calls.apiKeys).toEqual([]);
+  });
+
   it("creates a key limited to its roots, written as the API shows them", async () => {
-    const { run, calls } = makeWorld();
+    const { run, calls } = makeWorld({
+      mounts: [mount("m-1", "files", "b-1"), mount("m-2", "docs", "b-1")],
+    });
     valueOf(
       await run(
         createKey("user-1", {
