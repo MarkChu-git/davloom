@@ -29,7 +29,7 @@ for (const method of ["GET", "PROPFIND"]) {
 
     // Bun serves no storage yet (501). The Worker asks for credentials (401), since this request
     // has none, instead of handing the path to the Dashboard.
-    expect(response.status()).toBe(testInfo.project.name === "workers" ? 401 : 501);
+    expect(response.status()).toBe(testInfo.project.name === "workers" ? 401 : 503);
   });
 }
 

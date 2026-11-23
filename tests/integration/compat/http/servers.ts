@@ -74,11 +74,11 @@ const startServer = ({ command, args, cwd = REPO_ROOT, env }: ServerCommand): Pr
   });
 
 /** Runs an entry file in its own Bun process, the way a self-hosted deployment does. */
-export const startBunServer = (entry: string): Promise<Server> =>
+export const startBunServer = (entry: string, env: Record<string, string> = {}): Promise<Server> =>
   startServer({
     command: "bun",
     args: [resolve(REPO_ROOT, entry)],
-    env: { PORT: "0", HOST: "127.0.0.1" },
+    env: { PORT: "0", HOST: "127.0.0.1", ...env },
   });
 
 /**
@@ -323,7 +323,14 @@ export interface Runtime {
 }
 
 export const productionRuntimes: readonly Runtime[] = [
-  { name: "Bun", start: () => startBunServer("apps/api/src/entry.bun.ts") },
+  {
+    name: "Bun",
+    start: () =>
+      startBunServer("apps/api/src/entry.bun.ts", {
+        DAVLOOM_SECRET: "local-instance-secret-for-tests-only-0123456789",
+        DAVLOOM_DATA_DIR: mkdtempSync(join(tmpdir(), "davloom-bun-")),
+      }),
+  },
   {
     name: "Workers",
     start: () =>

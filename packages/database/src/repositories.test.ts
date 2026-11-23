@@ -87,8 +87,22 @@ describe("backends", () => {
     await insertBackend("b-1", "First", "durable-object", T0);
 
     expect(await repositories.backends.list()).toEqual([
-      { id: "b-1", name: "First", kind: "durable-object", createdAt: T0 },
-      { id: "b-2", name: "Second", kind: "s3", createdAt: new Date(T0.getTime() + 2) },
+      {
+        id: "b-1",
+        name: "First",
+        kind: "durable-object",
+        config: {},
+        secretKey: null,
+        createdAt: T0,
+      },
+      {
+        id: "b-2",
+        name: "Second",
+        kind: "s3",
+        config: {},
+        secretKey: null,
+        createdAt: new Date(T0.getTime() + 2),
+      },
     ]);
   });
 

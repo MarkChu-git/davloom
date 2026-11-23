@@ -39,6 +39,11 @@ export type StorageFailure =
   | "too-large"
   | "size-mismatch"
   | "unavailable"
+  /**
+   * An object-store collection that holds objects whose keys form no valid path, or that hides a
+   * file of the same name: removing, copying or moving it would lose or expose them.
+   */
+  | "hidden-objects"
   /** A copy or move between two backends, which the server does not perform. */
   | "cross-backend";
 

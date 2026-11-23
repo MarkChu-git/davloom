@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 const flag = (name: string) => integer(name, { mode: "boolean" });
@@ -141,4 +141,19 @@ export const davLocks = sqliteTable(
     expiresAt: integer("expires_at").notNull(),
   },
   (table) => [index("dav_locks_root_idx").on(table.root)],
+);
+
+// Dead properties (RFC 4918 §4) of backends that cannot keep them themselves, such as R2 and
+// S3-compatible storage. `path` is the path in the backend, names joined by "/", or empty for its
+// root; `name` is the property's name in Clark notation and `xml` its element. Removing a backend
+// removes its properties through the Property Store, so the table has no foreign key.
+export const davProperties = sqliteTable(
+  "dav_properties",
+  {
+    backendId: text("backend_id").notNull(),
+    path: text("path").notNull(),
+    name: text("name").notNull(),
+    xml: text("xml").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.backendId, table.path, table.name] })],
 );

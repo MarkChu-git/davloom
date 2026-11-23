@@ -1,4 +1,5 @@
-import { Cause, Context, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Option, Redacted } from "effect";
+import { CredentialCipher } from "./credentials";
 import { describe, expect, it } from "vitest";
 import {
   completeSetup,
@@ -34,7 +35,7 @@ import { fail, type StorageBackend, type Usage } from "./storage";
 
 type RecordsShape = Context.Service.Shape<typeof Records>;
 type IdentityShape = Context.Service.Shape<typeof Identity>;
-type Services = Records | Identity | StorageOpener | InstanceConfig;
+type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher;
 
 const CREATED = new Date("2026-01-02T03:04:05.000Z");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -45,6 +46,11 @@ interface WorldOptions {
   readonly users?: number;
   readonly setupToken?: string | null;
   readonly storageKinds?: readonly string[];
+  readonly defaultBackend?: {
+    kind: string;
+    config: unknown;
+    secretKey: Redacted.Redacted | null;
+  } | null;
   readonly backends?: BackendRecord[];
   readonly mounts?: MountRecord[];
   readonly keys?: ApiKeyRecord[];
@@ -77,7 +83,14 @@ const makeWorld = (options: WorldOptions = {}) => {
       list: () => Promise.resolve([...backends]),
       create: (record) => {
         calls.backendCreates.push(record);
-        backends.push({ id: record.id, name: record.name, kind: record.kind, createdAt: CREATED });
+        backends.push({
+          id: record.id,
+          name: record.name,
+          kind: record.kind,
+          config: record.config,
+          secretKey: record.secretKey ?? null,
+          createdAt: CREATED,
+        });
         return Promise.resolve();
       },
       ...options.records?.backends,
@@ -128,9 +141,15 @@ const makeWorld = (options: WorldOptions = {}) => {
     Layer.succeed(StorageOpener, {
       open: (backend: { id: string; kind: string }) => options.storages?.[backend.id] ?? null,
     }),
+    Layer.succeed(CredentialCipher, {
+      seal: (id: string, secret: Redacted.Redacted) =>
+        Effect.succeed(`sealed:${id}:${Redacted.value(secret)}`),
+      open: (_id: string, sealed: string) => Effect.succeed(Redacted.make(sealed)),
+    }),
     Layer.succeed(InstanceConfig, {
       setupToken: options.setupToken === undefined ? TOKEN : options.setupToken,
       storageKinds: options.storageKinds ?? ["durable-object", "s3"],
+      defaultBackend: options.defaultBackend ?? null,
     }),
   );
   const run = <A, E>(program: Effect.Effect<A, E, Services>) =>
@@ -157,6 +176,8 @@ const backend = (id: string, kind = "durable-object"): BackendRecord => ({
   id,
   name: `Backend ${id}`,
   kind,
+  config: {},
+  secretKey: null,
   createdAt: CREATED,
 });
 
@@ -540,10 +561,14 @@ describe("createBackend", () => {
   it("creates a backend of a kind the runtime can open, with a trimmed name", async () => {
     const { run, calls } = makeWorld();
 
-    const { id } = valueOf(await run(createBackend({ name: ` ${"b".repeat(64)} `, kind: "s3" })));
+    const { id } = valueOf(
+      await run(createBackend({ name: ` ${"b".repeat(64)} `, kind: "durable-object" })),
+    );
 
     expect(id).toMatch(UUID);
-    expect(calls.backendCreates).toEqual([{ id, name: "b".repeat(64), kind: "s3", config: {} }]);
+    expect(calls.backendCreates).toEqual([
+      { id, name: "b".repeat(64), kind: "durable-object", config: {} },
+    ]);
   });
 
   it.each([
@@ -552,9 +577,9 @@ describe("createBackend", () => {
   ])("turns %s into NameTaken", async (_case, error) => {
     const { run } = makeWorld({ records: { backends: { create: () => Promise.reject(error) } } });
 
-    expect(errorOf(await run(createBackend({ name: "Photos", kind: "s3" })))?._tag).toBe(
-      "NameTaken",
-    );
+    expect(
+      errorOf(await run(createBackend({ name: "Photos", kind: "durable-object" })))?._tag,
+    ).toBe("NameTaken");
   });
 });
 
@@ -846,5 +871,140 @@ describe("verifyApiKey", () => {
     const { run } = await worldWith(apiKey());
 
     expect(valueOf(await run(verifyApiKey(`${KEY}0`, NOW)))).toBeNull();
+  });
+});
+
+describe("S3-compatible backends", () => {
+  const s3 = {
+    endpoint: "http://127.0.0.1:9000",
+    region: "us-east-1",
+    bucket: "davloom",
+    prefix: "dav",
+    forcePathStyle: true,
+    accessKeyId: "access",
+  };
+
+  it.each([
+    [{ region: "" }, { region: "us-east-1" }],
+    [{ prefix: "" }, { prefix: "" }],
+    [{ prefix: "a/b/" }, { prefix: "a/b/" }],
+    [{ forcePathStyle: undefined }, { forcePathStyle: true }],
+    [{ forcePathStyle: false }, { forcePathStyle: false }],
+    [{ endpoint: "https://s3.example.com/" }, { endpoint: "https://s3.example.com" }],
+  ])("normalizes %j to %j", async (change, expected) => {
+    const { run, calls } = makeWorld();
+    valueOf(
+      await run(
+        createBackend({ name: "B", kind: "s3", config: { ...s3, ...change }, secretKey: "s" }),
+      ),
+    );
+    expect(calls.backendCreates[0]?.config).toMatchObject(expected);
+  });
+
+  it("creates one with its configuration and a sealed secret key", async () => {
+    const { run, calls } = makeWorld({
+      sessionUser: { id: "u", name: "A", email: "a@example.com" },
+    });
+    const created = valueOf(
+      await run(createBackend({ name: "Bucket", kind: "s3", config: s3, secretKey: "secret" })),
+    );
+    const record = calls.backendCreates[0];
+    expect(record?.kind).toBe("s3");
+    expect(record?.config).toEqual({ ...s3, prefix: "dav/" });
+    expect(record?.secretKey).toBe(`sealed:${created.id}:secret`);
+  });
+
+  it.each([
+    ["endpoint", { ...s3, endpoint: "ftp://x" }, "secret"],
+    ["endpoint", { ...s3, endpoint: "not a url" }, "secret"],
+    ["endpoint", { ...s3, endpoint: "https://user:pw@example.com" }, "secret"],
+    ["region", { ...s3, region: "US EAST" }, "secret"],
+    ["bucket", { ...s3, bucket: "Bad_Bucket" }, "secret"],
+    ["bucket", { ...s3, bucket: "ab" }, "secret"],
+    ["prefix", { ...s3, prefix: "/abs" }, "secret"],
+    ["prefix", { ...s3, prefix: "a//b" }, "secret"],
+    ["forcePathStyle", { ...s3, forcePathStyle: "yes" }, "secret"],
+    ["accessKeyId", { ...s3, accessKeyId: "" }, "secret"],
+    ["secretKey", s3, ""],
+    ["secretKey", s3, "x".repeat(257)],
+    ["secretKey", s3, undefined],
+    ["region", { ...s3, region: "r".repeat(65) }, "secret"],
+    ["prefix", { ...s3, prefix: "p".repeat(101) }, "secret"],
+    ["accessKeyId", { ...s3, accessKeyId: "a".repeat(257) }, "secret"],
+    ["endpoint", null, "secret"],
+  ])("refuses an invalid %s", async (field, config, secretKey) => {
+    const { run, calls } = makeWorld();
+    const exit = await run(createBackend({ name: "Bucket", kind: "s3", config, secretKey }));
+    expect(errorOf(exit)).toEqual(expect.objectContaining({ _tag: "InvalidInput", field }));
+    expect(calls.backendCreates).toEqual([]);
+  });
+
+  it("setup stores the deployment's default S3 configuration normalized, or as it is when invalid", async () => {
+    const valid = makeWorld({
+      defaultBackend: { kind: "s3", config: { ...s3, prefix: "p" }, secretKey: null },
+    });
+    valueOf(
+      await valid.run(
+        completeSetup({
+          name: "A",
+          email: "a@example.com",
+          password: "long enough pass",
+          token: TOKEN,
+        }),
+      ),
+    );
+    expect(valid.calls.backendCreates[0]?.config).toMatchObject({ prefix: "p/" });
+    expect(valid.calls.backendCreates[0]?.secretKey).toBeUndefined();
+    const invalid = makeWorld({
+      defaultBackend: { kind: "s3", config: { endpoint: "nope" }, secretKey: null },
+    });
+    valueOf(
+      await invalid.run(
+        completeSetup({
+          name: "A",
+          email: "a@example.com",
+          password: "long enough pass",
+          token: TOKEN,
+        }),
+      ),
+    );
+    expect(invalid.calls.backendCreates[0]?.config).toEqual({ endpoint: "nope" });
+  });
+
+  it("setup creates the deployment's default backend with its secret sealed", async () => {
+    const { run, calls } = makeWorld({
+      defaultBackend: { kind: "s3", config: s3, secretKey: Redacted.make("env-secret") },
+    });
+    valueOf(
+      await run(
+        completeSetup({
+          name: "A",
+          email: "a@example.com",
+          password: "long enough pass",
+          token: TOKEN,
+        }),
+      ),
+    );
+    const record = calls.backendCreates[0];
+    expect(record?.kind).toBe("s3");
+    expect(record?.secretKey).toBe(`sealed:${record?.id}:env-secret`);
+    expect(calls.mountCreates[0]?.backendId).toBe(record?.id);
+  });
+});
+
+describe("openNamespace with stored backends", () => {
+  it("opens each Mount's backend from its stored record, configuration included", async () => {
+    const opened: BackendRecord[] = [];
+    const stored = { ...backend("b-1", "s3"), config: { bucket: "x" }, secretKey: "sealed" };
+    const world = makeWorld({ backends: [stored], mounts: [mount("m-1", "files", "b-1")] });
+    const layer = Layer.succeed(StorageOpener, {
+      open: (record: BackendRecord) => {
+        opened.push(record);
+        return createMemoryStorage();
+      },
+    });
+    const namespace = valueOf(await world.run(Effect.provide(openNamespace, layer)));
+    expect(opened).toEqual([stored]);
+    expect((await namespace.stat(["files"])).ok).toBe(true);
   });
 });

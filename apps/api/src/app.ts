@@ -21,6 +21,7 @@ import {
   type Identity,
   type StorageOpener,
   type InstanceConfig,
+  type CredentialCipher,
 } from "@davloom/core";
 import { authorize } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
@@ -28,9 +29,12 @@ import { Cause, Effect, type Layer } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
 
+/** The application's Ports, which every deployment provides. */
+type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher;
+
 /** What a deployment provides: the Layer of the application's Ports, Better Auth and the locks. */
 export interface Instance {
-  readonly layer: Layer.Layer<Records | Identity | StorageOpener | InstanceConfig>;
+  readonly layer: Layer.Layer<Services>;
   /** Better Auth's own routes under /api/auth. */
   readonly authHandler: (request: Request) => Promise<Response>;
   readonly locks: LockStore;
@@ -94,7 +98,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
   let built:
     | {
         instance: Instance;
-        run: ReturnType<typeof makeHttpRunner<Records | Identity | StorageOpener | InstanceConfig>>;
+        run: ReturnType<typeof makeHttpRunner<Services>>;
       }
     | undefined;
   const get = (request: Request) => {
@@ -115,13 +119,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
 
   const api =
     (
-      program: (
-        request: Request,
-      ) => Effect.Effect<
-        unknown,
-        { _tag: ErrorTag },
-        Records | Identity | StorageOpener | InstanceConfig
-      >,
+      program: (request: Request) => Effect.Effect<unknown, { _tag: ErrorTag }, Services>,
       status = 200,
     ) =>
     async ({ request }: { request: Request }) => {
@@ -138,7 +136,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
     program: (
       user: { id: string },
       request: Request,
-    ) => Effect.Effect<A, { _tag: ErrorTag }, Records | Identity | StorageOpener | InstanceConfig>,
+    ) => Effect.Effect<A, { _tag: ErrorTag }, Services>,
     status = 200,
   ) =>
     api(
@@ -301,7 +299,12 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
             Effect.flatMap(
               Effect.promise(() => readJson(request)),
               (body) =>
-                createBackend({ name: text(body.name), kind: text(body.kind) || "durable-object" }),
+                createBackend({
+                  name: text(body.name),
+                  kind: text(body.kind) || "durable-object",
+                  config: body.config,
+                  secretKey: text(body.secretKey),
+                }),
             ),
           201,
         ),

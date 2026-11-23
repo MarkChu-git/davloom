@@ -7,13 +7,15 @@
     "./schema": "./src/schema.ts",
     "./d1": "./src/d1.ts",
     "./bun-sqlite": "./src/bun-sqlite.ts",
-    "./repositories": "./src/repositories.ts"
+    "./repositories": "./src/repositories.ts",
+    "./properties": "./src/properties.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@davloom/core": "workspace:*",
     "drizzle-orm": "0.45.4"
   },
   "devDependencies": {

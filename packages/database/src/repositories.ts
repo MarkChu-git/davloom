@@ -12,6 +12,8 @@ export interface BackendRecord {
   readonly id: string;
   readonly name: string;
   readonly kind: string;
+  readonly config: unknown;
+  readonly secretKey: string | null;
   readonly createdAt: Date;
 }
 
@@ -91,11 +93,19 @@ export const createRepositories = (db: Database) => ({
           id: schema.storageBackends.id,
           name: schema.storageBackends.name,
           kind: schema.storageBackends.kind,
+          config: schema.storageBackends.config,
+          secretKey: schema.storageBackends.secretKey,
           createdAt: schema.storageBackends.createdAt,
         })
         .from(schema.storageBackends)
         .orderBy(schema.storageBackends.createdAt),
-    create: async (record: { id: string; name: string; kind: string; config: unknown }) => {
+    create: async (record: {
+      id: string;
+      name: string;
+      kind: string;
+      config: unknown;
+      secretKey?: string | null;
+    }) => {
       const now = new Date();
       await db.insert(schema.storageBackends).values({ ...record, createdAt: now, updatedAt: now });
     },
