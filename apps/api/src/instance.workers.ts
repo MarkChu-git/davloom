@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createAuth, createIdentity } from "@davloom/auth";
 import {
+  checkR2Config,
   credentialCipherLayer,
   Identity,
   InstanceConfig,
@@ -9,7 +10,9 @@ import {
   StorageOpener,
 } from "@davloom/core";
 import { createSqlPropertyStore } from "@davloom/database/properties";
+import { createObjectStoreStorage } from "@davloom/storage/object-store";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
+import { createR2Driver } from "@davloom/storage/r2";
 import { createD1Database } from "@davloom/database/d1";
 import { createRepositories } from "@davloom/database/repositories";
 import { durableObjectStorage, type StorageObject } from "@davloom/storage/durable-object";
@@ -34,6 +37,14 @@ declare global {
 
 const MIN_SECRET_BYTES = 32;
 
+/** Whether a binding is an R2 bucket. */
+const isR2Bucket = (value: unknown): value is R2Bucket =>
+  typeof value === "object" &&
+  value !== null &&
+  "createMultipartUpload" in value &&
+  "head" in value &&
+  "list" in value;
+
 /** The instance on Workers: D1 for records, one Durable Object per storage backend. */
 export const workersInstance = (origin: string): Instance => {
   const secret = env.DAVLOOM_SECRET ?? "";
@@ -41,6 +52,9 @@ export const workersInstance = (origin: string): Instance => {
     throw new Error(`DAVLOOM_SECRET must be set to at least ${MIN_SECRET_BYTES} bytes`);
   }
   const db = createD1Database(env.DB);
+  const r2Bindings = new Map(
+    Object.entries(env).filter((entry): entry is [string, R2Bucket] => isR2Bucket(entry[1])),
+  );
   const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
   const unseal = async (backendId: string, sealed: string) =>
     await unsealWith(await cipher)(backendId, sealed);
@@ -52,6 +66,16 @@ export const workersInstance = (origin: string): Instance => {
     Layer.succeed(StorageOpener, {
       open: (backend) => {
         if (backend.kind === "durable-object") return durableObjectStorage(env.STORAGE, backend.id);
+        if (backend.kind === "r2") {
+          const checked = checkR2Config(backend.config);
+          const bucket = checked.ok ? r2Bindings.get(checked.config.binding) : undefined;
+          if (!checked.ok || !bucket) return null;
+          return createObjectStoreStorage({
+            driver: createR2Driver({ bucket }),
+            prefix: checked.config.prefix,
+            properties: createSqlPropertyStore(db, backend.id),
+          });
+        }
         if (backend.kind === "s3") {
           return openS3Backend(backend, unseal, createSqlPropertyStore(db, backend.id));
         }
@@ -62,7 +86,9 @@ export const workersInstance = (origin: string): Instance => {
 
     Layer.succeed(InstanceConfig, {
       setupToken: env.DAVLOOM_SETUP_TOKEN?.trim() ? env.DAVLOOM_SETUP_TOKEN.trim() : null,
-      storageKinds: ["durable-object", "s3"],
+      // R2 is offered only where the deployment has an R2 binding; enabling R2 needs a payment
+      // method, so the default deployment has none.
+      storageKinds: r2Bindings.size > 0 ? ["durable-object", "s3", "r2"] : ["durable-object", "s3"],
     }),
   );
   return {

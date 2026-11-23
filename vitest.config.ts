@@ -17,7 +17,8 @@ export const thresholds = {
   "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
   "packages/database/src/**": { lines: 93, branches: 95 },
   "packages/laws/src/**": { lines: 100, branches: 97 },
-  "packages/storage/src/**": { lines: 63.92, branches: 65.8 },
+  // r2.ts and durable-object.ts run only in workerd (test:storage), outside this report.
+  "packages/storage/src/**": { lines: 58.5, branches: 61 },
   "packages/ui/src/**": { lines: 34.37, branches: 100 },
   "packages/webdav/src/**": { lines: 97, branches: 88.9, functions: 96 },
 };

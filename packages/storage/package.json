@@ -8,7 +8,8 @@
     "./testing": "./test/worker.ts",
     "./object-store": "./src/object-store.ts",
     "./s3": "./src/s3.ts",
-    "./open-s3": "./src/open-s3.ts"
+    "./open-s3": "./src/open-s3.ts",
+    "./r2": "./src/r2.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.s3.json",

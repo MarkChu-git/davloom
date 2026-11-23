@@ -1,7 +1,7 @@
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
-// Runs the storage contract against the Durable Objects adapter inside workerd.
+// Runs the storage contract against the Durable Objects adapter and the R2 driver inside workerd.
 export default defineConfig({
   plugins: [
     cloudflareTest({
@@ -12,6 +12,7 @@ export default defineConfig({
           STORAGE: { className: "StorageObject", useSQLite: true },
           FULL: { className: "FullStorageObject", useSQLite: true },
         },
+        r2Buckets: ["R2"],
       },
     }),
   ],
