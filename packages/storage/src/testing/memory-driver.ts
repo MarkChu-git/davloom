@@ -127,8 +127,8 @@ export const createMemoryDriver = (options: MemoryDriverOptions = {}): MemoryDri
         ok({ info: infoOf(key, stored), body: new Blob([bytes.slice()]).stream() }),
       );
     },
-    put: async (key, body, { length, contentType, created }) => {
-      const failure = refused("put", key);
+    put: async (key, body, { length, contentType, created, ifNoneMatch }) => {
+      const failure = refused("put", key) ?? (ifNoneMatch && objects.has(key) ? "exists" : null);
       if (failure) {
         await body?.cancel();
         return fail(failure);

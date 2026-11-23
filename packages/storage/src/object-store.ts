@@ -96,6 +96,8 @@ export interface PutOptions {
   readonly contentType?: string | null | undefined;
   /** The creation time to keep with the object. */
   readonly created: number;
+  /** Store only if no object has the key: fail with `exists` otherwise (S3's If-None-Match: *). */
+  readonly ifNoneMatch?: boolean | undefined;
 }
 
 /**
@@ -127,6 +129,8 @@ export interface ObjectStoreOptions {
   readonly prefix: string;
   readonly properties: PropertyStore;
   readonly now?: () => number;
+  /** The largest file; MAX_UPLOAD_BYTES unless a test asks for less. */
+  readonly maxFileSize?: number;
 }
 
 // --- Keys --------------------------------------------------------------------------------------
@@ -259,8 +263,12 @@ export const readTree = (prefix: string, path: Path, objects: readonly ObjectInf
 // --- Streams -----------------------------------------------------------------------------------
 
 /** A stream of `body` that fails when it delivers more or fewer bytes than `size`, if stated. */
-const countBytes = (body: ReadableStream<Uint8Array> | null, size: number | undefined) => {
-  const state = { failed: false, cancelled: false, bytes: 0 };
+const countBytes = (
+  body: ReadableStream<Uint8Array> | null,
+  size: number | undefined,
+  limit = MAX_UPLOAD_BYTES,
+) => {
+  const state = { failed: false, cancelled: false, tooLarge: false, bytes: 0 };
   const reader = body?.getReader();
   const stream = new ReadableStream<Uint8Array>(
     {
@@ -273,6 +281,12 @@ const countBytes = (body: ReadableStream<Uint8Array> | null, size: number | unde
             return;
           }
           state.bytes += next.value.byteLength;
+          // A body of unknown length still stops at what one object may hold and later be copied.
+          if (state.bytes > limit) {
+            state.tooLarge = true;
+            await reader?.cancel();
+            throw new Error("the body is too large");
+          }
           if (size !== undefined && state.bytes > size) {
             await reader?.cancel();
             throw new Error("the body is longer than stated");
@@ -382,6 +396,7 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
     throw new Error("an object store's key prefix must be empty or end with /");
   }
   const now = options.now ?? Date.now;
+  const maxFileSize = options.maxFileSize ?? MAX_UPLOAD_BYTES;
 
   const probe = async (path: Path): Promise<Probe> => {
     if (path.length === 0) return ROOT_PROBE;
@@ -584,12 +599,16 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
           await cancel();
           return fail(failureOf(outcome.kind));
         }
+        if (writeOptions.ifAbsent && target.node !== "absent") {
+          await cancel();
+          return fail("exists");
+        }
         const { size } = writeOptions;
-        if (size !== undefined && size > MAX_UPLOAD_BYTES) {
+        if (size !== undefined && size > maxFileSize) {
           await cancel();
           return fail("too-large");
         }
-        const counted = countBytes(body, size);
+        const counted = countBytes(body, size, maxFileSize);
         try {
           // A new file takes no properties that an entry of its name left behind.
           if (!outcome.replaces) must(await properties.removeTree(path));
@@ -598,7 +617,9 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
             length: size,
             contentType: writeOptions.contentType,
             created: target.file?.created ?? target.file?.modified ?? now(),
+            ifNoneMatch: writeOptions.ifAbsent,
           });
+          if (counted.state.tooLarge) return fail("too-large");
           if (counted.state.failed) return fail("size-mismatch");
           const { etag } = must(put);
           const stored = must(await driver.head(key));

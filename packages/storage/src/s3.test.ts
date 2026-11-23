@@ -35,6 +35,8 @@ describe("error mapping", () => {
     ["InternalError", 500, "unavailable"],
     ["InvalidArgument", 400, "unavailable"],
     ["KeyTooLongError", 400, "unavailable"],
+    ["PreconditionFailed", 412, "exists"],
+    ["SomethingElse", 412, "exists"],
   ])("maps %s (%i) to %s", (name, status, failure) => {
     expect(failureOfError(exception(name, status))).toBe(failure);
   });

@@ -884,6 +884,23 @@ describe("S3-compatible backends", () => {
     accessKeyId: "access",
   };
 
+  it.each([
+    [{ region: "" }, { region: "us-east-1" }],
+    [{ prefix: "" }, { prefix: "" }],
+    [{ prefix: "a/b/" }, { prefix: "a/b/" }],
+    [{ forcePathStyle: undefined }, { forcePathStyle: true }],
+    [{ forcePathStyle: false }, { forcePathStyle: false }],
+    [{ endpoint: "https://s3.example.com/" }, { endpoint: "https://s3.example.com" }],
+  ])("normalizes %j to %j", async (change, expected) => {
+    const { run, calls } = makeWorld();
+    valueOf(
+      await run(
+        createBackend({ name: "B", kind: "s3", config: { ...s3, ...change }, secretKey: "s" }),
+      ),
+    );
+    expect(calls.backendCreates[0]?.config).toMatchObject(expected);
+  });
+
   it("creates one with its configuration and a sealed secret key", async () => {
     const { run, calls } = makeWorld({
       sessionUser: { id: "u", name: "A", email: "a@example.com" },
@@ -909,12 +926,49 @@ describe("S3-compatible backends", () => {
     ["forcePathStyle", { ...s3, forcePathStyle: "yes" }, "secret"],
     ["accessKeyId", { ...s3, accessKeyId: "" }, "secret"],
     ["secretKey", s3, ""],
+    ["secretKey", s3, "x".repeat(257)],
+    ["secretKey", s3, undefined],
+    ["region", { ...s3, region: "r".repeat(65) }, "secret"],
+    ["prefix", { ...s3, prefix: "p".repeat(101) }, "secret"],
+    ["accessKeyId", { ...s3, accessKeyId: "a".repeat(257) }, "secret"],
     ["endpoint", null, "secret"],
   ])("refuses an invalid %s", async (field, config, secretKey) => {
     const { run, calls } = makeWorld();
     const exit = await run(createBackend({ name: "Bucket", kind: "s3", config, secretKey }));
     expect(errorOf(exit)).toEqual(expect.objectContaining({ _tag: "InvalidInput", field }));
     expect(calls.backendCreates).toEqual([]);
+  });
+
+  it("setup stores the deployment's default S3 configuration normalized, or as it is when invalid", async () => {
+    const valid = makeWorld({
+      defaultBackend: { kind: "s3", config: { ...s3, prefix: "p" }, secretKey: null },
+    });
+    valueOf(
+      await valid.run(
+        completeSetup({
+          name: "A",
+          email: "a@example.com",
+          password: "long enough pass",
+          token: TOKEN,
+        }),
+      ),
+    );
+    expect(valid.calls.backendCreates[0]?.config).toMatchObject({ prefix: "p/" });
+    expect(valid.calls.backendCreates[0]?.secretKey).toBeUndefined();
+    const invalid = makeWorld({
+      defaultBackend: { kind: "s3", config: { endpoint: "nope" }, secretKey: null },
+    });
+    valueOf(
+      await invalid.run(
+        completeSetup({
+          name: "A",
+          email: "a@example.com",
+          password: "long enough pass",
+          token: TOKEN,
+        }),
+      ),
+    );
+    expect(invalid.calls.backendCreates[0]?.config).toEqual({ endpoint: "nope" });
   });
 
   it("setup creates the deployment's default backend with its secret sealed", async () => {
@@ -935,5 +989,22 @@ describe("S3-compatible backends", () => {
     expect(record?.kind).toBe("s3");
     expect(record?.secretKey).toBe(`sealed:${record?.id}:env-secret`);
     expect(calls.mountCreates[0]?.backendId).toBe(record?.id);
+  });
+});
+
+describe("openNamespace with stored backends", () => {
+  it("opens each Mount's backend from its stored record, configuration included", async () => {
+    const opened: BackendRecord[] = [];
+    const stored = { ...backend("b-1", "s3"), config: { bucket: "x" }, secretKey: "sealed" };
+    const world = makeWorld({ backends: [stored], mounts: [mount("m-1", "files", "b-1")] });
+    const layer = Layer.succeed(StorageOpener, {
+      open: (record: BackendRecord) => {
+        opened.push(record);
+        return createMemoryStorage();
+      },
+    });
+    const namespace = valueOf(await world.run(Effect.provide(openNamespace, layer)));
+    expect(opened).toEqual([stored]);
+    expect((await namespace.stat(["files"])).ok).toBe(true);
   });
 });

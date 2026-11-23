@@ -202,11 +202,15 @@ export const completeSetup = (input: {
     if (backendId === undefined) {
       const id = crypto.randomUUID();
       backendId = id;
-      const chosen = config.defaultBackend ?? {
+      let chosen = config.defaultBackend ?? {
         kind: config.storageKinds[0] ?? "durable-object",
         config: {},
         secretKey: null,
       };
+      // The deployment's own S3 settings are checked like any other; an invalid one is stored as
+      // it is and shows as unavailable, so setup still completes and the admin can fix it.
+      const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
+      if (checked?.ok) chosen = { ...chosen, config: checked.config };
       const cipher = yield* CredentialCipher;
       const secret = chosen.secretKey;
       const sealed = secret ? yield* cipher.seal(id, secret) : null;

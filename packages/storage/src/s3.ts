@@ -68,6 +68,9 @@ export const failureOfError = (error: unknown): StorageFailure => {
   if (!(error instanceof S3ServiceException)) return "unavailable";
   if (error.name === "NoSuchKey" || error.name === "NotFound") return "not-found";
   if (error.name === "EntityTooLarge") return "too-large";
+  // A conditional put (If-None-Match: *) that found an object with its key.
+  if (error.name === "PreconditionFailed" || error.$metadata.httpStatusCode === 412)
+    return "exists";
   if (FULL.has(error.name) || error.$metadata.httpStatusCode === 507) {
     return "insufficient-storage";
   }
@@ -175,13 +178,14 @@ export const createS3Driver = ({
         }),
       ),
 
-    put: (key, body, { length, contentType, created }) =>
+    put: (key, body, { length, contentType, created, ifNoneMatch }) =>
       call(async () => {
         const params = {
           Bucket: bucket,
           Key: key,
           ContentType: contentType ?? undefined,
           Metadata: { [CREATED_METADATA]: String(created) },
+          ...(ifNoneMatch ? { IfNoneMatch: "*" } : {}),
         };
         if (length !== undefined || body === null) {
           // A known length streams the body in one request.

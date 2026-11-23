@@ -782,3 +782,21 @@ describe("large collections", () => {
     expect(driver.keys()).toEqual([]);
   });
 });
+
+describe("the size limit", () => {
+  it.each([
+    ["stated", 5],
+    ["unknown", undefined],
+  ])("refuses a body over the limit whose length is %s, and keeps nothing", async (_, size) => {
+    const driver = createMemoryDriver();
+    const storage = createObjectStoreStorage({
+      driver,
+      prefix: "",
+      properties: createMemoryPropertyStore(),
+      maxFileSize: 4,
+    });
+    expect(await storage.write(["big"], text("12345"), { size })).toEqual(failed("too-large"));
+    expect((await storage.stat(["big"])).ok).toBe(false);
+    expect((await storage.write(["ok"], text("1234"), {})).ok).toBe(true);
+  });
+});
