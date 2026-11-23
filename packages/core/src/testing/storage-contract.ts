@@ -268,6 +268,16 @@ export const storageContract = (adapter: string, { make, runs = 60 }: ContractOp
       expect(await snapshot(storage)).toEqual({ f: "old" });
     });
 
+    it("a create-only write refuses a path that holds anything", async () => {
+      const storage = await make();
+      await run(storage, { op: "write", path: ["f"], text: "kept" });
+      expect(failureOf(await storage.write(["f"], null, { size: 0, ifAbsent: true }))).toBe(
+        "exists",
+      );
+      expect((await storage.write(["g"], null, { size: 0, ifAbsent: true })).ok).toBe(true);
+      expect(await snapshot(storage)).toEqual({ f: "kept", g: "" });
+    });
+
     it("writes an empty file from a null body", async () => {
       const storage = await make();
       const written = await storage.write(["e"], null, { size: 0 });

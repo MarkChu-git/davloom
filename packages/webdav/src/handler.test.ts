@@ -414,6 +414,28 @@ describe("PROPFIND", () => {
     );
   });
 
+  it.each([
+    [
+      100,
+      "<D:quota-used-bytes>3</D:quota-used-bytes>",
+      "<D:quota-available-bytes>97</D:quota-available-bytes>",
+    ],
+    [undefined, "<D:quota-used-bytes>3</D:quota-used-bytes>", "<D:quota-available-bytes/>"],
+  ])(
+    "reports RFC 4331 quota on a collection with capacity %s",
+    async (capacity, used, available) => {
+      const { put, dav } = setup({ storageOptions: capacity === undefined ? {} : { capacity } });
+      await put("/f", "abc");
+      const body = propfindBody("<D:prop><D:quota-used-bytes/><D:quota-available-bytes/></D:prop>");
+      const xml = await (await dav("PROPFIND", "/", { headers: { depth: "1" }, body })).text();
+      expect(xml).toContain(used);
+      expect(xml).toContain(available);
+      // A file has no quota, and allprop leaves quota out.
+      const all = await (await dav("PROPFIND", "/", { headers: { depth: "1" } })).text();
+      expect(all).not.toContain("quota");
+    },
+  );
+
   it("propname lists names without values", async () => {
     const { put, dav } = setup();
     await put("/f", "abc");

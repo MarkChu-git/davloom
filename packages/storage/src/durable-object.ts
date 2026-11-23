@@ -7,6 +7,7 @@ import {
   parentOf,
   pathKey,
   type ByteRange,
+  type Quota,
   type DeadProperty,
   type Entry,
   type Path,
@@ -34,6 +35,9 @@ import {
 
 /** Bytes per chunk row. Every chunk but a file's last holds exactly this many. */
 export const CHUNK_BYTES = 1024 * 1024;
+
+/** What one SQLite-backed Durable Object may store on Workers Free (PRD §9). */
+export const OBJECT_LIMIT_BYTES = 1_000_000_000;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS entries (
@@ -399,6 +403,8 @@ export class StorageObject extends DurableObject {
     // The tree may have changed while the bytes arrived, so decide again and commit at once.
     const result = this.transaction(() => {
       const { target, parent, outcome } = decide();
+      if (options.ifAbsent && target.node !== "absent")
+        return fail<{ entry: Entry; created: boolean }>("exists");
       if (outcome.kind !== "proceed")
         return fail<{ entry: Entry; created: boolean }>(failureOf(outcome.kind));
       const time = Date.now();
@@ -612,6 +618,17 @@ export class StorageObject extends DurableObject {
     return ok(row ?? { files: 0, collections: 0, bytes: 0 });
   }
 
+  /** RFC 4331 quota: the bytes of file content, and what the object may still store. */
+  quota(): StorageResult<Quota> {
+    const used =
+      this.one<{ bytes: number }>("SELECT COALESCE(SUM(size), 0) AS bytes FROM entries")?.bytes ??
+      0;
+    return ok({
+      used,
+      available: Math.max(0, OBJECT_LIMIT_BYTES - this.ctx.storage.sql.databaseSize),
+    });
+  }
+
   /** Deletes everything when the root holds nothing; for removing the backend. */
   async destroyIfEmpty(): Promise<StorageResult<null>> {
     if (this.one("SELECT id FROM entries LIMIT 1")) return fail("exists");
@@ -651,5 +668,6 @@ export const durableObjectStorage = (
     properties: (paths) => call((stub) => stub.properties(paths)),
     patchProperties: (path, set, remove) => call((stub) => stub.patchProperties(path, set, remove)),
     usage: () => call((stub) => stub.usage()),
+    quota: () => call((stub) => stub.quota()),
   };
 };

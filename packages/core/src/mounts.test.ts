@@ -181,6 +181,22 @@ describe("mounted storage", () => {
     });
   });
 
+  it("asks the Mount's backend for its quota, or falls back to its usage", async () => {
+    const limited = createMemoryStorage({ capacity: 10 });
+    const plain = createMemoryStorage();
+    const withoutQuota: StorageBackend = { ...plain, quota: undefined };
+    const storage = createMountedStorage([
+      { name: "l", backendId: "l", backend: limited, root: [] },
+      { name: "p", backendId: "p", backend: withoutQuota, root: [] },
+    ]);
+    await storage.write(["l", "f"], stream("abc"), {});
+    await storage.write(["p", "f"], stream("ab"), {});
+    expect(await storage.quota?.(["l"])).toEqual({ ok: true, value: { used: 3, available: 7 } });
+    expect(await storage.quota?.(["p"])).toEqual({ ok: true, value: { used: 2, available: null } });
+    expect(await storage.quota?.([])).toEqual({ ok: false, failure: "not-collection" });
+    expect(await storage.quota?.(["x", "y"])).toEqual({ ok: false, failure: "not-found" });
+  });
+
   it("counts each backend once", async () => {
     const { storage } = await namespace();
     await storage.write(["a", "f"], stream("abc"), {});

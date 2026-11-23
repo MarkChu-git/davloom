@@ -88,6 +88,15 @@ describe("Durable Objects adapter", () => {
     expect((await full.remove(["f"])).ok).toBe(true);
   });
 
+  it("reports its quota against the 1 GB object limit", async () => {
+    const storage = fresh();
+    await storage.write(["f"], streamOf(bytes(1000)), {});
+    const quota = await storage.quota?.([]);
+    expect(quota?.ok && quota.value.used).toBe(1000);
+    expect(quota?.ok && quota.value.available).toBeGreaterThan(900_000_000);
+    expect(quota?.ok && quota.value.available).toBeLessThan(1_000_000_000);
+  });
+
   it("destroys only an empty object", async () => {
     const name = crypto.randomUUID();
     const stub = env.STORAGE.get(env.STORAGE.idFromName(name));

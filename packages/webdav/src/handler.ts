@@ -6,7 +6,9 @@ import {
   type Entry,
   type Path,
   type StorageBackend,
+  type Quota,
   type StorageFailure,
+  type StorageResult,
 } from "@davloom/core";
 import { evaluatePreconditions, resolveRange, type Check } from "@davloom/laws";
 import {
@@ -196,6 +198,14 @@ const LIVE: Record<string, LiveProperty> = {
   lockdiscovery: (_, { lockDiscovery }) => lockDiscovery,
 };
 const LIVE_NAMES = Object.keys(LIVE);
+
+const QUOTA_NAMES = new Set(["quota-available-bytes", "quota-used-bytes"]);
+const quotaValue = (local: string, quota: Quota): string | null =>
+  local === "quota-used-bytes"
+    ? String(quota.used)
+    : quota.available === null
+      ? null
+      : String(quota.available);
 
 const liveElement = (local: string, value: string) =>
   value === "" ? `<D:${local}/>` : `<D:${local}>${value}</D:${local}>`;
@@ -557,6 +567,8 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     const dead: Record<string, readonly DeadProperty[]> = deadResult?.ok ? deadResult.value : {};
 
     const responses: string[] = [];
+    // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.
+    let quota: StorageResult<Quota> | null | undefined;
     for (const item of entries) {
       const lockDiscovery = await lockDiscoveryOf(item.path);
       const context = { lockDiscovery };
@@ -581,6 +593,14 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         for (const property of deadProps) found.push(property.xml);
       } else {
         for (const prop of query.props) {
+          if (prop.ns === DAV && QUOTA_NAMES.has(prop.local) && item.kind === "collection") {
+            quota ??= storage.quota ? await storage.quota(item.path) : null;
+            const value = quota?.ok ? quotaValue(prop.local, quota.value) : null;
+            if (value !== null) {
+              found.push(liveElement(prop.local, value));
+              continue;
+            }
+          }
           const live =
             prop.ns === DAV && Object.hasOwn(LIVE, prop.local) ? LIVE[prop.local] : undefined;
           const value = live ? live(item, context) : null;
@@ -722,9 +742,14 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         ifResult.tokens,
       );
       if (parentBlocked) return parentBlocked;
-      const created = await storage.write(path, null, { size: 0, contentType: null });
-      if (!created.ok) return failure(created.failure);
-      status = 201;
+      const created = await storage.write(path, null, {
+        size: 0,
+        contentType: null,
+        ifAbsent: true,
+      });
+      // Another client created the resource meanwhile: lock it as it now is, with its own locks checked.
+      if (!created.ok && created.failure !== "exists") return failure(created.failure);
+      if (created.ok) status = 201;
     }
     const granted: Lock = {
       token: `urn:uuid:${crypto.randomUUID()}`,

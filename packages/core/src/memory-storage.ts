@@ -191,6 +191,7 @@ export const createMemoryStorage = (options: MemoryStorageOptions = {}): Storage
         return fail("size-mismatch");
       if (content.length > maxFileSize) return fail("too-large");
       // The tree may have changed while the body arrived, so decide again.
+      if (writeOptions.ifAbsent && nodeOf(path) !== "absent") return fail("exists");
       const again = decideWrite(nodeOf(path), nodeOf(parentOf(path)));
       if (again.kind !== "proceed") return fail(failureOf(again.kind));
       const previous = items.get(pathKey(path));
@@ -257,6 +258,13 @@ export const createMemoryStorage = (options: MemoryStorageOptions = {}): Storage
       for (const name of remove) item.properties.delete(name);
       return Promise.resolve(ok(null));
     },
+    quota: () =>
+      Promise.resolve(
+        ok({
+          used: used(),
+          available: Number.isFinite(capacity) ? Math.max(0, capacity - used()) : null,
+        }),
+      ),
     usage: () => {
       let files = 0;
       let collections = 0;

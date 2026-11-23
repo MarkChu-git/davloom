@@ -67,6 +67,8 @@ export interface WriteOptions {
   /** The size the client stated, when it stated one; the write fails if the body differs. */
   readonly size?: number | undefined;
   readonly contentType?: string | null | undefined;
+  /** Create only: fail with `exists` when the path holds anything at commit time. */
+  readonly ifAbsent?: boolean | undefined;
 }
 
 export interface Usage {
@@ -109,6 +111,16 @@ export interface StorageBackend {
     remove: readonly string[],
   ): Promise<StorageResult<null>>;
   usage(): Promise<StorageResult<Usage>>;
+  /**
+   * The bytes stored and the bytes still free where `path` lives (RFC 4331), when the backend
+   * knows its limit; `available` is null for a backend without one.
+   */
+  quota?(path: Path): Promise<StorageResult<Quota>>;
+}
+
+export interface Quota {
+  readonly used: number;
+  readonly available: number | null;
 }
 
 /** A key that names a path uniquely: names cannot hold `/`. */

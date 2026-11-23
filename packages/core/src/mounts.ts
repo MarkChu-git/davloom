@@ -154,6 +154,14 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
       if (!located) return path.length === 0 ? fail("root") : fail("not-found");
       return await located.mount.backend.patchProperties(located.path, set, remove);
     },
+    quota: async (path) => {
+      const located = locate(path);
+      if (!located) return fail(path.length === 0 ? "not-collection" : "not-found");
+      const backend = located.mount.backend;
+      if (backend.quota) return await backend.quota(located.path);
+      const usage = await backend.usage();
+      return usage.ok ? ok({ used: usage.value.bytes, available: null }) : usage;
+    },
     usage: async () => {
       const seen = new Set<string>();
       let files = 0;
