@@ -24,7 +24,8 @@
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test",
     "laws:build": "bun scripts/laws-build.ts",
-    "laws:check": "bun scripts/laws-build.ts --check"
+    "laws:check": "bun scripts/laws-build.ts --check",
+    "laws:proofs": "bun scripts/laws-proofs.ts"
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.7.16",
