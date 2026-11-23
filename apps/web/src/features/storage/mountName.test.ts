@@ -1,9 +1,9 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { mountFolderOf, mountNameProblem } from "./mountStore";
+import { mountFolderOf, mountNameProblem } from "./mountName";
 
-// The law this stand-in shares with the server's Mount resolution (design.md Decision 2): a
-// mount's folder is one path segment that no other mount uses.
+// A mount's folder is one path segment that no other mount uses, as the server's Mount
+// resolution requires.
 describe("mount folder names", () => {
   const taken = ["/documents"];
   it.each([

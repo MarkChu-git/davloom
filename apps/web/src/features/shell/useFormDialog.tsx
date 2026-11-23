@@ -57,3 +57,11 @@ export const useFormDialog = (width: number) => {
   );
   return { show, hide, element };
 };
+
+let formCount = 0;
+
+/** A key for a form passed to `show`, new on every call, so the form starts from its own values. */
+export const nextFormKey = (): string => {
+  formCount += 1;
+  return `form-${formCount}`;
+};

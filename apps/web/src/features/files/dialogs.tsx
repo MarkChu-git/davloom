@@ -1,20 +1,21 @@
 import { Button } from "@astryxdesign/core/Button";
 import { DialogHeader } from "@astryxdesign/core/Dialog";
 import { HStack, Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { Selector } from "@astryxdesign/core/Selector";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState, type ReactNode } from "react";
-import type { Transfer } from "./tree";
+import type { Transfer } from "../api/dav";
 
 const DialogFrame = ({
   title,
   submitLabel,
+  isSaving,
   onCancel,
   onSubmit,
   children,
 }: {
   title: string;
   submitLabel: string;
+  isSaving: boolean;
   onCancel: () => void;
   onSubmit: () => void;
   children: ReactNode;
@@ -26,16 +27,36 @@ const DialogFrame = ({
       <LayoutFooter>
         <HStack gap={2} hAlign="end">
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
-          <Button label={submitLabel} variant="primary" onClick={onSubmit} />
+          <Button label={submitLabel} variant="primary" isLoading={isSaving} onClick={onSubmit} />
         </HStack>
       </LayoutFooter>
     }
   />
 );
 
+/** Makes a change and answers why it refused, if it did. */
+type Submit<T> = (value: T) => Promise<string | undefined>;
+
+/** Runs a submit once at a time, and keeps the reason it refused. */
+const useSubmit = <T,>(onSubmit: Submit<T>) => {
+  const [problem, setProblem] = useState<string>();
+  const [isSaving, setIsSaving] = useState(false);
+  const submit = (value: T) => {
+    if (isSaving) {
+      return;
+    }
+    setIsSaving(true);
+    void onSubmit(value).then((next) => {
+      setProblem(next);
+      setIsSaving(false);
+    });
+  };
+  return { problem, setProblem, isSaving, submit };
+};
+
 /**
- * Names a new folder or renames an item. `onSubmit` makes the change against the folder as it is
- * then and returns why it refused, if it did; that reason appears only after a submit.
+ * Names a new folder or renames an item. `onSubmit` makes the change and answers why it refused,
+ * if it did; that reason appears only after a submit.
  */
 export const NameForm = ({
   title,
@@ -48,14 +69,19 @@ export const NameForm = ({
   submitLabel: string;
   initialName?: string;
   onCancel: () => void;
-  onSubmit: (name: string) => string | undefined;
+  onSubmit: Submit<string>;
 }) => {
   const [name, setName] = useState(initialName);
-  const [problem, setProblem] = useState<string>();
-  const submit = () => setProblem(onSubmit(name));
+  const { problem, setProblem, isSaving, submit } = useSubmit(onSubmit);
 
   return (
-    <DialogFrame title={title} submitLabel={submitLabel} onCancel={onCancel} onSubmit={submit}>
+    <DialogFrame
+      title={title}
+      submitLabel={submitLabel}
+      isSaving={isSaving}
+      onCancel={onCancel}
+      onSubmit={() => submit(name)}
+    >
       <TextInput
         label="Name"
         value={name}
@@ -63,7 +89,7 @@ export const NameForm = ({
           setName(value);
           setProblem(undefined);
         }}
-        onEnter={submit}
+        onEnter={() => submit(name)}
         hasAutoFocus
         isRequired
         autoCapitalize="none"
@@ -75,41 +101,47 @@ export const NameForm = ({
   );
 };
 
-/** Moves or copies items to another folder. `onSubmit` returns why it refused, if it did. */
+/** Moves or copies items to another folder, named by its path. */
 export const TransferForm = ({
   transfer,
   names,
-  destinations,
+  initialDestination,
   onCancel,
   onSubmit,
 }: {
   transfer: Transfer;
   names: readonly string[];
-  destinations: readonly string[];
+  initialDestination: string;
   onCancel: () => void;
-  onSubmit: (destination: string) => string | undefined;
+  onSubmit: Submit<string>;
 }) => {
-  const [destination, setDestination] = useState<string>();
-  const [problem, setProblem] = useState<string>();
+  const [destination, setDestination] = useState(initialDestination);
+  const { problem, setProblem, isSaving, submit } = useSubmit(onSubmit);
   const what = names.length === 1 ? `“${names[0]}”` : `${names.length} items`;
   const verb = transfer === "move" ? "Move" : "Copy";
 
-  const submit = () =>
-    setProblem(destination === undefined ? "Choose a folder." : onSubmit(destination));
-
   return (
-    <DialogFrame title={`${verb} ${what}`} submitLabel={verb} onCancel={onCancel} onSubmit={submit}>
-      <Selector
-        label="Destination"
-        options={destinations.map((path) => ({ value: path, label: path }))}
+    <DialogFrame
+      title={`${verb} ${what}`}
+      submitLabel={verb}
+      isSaving={isSaving}
+      onCancel={onCancel}
+      onSubmit={() => submit(destination)}
+    >
+      <TextInput
+        label="Destination folder"
+        description="A folder's path, starting with its mount, such as /files/Archive."
         value={destination}
         onChange={(value) => {
           setDestination(value);
           setProblem(undefined);
         }}
-        hasSearch
-        placeholder="Choose a folder"
-        emptyText="No other folders"
+        onEnter={() => submit(destination)}
+        hasAutoFocus
+        isRequired
+        autoCapitalize="none"
+        hasAutoCorrect={false}
+        hasSpellCheck={false}
         status={problem === undefined ? undefined : { type: "error", message: problem }}
       />
     </DialogFrame>

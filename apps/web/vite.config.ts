@@ -1,9 +1,30 @@
 import stylex from "@stylexjs/unplugin/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type ProxyOptions } from "vite";
+
+// `vite dev` serves the Dashboard alone. Set DAVLOOM_API_ORIGIN to a running instance, such as a
+// local Worker, and the dev server passes /api and /dav to it. The proxy names the instance as the
+// request's origin, so Better Auth takes a sign-in made through the dev server as its own.
+const apiOrigin = process.env.DAVLOOM_API_ORIGIN;
+
+const toInstance = (target: string): ProxyOptions => ({
+  target,
+  changeOrigin: true,
+  configure: (proxy) => {
+    proxy.on("proxyReq", (request) => {
+      if (request.getHeader("origin") !== undefined) {
+        request.setHeader("origin", target);
+      }
+    });
+  },
+});
 
 export default defineConfig({
+  server:
+    apiOrigin === undefined || apiOrigin === ""
+      ? {}
+      : { proxy: { "/api": toInstance(apiOrigin), "/dav": toInstance(apiOrigin) } },
   plugins: [
     stylex({
       useCSSLayers: true,
