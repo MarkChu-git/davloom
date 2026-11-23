@@ -15,41 +15,44 @@ Run everything on Bun: no script, test, tool or CI job installs, pins or calls N
 - `bun run scan:secrets --log-opts=origin/main..HEAD`: scan the commits not yet on `main` for secrets with the pinned Gitleaks, which covers what CI scans for a pull request.
 - `bun run scan:actionlint` and `bun run scan:zizmor`: check the workflows, and with zizmor the local actions, with the pinned actionlint and zizmor, as the `workflows` job does.
 - `bun run laws:setup`: install the Bend and Lean releases that `packages/laws/toolchain.json` pins into the tool cache that `docs/ci.md` describes, and build Bend's `--verdict` kernel there with that Lean. An archive whose SHA-256 differs from its pin stops the run before anything is installed. The first run downloads about 600 MB; a second run downloads nothing.
-- `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota. Ask the user before running it.
+- `bun run --filter @davloom/compat-tests cloud:free all`: deploy the probe to the Cloudflare account Wrangler is logged in to, measure the Free plan's limits, and delete everything. It writes about 31,000 Durable Object rows, about a third of the daily quota, so run it only when a measurement needs it.
 - `bun outdated --filter '*'`: list dependencies behind the npm `latest` tag.
-- `bunx --bun @fission-ai/openspec list`: show active changes.
-- `bunx --bun @fission-ai/openspec validate <change> --strict`: validate a change before and after editing it.
 
 ## Dependencies
 
-Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. A pre-release version counts when the `latest` tag points to it. Pre-release tags such as `rc`, `beta` and `canary` do not count, so a version that only they point to needs the owner's approval. When a peer range blocks the newest version, use the newest one allowed and record why in the change's `design.md`.
+Use the npm `latest` tag for every dependency, declared with an exact version (`bunfig.toml` sets this). Look the version up when adding a package instead of copying one from a doc. A pre-release version counts when the `latest` tag points to it. Pre-release tags such as `rc`, `beta` and `canary` do not count: take a version that only they point to only when nothing else works, and say why in the pull request. When a peer range blocks the newest version, use the newest one allowed and say why in the pull request.
 
 The owner approved one standing exception on 2026-11-16: a direct `miniflare` dependency takes the exact version that the `latest` Wrangler pins, because Miniflare's own `latest` tag (4.20260730.0 that day) lags months behind the Miniflare that Wrangler uses.
 
-## Spec workflow
+## How work proceeds
 
-Davloom uses OpenSpec, and `prd.md` is the source of requirements. New behavior starts as a change under `openspec/changes/`: propose it with `/opsx:propose`, implement it with `/opsx:apply`, and archive it with `/opsx:archive` once the user has reviewed the result. Every change's `tasks.md` includes a task that wires the new tests into CI. Those skills call the CLI as `openspec <command>`; run it as `bunx --bun @fission-ai/openspec <command>`, because the global `openspec` launcher names Node and the npm package named `openspec` is a different project. Raise any conflict between a spec and the PRD with the user instead of choosing one silently. Write every formal document in English: the PRD, OpenSpec artifacts, `docs/`, pull request descriptions and Linear issues. Archived changes keep the language they were written in.
+The goal is a working product, shipped fast. On 2026-11-24 the owner said Davloom should go live within days, not weeks, and that effort spent on process and tooling polish was wasted. `prd.md` holds the requirements, and its §13 milestones set the order of work. `packages/laws/LAWS.bend` states what the decision logic guarantees, and tests pin down everything else.
+
+New work does not go through OpenSpec. Take the next slice of the current milestone, build it with its tests, merge it, deploy it and check it with real clients. `openspec/specs/` and the changes under `openspec/changes/` stay as reference and get no additions. Before adding process, tooling, a gate or a document, check that it gets the product live sooner or keeps the code robust; skip it otherwise. Tests are the exception to keeping things small: write many, generated from tables and models (PRD §11). New tests run in CI from the pull request that adds them.
+
+Raise any conflict between the code and the PRD with the owner instead of choosing one silently. Write every formal document in English: the PRD, `docs/`, pull request descriptions and Linear issues.
 
 ## Pull requests
 
 Agents merge the pull requests they open from the owner's account without the owner's review. This replaces any rule that asks the owner before every merge. Agents never merge a pull request from anyone else, Renovate included: it needs two approvals or the owner's own merge.
 
-Merge a pull request once all of these hold:
-
-- Every check on it passes. Until CI runs the project checks, `bun run check` and `bun run test:compat` must also pass locally on code identical to its head.
-- A subagent that did not write the change has reviewed it for correctness and against this file, `openspec/config.yaml`, `prd.md`, `.gitmessage` and the OpenSpec change it implements, and found nothing blocking. Give the reviewer the diff and the rules, not your own conclusions.
-- Every blocking finding is fixed, and the fix has passed the same review.
+Merge a pull request once every check on it passes and, when it changes product code in `apps/` or `packages/`, a subagent that did not write the change has reviewed the diff and found no blocking defect. Give the reviewer the diff, not your own conclusions, and ask only for defects that break behavior, security or data: wrong results, crashes, races, data loss, holes in authentication, authorization or path handling, and wrong protocol answers. Fix those, have the fix reviewed the same way, and merge. Style and wording never block. Changes to documentation, configuration or tests alone need only the checks.
 
 Merge every pull request with GitHub's asynchronous merge API, because `gh pr merge` refuses a stacked pull request and `gh stack merge` cannot bypass the two approvals. Merge a stack from the bottom up, one pull request at a time:
 
 1. Check that `gh pr view <n> --json baseRefName` shows `main`. If its base is a branch that has not merged yet, merge the pull request below it first. Otherwise the API would also merge every open pull request below `<n>`, or, for a pull request outside GitHub's stack, merge `<n>` into that branch instead of `main`. When the pull request below merges, GitHub retargets one still in its stack to `main` and then pushes a rebased head, so wait for both. A pull request that has left GitHub's stack (`gh api repos/MarkChu-git/davloom/pulls/<n> --jq .stack` prints `null`) is neither rebased nor retargeted, so it keeps a base that has already merged: rebase it with `but pull`, push it and run `gh pr edit <n> --base main` first.
 2. Read `<head>` with `gh pr view <n> --json headRefOid`. If it is not the commit whose checks passed, because step 1 pushed it or GitHub rebased it, wait until every check on it passes, and stop if one fails.
-3. While CI does not run the project checks, run `bun install --frozen-lockfile`, `bun run check` and `bun run test:compat` in a clean export of `<head>` (`git archive <head> | tar -x -C <empty directory>`), not in the GitButler workspace, which can hold other branches. A run that passed on the same tree (`git rev-parse <head>^{tree}`) counts.
-4. Run `gh api -X PUT repos/MarkChu-git/davloom/pulls/<n>/merge-async -f sha=<head> -f merge_method=merge -f merge_action=direct_merge -F bypass_rules=true`. It returns a UUID before the merge runs.
-5. Poll `gh api repos/MarkChu-git/davloom/pulls/<n>/merge-async/<uuid>` until its status is `merged`. Stop if it is `failed`; the response says why.
-6. GitHub then rebases the pull requests still in its stack, so run `but pull` before changing them.
+3. Run `gh api -X PUT repos/MarkChu-git/davloom/pulls/<n>/merge-async -f sha=<head> -f merge_method=merge -f merge_action=direct_merge -F bypass_rules=true`. It returns a UUID before the merge runs.
+4. Poll `gh api repos/MarkChu-git/davloom/pulls/<n>/merge-async/<uuid>` until its status is `merged`. Stop if it is `failed`; the response says why.
+5. GitHub then rebases the pull requests still in its stack, so run `but pull` before changing them.
 
-Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval this file names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or phases in `prd.md`. A pull request that carries one waits until the owner approves it in chat, and then an agent merges it. A pull request comment does not count, because agents also comment from the owner's account. For the same reason, never add the `laws-approved` label yourself: only the owner adds it (PRD §4). The other approvals this file names still apply: changes to `LAWS.bend`, conflicts between a spec and the PRD, dependency versions that only a pre-release tag points to, runs of `cloud:free`, and the owner's review before `/opsx:archive`.
+Bring the owner only major architecture decisions, before you build on them: changing the architecture or UI rules in this file; changing this section or any approval it names; adding, replacing or removing a runtime, framework, database, storage backend or cloud service; changing a public API or protocol contract; or changing the scope or milestones in `prd.md`. A pull request that carries one waits until the owner approves it in chat, and then an agent merges it. A pull request comment does not count, because agents also comment from the owner's account.
+
+Everything else is the agent's call, the laws in `LAWS.bend` included: decide, build, merge and deploy without asking.
+
+## Deployment
+
+Agents deploy Davloom to the owner's Cloudflare Workers Free account without asking, using only free services. Enabling a paid service such as R2, or adding a payment method, is the owner's decision. The account also holds other projects, so never change or delete anything Davloom did not create.
 
 ## Architecture rules
 
@@ -60,7 +63,7 @@ Davloom follows Hexagonal architecture with Effect Layers.
 - The WebDAV entry point takes a Web standard `Request` and returns a `Response`, so the protocol engine can be tested without an HTTP framework.
 - Production entries never import from `tests/integration/compat/probe`.
 - Never advertise a protocol capability that is not implemented correctly.
-- Write logic that decides an outcome without IO in Bend 2, with its laws in `LAWS.bend` and their proofs in `PROOF.bend` (PRD §4, Proven Domain Logic). Every change to `LAWS.bend` needs the owner's approval, and a law is never weakened or deleted to make a proof pass.
+- Write logic that decides an outcome without IO in Bend 2 from the start, with its laws in `LAWS.bend` and their proofs in `PROOF.bend` (PRD §4, Proven Domain Logic). Test each compiled module with table-driven and property cases as soon as it exists. A feature may run on the owner's account for trials before its proofs land, but no release ships an unproven law. Agents write and change the laws themselves; a law is never weakened or deleted to make a proof pass, and the review of a pull request that changes `LAWS.bend` checks that no law got weaker.
 
 ## UI rules
 
@@ -73,7 +76,7 @@ Davloom follows Hexagonal architecture with Effect Layers.
 
 ## Issue tracker
 
-Issues live in Linear team Mark's Workplace, project davloom (P-MAR-3). Each PRD phase has a milestone, and Phase 0 sub-issues carry the `tasks.md` number in their title. `tasks.md` is the source of truth for progress, so update the matching Linear issue when a task starts or finishes.
+Issues live in Linear team Mark's Workplace, project davloom (P-MAR-3), with a milestone for each PRD phase. Update a milestone when its work starts and when it ships; single tasks are not tracked there.
 
 ## Code intelligence
 
