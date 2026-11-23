@@ -11,3 +11,7 @@ export {
   CredentialsError,
   makeCredentialCipher,
 } from "./credentials";
+export * from "./storage";
+export { createMemoryStorage, type MemoryStorageOptions } from "./memory-storage";
+export { createMountedStorage, type Mount } from "./mounts";
+export * from "./instance";

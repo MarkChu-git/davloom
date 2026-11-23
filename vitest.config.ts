@@ -3,17 +3,21 @@ import { defineConfig } from "vitest/config";
 // Coverage thresholds per package, starting at the coverage measured when the gate was added
 // (task 2.5 of add-ci-baseline); apps/web and packages/ui rose to their measured coverage with
 // task 3.3. They only go up: lowering one needs a reason in the design.md of the change that
-// lowers it (PRD §11). Functions are gated where PRD §11 gates them.
+// lowers it (PRD §11). Functions are gated where PRD §11 gates them. The branch thresholds of
+// core, database, laws and webdav were 100% of packages that held almost no branches; with the
+// storage, protocol and instance code they start again at the coverage measured on 2026-11-23.
+// packages/storage runs in workerd (tests/integration/compat, test:storage), outside this report.
 // scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
 export const thresholds = {
   "apps/api/src/**": { lines: 0, branches: 0 },
   "apps/web/src/**": { lines: 18.04, branches: 14.55 },
-  "packages/auth/src/**": { lines: 63.15, branches: 100 },
-  "packages/core/src/**": { lines: 100, branches: 100, functions: 100 },
-  "packages/database/src/**": { lines: 0, branches: 100 },
-  "packages/laws/src/**": { lines: 100, branches: 100 },
+  "packages/auth/src/**": { lines: 100, branches: 100 },
+  "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
+  "packages/database/src/**": { lines: 93, branches: 95 },
+  "packages/laws/src/**": { lines: 100, branches: 97 },
+  "packages/storage/src/**": { lines: 0, branches: 0 },
   "packages/ui/src/**": { lines: 34.37, branches: 100 },
-  "packages/webdav/src/**": { lines: 0, branches: 100, functions: 0 },
+  "packages/webdav/src/**": { lines: 97, branches: 88.9, functions: 96 },
 };
 
 // Unit tests only. Runtime compatibility tests have their own configs in tests/integration/compat.

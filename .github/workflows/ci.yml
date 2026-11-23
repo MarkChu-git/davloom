@@ -140,6 +140,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ steps.playwright.outputs.key }}
       - run: bun run --filter @davloom/compat-tests playwright:install
+      # The real WebDAV clients that http/clients.test.ts drives against the Worker.
+      - name: Install litmus and rclone
+        run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone
       - run: bun run test:compat
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the

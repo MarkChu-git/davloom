@@ -3,10 +3,28 @@
   "name": "davloom",
   "main": "src/entry.workers.ts",
   "compatibility_date": "2026-11-04",
+  // Better Auth needs node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
   // The API and WebDAV share an origin with the Dashboard. Everything else is a static asset.
   "assets": {
     "directory": "../web/dist/client",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api", "/api/*", "/dav", "/dav/*"],
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "davloom",
+      // The project's own deployment. Local runs ignore it; a fork deploys with its own id.
+      "database_id": "e10bf45c-6034-4cab-8744-a5370374fa25",
+      "migrations_dir": "../../packages/database/drizzle",
+    },
+  ],
+  // The project's own deployment answers on its custom domain as well as on workers.dev.
+  "routes": [{ "pattern": "davloom.markchu.work", "custom_domain": true }],
+  // One Durable Object per storage backend, on the SQLite storage that Workers Free offers.
+  "durable_objects": {
+    "bindings": [{ "name": "STORAGE", "class_name": "StorageObject" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StorageObject"] }],
 }

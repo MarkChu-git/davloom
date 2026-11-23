@@ -41,7 +41,7 @@ const INFO = "davloom storage-backends secret-key v1";
 
 const encoder = new TextEncoder();
 // Fatal, so bytes that are not UTF-8 fail to open instead of becoming replacement characters.
-const decoder = new TextDecoder("utf-8", { fatal: true });
+const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
 
 // `String.fromCharCode` takes one argument per byte, and one call takes at most about 120,600 in
 // workerd and 638,400 on Bun 1.4.4, fewer the deeper the stack. So it gets the bytes in slices.

@@ -14,6 +14,7 @@
     "packages/ui/src/themes/davloom.js",
     "packages/ui/src/themes/davloom.d.ts",
     "packages/ui/src/themes/davloom.css.d.ts",
-    "packages/ui/src/themes/davloom.variants.d.ts"
+    "packages/ui/src/themes/davloom.variants.d.ts",
+    "packages/laws/src/compiled/**"
   ]
 }

@@ -324,7 +324,13 @@ export interface Runtime {
 
 export const productionRuntimes: readonly Runtime[] = [
   { name: "Bun", start: () => startBunServer("apps/api/src/entry.bun.ts") },
-  { name: "Workers", start: () => startWorkerdServer("apps/api/wrangler.jsonc") },
+  {
+    name: "Workers",
+    start: () =>
+      startWorkerdServer("apps/api/wrangler.jsonc", {
+        vars: { DAVLOOM_SECRET: "local-instance-secret-for-tests-only-0123456789" },
+      }),
+  },
 ];
 
 export const probeRuntimes: readonly Runtime[] = [

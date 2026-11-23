@@ -9,7 +9,8 @@
     "identity/suite.ts",
     "identity/d1.test.ts",
     "vitest.d1.config.ts",
-    "vitest.workerd.config.ts"
+    "vitest.workerd.config.ts",
+    "vitest.storage.config.ts"
   ],
   "exclude": ["probe/entry.bun.ts"]
 }

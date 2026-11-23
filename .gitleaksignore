@@ -1,0 +1,5 @@
+# Findings in past commits that are not secrets. A finding in a new commit gets an inline
+# `gitleaks:allow` comment instead, which only works once it is on the line in that commit.
+# 45d0ee7 added a SHA-256 test digest and a made-up API Key to the hashApiKey and verifyApiKey tests.
+45d0ee756254b0b515c4e79e5a8d44a934a68454:packages/core/src/instance.test.ts:generic-api-key:786
+45d0ee756254b0b515c4e79e5a8d44a934a68454:packages/core/src/instance.test.ts:generic-api-key:796
