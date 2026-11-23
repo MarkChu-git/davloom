@@ -2,10 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { DEV_SERVER_ORIGIN } from "./devServer";
 
 // The owner reviews pages on `vite dev`, so the dev server has to draw them as the build does.
-// Each page opens on the Bun build and on the dev server at the same size and color scheme, and
-// every element that renders is compared by its box and a few computed styles.
+// Each page opens on the build that the `dev` project's Worker delivers and on the dev server, which
+// passes /api and /dav to that Worker, at the same size and color scheme, and every element that
+// renders is compared by its box and a few computed styles.
 
-const PAGES = ["/", "/files?path=%2Fdocuments", "/credentials", "/storage", "/settings"];
+const PAGES = ["/", "/files?path=%2Ffiles", "/credentials", "/storage", "/settings"];
 
 const VIEWS = [
   { width: 1280, height: 900, colorScheme: "light" },

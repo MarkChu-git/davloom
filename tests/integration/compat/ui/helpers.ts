@@ -1,10 +1,53 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 // What the Dashboard's page specs share: how to find what a page shows, the clock and the
-// clipboard a state needs, the address of a file's preview and the check that a page does not
-// scroll sideways.
+// clipboard a state needs, an answer of the API changed on its way, and the check that a page does
+// not scroll sideways.
 
-export const PREVIEW = "/files?path=%2Fshared&file=wifi-guest.txt";
+/** The Files address of a folder, and of a file's details in it. */
+export const filesAt = (folder: string, file?: string): string => {
+  const search = new URLSearchParams({ path: folder });
+  if (file !== undefined) {
+    search.set("file", file);
+  }
+  return `/files?${search.toString()}`;
+};
+
+/** A text file's details in the sample at the top of the Mount "files", which no test changes. */
+export const PREVIEW = filesAt("/files", "wifi-guest.txt");
+
+/**
+ * Makes the backend named Default read as one that does not answer, as the API reports a backend
+ * whose storage fails: the page cannot make a real one fail.
+ */
+const unavailable = (backend: unknown) =>
+  typeof backend === "object" && backend !== null && Reflect.get(backend, "name") === "Default"
+    ? { ...backend, available: false, usage: null }
+    : backend;
+
+export const withUnavailableBackend = async (page: Page) => {
+  await page.route("**/api/backends", async (route) => {
+    const response = await route.fetch();
+    const backends: unknown = await response.json();
+    await route.fulfill({
+      response,
+      json: Array.isArray(backends) ? backends.map(unavailable) : backends,
+    });
+  });
+  await page.route("**/api/overview", async (route) => {
+    const response = await route.fetch();
+    const overview: unknown = await response.json();
+    const backends: unknown =
+      typeof overview === "object" && overview !== null ? Reflect.get(overview, "backends") : [];
+    await route.fulfill({
+      response,
+      json: {
+        ...(typeof overview === "object" ? overview : {}),
+        backends: Array.isArray(backends) ? backends.map(unavailable) : [],
+      },
+    });
+  });
+};
 
 export const levelOne = (page: Page) => page.getByRole("heading", { level: 1 });
 export const sideNavigation = (page: Page) =>
