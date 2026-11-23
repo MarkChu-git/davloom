@@ -1,3 +1,4 @@
+import { DavError } from "./dav";
 // The Dashboard's calls to the management API (apps/api/src/app.ts). Every call goes to the origin
 // that served the Dashboard and carries its session cookie.
 
@@ -17,8 +18,9 @@ export class ApiError extends Error {
 export const isApiError = (error: unknown): error is ApiError => error instanceof ApiError;
 
 /** Whether an error says the browser has no session, or its session ended. */
+/** A 401 from the API or from WebDAV: either means the session ended. */
 export const isUnauthorized = (error: unknown): boolean =>
-  isApiError(error) && error.status === 401;
+  (isApiError(error) || error instanceof DavError) && error.status === 401;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

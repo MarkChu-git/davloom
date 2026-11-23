@@ -117,6 +117,14 @@ describe("WebDAV credentials", () => {
       headers: { cookie: davloom.cookie, depth: "0" },
     });
     expect(plain.status).toBe(401);
+    expect(plain.headers.get("www-authenticate")).toContain("Basic");
+    const expired = await davloom.server.fetch("/dav/", {
+      method: "PROPFIND",
+      headers: { depth: "0", "x-davloom-dashboard": "1" },
+    });
+    // No Basic challenge for the Dashboard, so the browser opens no login dialog of its own.
+    expect(expired.status).toBe(401);
+    expect(expired.headers.has("www-authenticate")).toBe(false);
     const marked = await davloom.server.fetch("/dav/", {
       method: "PROPFIND",
       headers: { cookie: davloom.cookie, depth: "0", "x-davloom-dashboard": "1" },

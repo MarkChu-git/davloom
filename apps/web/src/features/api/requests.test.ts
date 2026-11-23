@@ -57,17 +57,17 @@ describe("WebDAV requests", () => {
     ]);
   });
 
-  it("moves and copies to an absolute destination without replacing anything", async () => {
+  it("moves and copies to a destination path without replacing anything", async () => {
     await transferEntry("move", ["files", "a b.txt"], ["files", "Archive", "a b.txt"], "file");
     await transferEntry("copy", ["files", "Drafts"], ["other", "Drafts"], "folder");
     expect(calls[0]?.[1].method).toBe("MOVE");
     expect(headersOf(calls[0])).toMatchObject({
-      destination: "https://dav.example/dav/files/Archive/a%20b.txt",
+      destination: "/dav/files/Archive/a%20b.txt",
       overwrite: "F",
     });
     expect(calls[1]?.[0]).toBe("/dav/files/Drafts/");
     expect(calls[1]?.[1].method).toBe("COPY");
-    expect(headersOf(calls[1]).destination).toBe("https://dav.example/dav/other/Drafts/");
+    expect(headersOf(calls[1]).destination).toBe("/dav/other/Drafts/");
   });
 
   it("a refusal throws its status, and a dropped connection status 0", async () => {

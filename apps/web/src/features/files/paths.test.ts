@@ -17,6 +17,10 @@ describe("paths", () => {
     ["", "/"],
     ["/files//Drafts/", "/files/Drafts"],
     ["files/a", "/files/a"],
+    ["/files/sub/..", "/"],
+    ["/files/./a", "/"],
+    ["/../files", "/"],
+    ["/files/..a/b.", "/files/..a/b."],
   ])("%j normalizes to %j", (path, normalized) => {
     expect(normalizePath(path)).toBe(normalized);
   });

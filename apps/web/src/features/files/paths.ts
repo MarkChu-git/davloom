@@ -5,8 +5,14 @@ export const splitPath = (path: string): string[] => path.split("/").filter((par
 
 export const joinPath = (parts: readonly string[]): string => `/${parts.join("/")}`;
 
-/** "/files//Drafts/" becomes "/files/Drafts". Dot segments stay, and the server refuses them. */
-export const normalizePath = (path: string): string => joinPath(splitPath(path));
+/**
+ * "/files//Drafts/" becomes "/files/Drafts". A path with a dot segment names no folder the page
+ * shows, and an upload there would land elsewhere, so it becomes the list of Mounts.
+ */
+export const normalizePath = (path: string): string => {
+  const parts = splitPath(path);
+  return parts.some((part) => part === "." || part === "..") ? "/" : joinPath(parts);
+};
 
 /**
  * Why a name cannot be used among `siblings`, or undefined when it can. The server decides in the
@@ -42,12 +48,12 @@ export const destinationProblem = (
   names: readonly string[],
   to: string,
 ): string | undefined => {
+  if (splitPath(to).some((part) => part === "." || part === "..")) {
+    return "Name the folder without . or .. in its path.";
+  }
   const target = normalizePath(to);
   if (splitPath(target).length === 0) {
     return "Choose a folder inside a mount, such as /files.";
-  }
-  if (splitPath(target).some((part) => part === "." || part === "..")) {
-    return "Name the folder without . or .. in its path.";
   }
   if (target === normalizePath(from)) {
     return "Choose another folder than the one they are in.";

@@ -213,7 +213,9 @@ export const transferEntry = async (
   await send(transfer === "move" ? "MOVE" : "COPY", from, {
     isFolder: kind === "folder",
     headers: {
-      destination: new URL(davHref(to, kind === "folder"), location.origin).href,
+      // A path alone: the server resolves it against the request's own URL, which also holds
+      // behind the dev server's proxy, where the Worker sees another host than the page.
+      destination: davHref(to, kind === "folder"),
       overwrite: "F",
     },
   });

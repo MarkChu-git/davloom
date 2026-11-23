@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch, describeError, errorCodeOf, isUnauthorized } from "./client";
+import { DavError } from "./dav";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -65,6 +66,8 @@ describe("calls", () => {
     const error: unknown = await apiFetch("/api/me").catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect(isUnauthorized(error)).toBe(true);
+    expect(isUnauthorized(new DavError(401))).toBe(true);
+    expect(isUnauthorized(new DavError(403))).toBe(false);
   });
 
   it("a dropped connection is a network error", async () => {
