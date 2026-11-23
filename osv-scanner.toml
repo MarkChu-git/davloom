@@ -11,3 +11,8 @@
 id = "GHSA-67mh-4wv8-2f99"
 effectiveUntil = 2027-02-19
 reason = "esbuild 0.18.20 is installed but never loaded. drizzle-kit 0.31.11, the npm latest, declares @esbuild-kit/esm-loader, which brings it in, but no installed code loads that package: drizzle-kit bundles tsx and requires esbuild 0.25.12, which has the fix. Remove the exception once drizzle-kit drops @esbuild-kit."
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+effectiveUntil = 2027-02-23
+reason = "minimatch 10.2.6 comes only from @stryker-mutator/core 10.1.1, the npm latest, which asks for ~10.2.4. Stryker runs in development and in the mutation workflow, never in Davloom, and matches only the file globs in the repository's own Stryker config. Remove the exception once Stryker allows minimatch 11.0.1 or later."

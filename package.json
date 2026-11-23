@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/integration/compat' typecheck",
     "test": "bun --bun vitest run",
     "test:coverage": "bun --bun vitest run --coverage",
+    "test:mutation": "bun scripts/mutation.ts",
     "coverage:summary": "bun scripts/coverage-summary.ts",
     "scan:deps": "bun scripts/tool.ts osv-scanner scan source --config=osv-scanner.toml --lockfile=bun.lock",
     "scan:secrets": "bun scripts/tool.ts gitleaks git --config=.gitleaks.toml --redact --no-banner --verbose",
@@ -30,6 +31,8 @@
   "devDependencies": {
     "@astryxdesign/cli": "0.7.16",
     "@astryxdesign/core": "0.7.16",
+    "@stryker-mutator/core": "10.1.1",
+    "@stryker-mutator/vitest-runner": "10.1.1",
     "@types/bun": "1.4.4",
     "@vitest/coverage-istanbul": "5.1.0",
     "fast-check": "4.11.0",
@@ -38,6 +41,9 @@
     "oxlint-tsgolint": "7.0.2007",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
+  },
+  "overrides": {
+    "qs": "6.17.1"
   },
   "packageManager": "bun@1.4.4"
 }

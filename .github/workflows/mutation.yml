@@ -1,0 +1,38 @@
+name: Mutation
+
+# StrykerJS on packages/core and packages/webdav, one job per package, each failing below a
+# mutation score of 80 (PRD §11, Decision 14 of add-phase-1-core). It runs every week and before a
+# release; a maintainer starts the run before a release from the Actions tab or with
+# `gh workflow run mutation.yml`. Locally: `bun run test:mutation`, or `bun run test:mutation core`.
+on:
+  schedule:
+    - cron: "41 3 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: mutation ${{ matrix.package }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      # One package's failure does not cancel the other's run, so every run reports both scores.
+      fail-fast: false
+      matrix:
+        package: [core, webdav]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      - name: Mutation-test packages/${{ matrix.package }}
+        run: bun run test:mutation "$PACKAGE"
+        env:
+          PACKAGE: ${{ matrix.package }}
