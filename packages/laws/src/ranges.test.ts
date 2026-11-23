@@ -75,6 +75,14 @@ describe("ranges", () => {
     expect(resolveRange(range, size)).toBe("unsatisfiable");
   });
 
+  it.each([
+    [5, 2],
+    [1, 0],
+    [2 ** 40, 0],
+  ])("refuses the inverted range %i-%i", (first, last) => {
+    expect(() => resolveRange({ kind: "from-to", first, last }, 10)).toThrow(RangeError);
+  });
+
   it("refuses a size that is not a Nat", () => {
     expect(() => resolveRange({ kind: "from", first: 0 }, -1)).toThrow(RangeError);
     expect(() => resolveRange({ kind: "from", first: 0 }, 1.5)).toThrow(RangeError);
