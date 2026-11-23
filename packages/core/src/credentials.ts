@@ -41,7 +41,8 @@ const INFO = "davloom storage-backends secret-key v1";
 
 const encoder = new TextEncoder();
 // Fatal, so bytes that are not UTF-8 fail to open instead of becoming replacement characters.
-const decoder = new TextDecoder("utf-8", { fatal: true });
+// ignoreBOM is the default, false, and stated because the Workers types require it.
+const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
 
 // `String.fromCharCode` takes one argument per byte, and the runtimes limit the arguments of one
 // call: 125,000 bytes threw a RangeError in workerd and 1,000,000 on Bun 1.4.4. So it gets slices.
