@@ -80,7 +80,9 @@
       "name": "@davloom/database",
       "version": "0.0.0",
       "dependencies": {
+        "@davloom/core": "workspace:*",
         "drizzle-orm": "0.45.4",
+        "effect": "4.1.4",
       },
       "devDependencies": {
         "drizzle-kit": "0.31.11",
