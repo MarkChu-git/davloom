@@ -503,3 +503,203 @@ def Lemma.name_bound(+xs: +List<Nat>) -> {L.implies(N.name_ok(xs), Bool.and(L.no
       {==}
     case Con{h, t}:
       Lemma.name_bound_bool(Bool.not(N.is_dots(h <> t)), N.chars_ok(h <> t), Nat.is_le(N.utf8_length(h <> t), 255n))
+
+# --- Exact byte ranges ---
+
+def Lemma.sub_zero(n: Nat) -> {n == Nat.sub(n, 0n) : Nat}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      {==}
+
+# Truncated subtraction of min(n, s) from s is truncated subtraction of n.
+def Lemma.sub_min(+s: Nat, +n: Nat) -> {Nat.sub(s, Nat.min(n, s)) == Nat.sub(s, n) : Nat}:
+  match s n:
+    case 0n _:
+      {==}
+    case 1n+sp 0n:
+      {==}
+    case 1n+sp 1n+np:
+      Lemma.sub_min(sp, np)
+
+def Lemma.to_exact_pick(c: Bool, -f: Nat, -l: Nat, -sp: Nat) -> {R.span_to(c, f, l, 1n+sp) == Bool.pick(R.Resolved, Bool.not(c), R.Unsatisfiable{}, R.Span{f, 1n+Nat.min(l, sp)}) : R.Resolved}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.to_exact_empty(f: Nat, -l: Nat) -> {R.span_to(Nat.is_lt(f, 0n), f, l, 0n) == Bool.pick(R.Resolved, Nat.is_ge(f, 0n), R.Unsatisfiable{}, R.Span{f, 1n+Nat.min(l, Nat.sub(0n, 1n))}) : R.Resolved}:
+  match f:
+    case 0n:
+      {==}
+    case 1n+p:
+      {==}
+
+def Lemma.to_exact(+s: Nat, +f: Nat, +l: Nat) -> {R.span_to(Nat.is_lt(f, s), f, l, s) == Bool.pick(R.Resolved, Nat.is_ge(f, s), R.Unsatisfiable{}, R.Span{f, 1n+Nat.min(l, Nat.sub(s, 1n))}) : R.Resolved}:
+  match s:
+    case 0n:
+      Lemma.to_exact_empty(f, l)
+    case 1n+sp:
+      %Lemma.sub_zero(sp) : {R.span_to(Nat.is_lt(f, 1n+sp), f, l, 1n+sp) == Bool.pick(R.Resolved, Nat.is_ge(f, 1n+sp), R.Unsatisfiable{}, R.Span{f, 1n+Nat.min(l, _)}) : R.Resolved}
+      %Lemma.not_lt_ge(f, 1n+sp) : {R.span_to(Nat.is_lt(f, 1n+sp), f, l, 1n+sp) == Bool.pick(R.Resolved, _, R.Unsatisfiable{}, R.Span{f, 1n+Nat.min(l, sp)}) : R.Resolved}
+      Lemma.to_exact_pick(Nat.is_lt(f, 1n+sp), f, l, sp)
+
+def Lemma.from_exact(c: Bool, -f: Nat, -s: Nat) -> {R.span_from(c, f, s) == Bool.pick(R.Resolved, Bool.not(c), R.Unsatisfiable{}, R.Span{f, s}) : R.Resolved}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+def Lemma.suffix_exact(c: Bool, -n: Nat, -s: Nat) -> {R.span_suffix(c, n, s) == Bool.pick(R.Resolved, c, R.Unsatisfiable{}, R.Span{Nat.sub(s, Nat.min(n, s)), s}) : R.Resolved}:
+  match c:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+# --- Exact names ---
+
+def Lemma.and_true(x: Bool) -> {Bool.and(x, True{}) == x : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.dots2(x: Bool, y: Bool) -> {Bool.and(x, Bool.and(y, True{})) == Bool.and(x, y) : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      match y:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.dots3(x: Bool, y: Bool) -> {Bool.and(x, Bool.and(y, False{})) == False{} : Bool}:
+  match x:
+    case False{}:
+      {==}
+    case True{}:
+      match y:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.char_bool(e0: Bool, e47: Bool, lt1: Bool, gt1: Bool, le2: Bool) -> {Bool.and(Bool.and(Bool.not(e0), Bool.not(e47)), Bool.and(Bool.or(lt1, gt1), le2)) == Bool.not(Bool.or(Bool.or(e0, e47), Bool.or(Bool.and(Bool.not(lt1), Bool.not(gt1)), Bool.not(le2)))) : Bool}:
+  match e0:
+    case False{}:
+      match e47:
+        case False{}:
+          match lt1:
+            case False{}:
+              match gt1:
+                case False{}:
+                  {==}
+                case True{}:
+                  match le2:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match gt1:
+                case False{}:
+                  match le2:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match le2:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          {==}
+    case True{}:
+      {==}
+
+def Lemma.name_bool(a: Bool, b: Bool, c: Bool, d: Bool) -> {Bool.and(Bool.and(a, b), Bool.and(c, d)) == Bool.and(a, Bool.and(b, Bool.and(c, d))) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      match b:
+        case False{}:
+          {==}
+        case True{}:
+          match c:
+            case False{}:
+              {==}
+            case True{}:
+              match d:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+
+def Lemma.not_gt_le(x: Nat, y: Nat) -> {Bool.not(Nat.is_gt(x, y)) == Nat.is_le(x, y) : Bool}:
+  match x y:
+    case 0n 0n:
+      {==}
+    case 0n 1n+yp:
+      {==}
+    case 1n+xp 0n:
+      {==}
+    case 1n+xp 1n+yp:
+      Lemma.not_gt_le(xp, yp)
+
+def Lemma.not_le_gt(x: Nat, y: Nat) -> {Bool.not(Nat.is_le(x, y)) == Nat.is_gt(x, y) : Bool}:
+  match x y:
+    case 0n 0n:
+      {==}
+    case 0n 1n+yp:
+      {==}
+    case 1n+xp 0n:
+      {==}
+    case 1n+xp 1n+yp:
+      Lemma.not_le_gt(xp, yp)
+
+def Lemma.dots(+xs: +List<Nat>) -> {N.is_dots(xs) == L.dot_name(xs) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{a, t}:
+      match t:
+        case Nil{}:
+          Lemma.and_true(Nat.is_eq(a, 46n))
+        case Con{b, u}:
+          match u:
+            case Nil{}:
+              Lemma.dots2(Nat.is_eq(a, 46n), Nat.is_eq(b, 46n))
+            case Con{c, v}:
+              Lemma.dots3(Nat.is_eq(a, 46n), Nat.is_eq(b, 46n))
+
+def Lemma.char(+c: Nat) -> {N.char_ok(c) == L.allowed(c) : Bool}:
+  %Lemma.not_lt_ge(c, 55296n) : {N.char_ok(c) == Bool.not(Bool.or(Bool.or(Nat.is_eq(c, 0n), Nat.is_eq(c, 47n)), Bool.or(Bool.and(_, Nat.is_le(c, 57343n)), Nat.is_gt(c, 1114111n)))) : Bool}
+  %Lemma.not_gt_le(c, 57343n) : {N.char_ok(c) == Bool.not(Bool.or(Bool.or(Nat.is_eq(c, 0n), Nat.is_eq(c, 47n)), Bool.or(Bool.and(Bool.not(Nat.is_lt(c, 55296n)), _), Nat.is_gt(c, 1114111n)))) : Bool}
+  %Lemma.not_le_gt(c, 1114111n) : {N.char_ok(c) == Bool.not(Bool.or(Bool.or(Nat.is_eq(c, 0n), Nat.is_eq(c, 47n)), Bool.or(Bool.and(Bool.not(Nat.is_lt(c, 55296n)), Bool.not(Nat.is_gt(c, 57343n))), _))) : Bool}
+  Lemma.char_bool(Nat.is_eq(c, 0n), Nat.is_eq(c, 47n), Nat.is_lt(c, 55296n), Nat.is_gt(c, 57343n), Nat.is_le(c, 1114111n))
+
+def Lemma.chars(+xs: +List<Nat>) -> {N.chars_ok(xs) == L.all_allowed(xs) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.chars(t) : {Bool.and(N.char_ok(h), N.chars_ok(t)) == Bool.and(L.allowed(h), _) : Bool}
+      %Lemma.char(h) : {Bool.and(N.char_ok(h), N.chars_ok(t)) == Bool.and(_, N.chars_ok(t)) : Bool}
+      {==}
+
+def Lemma.nonempty(+xs: +List<Nat>) -> {Bool.not(List.is_empty(&2, Nat, xs)) == L.nonempty(xs) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      {==}
