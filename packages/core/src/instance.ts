@@ -330,6 +330,17 @@ export const createKey = (
     if (input.paths !== undefined && input.paths !== null && scope === null) {
       return yield* Effect.fail(new InvalidInput({ field: "paths" }));
     }
+    if (scope !== null) {
+      // A key names its Mounts by name, so each must exist: a key made for a name no Mount has yet
+      // would reach whichever Mount takes that name later.
+      const records = yield* Records;
+      const names = new Set(
+        (yield* promise(() => records.mounts.list())).map((mount) => mount.name),
+      );
+      if (scope.some((root) => !names.has(root[0] ?? ""))) {
+        return yield* Effect.fail(new InvalidInput({ field: "paths" }));
+      }
+    }
     const access: Access = input.access === "read-write" ? "read-write" : "read-only";
     const created = yield* promise(() =>
       identity.createApiKey({

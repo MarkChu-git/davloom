@@ -37,13 +37,12 @@ declare global {
 
 const MIN_SECRET_BYTES = 32;
 
-/** Whether a binding is an R2 bucket. */
+/**
+ * Whether a binding is an R2 bucket. Duck typing is not enough: a service binding answers `in` for
+ * every name, so the binding's own class is asked.
+ */
 const isR2Bucket = (value: unknown): value is R2Bucket =>
-  typeof value === "object" &&
-  value !== null &&
-  "createMultipartUpload" in value &&
-  "head" in value &&
-  "list" in value;
+  Object.prototype.toString.call(value) === "[object R2Bucket]";
 
 /** The instance on Workers: D1 for records, one Durable Object per storage backend. */
 export const workersInstance = (origin: string): Instance => {
