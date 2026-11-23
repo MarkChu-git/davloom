@@ -39,24 +39,44 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { FolderPlus, HardDrive, Upload as UploadIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { backends, SAMPLE_NOW, type Entry, type EntryKind } from "../sample-data/data";
-import { formatBytes, formatDateTime, formatRelative } from "../sample-data/format";
-import { sampleId } from "../sample-data/id";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createFolder,
+  davProblem,
+  downloadFile,
+  isDavError,
+  listFolder,
+  readText,
+  removeEntry,
+  transferEntry,
+  type Entry,
+  type EntryKind,
+  type Transfer,
+} from "../api/dav";
+import { keys, useBackends, useMounts } from "../api/queries";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
+import { formatBytes, formatDateTime, formatRelative } from "../shell/format";
 import { PageHeader, TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
+import { LoadingRows } from "../shell/QueryState";
 import { TitleAction } from "../shell/TitleRow";
-import { useFormDialog } from "../shell/useFormDialog";
+import { nextFormKey, useFormDialog } from "../shell/useFormDialog";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
-import { useMounts } from "../storage/mountStore";
 import { NameForm, TransferForm } from "./dialogs";
+import { isPreviewable } from "./preview";
 import { FileName, splitExtension } from "./FileName";
-import { createFolder, removeEntries, renameEntry, transferEntries, useTrees } from "./fileStore";
+import {
+  destinationProblem,
+  filesHref,
+  joinPath,
+  nameProblem,
+  normalizePath,
+  splitPath,
+} from "./paths";
 import { SortMenu, type SortKey } from "./SortMenu";
-import { destinationsFor, folderIn, joinPath, splitPath, type Transfer } from "./tree";
 import { UploadPanel } from "./UploadPanel";
 import type { Upload } from "./uploadStore";
 
@@ -81,19 +101,6 @@ interface Row extends Record<string, unknown> {
   modifiedAt: string;
 }
 
-/** The Files URL for a folder, and optionally the file whose details are open. */
-export const filesHref = (path: string, file?: string): string => {
-  const search = new URLSearchParams();
-  if (path !== "/") {
-    search.set("path", path);
-  }
-  if (file !== undefined) {
-    search.set("file", file);
-  }
-  const query = search.toString();
-  return query === "" ? "/files" : `/files?${query}`;
-};
-
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
 const describe = (names: readonly string[]): string =>
@@ -101,27 +108,24 @@ const describe = (names: readonly string[]): string =>
 
 const searchInput = (): HTMLElement | undefined => inMain('input[type="search"]')[0];
 
-/** The listing appears after a short pause, as it would while the API answers. */
-const useListingDelay = (ms: number): boolean => {
-  const [isLoading, setIsLoading] = useState(true);
-  useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), ms);
-    return () => clearTimeout(timer);
-  }, [ms]);
-  return isLoading;
-};
+const ageOf = (iso: string): string => (iso === "" ? "—" : formatRelative(iso));
 
-const LoadingRows = () => (
-  <VStack gap={3}>
-    {[0, 1, 2, 3, 4].map((row) => (
-      <HStack key={row} gap={4} vAlign="center">
-        <Skeleton width={280} height={16} index={row * 3} />
-        <Skeleton width={80} height={16} index={row * 3 + 1} />
-        <Skeleton width={120} height={16} index={row * 3 + 2} />
-      </HStack>
-    ))}
-  </VStack>
-);
+/** Runs `run` on each name in turn, and stops at the first refusal, which it returns. */
+const eachInTurn = async (
+  names: readonly string[],
+  run: (name: string) => Promise<void>,
+): Promise<{ done: string[]; error?: unknown }> => {
+  const done: string[] = [];
+  for (const name of names) {
+    try {
+      await run(name);
+      done.push(name);
+    } catch (error) {
+      return { done, error };
+    }
+  }
+  return { done };
+};
 
 /** File Explorer (PRD §8.2): browse a mount, upload, download, and organize what is stored. */
 export const FileExplorerPage = ({
@@ -131,8 +135,9 @@ export const FileExplorerPage = ({
   path: string;
   selectedName?: string;
 }) => {
-  const trees = useTrees();
-  const mounts = useMounts();
+  const client = useQueryClient();
+  const mountsQuery = useMounts();
+  const backendsQuery = useBackends();
   const toast = useToast();
   const navigate = useNavigate();
   // Responsive contract: on a page wider than 776px, which a 1024px window leaves beside the side
@@ -152,43 +157,49 @@ export const FileExplorerPage = ({
   const nameDialog = useFormDialog(440);
   const transferDialog = useFormDialog(480);
   const confirm = useImperativeAlertDialog();
-  const isLoading = useListingDelay(350);
   const [query, setQuery] = useState("");
   const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const parts = splitPath(path);
   const isRoot = parts.length === 0;
-  const mount = mounts.find((candidate) => candidate.id === parts[0]);
-  const backend = backends.find((candidate) => candidate.id === mount?.backendId);
-  const isUnreachable = backend?.status === "unreachable";
-  const entries = useMemo<Entry[] | undefined>(
-    () =>
-      isRoot
-        ? mounts.map((item) => ({
-            name: item.id,
-            kind: "folder",
-            sizeBytes: 0,
-            modifiedAt: SAMPLE_NOW.toISOString(),
-          }))
-        : folderIn(
-            trees,
-            mounts.map((item) => item.id),
-            path,
-          ),
-    [isRoot, mounts, trees, path],
-  );
-  // Changes need a folder that exists, inside a mount whose backend answers. The top level lists
-  // the mounts themselves, which Storage & Mounts manages.
-  const canChange = !isRoot && entries !== undefined && !isUnreachable;
-  const blockedReason = isUnreachable
-    ? `${backend?.name ?? "The backend"} is not answering.`
-    : undefined;
+  const mounts = mountsQuery.data;
+  const mount = mounts?.find((candidate) => candidate.name === parts[0]);
+  const backend = backendsQuery.data?.find((candidate) => candidate.id === mount?.backendId);
+  const listing = useQuery({
+    queryKey: [...keys.dav, "list", path],
+    queryFn: () => listFolder(parts),
+    enabled: mount !== undefined,
+    // A refusal says at once why the folder cannot be listed; a dropped connection gets one more try.
+    retry: (count, error) => count < 1 && isDavError(error) && error.status === 0,
+  });
+
+  const entries = useMemo<Entry[] | undefined>(() => {
+    if (isRoot) {
+      return mounts?.map((item) => ({
+        name: item.name,
+        kind: "folder",
+        sizeBytes: 0,
+        modifiedAt: item.createdAt,
+        contentType: "",
+      }));
+    }
+    return listing.data;
+  }, [isRoot, mounts, listing.data]);
+  const isMissing =
+    !isRoot &&
+    ((mounts !== undefined && mount === undefined) ||
+      (isDavError(listing.error) && listing.error.status === 404));
+  const isLoading = entries === undefined && !isMissing && !listing.isError && !mountsQuery.isError;
+  const loadError = isRoot ? mountsQuery.error : (mountsQuery.error ?? listing.error);
+  const failedToLoad = entries === undefined && !isMissing && loadError !== null;
+  // Changes need a folder that exists inside a mount. The top level lists the mounts themselves,
+  // which Storage & Mounts manages.
+  const canChange = !isRoot && entries !== undefined;
 
   const rows = useMemo<Row[]>(() => {
     const needle = query.trim().toLowerCase();
-    return (isUnreachable ? [] : (entries ?? []))
+    return (entries ?? [])
       .filter((entry) => needle === "" || entry.name.toLowerCase().includes(needle))
       .map((entry) => ({
         id: entry.name,
@@ -197,7 +208,11 @@ export const FileExplorerPage = ({
         sizeBytes: entry.sizeBytes,
         modifiedAt: entry.modifiedAt,
       }));
-  }, [entries, isUnreachable, query]);
+  }, [entries, query]);
+  const folderNames = useMemo(
+    () => new Set((entries ?? []).filter((entry) => entry.kind === "folder").map((e) => e.name)),
+    [entries],
+  );
 
   // The page keeps the order, so the column headers and a narrow listing's sort menu share it.
   const [sort, setSort] = useState<TableSortState<SortKey>>([
@@ -245,30 +260,44 @@ export const FileExplorerPage = ({
     }
   }, [announceCount, query, rows.length]);
 
-  // A backend that does not answer is announced as an error, since moving between pages announces
-  // nothing. A missing folder needs no announcement here: its EmptyState announces itself.
-  const pageProblem =
-    !isLoading && isUnreachable && backend !== undefined
-      ? `Cannot list ${path}. ${backend.name} gave ${backend.statusDetail}.`
-      : undefined;
+  // A listing that fails is announced as an error, since moving between pages announces nothing.
+  // A missing folder needs no announcement here: its EmptyState announces itself.
+  const pageProblem = failedToLoad
+    ? `Cannot list ${path}. ${davProblem(loadError, path)}`
+    : undefined;
   useEffect(() => {
     if (pageProblem !== undefined) {
       announce(pageProblem, "assertive");
     }
   }, [announce, pageProblem]);
 
-  const selectedEntry = isUnreachable
-    ? undefined
-    : entries?.find((entry) => entry.kind === "file" && entry.name === selectedName);
+  const selectedEntry = entries?.find(
+    (entry) => entry.kind === "file" && entry.name === selectedName,
+  );
+  const selectedParts = selectedEntry === undefined ? undefined : [...parts, selectedEntry.name];
+  const preview = useQuery({
+    queryKey: [...keys.dav, "text", path, selectedEntry?.name, selectedEntry?.modifiedAt],
+    queryFn: () => readText(selectedParts ?? []),
+    enabled: selectedEntry !== undefined && isPreviewable(selectedEntry),
+    staleTime: 60_000,
+  });
 
   // At the top level, a mount's backend says more under its name than when it last changed.
-  const backendOf = (mountId: string): string => {
-    const backendId = mounts.find((item) => item.id === mountId)?.backendId;
-    return backends.find((candidate) => candidate.id === backendId)?.name ?? "";
+  const backendOf = (mountName: string): string => {
+    const backendId = mounts?.find((item) => item.name === mountName)?.backendId;
+    return backendsQuery.data?.find((candidate) => candidate.id === backendId)?.name ?? "";
   };
 
   const rowHref = (row: { name: string; kind: EntryKind }): string =>
     row.kind === "folder" ? filesHref(joinPath([...parts, row.name])) : filesHref(path, row.name);
+
+  /** After a change, every listing and every count of stored bytes reads again. */
+  const refresh = () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: keys.dav }),
+      client.invalidateQueries({ queryKey: keys.overview }),
+      client.invalidateQueries({ queryKey: keys.backends }),
+    ]);
 
   // When rows go away, focus moves to the row that took the first one's place, or to the search.
   const focusAfterRemoval = (names: readonly string[]) => {
@@ -306,6 +335,7 @@ export const FileExplorerPage = ({
   };
 
   const showUploadResult = (uploads: Upload[]) => {
+    void refresh();
     const done = uploads.filter((upload) => upload.state === "done").length;
     const failed = uploads.length - done;
     if (failed === 0) {
@@ -318,24 +348,38 @@ export const FileExplorerPage = ({
     }
   };
 
+  const kindOf = (name: string): EntryKind =>
+    entries?.find((entry) => entry.name === name)?.kind ?? "file";
+
   // Each form gets a new key, so that it starts from its own values (useFormDialog).
   const openNewFolder = () =>
     nameDialog.show(
       <NameForm
-        key={sampleId()}
+        key={nextFormKey()}
         title="New folder"
         submitLabel="Create folder"
         onCancel={() => nameDialog.hide()}
-        onSubmit={(name) => {
-          const problem = createFolder(path, name);
-          if (problem === undefined) {
-            // A search can hide the new folder, and then focus goes to the search field.
-            nameDialog.hide(
-              () => linkTo(rowHref({ name: name.trim(), kind: "folder" })) ?? searchInput(),
-            );
-            toast({ body: `Created “${name.trim()}”.` });
+        onSubmit={async (name) => {
+          const problem = nameProblem(
+            name,
+            (entries ?? []).map((entry) => entry.name),
+          );
+          if (problem !== undefined) {
+            return problem;
           }
-          return problem;
+          const created = name.trim();
+          try {
+            await createFolder([...parts, created]);
+          } catch (error) {
+            return davProblem(error, path);
+          }
+          await refresh();
+          // A search can hide the new folder, and then focus goes to the search field.
+          nameDialog.hide(
+            () => linkTo(rowHref({ name: created, kind: "folder" })) ?? searchInput(),
+          );
+          toast({ body: `Created “${created}”.` });
+          return undefined;
         }}
       />,
     );
@@ -343,72 +387,91 @@ export const FileExplorerPage = ({
   const openRename = (entry: { name: string; kind: EntryKind }) =>
     nameDialog.show(
       <NameForm
-        key={sampleId()}
+        key={nextFormKey()}
         title={`Rename “${entry.name}”`}
         submitLabel="Rename"
         initialName={entry.name}
         onCancel={() => nameDialog.hide()}
-        onSubmit={(name) => {
+        onSubmit={async (name) => {
           const to = name.trim();
           if (to === entry.name) {
             nameDialog.hide();
             return undefined;
           }
-          const problem = renameEntry(path, entry.name, to);
-          if (problem === undefined) {
-            // The old row's menu is gone, and a search can hide the new name too.
-            nameDialog.hide(() => linkTo(rowHref({ name: to, kind: entry.kind })) ?? searchInput());
-            setSelectedKeys((keys) =>
-              keys.has(entry.name)
-                ? new Set([...keys].map((key) => (key === entry.name ? to : key)))
-                : keys,
-            );
-            if (selectedName === entry.name) {
-              void navigate({ href: filesHref(path, to), replace: true });
-            }
-            toast({ body: `Renamed to “${to}”.` });
+          const problem = nameProblem(
+            to,
+            (entries ?? []).filter((item) => item.name !== entry.name).map((item) => item.name),
+          );
+          if (problem !== undefined) {
+            return problem;
           }
-          return problem;
+          try {
+            await transferEntry("move", [...parts, entry.name], [...parts, to], entry.kind);
+          } catch (error) {
+            return davProblem(error, path);
+          }
+          await refresh();
+          // The old row's menu is gone, and a search can hide the new name too.
+          nameDialog.hide(() => linkTo(rowHref({ name: to, kind: entry.kind })) ?? searchInput());
+          setSelectedKeys((current) =>
+            current.has(entry.name)
+              ? new Set([...current].map((key) => (key === entry.name ? to : key)))
+              : current,
+          );
+          if (selectedName === entry.name) {
+            void navigate({ href: filesHref(path, to), replace: true });
+          }
+          toast({ body: `Renamed to “${to}”.` });
+          return undefined;
         }}
       />,
       // Opened from the row's menu, which is gone once the dialog is open.
       () => buttonLabelled(`Actions for ${entry.name}`),
     );
 
-  const openTransfer = (transfer: Transfer, names: readonly string[]) => {
-    // A mount whose backend does not answer cannot take anything either.
-    const reachable = mounts
-      .filter(
-        (item) =>
-          backends.find((candidate) => candidate.id === item.backendId)?.status !== "unreachable",
-      )
-      .map((item) => item.id);
+  const openTransfer = (transfer: Transfer, names: readonly string[]) =>
     transferDialog.show(
       <TransferForm
-        key={sampleId()}
+        key={nextFormKey()}
         transfer={transfer}
         names={names}
-        destinations={destinationsFor(trees, reachable, path, names)}
+        initialDestination={path}
         onCancel={() => transferDialog.hide()}
-        onSubmit={(destination) => {
-          const problem = transferEntries(transfer, path, new Set(names), destination);
-          if (problem === undefined) {
-            if (transfer === "move") {
-              transferDialog.hide(focusAfterRemoval(names));
-              setSelectedKeys(new Set());
-              names.forEach(closeDetailsOf);
-            } else {
-              transferDialog.hide();
-            }
-            toast({
-              body: `${transfer === "move" ? "Moved" : "Copied"} ${describe(names)} to ${destination}.`,
-            });
+        onSubmit={async (destination) => {
+          const problem = destinationProblem(path, names, destination);
+          if (problem !== undefined) {
+            return problem;
           }
-          return problem;
+          const target = splitPath(normalizePath(destination));
+          const { done, error } = await eachInTurn(names, (name) =>
+            transferEntry(transfer, [...parts, name], [...target, name], kindOf(name)),
+          );
+          if (done.length > 0) {
+            await refresh();
+          }
+          if (error !== undefined) {
+            const reason =
+              isDavError(error) && error.status === 412
+                ? `Something named “${names[done.length]}” is already in ${joinPath(target)}.`
+                : davProblem(error, joinPath(target));
+            return done.length === 0
+              ? reason
+              : `${transfer === "move" ? "Moved" : "Copied"} ${describe(done)}, then: ${reason}`;
+          }
+          if (transfer === "move") {
+            transferDialog.hide(focusAfterRemoval(names));
+            setSelectedKeys(new Set());
+            names.forEach(closeDetailsOf);
+          } else {
+            transferDialog.hide();
+          }
+          toast({
+            body: `${transfer === "move" ? "Moved" : "Copied"} ${describe(names)} to ${joinPath(target)}.`,
+          });
+          return undefined;
         }}
       />,
     );
-  };
 
   const openDelete = (names: readonly string[]) =>
     confirm.show({
@@ -416,37 +479,29 @@ export const FileExplorerPage = ({
       description: "This cannot be undone.",
       actionLabel: "Delete",
       onAction: () => {
-        const problem = removeEntries(path, new Set(names));
         confirm.hide();
-        if (problem !== undefined) {
-          toast({ type: "error", body: problem });
-          return;
-        }
-        setSelectedKeys(new Set());
-        names.forEach(closeDetailsOf);
-        toast({ body: `Deleted ${describe(names)}.` });
-        refocusIfLost(focusAfterRemoval(names));
+        const refocus = focusAfterRemoval(names);
+        void eachInTurn(names, (name) => removeEntry([...parts, name], kindOf(name))).then(
+          async ({ done, error }) => {
+            await refresh();
+            setSelectedKeys(new Set());
+            done.forEach(closeDetailsOf);
+            if (error !== undefined) {
+              toast({ type: "error", body: davProblem(error, path) });
+              return;
+            }
+            toast({ body: `Deleted ${describe(names)}.` });
+            refocusIfLost(refocus);
+          },
+        );
       },
     });
 
-  const download = (name: string) =>
+  const download = (name: string) => {
     toast({ body: `Downloading “${name}”.`, uniqueID: "download" });
-
-  // Leaving the folder ends the try, so its answer is never announced on another page.
-  const retryTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  useEffect(() => () => clearTimeout(retryTimer.current), []);
-  const retry = () => {
-    setIsRetrying(true);
-    clearTimeout(retryTimer.current);
-    retryTimer.current = setTimeout(() => {
-      setIsRetrying(false);
-      if (backend !== undefined) {
-        announce(
-          `Still cannot list ${path}. ${backend.name} gave ${backend.statusDetail}.`,
-          "assertive",
-        );
-      }
-    }, 900);
+    downloadFile([...parts, name]).catch((error: unknown) =>
+      toast({ type: "error", body: davProblem(error, path), uniqueID: "download" }),
+    );
   };
 
   const columns: TableColumn<Row>[] = [
@@ -469,8 +524,8 @@ export const FileExplorerPage = ({
               {isRoot
                 ? backendOf(row.name)
                 : row.kind === "folder"
-                  ? formatRelative(row.modifiedAt)
-                  : `${formatBytes(row.sizeBytes)} · ${formatRelative(row.modifiedAt)}`}
+                  ? ageOf(row.modifiedAt)
+                  : `${formatBytes(row.sizeBytes)} · ${ageOf(row.modifiedAt)}`}
             </Text>
           </VStack>
         ) : (
@@ -495,12 +550,10 @@ export const FileExplorerPage = ({
           },
           {
             key: "modifiedAt",
-            header: "Modified",
+            header: isRoot ? "Added" : "Modified",
             sortable: true,
             width: pixel(160),
-            renderCell: (row: Row) => (
-              <Text color="secondary">{formatRelative(row.modifiedAt)}</Text>
-            ),
+            renderCell: (row: Row) => <Text color="secondary">{ageOf(row.modifiedAt)}</Text>,
           },
         ] satisfies TableColumn<Row>[])),
     ...(canChange
@@ -536,33 +589,38 @@ export const FileExplorerPage = ({
       : []),
   ];
 
-  const listing = (() => {
+  const content = (() => {
     if (isLoading) {
       return <LoadingRows />;
     }
-    if (isUnreachable && backend !== undefined) {
+    if (isMissing) {
+      return (
+        <EmptyState
+          title="This folder does not exist"
+          actions={<Button label="Go to Files" variant="secondary" href="/files" />}
+        />
+      );
+    }
+    if (failedToLoad) {
       return (
         <Banner
           status="error"
           title={`Cannot list ${path}`}
-          description={`${backend.name} gave ${backend.statusDetail}.`}
+          description={davProblem(loadError, path)}
           endContent={
             <Button
               label="Try again"
               variant="secondary"
               size="sm"
-              isLoading={isRetrying}
-              onClick={retry}
+              isLoading={listing.isFetching || mountsQuery.isFetching}
+              onClick={() => {
+                void mountsQuery.refetch();
+                if (!isRoot) {
+                  void listing.refetch();
+                }
+              }}
             />
           }
-        />
-      );
-    }
-    if (entries === undefined) {
-      return (
-        <EmptyState
-          title="This folder does not exist"
-          actions={<Button label="Go to Files" variant="secondary" href="/files" />}
         />
       );
     }
@@ -654,6 +712,15 @@ export const FileExplorerPage = ({
         path={path}
         entry={selectedEntry}
         backendName={backend?.name}
+        preview={
+          !isPreviewable(selectedEntry)
+            ? { state: "none" }
+            : preview.data !== undefined
+              ? { state: "text", text: preview.data }
+              : preview.isError
+                ? { state: "error", problem: davProblem(preview.error, path) }
+                : { state: "loading" }
+        }
         onDownload={() => download(selectedEntry.name)}
         onRename={() => openRename(selectedEntry)}
         onDelete={() => openDelete([selectedEntry.name])}
@@ -668,7 +735,7 @@ export const FileExplorerPage = ({
           <VStack gap={6}>
             <PageHeader
               // Each set of actions has its own key, so the header measures the new set.
-              key={isRoot ? "mounts" : entries === undefined ? "none" : "folder"}
+              key={isRoot ? "mounts" : canChange ? "folder" : "none"}
               title="Files"
               actions={
                 isRoot ? (
@@ -678,26 +745,22 @@ export const FileExplorerPage = ({
                     icon={<Icon icon={HardDrive} size="sm" />}
                     href="/storage"
                   />
-                ) : entries === undefined ? undefined : (
+                ) : canChange ? (
                   <>
                     <TitleAction
                       label="New folder"
                       variant="secondary"
                       icon={<Icon icon={FolderPlus} size="sm" />}
-                      isDisabled={!canChange}
-                      tooltip={blockedReason}
                       onClick={openNewFolder}
                     />
                     <TitleAction
                       label="Upload"
                       variant="primary"
                       icon={<Icon icon={UploadIcon} size="sm" />}
-                      isDisabled={!canChange}
-                      tooltip={blockedReason}
                       onClick={() => setIsUploadOpen((isOpen) => !isOpen)}
                     />
                   </>
-                )
+                ) : undefined
               }
             />
 
@@ -739,14 +802,17 @@ export const FileExplorerPage = ({
             </HStack>
 
             {isUploadOpen && canChange ? (
-              <UploadPanel path={path} onSettled={showUploadResult} />
+              <UploadPanel path={path} folders={folderNames} onSettled={showUploadResult} />
             ) : null}
 
-            {listing}
+            {content}
           </VStack>
-          {isNarrow ? (
+          {/* The dialog mounts open, with its header, once the file is known: one that opened
+              later than it mounted took no name from its header. */}
+          {isNarrow && selectedEntry !== undefined ? (
             <Dialog
-              isOpen={details !== null}
+              key={selectedEntry.name}
+              isOpen
               onOpenChange={(isOpen) => {
                 if (!isOpen) {
                   closeDetails();
@@ -754,12 +820,10 @@ export const FileExplorerPage = ({
               }}
               width={480}
             >
-              {selectedEntry === undefined ? null : (
-                <Layout
-                  header={<DialogHeader title={selectedEntry.name} onOpenChange={closeDetails} />}
-                  content={<LayoutContent>{details}</LayoutContent>}
-                />
-              )}
+              <Layout
+                header={<DialogHeader title={selectedEntry.name} onOpenChange={closeDetails} />}
+                content={<LayoutContent>{details}</LayoutContent>}
+              />
             </Dialog>
           ) : null}
           {nameDialog.element}
@@ -796,11 +860,18 @@ export const FileExplorerPage = ({
   );
 };
 
+type Preview =
+  | { state: "none" }
+  | { state: "loading" }
+  | { state: "text"; text: string }
+  | { state: "error"; problem: string };
+
 /** What the details show below the file's name, in the side panel or the dialog. */
 const EntryDetails = ({
   path,
   entry,
   backendName,
+  preview,
   onDownload,
   onRename,
   onDelete,
@@ -808,6 +879,7 @@ const EntryDetails = ({
   path: string;
   entry: Entry;
   backendName?: string;
+  preview: Preview;
   onDownload: () => void;
   onRename: () => void;
   onDelete: () => void;
@@ -823,22 +895,33 @@ const EntryDetails = ({
       <MetadataList>
         <MetadataListItem label="Location">{path}</MetadataListItem>
         <MetadataListItem label="Size">{formatBytes(entry.sizeBytes)}</MetadataListItem>
-        <MetadataListItem label="Modified">{formatDateTime(entry.modifiedAt)}</MetadataListItem>
+        <MetadataListItem label="Modified">
+          {entry.modifiedAt === "" ? "Unknown" : formatDateTime(entry.modifiedAt)}
+        </MetadataListItem>
         <MetadataListItem label="Type">
-          {extension === "" ? "File" : `${extension} file`}
+          {entry.contentType !== ""
+            ? entry.contentType.split(";")[0]
+            : extension === ""
+              ? "File"
+              : `${extension} file`}
         </MetadataListItem>
         <MetadataListItem label="Stored on">{backendName ?? "Unknown"}</MetadataListItem>
-        <MetadataListItem label="Lock">Not locked</MetadataListItem>
       </MetadataList>
       <VStack gap={2}>
         <Heading level={3}>Preview</Heading>
-        {entry.text === undefined ? (
+        {preview.state === "none" ? (
           <Text type="supporting" color="secondary">
             No preview for this kind of file.
           </Text>
+        ) : preview.state === "loading" ? (
+          <Skeleton width="100%" height={80} />
+        ) : preview.state === "error" ? (
+          <Text type="supporting" color="secondary">
+            {`The preview could not be read. ${preview.problem}`}
+          </Text>
         ) : (
           <CodeBlock
-            code={entry.text}
+            code={preview.text}
             isWrapped
             maxHeight={280}
             width="100%"

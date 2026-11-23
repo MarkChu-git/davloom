@@ -1,5 +1,3 @@
-import { SAMPLE_NOW } from "./data";
-
 const LOCALE = "en";
 
 const UNITS = [
@@ -33,13 +31,14 @@ const RELATIVE_STEPS = [
 ] as const;
 
 /**
- * How far a time lies from the sample data's fixed clock: a whole count of the largest unit that
- * keeps it under the next one, such as -2 hours, below zero for a time past.
+ * How far a time lies from `now`: a whole count of the largest unit that keeps it under the next
+ * one, such as -2 hours, below zero for a time past.
  */
 export const relativeSpan = (
   iso: string,
+  now: Date = new Date(),
 ): { count: number; unit: (typeof RELATIVE_STEPS)[number][0] } => {
-  let value = (new Date(iso).getTime() - SAMPLE_NOW.getTime()) / 60_000;
+  let value = (new Date(iso).getTime() - now.getTime()) / 60_000;
   for (const [unit, next] of RELATIVE_STEPS) {
     if (Math.abs(value) < next) {
       return { count: Math.round(value), unit };
@@ -49,9 +48,9 @@ export const relativeSpan = (
   return { count: Math.round(value), unit: "year" };
 };
 
-/** "2 minutes ago", measured from the sample data's fixed clock. */
-export const formatRelative = (iso: string): string => {
-  const { count, unit } = relativeSpan(iso);
+/** "2 minutes ago", or "this minute" within half a minute. */
+export const formatRelative = (iso: string, now: Date = new Date()): string => {
+  const { count, unit } = relativeSpan(iso, now);
   return new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" }).format(count, unit);
 };
 

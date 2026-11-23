@@ -27,9 +27,9 @@ for (const method of ["GET", "PROPFIND"]) {
   test(`WebDAV routes still receive ${method}`, async ({ request }, testInfo) => {
     const response = await request.fetch("/dav/a.txt", { method });
 
-    // Bun serves no storage yet (501). This Worker runs without DAVLOOM_SECRET, so it answers that it
-    // is not configured (503) instead of handing the path to the Dashboard.
-    expect(response.status()).toBe(testInfo.project.name === "workers" ? 503 : 501);
+    // Bun serves no storage yet (501). The Worker asks for credentials (401), since this request
+    // has none, instead of handing the path to the Dashboard.
+    expect(response.status()).toBe(testInfo.project.name === "workers" ? 401 : 501);
   });
 }
 
@@ -143,31 +143,38 @@ const differingChannels = async (mark: Element, source: string) => {
   return drawn.filter((channel, index) => channel !== favicon[index]).length;
 };
 
-test("the favicon is the mark: the same shapes, drawn pixel for pixel alike in either scheme", async ({
-  page,
-  request,
-}) => {
-  await page.goto("/");
-  const icon = page.locator('link[rel="icon"]');
-  await expect(icon).toHaveAttribute("type", "image/svg+xml");
-  const href = (await icon.getAttribute("href")) ?? "";
-  const response = await request.get(href);
+// Signed out, so the Worker shows the sign-in page too.
+test.describe(() => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+  test("the favicon is the mark: the same shapes, drawn pixel for pixel alike in either scheme", async ({
+    page,
+    request,
+  }) => {
+    // The sign-in page draws the mark on every server, also on Bun, which runs no API yet.
+    await page.goto("/sign-in");
+    await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();
+    const icon = page.locator('link[rel="icon"]');
+    await expect(icon).toHaveAttribute("type", "image/svg+xml");
+    const href = (await icon.getAttribute("href")) ?? "";
+    const response = await request.get(href);
 
-  expect(response.status()).toBe(200);
-  expect(response.headers()["content-type"]).toContain("image/svg+xml");
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("image/svg+xml");
 
-  const mark = page.getByRole("link", { name: "Davloom" }).locator("svg").first();
-  const favicon = await page.evaluateHandle(
-    (source) => new DOMParser().parseFromString(source, "image/svg+xml").documentElement,
-    await response.text(),
-  );
-  expect(await favicon.evaluate(shapesOf)).toEqual(await mark.evaluate(shapesOf));
+    // The mark leads the page, above the form.
+    const mark = page.locator("svg").first();
+    const favicon = await page.evaluateHandle(
+      (source) => new DOMParser().parseFromString(source, "image/svg+xml").documentElement,
+      await response.text(),
+    );
+    expect(await favicon.evaluate(shapesOf)).toEqual(await mark.evaluate(shapesOf));
 
-  for (const colorScheme of ["light", "dark"] as const) {
-    await page.emulateMedia({ colorScheme });
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
 
-    await expect
-      .poll(() => mark.evaluate(differingChannels, `${href}?scheme=${colorScheme}`))
-      .toBe(0);
-  }
+      await expect
+        .poll(() => mark.evaluate(differingChannels, `${href}?scheme=${colorScheme}`))
+        .toBe(0);
+    }
+  });
 });

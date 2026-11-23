@@ -13,7 +13,7 @@ import {
   Image,
   type LucideIcon,
 } from "lucide-react";
-import type { EntryKind } from "../sample-data/data";
+import type { EntryKind } from "../api/dav";
 
 const styles = stylex.create({
   row: { minWidth: 0 },

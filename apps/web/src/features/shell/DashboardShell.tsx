@@ -15,18 +15,21 @@ import {
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import { LoomMark } from "@davloom/ui";
 import * as stylex from "@stylexjs/stylex";
-import { useRouterState } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Folder,
   HardDrive,
   KeyRound,
   LayoutDashboard,
+  LogOut,
   Menu,
   Settings,
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode, type SVGProps } from "react";
-import { storageAlert } from "../storage/summary";
+import { signOut, useBackends } from "../api/queries";
+import { storageAlert } from "../storage/backendStatus";
 import { NAV_WIDTH } from "./pageWidth";
 import type { Tone } from "./StatusLabel";
 
@@ -64,11 +67,38 @@ const WORK_ITEMS: NavEntry[] = [
   { label: "Files", href: "/files", ...navIcons(Folder) },
 ];
 
-/** The pages that set the service up. */
-const MANAGE_ITEMS: NavEntry[] = [
+/** The pages that set the service up; Storage & Mounts names a backend that does not answer. */
+const manageItems = (alert: NavEntry["alert"]): NavEntry[] => [
   { label: "Credentials", href: "/credentials", ...navIcons(KeyRound) },
-  { label: "Storage & Mounts", href: "/storage", ...navIcons(HardDrive), alert: storageAlert },
+  { label: "Storage & Mounts", href: "/storage", ...navIcons(HardDrive), alert },
 ];
+
+const SIGN_OUT_ICONS = navIcons(LogOut);
+
+/** Ends the session, forgets what the Dashboard read with it, and opens the sign-in page. */
+const useSignOut = () => {
+  const client = useQueryClient();
+  const navigate = useNavigate();
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const run = async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+    } catch {
+      // A session the server no longer knows is signed out already.
+    }
+    client.clear();
+    await navigate({ to: "/sign-in" });
+  };
+  return { isSigningOut, signOut: () => void run() };
+};
+
+interface NavOptions {
+  alert: NavEntry["alert"];
+  onSignOut: () => void;
+  isSigningOut: boolean;
+  onChoose?: () => void;
+}
 
 const SETTINGS: NavEntry = { label: "Settings", href: "/settings", ...navIcons(Settings) };
 
@@ -171,7 +201,7 @@ const NavItem = ({
 };
 
 /** The navigation's rows in their three groups, marking the page at `pathname` as current. */
-const navGroups = (pathname: string, onChoose?: () => void) => {
+const navGroups = (pathname: string, { alert, onSignOut, isSigningOut, onChoose }: NavOptions) => {
   const item = (entry: NavEntry) => (
     <NavItem
       key={entry.href}
@@ -186,10 +216,19 @@ const navGroups = (pathname: string, onChoose?: () => void) => {
         {WORK_ITEMS.map(item)}
       </NavSection>
     ),
-    manage: <NavSection title="Manage">{MANAGE_ITEMS.map(item)}</NavSection>,
+    manage: <NavSection title="Manage">{manageItems(alert).map(item)}</NavSection>,
     account: (
       <NavSection title="Account" isHeaderHidden>
         {item(SETTINGS)}
+        <SideNavItem
+          label="Sign out"
+          {...SIGN_OUT_ICONS}
+          isDisabled={isSigningOut}
+          onClick={() => {
+            onChoose?.();
+            onSignOut();
+          }}
+        />
       </NavSection>
     ),
   };
@@ -218,7 +257,7 @@ const styles = stylex.create({
  * down from a Menu button in that bar. They stay links, as navigation should, rather than becoming
  * a menu of actions, and reaching another page closes the dropdown.
  */
-const PhoneMenu = ({ pathname }: { pathname: string }) => {
+const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOptions }) => {
   const { isMobile } = useAppShellMobile();
   // The page the dropdown opened on, so a row or the browser's Back button closes it.
   const [openOn, setOpenOn] = useState<string>();
@@ -229,7 +268,7 @@ const PhoneMenu = ({ pathname }: { pathname: string }) => {
     }
     return null;
   }
-  const groups = navGroups(pathname, () => setOpenOn(undefined));
+  const groups = navGroups(pathname, { ...options, onChoose: () => setOpenOn(undefined) });
   return (
     <Popover
       label="Menu"
@@ -266,7 +305,10 @@ const NO_DRAWER = <></>;
 /** The Dashboard frame (PRD §13, Phase 4 deliverable 1): a side navigation around each page. */
 export const DashboardShell = ({ children }: { children: ReactNode }) => {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const groups = navGroups(pathname);
+  const backends = useBackends();
+  const { isSigningOut, signOut: onSignOut } = useSignOut();
+  const options: NavOptions = { alert: storageAlert(backends.data), onSignOut, isSigningOut };
+  const groups = navGroups(pathname, options);
 
   return (
     <AppShell
@@ -284,7 +326,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
           footerIcons={
             <NavFooterIcons>
               <SideNavCollapseButton size="md" />
-              <PhoneMenu pathname={pathname} />
+              <PhoneMenu pathname={pathname} options={options} />
             </NavFooterIcons>
           }
         >

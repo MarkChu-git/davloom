@@ -181,7 +181,12 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
     if (current === undefined) return await notImplemented(request);
     if (current === null) return NOT_CONFIGURED();
     const credential = await credentialOf(request, current);
-    if (!credential) return UNAUTHORIZED();
+    // The Dashboard signs in with its own page; a Basic challenge would open the browser's dialog.
+    if (!credential) {
+      return request.headers.get(DASHBOARD_HEADER) === "1"
+        ? new Response(null, { status: 401 })
+        : UNAUTHORIZED();
+    }
     const now = Date.now();
     if (!namespace || namespace.until <= now)
       namespace = { handlerFor: new Map(), until: now + NAMESPACE_TTL_MS };

@@ -1,9 +1,18 @@
-import { closeSync, ftruncateSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  ftruncateSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { boxOf, cardWith, listed, onScreen, openList, shown } from "./helpers";
+import { boxOf, cardWith, filesAt, listed, onScreen, shown } from "./helpers";
+import { dav, davPath, README, SAMPLE_NAMES, scratchFolder } from "./instances";
 
-// The File Explorer's scenarios about changing content: names, moving and copying, deleting,
-// uploading and downloading. The ones about finding things have their tests in
+// The File Explorer's scenarios about changing content on the Worker: names, moving and copying,
+// deleting, uploading and downloading. Each test changes a folder of its own in the Mount "files",
+// which holds the sample (instances.ts). The ones about finding things have their tests in
 // file-explorer-browsing.spec.ts.
 
 /** A text file on disk for a test to upload. */
@@ -25,22 +34,53 @@ const sparseFile = (testInfo: TestInfo, name: string, bytes: number): string => 
   return path;
 };
 
-/** Opens the upload area of `/documents` and hands it files, as choosing them does. */
-const uploadFiles = async (page: Page, files: string | string[]) => {
-  await page.goto("/files?path=%2Fdocuments");
+/** Opens a folder of the test's own, with the sample in it. */
+const openScratch = async (page: Page): Promise<string> => {
+  const folder = await scratchFolder(page.request);
+  await page.goto(filesAt(folder));
+  await expect.poll(() => listed(page)).toHaveLength(SAMPLE_NAMES.length);
+  return folder;
+};
+
+/** Opens the upload area of a folder of the test's own and hands it files, as choosing them does. */
+const uploadFiles = async (page: Page, files: string | string[]): Promise<string> => {
+  const folder = await openScratch(page);
   await page.getByRole("button", { name: "Upload", exact: true }).click();
   await page.locator('input[type="file"]').setInputFiles(files);
+  return folder;
 };
 
 /** The card with the upload area and the progress of every file. */
 const uploadPanel = (page: Page) =>
   cardWith(page, page.getByRole("heading", { name: "Upload", exact: true }));
 
+/** What the server holds at a path, as text. */
+const stored = async (page: Page, path: string): Promise<string> =>
+  (await dav(page.request, "GET", path)).text();
+
+test("A new folder: it is made on the server, and the list shows it", async ({ page }) => {
+  const folder = await openScratch(page);
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("dialog").getByLabel("Name").fill("Receipts 2026");
+  await page.getByRole("dialog").getByRole("button", { name: "Create folder" }).click();
+  await shown(onScreen(page, "Created “Receipts 2026”."));
+  await page.getByRole("link", { name: "Receipts 2026", exact: true }).click();
+  await shown(page.getByRole("heading", { name: "This folder is empty" }));
+  expect(
+    (
+      await dav(page.request, "PROPFIND", `${folder}/Receipts 2026`, {
+        isFolder: true,
+        headers: { depth: "0" },
+      })
+    ).status(),
+  ).toBe(207);
+});
+
 test("A name already in use: New folder shows no error until Drafts is submitted, then stays open and says so", async ({
   page,
 }) => {
   const taken = "Something with this name is already here.";
-  await page.goto("/files?path=%2Fdocuments");
+  await openScratch(page);
   await page.getByRole("button", { name: "New folder" }).click();
   const dialog = page.getByRole("dialog");
   const name = dialog.getByLabel("Name");
@@ -61,62 +101,89 @@ test("A name already in use: New folder shows no error until Drafts is submitted
   await expect(dialog).toBeVisible();
 });
 
-test("Destinations for a folder: Move offers the folders of the mounts that answer, but not the folder, the one that holds it or what it holds", async ({
+test("Renaming a file: MOVE gives it the new name, and its details follow it", async ({ page }) => {
+  const folder = await openScratch(page);
+  await page.getByRole("button", { name: "Actions for README.txt" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill("READ ME first.txt");
+  await dialog.getByRole("button", { name: "Rename" }).click();
+
+  await shown(onScreen(page, "Renamed to “READ ME first.txt”."));
+  await shown(page.getByRole("link", { name: "READ ME first.txt", exact: true }));
+  await expect(page.getByRole("link", { name: "README.txt", exact: true })).toHaveCount(0);
+  expect(await stored(page, `${folder}/READ ME first.txt`)).toBe(README);
+});
+
+test("Moving into the folder itself: Move refuses Drafts into Drafts, and moves README.txt there", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  const folder = await openScratch(page);
+  const dialog = page.getByRole("dialog");
   await page.getByRole("button", { name: "Actions for Drafts" }).click();
   await page.getByRole("menuitem", { name: "Move" }).click();
-  await openList(page, "button", /^Destination/);
+  const destination = dialog.getByLabel("Destination folder");
+  // The form starts from the folder that is open.
+  await expect(destination).toHaveValue(folder);
+  await destination.fill(`${folder}/Drafts/Old`);
+  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  await shown(onScreen(page, "A folder cannot go inside itself."));
+  await dialog.getByRole("button", { name: "Cancel" }).click();
 
-  await expect(page.getByRole("option")).toHaveText([
-    "/documents/Contracts",
-    "/documents/Invoices 2026",
-    "/documents/Scans",
-    "/shared",
-    "/shared/Family",
-    "/photos",
-    "/photos/2025",
-    "/photos/2026",
-  ]);
+  await page.getByRole("button", { name: "Actions for README.txt" }).click();
+  await page.getByRole("menuitem", { name: "Move" }).click();
+  await destination.fill(`${folder}/Drafts`);
+  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  await shown(onScreen(page, `Moved “README.txt” to ${folder}/Drafts.`));
+  await expect(page.getByRole("link", { name: "README.txt", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Drafts", exact: true }).click();
+  await expect.poll(() => listed(page)).toEqual(["blog-post-self-hosting.md", "README.txt"]);
 });
 
 test("A name already at the destination: copying README.txt into Drafts a second time is refused and copies nothing", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  const folder = await openScratch(page);
   const dialog = page.getByRole("dialog");
   const copyReadmeToDrafts = async () => {
     await page.getByRole("button", { name: "Actions for README.txt" }).click();
     await page.getByRole("menuitem", { name: "Copy" }).click();
-    await openList(page, "button", /^Destination/);
-    await page.getByRole("option", { name: "/documents/Drafts" }).click();
+    await dialog.getByLabel("Destination folder").fill(`${folder}/Drafts`);
     await dialog.getByRole("button", { name: "Copy", exact: true }).click();
   };
 
   await copyReadmeToDrafts();
-  await shown(onScreen(page, "Copied “README.txt” to /documents/Drafts."));
+  await shown(onScreen(page, `Copied “README.txt” to ${folder}/Drafts.`));
   await expect(dialog).toHaveCount(0);
 
   await copyReadmeToDrafts();
-  const taken = "“README.txt” is already in /documents/Drafts.";
+  const taken = `Something named “README.txt” is already in ${folder}/Drafts.`;
   await shown(onScreen(page, taken));
   await expect(dialog).toBeVisible();
   // The dialog says it, at the destination it refused.
-  await expect(dialog.getByRole("button", { name: /^Destination/ })).toHaveAccessibleDescription(
-    taken,
+  await expect(dialog.getByLabel("Destination folder")).toHaveAccessibleDescription(
+    `A folder's path, starting with its mount, such as /files/Archive. ${taken}`,
   );
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
-  // The listing is reached from inside the page, since a reload would bring the samples back.
   await page.getByRole("link", { name: "Drafts", exact: true }).click();
   await expect.poll(() => listed(page)).toEqual(["blog-post-self-hosting.md", "README.txt"]);
+});
+
+test("A destination that does not exist: the copy is refused and says so", async ({ page }) => {
+  const folder = await openScratch(page);
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Actions for README.txt" }).click();
+  await page.getByRole("menuitem", { name: "Copy" }).click();
+  await dialog.getByLabel("Destination folder").fill(`${folder}/Nowhere`);
+  await dialog.getByRole("button", { name: "Copy", exact: true }).click();
+  await shown(onScreen(page, "The destination folder does not exist."));
 });
 
 test("Deleting two files: the confirmation names 2 items and says it cannot be undone, both files go, and a notification reports it", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  const folder = await openScratch(page);
   await page.getByRole("checkbox", { name: "Select budget-2027.xlsx" }).check();
   await page.getByRole("checkbox", { name: "Select README.txt" }).check();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -128,10 +195,15 @@ test("Deleting two files: the confirmation names 2 items and says it cannot be u
 
   await expect(confirmation).toHaveCount(0);
   await shown(onScreen(page, "Deleted 2 items."));
-  await expect.poll(() => listed(page)).toHaveLength(7);
+  await expect.poll(() => listed(page)).toHaveLength(SAMPLE_NAMES.length - 2);
   const left = await listed(page);
   expect(left).not.toContain("budget-2027.xlsx");
   expect(left).not.toContain("README.txt");
+  const gone = await page.request.fetch(davPath(`${folder}/README.txt`), {
+    method: "HEAD",
+    headers: { "x-davloom-dashboard": "1" },
+  });
+  expect(gone.status()).toBe(404);
 });
 
 test("One file too large: the 2 KB file is stored with a preview, the 150 MB file is refused for its size, and a notification says 1 of 2 uploads failed", async ({
@@ -145,28 +217,28 @@ test("One file too large: the 2 KB file is stored with a preview, the 150 MB fil
     uploadPanel(page).getByText("Over the 100 MB limit for one request on Cloudflare Free."),
   );
   // The listing has rendered once notes.txt is in it, and only then can huge.bin be missing.
-  const stored = page.getByRole("link", { name: "notes.txt", exact: true });
-  await shown(stored);
+  const link = page.getByRole("link", { name: "notes.txt", exact: true });
+  await shown(link);
   await expect(page.getByRole("link", { name: "huge.bin", exact: true })).toHaveCount(0);
 
-  await stored.click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await link.click();
   const details = page.locator('[aria-label="Details"]');
   await expect(details).toContainText(/Size\s+2 kB/, { useInnerText: true });
   await expect(details).toContainText("Receipts for the accountant.");
 });
 
-test("Uploading a file again: the uploaded README.txt replaces the old one", async ({
+test("Uploading a file again: the uploaded README.txt replaces the old one on the server", async ({
   page,
 }, testInfo) => {
-  await uploadFiles(page, textFile(testInfo, "README.txt", "Replaced by an upload."));
+  const folder = await uploadFiles(
+    page,
+    textFile(testInfo, "README.txt", "Replaced by an upload."),
+  );
 
-  await shown(onScreen(page, "Uploaded 1 file to /documents."));
-  const readme = page.getByRole("link", { name: "README.txt", exact: true });
-  await expect(readme).toHaveCount(1);
-  await readme.click();
-  const details = page.locator('[aria-label="Details"]');
-  await expect(details).toContainText("Replaced by an upload.");
-  await expect(details).not.toContainText("syncs to the laptop");
+  await shown(onScreen(page, `Uploaded 1 file to ${folder}.`));
+  await expect(page.getByRole("link", { name: "README.txt", exact: true })).toHaveCount(1);
+  expect(await stored(page, `${folder}/README.txt`)).toBe("Replaced by an upload.");
 });
 
 test("A file with a folder's name: the upload fails because a folder has the name, and the folder is unchanged", async ({
@@ -187,7 +259,7 @@ test("A dropped folder: its upload fails and says to upload the files inside it"
   // Playwright cannot drop a real folder, so the drop goes through the Chrome DevTools Protocol.
   const folder = testInfo.outputPath("Album");
   mkdirSync(folder);
-  await page.goto("/files?path=%2Fdocuments");
+  await openScratch(page);
   await page.getByRole("button", { name: "Upload", exact: true }).click();
   const target = page.getByText("Drop files here or choose them");
   await shown(target);
@@ -207,10 +279,18 @@ test("A dropped folder: its upload fails and says to upload the files inside it"
   await shown(onScreen(page, "1 of 1 upload failed."));
 });
 
-test("Downloading from a row: a notification says README.txt is downloading", async ({ page }) => {
-  await page.goto("/files?path=%2Fdocuments");
+test("Downloading from a row: a notification says README.txt is downloading, and the browser saves its bytes", async ({
+  page,
+}, testInfo) => {
+  await openScratch(page);
+  const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Actions for README.txt" }).click();
   await page.getByRole("menuitem", { name: "Download" }).click();
 
   await shown(onScreen(page, "Downloading “README.txt”."));
+  const saved = await download;
+  expect(saved.suggestedFilename()).toBe("README.txt");
+  const path = testInfo.outputPath("downloaded.txt");
+  await saved.saveAs(path);
+  expect(readFileSync(path, "utf8")).toBe(README);
 });
