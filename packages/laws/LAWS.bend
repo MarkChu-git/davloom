@@ -446,6 +446,24 @@ law range_unsatisfiable_exactly:
   for +size: Nat
   {unsatisfiable(R.resolve(spec, size)) == spec_unsatisfiable(spec, size) : Bool}
 
+# RFC 9110 §14.1.2, stated exactly: `first-last` selects first up to min(last, size - 1), `first-`
+# selects first to the end, and `-length` the last min(length, size) bytes; a range that selects no
+# byte is unsatisfiable. A span names its stop one past its last byte.
+def spec_resolve(spec: R.RangeSpec, +size: Nat) -> R.Resolved:
+  match spec:
+    case R.FromTo{+first, last}:
+      Bool.pick(R.Resolved, Nat.is_ge(first, size), R.Unsatisfiable{}, R.Span{first, 1n+Nat.min(last, Nat.sub(size, 1n))})
+    case R.From{+first}:
+      Bool.pick(R.Resolved, Nat.is_ge(first, size), R.Unsatisfiable{}, R.Span{first, size})
+    case R.Suffix{+length}:
+      Bool.pick(R.Resolved, Bool.or(zero(length), zero(size)), R.Unsatisfiable{}, R.Span{Nat.sub(size, length), size})
+
+# `resolve` selects exactly the bytes RFC 9110 names, for every spec and size.
+law range_exact:
+  for spec: R.RangeSpec
+  for +size: Nat
+  {R.resolve(spec, size) == spec_resolve(spec, size) : R.Resolved}
+
 # --- Names and paths (PRD §6) ----------------------------------------------------------------
 
 # `.` and `..` are never names.
@@ -501,3 +519,44 @@ def path_size(xss: +List<+List<Nat>>) -> Nat:
 law path_bounded:
   for +xss: +List<+List<Nat>>
   {implies(N.path_ok(xss), Nat.is_le(path_size(xss), 900n)) == True{} : Bool}
+
+# Whether a name is `.` or `..`.
+def dot_name(xs: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Con{a, t}:
+      match t:
+        case Nil{}:
+          Nat.is_eq(a, 46n)
+        case Con{b, u}:
+          match u:
+            case Nil{}:
+              Bool.and(Nat.is_eq(a, 46n), Nat.is_eq(b, 46n))
+            case Con{c, v}:
+              False{}
+
+# A code point a name may hold: not NUL, not `/`, not a surrogate (U+D800 to U+DFFF), and not past
+# U+10FFFF.
+def allowed(+c: Nat) -> Bool:
+  Bool.not(Bool.or(
+    Bool.or(Nat.is_eq(c, 0n), Nat.is_eq(c, 47n)),
+    Bool.or(Bool.and(Nat.is_ge(c, 55296n), Nat.is_le(c, 57343n)), Nat.is_gt(c, 1114111n))))
+
+def all_allowed(xs: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      Bool.and(allowed(h), all_allowed(t))
+
+# A name: at least one code point, not `.` or `..`, only allowed code points, at most 255 bytes.
+def spec_name_ok(+xs: +List<Nat>) -> Bool:
+  Bool.and(nonempty(xs),
+    Bool.and(Bool.not(dot_name(xs)),
+      Bool.and(all_allowed(xs), Nat.is_le(utf8_size(xs), 255n))))
+
+# `name_ok` accepts exactly the names the specification describes.
+law name_accepted:
+  for +xs: +List<Nat>
+  {N.name_ok(xs) == spec_name_ok(xs) : Bool}

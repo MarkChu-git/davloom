@@ -32,6 +32,12 @@ const codePoint = fc.oneof(
   fc.constantFrom(0x10000, 0x10ffff, 0x110000),
 );
 const codePoints = (maxLength: number) => fc.array(codePoint, { maxLength });
+const allowed = (c: number) =>
+  c !== 0 && c !== 47 && !(c >= 0xd800 && c <= 0xdfff) && c <= 0x10ffff;
+const dots = (cps: readonly number[]) =>
+  (cps.length === 1 || cps.length === 2) && cps.every((c) => c === 46);
+const specNameOk = (cps: readonly number[]) =>
+  cps.length > 0 && !dots(cps) && cps.every(allowed) && bytes(cps) <= 255;
 
 describe("names", () => {
   it.each([
@@ -130,6 +136,23 @@ describe("names", () => {
         }),
         (names) => !pathOk(names) || names.reduce((sum, cps) => sum + 1 + bytes(cps), 0) <= 900,
       ),
+    );
+  });
+
+  it("name_accepted: the module accepts a name exactly when the specification does", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          codePoints(8),
+          codePoints(300),
+          fc.array(fc.constantFrom(46, 0x41), { maxLength: 4 }),
+          fc.array(fc.constant(0xe9), { maxLength: 300 }),
+        ),
+        (cps) => {
+          expect(nameOk(cps)).toBe(specNameOk(cps));
+        },
+      ),
+      { numRuns: 2000 },
     );
   });
 

@@ -62,6 +62,18 @@ const bendSpec: fc.Arbitrary<BendSpec> = fc.oneof(
 // RFC 9110 §14.1.1: a range-spec whose last position is below its first is invalid.
 const valid = (range: BendSpec) => range.$ !== "FromTo" || range.first <= range.last;
 
+// The selection as RFC 9110 §14.1.2 words it, with the stop one past the last byte.
+const rfcSelection = (range: BendSpec, size: number) => {
+  if (range.$ === "Suffix") {
+    return range.length === 0 || size === 0
+      ? { $: "Unsatisfiable" }
+      : { $: "Span", start: Math.max(0, size - range.length), stop: size };
+  }
+  if (range.first >= size) return { $: "Unsatisfiable" };
+  const last = range.$ === "From" ? size - 1 : Math.min(range.last, size - 1);
+  return { $: "Span", start: range.first, stop: last + 1 };
+};
+
 describe("ranges", () => {
   it.each(RFC_EXAMPLES)("%s", (_, range, expected) => {
     expect(resolveRange(range, 10000)).toEqual(expected);
@@ -107,6 +119,15 @@ describe("ranges", () => {
           resolved.$ === "Unsatisfiable" ||
           (resolved.start < resolved.stop && resolved.stop <= size)
         );
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("range_exact: the module selects exactly the bytes RFC 9110 names, for every spec", () => {
+    fc.assert(
+      fc.property(bendSpec, edge, (range, size) => {
+        expect(bend.resolve(range, size)).toEqual(rfcSelection(range, size));
       }),
       { numRuns: 2000 },
     );
