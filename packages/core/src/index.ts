@@ -17,3 +17,11 @@ export { createMemoryPropertyStore, isKeyWithin, type PropertyStore } from "./pr
 export { createMountedStorage, type Mount } from "./mounts";
 export * from "./instance";
 export { checkS3Config, type S3BackendConfig } from "./backend-config";
+export {
+  formatRoot,
+  MAX_SCOPE_ROOTS,
+  parseScope,
+  relationOf,
+  scopeStorage,
+  type Scope,
+} from "./scope";

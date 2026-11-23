@@ -219,11 +219,11 @@ const propstat = (status: number, props: string[]) =>
     ? ""
     : `<D:propstat><D:prop>${props.join("")}</D:prop><D:status>${statusLine(status)}</D:status></D:propstat>`;
 
-const activeLockXml = (lock: Lock, basePath: string, now: number) =>
+const activeLockXml = (lock: Lock, basePath: string, now: number, withToken = true) =>
   `<D:activelock><D:locktype><D:write/></D:locktype><D:lockscope><D:${lock.scope}/></D:lockscope>` +
   `<D:depth>${lock.depth === "0" ? "0" : "infinity"}</D:depth>${lock.owner}` +
   `<D:timeout>Second-${Math.max(0, Math.ceil((lock.expires - now) / 1000))}</D:timeout>` +
-  `<D:locktoken><D:href>${escapeText(lock.token)}</D:href></D:locktoken>` +
+  (withToken ? `<D:locktoken><D:href>${escapeText(lock.token)}</D:href></D:locktoken>` : "") +
   `<D:lockroot><D:href>${escapeText(hrefOf(basePath, lock.root, false))}</D:href></D:lockroot></D:activelock>`;
 
 type PropfindRequest =
@@ -305,11 +305,23 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     return result.ok ? result.value : null;
   };
 
+  /**
+   * Whether the credential may read a resource itself: its content, its dead properties and its
+   * locks. A scoped key may browse the folders above its roots but read none of them.
+   */
+  const mayRead = (path: Path): boolean =>
+    !options.authorize || options.authorize({ method: "HEAD", target: path, destination: null });
+
+  /** Whether the credential may change a lock rooted at `root`. */
+  const mayLock = (root: Path): boolean =>
+    !options.authorize || options.authorize({ method: "LOCK", target: root, destination: null });
+
   const lockDiscoveryOf = async (path: Path): Promise<string | null> => {
     if (!locks) return null;
     const time = now();
     const held = await locks.covering(path, { descendants: false, now: time });
-    return held.map((lock) => activeLockXml(lock, basePath, time)).join("");
+    // A lock rooted where the credential may not lock still shows, without its token.
+    return held.map((lock) => activeLockXml(lock, basePath, time, mayLock(lock.root))).join("");
   };
 
   /** Evaluates the If header; returns the tokens it submits, or a failure response. */
@@ -330,6 +342,8 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         const destination = parseDestination(list.resource, url, basePath);
         path = destination?.kind === "path" ? destination.path : null;
       }
+      // A tagged resource the credential may not read is never looked at: its list is false.
+      if (path !== null && !mayRead(path)) path = null;
       let listTrue = path !== null;
       const entry = path ? await stat(path) : null;
       const held =
@@ -571,11 +585,12 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.
     const quotas = new Map<string, StorageResult<Quota> | null>();
     for (const item of entries) {
-      const lockDiscovery = await lockDiscoveryOf(item.path);
+      // Above a scoped key's roots a folder shows only what leads to them: no locks, no properties.
+      const readable = mayRead(item.path);
+      const lockDiscovery = readable ? await lockDiscoveryOf(item.path) : locks ? "" : null;
       const context = { lockDiscovery };
-      const deadProps = Object.hasOwn(dead, pathKey(item.path))
-        ? (dead[pathKey(item.path)] ?? [])
-        : [];
+      const deadProps =
+        readable && Object.hasOwn(dead, pathKey(item.path)) ? (dead[pathKey(item.path)] ?? []) : [];
       const found: string[] = [];
       const missing: string[] = [];
       if (query.kind === "propname") {
@@ -701,7 +716,9 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         .find((c) => c.kind === "token" && !c.not)?.value;
       if (!token) return empty(400);
       const held = await store.covering(path, { descendants: false, now: time });
-      if (!held.some((l) => l.token === token)) return empty(412);
+      const named = held.find((l) => l.token === token);
+      // A lock rooted where the credential may not lock, such as above a key's roots, stays as it is.
+      if (!named || !mayLock(named.root)) return empty(412);
       const refreshed = await store.refresh(token, timeout, time + timeout * 1000, time);
       if (!refreshed) return empty(412);
       return xmlResponse(
@@ -778,8 +795,9 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     const token = header?.startsWith("<") && header.endsWith(">") ? header.slice(1, -1) : null;
     if (!token) return empty(400);
     const held = await store.covering(path, { descendants: false, now: now() });
-    if (!held.some((l) => l.token === token))
-      return davError(409, "<D:lock-token-matches-request-uri/>");
+    const named = held.find((l) => l.token === token);
+    if (!named) return davError(409, "<D:lock-token-matches-request-uri/>");
+    if (!mayLock(named.root)) return empty(403);
     await store.remove(token);
     return empty(204);
   };

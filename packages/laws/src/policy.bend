@@ -130,3 +130,60 @@ def authorize(+access: Access, +m: Method, target_in_scope: Bool, dest_in_scope:
   Bool.and(
     Bool.and(is_known(m), target_in_scope),
     Bool.and(allows_target(access, m), allows_destination(access, m, dest_in_scope)))
+
+# Where a path lies relative to a key's scope: inside one of its roots, above one (a folder on the
+# way to a root, which the key may only browse), or elsewhere.
+type Relation is Data:
+  Inside{}
+  Above{}
+  Outside{}
+
+def is_inside(r: Relation) -> Bool:
+  match r:
+    case Inside{}:
+      True{}
+    case Above{}:
+      False{}
+    case Outside{}:
+      False{}
+
+# Methods that only look at a folder: what a key may do above its roots, to reach them.
+def browses(m: Method) -> Bool:
+  match m:
+    case MOptions{}:
+      True{}
+    case MPropfind{}:
+      True{}
+    case MGet{}:
+      False{}
+    case MHead{}:
+      False{}
+    case MPut{}:
+      False{}
+    case MMkcol{}:
+      False{}
+    case MDelete{}:
+      False{}
+    case MProppatch{}:
+      False{}
+    case MCopy{}:
+      False{}
+    case MMove{}:
+      False{}
+    case MLock{}:
+      False{}
+    case MUnlock{}:
+      False{}
+    case MOther{}:
+      False{}
+
+# A request of a key with a scope: inside its roots the rules of `authorize` hold, with the
+# destination inside them too; above its roots it may only browse; elsewhere nothing.
+def authorize_scoped(+access: Access, +m: Method, target: Relation, dest: Relation) -> Bool:
+  match target:
+    case Inside{}:
+      authorize(access, m, True{}, is_inside(dest))
+    case Above{}:
+      browses(m)
+    case Outside{}:
+      False{}

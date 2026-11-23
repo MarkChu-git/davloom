@@ -19,3 +19,39 @@ export const keyStateOf = (key: Pick<ApiKey, "enabled" | "expiresAt">, now: Date
   }
   return "active";
 };
+
+/**
+ * Reads the folders a new key is limited to, one per comma or line, such as "/files/photos";
+ * an empty field limits nothing. Returns why the text cannot be used, or the folders.
+ */
+export const parseFolders = (text: string): { folders: string[] } | { problem: string } => {
+  const folders = text
+    .split(/[,\n]/)
+    .map((folder) => folder.trim())
+    .filter((folder) => folder !== "")
+    .map(
+      (folder) =>
+        `/${folder
+          .split("/")
+          .filter((name) => name !== "")
+          .join("/")}`,
+    );
+  if (folders.some((folder) => folder === "/")) {
+    return { problem: "Name a mount or a folder inside one, such as /files/photos." };
+  }
+  if (folders.some((folder) => folder.split("/").some((name) => name === "." || name === ".."))) {
+    return { problem: "Name the folders without . or .. in their paths." };
+  }
+  if (folders.length > 16) {
+    return { problem: "Limit a key to at most 16 folders." };
+  }
+  return { folders: [...new Set(folders)] };
+};
+
+/** How a key's reach reads in the list. */
+export const reachOf = (paths: readonly string[] | null): string =>
+  paths === null
+    ? "Every mount"
+    : paths.length === 0
+      ? "Nothing: its folders cannot be read"
+      : paths.join(", ");

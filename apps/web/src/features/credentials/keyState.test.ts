@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { hasExpired, keyStateOf } from "./keyState";
+import { hasExpired, keyStateOf, parseFolders, reachOf } from "./keyState";
 
 const NOW = new Date("2026-11-16T15:30:00Z");
 
@@ -36,5 +36,31 @@ describe("key states", () => {
         },
       ),
     );
+  });
+});
+
+describe("parseFolders", () => {
+  it.each([
+    ["", []],
+    ["  ", []],
+    ["/files/photos", ["/files/photos"]],
+    ["files/photos/", ["/files/photos"]],
+    ["/files, /docs\n/music", ["/files", "/docs", "/music"]],
+    ["/files,/files", ["/files"]],
+    ["/中文/😀", ["/中文/😀"]],
+  ])("reads %j as %j", (text, folders) => {
+    expect(parseFolders(text)).toEqual({ folders });
+  });
+
+  it.each(["/", "/files/..", "./x", Array.from({ length: 17 }, (_, i) => `/m${i}`).join(",")])(
+    "refuses %j",
+    (text) => {
+      expect(parseFolders(text)).toHaveProperty("problem");
+    },
+  );
+
+  it("names a key's reach", () => {
+    expect(reachOf(null)).toBe("Every mount");
+    expect(reachOf(["/files/a", "/docs"])).toBe("/files/a, /docs");
   });
 });

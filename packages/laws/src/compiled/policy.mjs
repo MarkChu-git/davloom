@@ -294,6 +294,56 @@ function $authorize(_access_0, _m_0, _target_in_scope_0, _dest_in_scope_0) {
   return $Bool_and($$Bool_and($$is_known(_m_0), _target_in_scope_0), $$Bool_and($$allows_target(_access_0, _m_0), $$allows_destination(_access_0, _m_0, _dest_in_scope_0)));
 }
 
+function $is_inside(_r_0) {
+  if (_r_0.$ === "Inside") {
+    return true;
+  } else if (_r_0.$ === "Above") {
+    return false;
+  } else {
+    return false;
+  }
+}
+
+function $browses(_m_0) {
+  if (_m_0.$ === "MOptions") {
+    return true;
+  } else if (_m_0.$ === "MPropfind") {
+    return true;
+  } else if (_m_0.$ === "MGet") {
+    return false;
+  } else if (_m_0.$ === "MHead") {
+    return false;
+  } else if (_m_0.$ === "MPut") {
+    return false;
+  } else if (_m_0.$ === "MMkcol") {
+    return false;
+  } else if (_m_0.$ === "MDelete") {
+    return false;
+  } else if (_m_0.$ === "MProppatch") {
+    return false;
+  } else if (_m_0.$ === "MCopy") {
+    return false;
+  } else if (_m_0.$ === "MMove") {
+    return false;
+  } else if (_m_0.$ === "MLock") {
+    return false;
+  } else if (_m_0.$ === "MUnlock") {
+    return false;
+  } else {
+    return false;
+  }
+}
+
+function $authorize_scoped(_access_0, _m_0, _target_0, _dest_0) {
+  if (_target_0.$ === "Inside") {
+    return $authorize(_access_0, _m_0, true, $$is_inside(_dest_0));
+  } else if (_target_0.$ === "Above") {
+    return $browses(_m_0);
+  } else {
+    return false;
+  }
+}
+
 function $Bool_not(_b_0) {
   if (!_b_0) {
     return true;
@@ -317,7 +367,8 @@ const $$has_destination = $has_destination;
 const $$Bool_and = $Bool_and;
 const $$is_known = $is_known;
 const $$allows_target = $allows_target;
-const $$allows_destination = $allows_destination;export default {
+const $$allows_destination = $allows_destination;
+const $$is_inside = $is_inside;export default {
   "can_write": run_lib((a0) => run_loop($can_write(a0)), 1),
   "writes_target": run_lib((a0) => run_loop($writes_target(a0)), 1),
   "has_destination": run_lib((a0) => run_loop($has_destination(a0)), 1),
@@ -325,4 +376,7 @@ const $$allows_destination = $allows_destination;export default {
   "allows_target": run_lib((a0,a1) => run_loop($allows_target(a0,a1)), 2),
   "allows_destination": run_lib((a0,a1,a2) => run_loop($allows_destination(a0,a1,a2)), 3),
   "authorize": run_lib((a0,a1,a2,a3) => run_loop($authorize(a0,a1,a2,a3)), 4),
+  "is_inside": run_lib((a0) => run_loop($is_inside(a0)), 1),
+  "browses": run_lib((a0) => run_loop($browses(a0)), 1),
+  "authorize_scoped": run_lib((a0,a1,a2,a3) => run_loop($authorize_scoped(a0,a1,a2,a3)), 4),
 };

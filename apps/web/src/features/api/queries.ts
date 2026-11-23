@@ -64,6 +64,8 @@ export interface ApiKey {
   /** The key's first characters, which Better Auth keeps to tell keys apart. */
   start: string | null;
   access: Access;
+  /** The folders the key is limited to, such as /files/photos; null for every mount. */
+  paths: string[] | null;
   enabled: boolean;
   expiresAt: string | null;
   createdAt: string;
@@ -155,8 +157,12 @@ const useInvalidateStorage = () => {
 export const useCreateKey = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (input: { name: string; access: Access; expiresInDays: number | null }) =>
-      apiFetch<{ id: string; key: string }>("/api/keys", { method: "POST", body: input }),
+    mutationFn: (input: {
+      name: string;
+      access: Access;
+      expiresInDays: number | null;
+      paths?: string[];
+    }) => apiFetch<{ id: string; key: string }>("/api/keys", { method: "POST", body: input }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 };

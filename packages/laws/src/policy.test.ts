@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authorize, METHODS, type Access } from "./policy";
+import { authorize, authorizeScoped, METHODS, type Access } from "./policy";
 
 // The reference model: which methods read or write their target and their destination.
 const MODEL: Record<string, { target: "read" | "write"; destination: boolean }> = {
@@ -62,5 +62,26 @@ describe("policy", () => {
     expect(
       authorize({ access: "read-write", method, targetInScope: false, destinationInScope: true }),
     ).toBe(false);
+  });
+});
+
+describe("scoped policy", () => {
+  const RELATIONS = ["inside", "above", "outside"] as const;
+  const scopedCases = ACCESS.flatMap((access) =>
+    ALL_METHODS.flatMap((method) =>
+      RELATIONS.flatMap((target) =>
+        RELATIONS.map((destination) => ({ access, method, target, destination })),
+      ),
+    ),
+  );
+  const BROWSE = new Set(["OPTIONS", "PROPFIND"]);
+  const scopedOracle = (c: (typeof scopedCases)[number]) => {
+    if (c.target === "outside") return false;
+    if (c.target === "above") return BROWSE.has(c.method);
+    return oracle(c.access, c.method, true, c.destination === "inside");
+  };
+
+  it.each(scopedCases)("%j", (request) => {
+    expect(authorizeScoped(request)).toBe(scopedOracle(request));
   });
 });

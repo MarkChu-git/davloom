@@ -316,3 +316,72 @@ law remove_decides_in_order:
   for root: Bool
   for target: T.Node
   {T.decide_remove(root, target) == spec_remove(root, target) : T.Outcome}
+
+# --- Mount and Path Prefix Scope (PRD §6) ----------------------------------------------------
+
+def inside(r: P.Relation) -> Bool:
+  match r:
+    case P.Inside{}:
+      True{}
+    case P.Above{}:
+      False{}
+    case P.Outside{}:
+      False{}
+
+def spec_browses(m: P.Method) -> Bool:
+  match m:
+    case P.MOptions{}:
+      True{}
+    case P.MPropfind{}:
+      True{}
+    case P.MGet{}:
+      False{}
+    case P.MHead{}:
+      False{}
+    case P.MPut{}:
+      False{}
+    case P.MMkcol{}:
+      False{}
+    case P.MDelete{}:
+      False{}
+    case P.MProppatch{}:
+      False{}
+    case P.MCopy{}:
+      False{}
+    case P.MMove{}:
+      False{}
+    case P.MLock{}:
+      False{}
+    case P.MUnlock{}:
+      False{}
+    case P.MOther{}:
+      False{}
+
+# A key never reaches anything outside its roots.
+law scope_outside_denied:
+  for a: P.Access
+  for m: P.Method
+  for dest: P.Relation
+  {P.authorize_scoped(a, m, P.Outside{}, dest) == False{} : Bool}
+
+# Above its roots a key only browses: OPTIONS and PROPFIND, never a read of content or a write.
+law scope_above_only_browses:
+  for a: P.Access
+  for m: P.Method
+  for dest: P.Relation
+  {implies(P.authorize_scoped(a, m, P.Above{}, dest), spec_browses(m)) == True{} : Bool}
+
+# Inside its roots a key has exactly the rights of its access level.
+law scope_inside_as_unscoped:
+  for a: P.Access
+  for m: P.Method
+  for dest: P.Relation
+  {P.authorize_scoped(a, m, P.Inside{}, dest) == spec_authorize(a, m, True{}, inside(dest)) : Bool}
+
+# COPY and MOVE never leave a key's roots: an allowed one has its destination inside them.
+law scope_destination_inside:
+  for a: P.Access
+  for m: P.Method
+  for target: P.Relation
+  for dest: P.Relation
+  {implies(Bool.and(spec_has_destination(m), P.authorize_scoped(a, m, target, dest)), inside(dest)) == True{} : Bool}

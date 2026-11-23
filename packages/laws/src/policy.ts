@@ -1,4 +1,4 @@
-import bend, { type BendMethod } from "./compiled/policy.mjs";
+import bend, { type BendMethod, type BendRelation } from "./compiled/policy.mjs";
 
 export type Access = "read-only" | "read-write";
 
@@ -51,4 +51,33 @@ export const authorize = ({ access, method, targetInScope, destinationInScope }:
     { $: isMethod(method) ? BEND_METHODS[method] : "MOther" },
     targetInScope,
     destinationInScope,
+  );
+
+/** Where a path lies relative to a key's scope. */
+export type Relation = "inside" | "above" | "outside";
+
+const RELATIONS: Record<Relation, BendRelation> = {
+  inside: { $: "Inside" },
+  above: { $: "Above" },
+  outside: { $: "Outside" },
+};
+
+export interface ScopedRequest {
+  readonly access: Access;
+  readonly method: string;
+  readonly target: Relation;
+  /** For COPY and MOVE; ignored for the other methods. */
+  readonly destination: Relation;
+}
+
+/**
+ * Whether an API Key with a scope may make a WebDAV request: inside its roots as `authorize`
+ * decides, above them only to browse, elsewhere never.
+ */
+export const authorizeScoped = ({ access, method, target, destination }: ScopedRequest) =>
+  bend.authorize_scoped(
+    { $: access === "read-write" ? "ReadWrite" : "ReadOnly" },
+    { $: isMethod(method) ? BEND_METHODS[method] : "MOther" },
+    RELATIONS[target],
+    RELATIONS[destination],
   );
