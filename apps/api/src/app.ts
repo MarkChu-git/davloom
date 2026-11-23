@@ -64,6 +64,7 @@ const ERRORS = {
   NotFound: { status: 404, code: "not_found" },
   NameTaken: { status: 409, code: "name_taken" },
   Unauthorized: { status: 401, code: "unauthorized" },
+  MountInUse: { status: 409, code: "mount_in_use" },
 } as const;
 type ErrorTag = keyof typeof ERRORS;
 const errors: ErrorResponses<{ _tag: ErrorTag }> = ERRORS;
@@ -221,7 +222,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
             destination: destination === null ? "outside" : relationOf(destination, scope),
           }),
       });
-      namespace.handlerFor.set(cacheKey, handler);
+      cache.handlerFor.set(cacheKey, handler);
     }
     return await handler(request);
   };

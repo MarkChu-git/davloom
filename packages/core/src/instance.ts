@@ -1,5 +1,5 @@
 import { Context, Data, Effect, Redacted } from "effect";
-import { checkS3Config } from "./backend-config";
+import { checkR2Config, checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
 import { isValidName, isValidPath, type Access } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
@@ -125,6 +125,8 @@ export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly fi
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class NameTaken extends Data.TaggedError("NameTaken")<{}> {}
 export class Unauthorized extends Data.TaggedError("Unauthorized")<{}> {}
+/** An API Key is limited to the Mount, so it keeps its name until the key is revoked. */
+export class MountInUse extends Data.TaggedError("MountInUse")<{}> {}
 
 export interface KeyMetadata {
   readonly access: Access;
@@ -405,6 +407,14 @@ export const createBackend = (input: {
       );
       return { id };
     }
+    if (input.kind === "r2") {
+      const checked = checkR2Config(input.config);
+      if (!checked.ok) return yield* Effect.fail(new InvalidInput({ field: checked.field }));
+      yield* insert(() =>
+        records.backends.create({ id, name, kind: "r2", config: checked.config }),
+      );
+      return { id };
+    }
     yield* insert(() => records.backends.create({ id, name, kind: input.kind, config: {} }));
     return { id };
   });
@@ -452,11 +462,30 @@ export const createMount = (input: { name: string; backendId: string; root: stri
     return { id };
   });
 
+/**
+ * Fails with MountInUse when an API Key is limited to the Mount, since a key names its Mounts by
+ * name: renaming or removing the Mount would leave the key reaching whatever Mount takes the name.
+ */
+const ensureNoKeyLimitedTo = (id: string) =>
+  Effect.gen(function* () {
+    const records = yield* Records;
+    const mount = (yield* promise(() => records.mounts.list())).find((m) => m.id === id);
+    if (!mount) return;
+    const keys = yield* promise(() => records.apiKeys.list());
+    const limited = keys.some(
+      (key) =>
+        brokenScope(key.metadata) ||
+        (scopeOf(key.metadata) ?? []).some((root) => root[0] === mount.name),
+    );
+    if (limited) yield* Effect.fail(new MountInUse());
+  });
+
 export const renameMount = (id: string, name: string) =>
   Effect.gen(function* () {
     const records = yield* Records;
     if (!isValidName(name) || name.length > 64)
       return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    yield* ensureNoKeyLimitedTo(id);
     const renamed = yield* Effect.tryPromise({
       try: () => records.mounts.rename(id, name),
       catch: (e) => e,
@@ -470,6 +499,7 @@ export const renameMount = (id: string, name: string) =>
 export const removeMount = (id: string) =>
   Effect.gen(function* () {
     const records = yield* Records;
+    yield* ensureNoKeyLimitedTo(id);
     if (!(yield* promise(() => records.mounts.remove(id))))
       return yield* Effect.fail(new NotFound());
     return { id };

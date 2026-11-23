@@ -85,6 +85,8 @@ export const describeError = (error: unknown): string => {
       return "Your session has ended. Sign in again.";
     case "not_configured":
       return "This instance is not configured: DAVLOOM_SECRET is missing or shorter than 32 bytes.";
+    case "mount_in_use":
+      return "An API key is limited to this mount. Revoke that key first.";
     case "name_taken":
       return "That name is already in use.";
     case "not_found":

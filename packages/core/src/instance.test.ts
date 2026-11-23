@@ -1090,3 +1090,76 @@ describe("openNamespace with stored backends", () => {
     expect((await namespace.stat(["files"])).ok).toBe(true);
   });
 });
+
+describe("R2 backends", () => {
+  it("creates one with its binding and a normalized prefix", async () => {
+    const { run, calls } = makeWorld({ storageKinds: ["durable-object", "s3", "r2"] });
+    valueOf(
+      await run(
+        createBackend({ name: "Photos", kind: "r2", config: { binding: "R2", prefix: "photos" } }),
+      ),
+    );
+    expect(calls.backendCreates[0]).toMatchObject({
+      kind: "r2",
+      config: { binding: "R2", prefix: "photos/" },
+    });
+  });
+
+  it.each([
+    ["binding", { binding: "" }],
+    ["binding", { binding: "1BUCKET" }],
+    ["binding", { binding: "my-bucket" }],
+    ["binding", { binding: "B".repeat(65) }],
+    ["prefix", { binding: "R2", prefix: "/abs" }],
+    ["prefix", { binding: "R2", prefix: "a//b" }],
+    ["prefix", { binding: "R2", prefix: "p".repeat(101) }],
+    ["binding", null],
+  ])("refuses an invalid %s", async (field, config) => {
+    const { run, calls } = makeWorld({ storageKinds: ["durable-object", "s3", "r2"] });
+    expect(errorOf(await run(createBackend({ name: "Photos", kind: "r2", config })))).toMatchObject(
+      {
+        _tag: "InvalidInput",
+        field,
+      },
+    );
+    expect(calls.backendCreates).toEqual([]);
+  });
+
+  it("refuses R2 where the deployment has no R2 binding", async () => {
+    const { run } = makeWorld({ storageKinds: ["durable-object", "s3"] });
+    expect(
+      errorOf(await run(createBackend({ name: "Photos", kind: "r2", config: { binding: "R2" } }))),
+    ).toMatchObject({ _tag: "InvalidInput", field: "kind" });
+  });
+});
+
+describe("a Mount that a key is limited to", () => {
+  const limitedTo = (paths: unknown) => apiKey({ metadata: { access: "read-only", paths } });
+
+  it.each([
+    ["rename", (id: string) => renameMount(id, "other")],
+    ["remove", (id: string) => removeMount(id)],
+  ])("cannot be %sd while the key exists", async (_, operation) => {
+    const { run, calls } = makeWorld({
+      mounts: [mount("m-1", "files", "b-1")],
+      keys: [limitedTo(["/files/photos"])],
+    });
+    expect(errorOf(await run(operation("m-1")))).toMatchObject({ _tag: "MountInUse" });
+    expect(calls.renames).toEqual([]);
+  });
+
+  it.each([
+    ["a key limited to another Mount", [limitedTo(["/docs"])]],
+    ["a key without a scope", [apiKey()]],
+    ["no key", []],
+  ])("can be renamed with %s", async (_, keys) => {
+    const { run } = makeWorld({ mounts: [mount("m-1", "files", "b-1")], keys });
+    expect(valueOf(await run(renameMount("m-1", "other")))).toEqual({ id: "m-1" });
+    expect(valueOf(await run(removeMount("m-1")))).toEqual({ id: "m-1" });
+  });
+
+  it("a key whose scope cannot be read holds every Mount", async () => {
+    const { run } = makeWorld({ mounts: [mount("m-1", "files", "b-1")], keys: [limitedTo("bad")] });
+    expect(errorOf(await run(removeMount("m-1")))).toMatchObject({ _tag: "MountInUse" });
+  });
+});

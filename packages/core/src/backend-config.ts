@@ -75,3 +75,24 @@ export const checkS3Config = (raw: unknown): ConfigCheck<S3BackendConfig> => {
     },
   };
 };
+
+export interface R2BackendConfig {
+  /** The name of the Worker's R2 binding, such as R2. */
+  readonly binding: string;
+  /** Empty, or ending at `/`. */
+  readonly prefix: string;
+}
+
+/** Reads an R2 backend's configuration; names the first field that is missing or invalid. */
+export const checkR2Config = (raw: unknown): ConfigCheck<R2BackendConfig> => {
+  const field = (name: string): unknown =>
+    typeof raw === "object" && raw !== null ? Reflect.get(raw, name) : undefined;
+  const binding = text(field("binding"));
+  if (!binding || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(binding))
+    return { ok: false, field: "binding" };
+  const prefixText = text(field("prefix")) ?? "";
+  const prefix = prefixText === "" || prefixText.endsWith("/") ? prefixText : `${prefixText}/`;
+  if (prefix.startsWith("/") || prefix.includes("//") || prefix.length > 100)
+    return { ok: false, field: "prefix" };
+  return { ok: true, config: { binding, prefix } };
+};
