@@ -1,4 +1,6 @@
-import { Context, Data, Effect } from "effect";
+import { Context, Data, Effect, Redacted } from "effect";
+import { checkS3Config } from "./backend-config";
+import { CredentialCipher } from "./credentials";
 import { isValidName, isValidPath, type Access } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
 import type { Path, StorageBackend, Usage } from "./storage";
@@ -11,6 +13,10 @@ export interface BackendRecord {
   readonly id: string;
   readonly name: string;
   readonly kind: string;
+  /** The kind's configuration, without secrets. */
+  readonly config: unknown;
+  /** An S3-compatible backend's secret key, sealed by the credential cipher; else null. */
+  readonly secretKey: string | null;
   readonly createdAt: Date;
 }
 
@@ -45,6 +51,7 @@ export class Records extends Context.Service<
         name: string;
         kind: string;
         config: unknown;
+        secretKey?: string | null;
       }) => Promise<void>;
     };
     readonly mounts: {
@@ -91,7 +98,7 @@ export class Identity extends Context.Service<
 /** The Port that opens a backend's Storage Port. */
 export class StorageOpener extends Context.Service<
   StorageOpener,
-  { readonly open: (backend: { id: string; kind: string }) => StorageBackend | null }
+  { readonly open: (backend: BackendRecord) => StorageBackend | null }
 >()("@davloom/core/StorageOpener") {}
 
 /** Instance settings that come from the deployment. */
@@ -102,6 +109,12 @@ export class InstanceConfig extends Context.Service<
     readonly setupToken: string | null;
     /** The storage kinds this runtime can open; the first is the default for new backends. */
     readonly storageKinds: readonly string[];
+    /** The backend the first-run setup creates, when the deployment names one (self-hosted). */
+    readonly defaultBackend?: {
+      readonly kind: string;
+      readonly config: unknown;
+      readonly secretKey: Redacted.Redacted | null;
+    } | null;
   }
 >()("@davloom/core/InstanceConfig") {}
 
@@ -187,10 +200,24 @@ export const completeSetup = (input: {
     const backends = yield* promise(() => records.backends.list());
     let backendId = backends[0]?.id;
     if (backendId === undefined) {
-      backendId = crypto.randomUUID();
-      const kind = config.storageKinds[0] ?? "durable-object";
+      const id = crypto.randomUUID();
+      backendId = id;
+      const chosen = config.defaultBackend ?? {
+        kind: config.storageKinds[0] ?? "durable-object",
+        config: {},
+        secretKey: null,
+      };
+      const cipher = yield* CredentialCipher;
+      const secret = chosen.secretKey;
+      const sealed = secret ? yield* cipher.seal(id, secret) : null;
       yield* insert(() =>
-        records.backends.create({ id: backendId ?? "", name: "Default", kind, config: {} }),
+        records.backends.create({
+          id,
+          name: "Default",
+          kind: chosen.kind,
+          config: chosen.config,
+          ...(sealed === null ? {} : { secretKey: sealed }),
+        }),
       );
     }
     const mounts = yield* promise(() => records.mounts.list());
@@ -309,7 +336,12 @@ export const listBackends = Effect.gen(function* () {
   );
 });
 
-export const createBackend = (input: { name: string; kind: string }) =>
+export const createBackend = (input: {
+  name: string;
+  kind: string;
+  config?: unknown;
+  secretKey?: string;
+}) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const config = yield* InstanceConfig;
@@ -319,6 +351,26 @@ export const createBackend = (input: { name: string; kind: string }) =>
     if (!config.storageKinds.includes(input.kind))
       return yield* Effect.fail(new InvalidInput({ field: "kind" }));
     const id = crypto.randomUUID();
+    if (input.kind === "s3") {
+      const checked = checkS3Config(input.config);
+      if (!checked.ok) return yield* Effect.fail(new InvalidInput({ field: checked.field }));
+      const secret = input.secretKey ?? "";
+      if (secret === "" || secret.length > 256) {
+        return yield* Effect.fail(new InvalidInput({ field: "secretKey" }));
+      }
+      const cipher = yield* CredentialCipher;
+      const sealed = yield* cipher.seal(id, Redacted.make(secret));
+      yield* insert(() =>
+        records.backends.create({
+          id,
+          name,
+          kind: "s3",
+          config: checked.config,
+          secretKey: sealed,
+        }),
+      );
+      return { id };
+    }
     yield* insert(() => records.backends.create({ id, name, kind: input.kind, config: {} }));
     return { id };
   });
@@ -394,8 +446,17 @@ export const openNamespace = Effect.gen(function* () {
   const records = yield* Records;
   const opener = yield* StorageOpener;
   const mounts: Mount[] = [];
+  const backends = new Map((yield* promise(() => records.backends.list())).map((b) => [b.id, b]));
   for (const record of yield* promise(() => records.mounts.list())) {
-    const backend = opener.open({ id: record.backendId, kind: record.backendKind });
+    const stored = backends.get(record.backendId) ?? {
+      id: record.backendId,
+      name: "",
+      kind: record.backendKind,
+      config: {},
+      secretKey: null,
+      createdAt: new Date(0),
+    };
+    const backend = opener.open(stored);
     if (backend) {
       mounts.push({
         name: record.name,

@@ -38,10 +38,17 @@ const mergeHeaders = (base: Record<string, string>, extra: HeadersInit | undefin
 
 export const basic = (key: string) => `Basic ${btoa(`davloom:${key}`)}`;
 
-export const startDavloom = async (): Promise<Davloom> => {
-  const server = await startWorkerdServer("apps/api/wrangler.jsonc", {
+/** The production Worker in local workerd: D1 and Durable Objects. */
+export const startWorkersServer = () =>
+  startWorkerdServer("apps/api/wrangler.jsonc", {
     vars: { DAVLOOM_SECRET: SECRET, DAVLOOM_SETUP_TOKEN: SETUP_TOKEN },
   });
+
+/** Starts a server, creates its administrator, signs in and makes an API Key of each access level. */
+export const startDavloom = async (
+  start: () => Promise<Server> = startWorkersServer,
+): Promise<Davloom> => {
+  const server = await start();
   const setup = await server.fetch("/api/setup", {
     method: "POST",
     headers: { "content-type": "application/json" },

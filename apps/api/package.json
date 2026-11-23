@@ -13,6 +13,7 @@
     "dev:bun": "bun --watch src/entry.bun.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1176.0",
     "@davloom/auth": "workspace:*",
     "@davloom/core": "workspace:*",
     "@davloom/database": "workspace:*",

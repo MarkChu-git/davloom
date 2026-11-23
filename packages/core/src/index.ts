@@ -16,3 +16,4 @@ export { createMemoryStorage, type MemoryStorageOptions } from "./memory-storage
 export { createMemoryPropertyStore, isKeyWithin, type PropertyStore } from "./property-store";
 export { createMountedStorage, type Mount } from "./mounts";
 export * from "./instance";
+export { checkS3Config, type S3BackendConfig } from "./backend-config";

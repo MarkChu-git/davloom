@@ -32,9 +32,9 @@ const WEBDAV_METHODS = [
   "UNLOCK",
 ];
 
-// Bun serves no storage until the self-hosted milestone, so its /dav still answers 501. Workers
-// asks for credentials before anything else (http/davloom.test.ts covers the protocol itself).
-const EXPECTED: Record<string, number> = { Bun: 501, Workers: 401 };
+// Both runtimes ask for credentials before anything else; http/davloom.test.ts and
+// http/selfhosted.test.ts cover the protocol itself.
+const EXPECTED: Record<string, number> = { Bun: 401, Workers: 401 };
 
 describe.each(productionRuntimes)("production /dav on $name", ({ name, start }) => {
   let server: Server;

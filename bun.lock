@@ -21,6 +21,7 @@
       "name": "@davloom/api",
       "version": "0.0.0",
       "dependencies": {
+        "@aws-sdk/client-s3": "3.1176.0",
         "@davloom/auth": "workspace:*",
         "@davloom/core": "workspace:*",
         "@davloom/database": "workspace:*",
@@ -108,6 +109,7 @@
         "@davloom/core": "workspace:*",
         "@davloom/laws": "workspace:*",
         "@smithy/fetch-http-handler": "5.8.1",
+        "effect": "4.1.4",
       },
       "devDependencies": {
         "@cloudflare/vitest-plugin": "1.8.3",
