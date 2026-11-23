@@ -233,3 +233,71 @@ describe("WebDAV on Durable Objects", () => {
     });
   });
 });
+
+const scopedKey = async (paths: string[], access = "read-write") => {
+  const response = await davloom.api("/api/keys", {
+    method: "POST",
+    body: JSON.stringify({ name: `scoped ${paths.join(" ")}`, access, paths }),
+  });
+  expect(response.status).toBe(201);
+  return stringField(await response.json(), "key");
+};
+
+describe("keys limited to a folder", () => {
+  it("reaches its folder, browses the way to it, and nothing else", async () => {
+    const { dav, server } = davloom;
+    await dav("/files/scope", { method: "MKCOL" });
+    await dav("/files/scope/in", { method: "MKCOL" });
+    await dav("/files/scope/out", { method: "MKCOL" });
+    await dav("/files/scope/in/a.txt", { method: "PUT", body: "inside" });
+    await dav("/files/scope/out/b.txt", { method: "PUT", body: "outside" });
+    const key = await scopedKey(["/files/scope/in"]);
+
+    const root = await (
+      await dav("/", { key, method: "PROPFIND", headers: { depth: "1" } })
+    ).text();
+    expect(root).toContain("/dav/files/");
+    const scope = await (
+      await dav("/files/scope", { key, method: "PROPFIND", headers: { depth: "1" } })
+    ).text();
+    expect(scope).toContain("/dav/files/scope/in/");
+    expect(scope).not.toContain("/dav/files/scope/out/");
+
+    expect(await (await dav("/files/scope/in/a.txt", { key })).text()).toBe("inside");
+    expect((await dav("/files/scope/in/new.txt", { key, method: "PUT", body: "x" })).status).toBe(
+      201,
+    );
+    expect((await dav("/files/scope/out/b.txt", { key })).status).toBe(403);
+    expect((await dav("/files/scope/out/c.txt", { key, method: "PUT", body: "x" })).status).toBe(
+      403,
+    );
+    expect((await dav("/files/scope/x.txt", { key, method: "PUT", body: "x" })).status).toBe(403);
+    expect((await dav("/files/scope", { key, method: "DELETE" })).status).toBe(403);
+    const out = { destination: `${server.url}/dav/files/scope/out/moved.txt` };
+    expect((await dav("/files/scope/in/a.txt", { key, method: "MOVE", headers: out })).status).toBe(
+      403,
+    );
+    expect((await dav("/files/scope/in/a.txt", { key, method: "COPY", headers: out })).status).toBe(
+      403,
+    );
+    const inside = { destination: `${server.url}/dav/files/scope/in/copy.txt` };
+    expect(
+      (await dav("/files/scope/in/a.txt", { key, method: "COPY", headers: inside })).status,
+    ).toBe(201);
+  });
+
+  it("refuses a scope that is not a list of folders", async () => {
+    const response = await davloom.api("/api/keys", {
+      method: "POST",
+      body: JSON.stringify({ name: "bad", access: "read-only", paths: ["/"] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("shows a key's folders in the list", async () => {
+    await scopedKey(["/files/listed"], "read-only");
+    expect(await (await davloom.api("/api/keys")).json()).toContainEqual(
+      expect.objectContaining({ paths: ["/files/listed"], access: "read-only" }),
+    );
+  });
+});

@@ -37,7 +37,7 @@ import { QueryState } from "../shell/QueryState";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
 import { TitleAction } from "../shell/TitleRow";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
-import { hasExpired, keyStateOf, type KeyState } from "./keyState";
+import { hasExpired, keyStateOf, parseFolders, reachOf, type KeyState } from "./keyState";
 
 // Rows keep the API's fields; the table wants records.
 type KeyRow = ApiKey & Record<string, unknown>;
@@ -57,6 +57,18 @@ const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
 
 const accessOf = (key: ApiKey): string =>
   key.access === "read-only" ? "Read only" : "Read and write";
+
+/** The access level, with the folders under it when the key is limited to some. */
+const KeyAccess = ({ apiKey }: { apiKey: ApiKey }) => (
+  <VStack gap={0.5}>
+    <Text>{accessOf(apiKey)}</Text>
+    {apiKey.paths === null ? null : (
+      <Text type="code" color="secondary" maxLines={2}>
+        {reachOf(apiKey.paths)}
+      </Text>
+    )}
+  </VStack>
+);
 
 const expiresOf = (key: ApiKey): string =>
   key.expiresAt === null ? "Never" : formatDate(key.expiresAt);
@@ -91,7 +103,12 @@ const WIDE_COLUMNS: TableColumn<KeyRow>[] = [
     width: proportional(2, { minWidth: 180 }),
     renderCell: (key) => <KeyName apiKey={key} />,
   },
-  { key: "access", header: "Access", width: pixel(136), renderCell: accessOf },
+  {
+    key: "access",
+    header: "Access",
+    width: pixel(168),
+    renderCell: (key) => <KeyAccess apiKey={key} />,
+  },
   {
     key: "createdAt",
     header: "Created",
@@ -130,6 +147,7 @@ const KeyFacts = ({ apiKey }: { apiKey: ApiKey }) => {
   return (
     <MetadataList>
       <MetadataListItem label="Access">{accessOf(apiKey)}</MetadataListItem>
+      <MetadataListItem label="Reaches">{reachOf(apiKey.paths)}</MetadataListItem>
       <MetadataListItem label="Created">{formatDate(apiKey.createdAt)}</MetadataListItem>
       <MetadataListItem label={hasExpired(apiKey, now) ? "Expired" : "Expires"}>
         {expiresOf(apiKey)}
@@ -188,7 +206,9 @@ const CreateKeyForm = ({
   const [name, setName] = useState("");
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [expiry, setExpiry] = useState<string>("90");
+  const [folders, setFolders] = useState("");
   const [problem, setProblem] = useState<string>();
+  const [foldersProblem, setFoldersProblem] = useState<string>();
 
   const submit = () => {
     const trimmed = name.trim();
@@ -200,6 +220,11 @@ const CreateKeyForm = ({
       setProblem("Use at most 64 characters.");
       return;
     }
+    const reach = parseFolders(folders);
+    if ("problem" in reach) {
+      setFoldersProblem(reach.problem);
+      return;
+    }
     if (create.isPending) {
       return;
     }
@@ -208,6 +233,7 @@ const CreateKeyForm = ({
         name: trimmed,
         access: isReadOnly ? "read-only" : "read-write",
         expiresInDays: expiry === "never" ? null : Number(expiry),
+        ...(reach.folders.length > 0 ? { paths: reach.folders } : {}),
       },
       { onSuccess: ({ key }) => onCreate(trimmed, key) },
     );
@@ -243,9 +269,23 @@ const CreateKeyForm = ({
               onChange={setExpiry}
               options={EXPIRY_OPTIONS.map((option) => ({ ...option }))}
             />
-            <Text type="supporting" color="secondary">
-              A key reaches every mount. Keys limited to one mount or folder come later.
-            </Text>
+            <TextInput
+              label="Folders"
+              value={folders}
+              onChange={(value) => {
+                setFolders(value);
+                setFoldersProblem(undefined);
+              }}
+              onEnter={submit}
+              placeholder="/files/photos"
+              hasSpellCheck={false}
+              description="Optional. Limit the key to these folders, separated by commas; empty reaches every mount."
+              status={
+                foldersProblem === undefined
+                  ? undefined
+                  : { type: "error", message: foldersProblem }
+              }
+            />
           </VStack>
         </LayoutContent>
       }

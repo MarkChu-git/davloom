@@ -3734,3 +3734,1331 @@ def L.remove_decides_in_order(root, target):
           {==}
         case T.Folder{}:
           {==}
+
+def L.scope_outside_denied(a, m, dest):
+  match a:
+    case P.ReadOnly{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+    case P.ReadWrite{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+
+def L.scope_above_only_browses(a, m, dest):
+  match a:
+    case P.ReadOnly{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+    case P.ReadWrite{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+
+def L.scope_inside_as_unscoped(a, m, dest):
+  match a:
+    case P.ReadOnly{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+    case P.ReadWrite{}:
+      match m:
+        case P.MOptions{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MGet{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MHead{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPropfind{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MPut{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMkcol{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MDelete{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MProppatch{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MCopy{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MMove{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MLock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MUnlock{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+        case P.MOther{}:
+          match dest:
+            case P.Inside{}:
+              {==}
+            case P.Above{}:
+              {==}
+            case P.Outside{}:
+              {==}
+
+def L.scope_destination_inside(a, m, target, dest):
+  match a:
+    case P.ReadOnly{}:
+      match m:
+        case P.MOptions{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MGet{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MHead{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MPropfind{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MPut{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MMkcol{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MDelete{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MProppatch{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MCopy{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MMove{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MLock{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MUnlock{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MOther{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+    case P.ReadWrite{}:
+      match m:
+        case P.MOptions{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MGet{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MHead{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MPropfind{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MPut{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MMkcol{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MDelete{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MProppatch{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MCopy{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MMove{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MLock{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MUnlock{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+        case P.MOther{}:
+          match target:
+            case P.Inside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Above{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}
+            case P.Outside{}:
+              match dest:
+                case P.Inside{}:
+                  {==}
+                case P.Above{}:
+                  {==}
+                case P.Outside{}:
+                  {==}

@@ -4,6 +4,7 @@ import { createAdmin, type Auth } from "./auth";
 
 export interface KeyMetadata {
   readonly access: "read-only" | "read-write";
+  readonly paths?: readonly string[];
 }
 
 export const createIdentity = (auth: Auth) => ({

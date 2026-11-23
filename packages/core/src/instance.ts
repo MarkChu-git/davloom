@@ -3,6 +3,7 @@ import { checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
 import { isValidName, isValidPath, type Access } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
+import { formatRoot, parseScope, type Scope } from "./scope";
 import type { Path, StorageBackend, Usage } from "./storage";
 
 // The application services of one Davloom instance: first-run setup, API Keys, storage backends and
@@ -127,6 +128,8 @@ export class Unauthorized extends Data.TaggedError("Unauthorized")<{}> {}
 
 export interface KeyMetadata {
   readonly access: Access;
+  /** The roots the key is limited to, as `/mount/folder`; absent for every Mount. */
+  readonly paths?: readonly string[];
 }
 
 const promise = <A>(run: () => Promise<A>) => Effect.promise(run);
@@ -253,6 +256,8 @@ export interface KeyView {
   readonly name: string;
   readonly start: string | null;
   readonly access: Access;
+  /** The roots the key is limited to; null for every Mount. */
+  readonly paths: readonly string[] | null;
   readonly enabled: boolean;
   readonly expiresAt: string | null;
   readonly createdAt: string;
@@ -266,11 +271,30 @@ const accessOf = (metadata: unknown): Access =>
     ? "read-write"
     : "read-only";
 
+/** The roots a key's metadata names; null for every Mount, and for metadata that names none. */
+const scopeOf = (metadata: unknown): Scope =>
+  typeof metadata === "object" && metadata !== null && "paths" in metadata
+    ? parseScope(metadata.paths)
+    : null;
+
+/**
+ * Whether stored metadata asks for a scope it cannot express: a key whose `paths` do not parse
+ * must reach nothing rather than everything.
+ */
+const brokenScope = (metadata: unknown): boolean =>
+  typeof metadata === "object" &&
+  metadata !== null &&
+  "paths" in metadata &&
+  metadata.paths !== undefined &&
+  metadata.paths !== null &&
+  parseScope(metadata.paths) === null;
+
 const keyView = (key: ApiKeyRecord): KeyView => ({
   id: key.id,
   name: key.name ?? "",
   start: key.start,
   access: accessOf(key.metadata),
+  paths: scopeOf(key.metadata)?.map(formatRoot) ?? null,
   enabled: key.enabled,
   expiresAt: key.expiresAt?.toISOString() ?? null,
   createdAt: key.createdAt.toISOString(),
@@ -285,7 +309,7 @@ const MAX_KEY_DAYS = 3650;
 
 export const createKey = (
   userId: string,
-  input: { name: string; access: string; expiresInDays: number | null },
+  input: { name: string; access: string; expiresInDays: number | null; paths?: unknown },
 ) =>
   Effect.gen(function* () {
     const identity = yield* Identity;
@@ -299,12 +323,18 @@ export const createKey = (
     if (days !== null && (!Number.isInteger(days) || days < 1 || days > MAX_KEY_DAYS)) {
       return yield* Effect.fail(new InvalidInput({ field: "expiresInDays" }));
     }
+    const scope =
+      input.paths === undefined || input.paths === null ? null : parseScope(input.paths);
+    if (input.paths !== undefined && input.paths !== null && scope === null) {
+      return yield* Effect.fail(new InvalidInput({ field: "paths" }));
+    }
+    const access: Access = input.access === "read-write" ? "read-write" : "read-only";
     const created = yield* promise(() =>
       identity.createApiKey({
         userId,
         name,
         expiresIn: days === null ? null : days * 86_400,
-        metadata: { access: input.access === "read-write" ? "read-write" : "read-only" },
+        metadata: scope === null ? { access } : { access, paths: scope.map(formatRoot) },
       }),
     );
     return { id: created.id, key: created.key };
@@ -494,6 +524,8 @@ export const hashApiKey = async (key: string): Promise<string> => {
 export interface Credential {
   readonly keyId: string;
   readonly access: Access;
+  /** The roots the key is limited to; null for every Mount. */
+  readonly scope: Scope;
 }
 
 /** Checks an API Key sent as the password of Basic Auth; null when it is unknown, off or expired. */
@@ -509,5 +541,10 @@ export const verifyApiKey = (key: string, now: number) =>
       (record.expiresAt !== null && record.expiresAt.getTime() <= now)
     )
       return null;
-    return { keyId: record.id, access: accessOf(record.metadata) } satisfies Credential;
+    if (brokenScope(record.metadata)) return null;
+    return {
+      keyId: record.id,
+      access: accessOf(record.metadata),
+      scope: scopeOf(record.metadata),
+    } satisfies Credential;
   });

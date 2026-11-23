@@ -14,6 +14,9 @@ import {
   revokeKey,
   setupStatus,
   verifyApiKey,
+  relationOf,
+  scopeStorage,
+  type StorageBackend,
   instanceUsage,
   type Credential,
   type ErrorResponses,
@@ -23,9 +26,9 @@ import {
   type InstanceConfig,
   type CredentialCipher,
 } from "@davloom/core";
-import { authorize } from "@davloom/laws";
+import { authorizeScoped } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
-import { Cause, Effect, type Layer } from "effect";
+import { Cause, Effect, type Exit, type Layer } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
 
@@ -115,7 +118,13 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
     return built;
   };
   const credentials = new Map<string, { credential: Credential | null; until: number }>();
-  let namespace: { handlerFor: Map<string, WebDavHandler>; until: number } | undefined;
+  let namespace:
+    | {
+        handlerFor: Map<string, WebDavHandler>;
+        storage?: Exit.Exit<StorageBackend, unknown>;
+        until: number;
+      }
+    | undefined;
 
   const api =
     (
@@ -167,7 +176,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
         Effect.provide(requireUser(request.headers), current.instance.layer),
       );
       return exit._tag === "Success"
-        ? { keyId: `session:${exit.value.id}`, access: "read-write" }
+        ? { keyId: `session:${exit.value.id}`, access: "read-write", scope: null }
         : null;
     }
     return null;
@@ -188,25 +197,29 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
     const now = Date.now();
     if (!namespace || namespace.until <= now)
       namespace = { handlerFor: new Map(), until: now + NAMESPACE_TTL_MS };
-    let handler = namespace.handlerFor.get(credential.access);
+    // One handler per access level and scope; the namespace itself is read once for all of them.
+    const cacheKey = JSON.stringify([credential.access, credential.scope]);
+    let handler = namespace.handlerFor.get(cacheKey);
     if (!handler) {
-      const exit = await Effect.runPromiseExit(
+      namespace.storage ??= await Effect.runPromiseExit(
         Effect.provide(openNamespace, current.instance.layer),
       );
-      if (exit._tag !== "Success") return new Response(null, { status: 503 });
+      const opened = namespace.storage;
+      if (opened._tag !== "Success") return new Response(null, { status: 503 });
+      const { access, scope } = credential;
       handler = createWebDavHandler({
         basePath: "/dav",
-        storage: exit.value,
+        storage: scopeStorage(opened.value, scope),
         locks: current.instance.locks,
-        authorize: ({ method }) =>
-          authorize({
-            access: credential.access,
+        authorize: ({ method, target, destination }) =>
+          authorizeScoped({
+            access,
             method,
-            targetInScope: true,
-            destinationInScope: true,
+            target: relationOf(target, scope),
+            destination: destination === null ? "outside" : relationOf(destination, scope),
           }),
       });
-      namespace.handlerFor.set(credential.access, handler);
+      namespace.handlerFor.set(cacheKey, handler);
     }
     return await handler(request);
   };
@@ -277,6 +290,7 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
                   name: text(body.name),
                   access: text(body.access),
                   expiresInDays: typeof body.expiresInDays === "number" ? body.expiresInDays : null,
+                  paths: body.paths,
                 }),
             ),
           201,

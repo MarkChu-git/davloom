@@ -1,5 +1,6 @@
 import type { Ctor } from "../bend";
 
+export type BendRelation = Ctor<"Inside"> | Ctor<"Above"> | Ctor<"Outside">;
 export type BendAccess = Ctor<"ReadOnly"> | Ctor<"ReadWrite">;
 export type BendMethod = Ctor<
   | "MOptions"
@@ -23,6 +24,12 @@ declare const module: {
     method: BendMethod,
     targetInScope: boolean,
     destinationInScope: boolean,
+  ): boolean;
+  authorize_scoped(
+    access: BendAccess,
+    method: BendMethod,
+    target: BendRelation,
+    destination: BendRelation,
   ): boolean;
 };
 export default module;

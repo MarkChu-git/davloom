@@ -55,13 +55,29 @@ test("A key without a name: the form stays open and asks for a name only after t
   await expect(dialog).toBeVisible();
 });
 
-test("No scope on offer: the form names no mount or folder, and says a key reaches every mount", async ({
+test("A key limited to folders: the list shows its access with the folders it reaches", async ({
   page,
 }) => {
+  const name = unique("Photo frame");
   const dialog = await openForm(page);
-  await expect(dialog.getByRole("combobox", { name: "Mount" })).toHaveCount(0);
-  await expect(dialog.getByLabel("Folder inside the mount")).toHaveCount(0);
-  await shown(dialog.getByText("A key reaches every mount."));
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("switch", { name: "Read only" }).click();
+  await dialog.getByLabel("Folders").fill("files/photos, /files/albums/");
+  await dialog.getByRole("button", { name: "Create key" }).click();
+  await shown(page.getByRole("heading", { name: `Key “${name}” is ready` }));
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(columnOf(rowOf(page, name), "Access")).toHaveText(
+    "Read only/files/photos, /files/albums",
+  );
+});
+
+test("Folders that name no folder: the form stays open and says why", async ({ page }) => {
+  const dialog = await openForm(page);
+  await dialog.getByLabel("Name").fill(unique("Bad scope"));
+  await dialog.getByLabel("Folders").fill("/");
+  await dialog.getByRole("button", { name: "Create key" }).click();
+  await shown(onScreen(page, "Name a mount or a folder inside one, such as /files/photos."));
+  await expect(dialog).toBeVisible();
 });
 
 test("Creating a key: the dialog shows the whole key once, with how to connect, and after Done the list holds only its first characters", async ({

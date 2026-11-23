@@ -394,6 +394,7 @@ describe("listKeys", () => {
         name: "Laptop",
         start: "dav_abcdef",
         access: "read-write",
+        paths: null,
         enabled: true,
         expiresAt: "2027-05-06T07:08:09.000Z",
         createdAt: "2026-01-02T03:04:05.000Z",
@@ -403,6 +404,7 @@ describe("listKeys", () => {
         name: "",
         start: null,
         access: "read-only",
+        paths: null,
         enabled: false,
         expiresAt: null,
         createdAt: "2026-01-02T03:04:05.000Z",
@@ -817,6 +819,77 @@ describe("hashApiKey", () => {
   });
 });
 
+describe("key scopes", () => {
+  it("creates a key limited to its roots, written as the API shows them", async () => {
+    const { run, calls } = makeWorld();
+    valueOf(
+      await run(
+        createKey("user-1", {
+          name: "k",
+          access: "read-only",
+          expiresInDays: null,
+          paths: ["files//photos/", "/docs"],
+        }),
+      ),
+    );
+    expect(calls.apiKeys[0]?.metadata).toEqual({
+      access: "read-only",
+      paths: ["/files/photos", "/docs"],
+    });
+  });
+
+  it.each([[[]], [["/"]], [["/a/.."]], ["/files"], [[1]]])(
+    "refuses the scope %j",
+    async (paths) => {
+      const { run, calls } = makeWorld();
+      const exit = await run(
+        createKey("user-1", { name: "k", access: "read-only", expiresInDays: null, paths }),
+      );
+      expect(errorOf(exit)).toMatchObject({ _tag: "InvalidInput", field: "paths" });
+      expect(calls.apiKeys).toEqual([]);
+    },
+  );
+
+  it.each([[undefined], [null]])(
+    "a key without a scope (%j) reaches every Mount",
+    async (paths) => {
+      const { run, calls } = makeWorld();
+      valueOf(
+        await run(
+          createKey("user-1", { name: "k", access: "read-only", expiresInDays: null, paths }),
+        ),
+      );
+      expect(calls.apiKeys[0]?.metadata).toEqual({ access: "read-only" });
+    },
+  );
+
+  it("lists a key's roots", async () => {
+    const { run } = makeWorld({
+      keys: [apiKey({ metadata: { access: "read-only", paths: ["/files/a"] } })],
+    });
+    expect(valueOf(await run(listKeys))[0]?.paths).toEqual(["/files/a"]);
+  });
+
+  it.each([
+    [
+      { access: "read-write", paths: ["/files/a"] },
+      { keyId: "key-1", access: "read-write", scope: [["files", "a"]] },
+    ],
+    [
+      { access: "read-write", paths: null },
+      { keyId: "key-1", access: "read-write", scope: null },
+    ],
+    [{ access: "read-write", paths: ["/"] }, null],
+    [{ access: "read-write", paths: "files" }, null],
+  ])("verifies a key with metadata %j as %j", async (metadata, expected) => {
+    const KEY = "dav_scope_test_key_0123"; // gitleaks:allow (a made-up test key)
+    const { run } = makeWorld({ keysByHash: { [await hashApiKey(KEY)]: apiKey({ metadata }) } });
+    expect(valueOf(await run(verifyApiKey(KEY, Date.parse("2026-06-01T00:00:00Z"))))).toEqual(
+      expected,
+    );
+  });
+});
+
 describe("verifyApiKey", () => {
   const KEY = "dav_0123456789abcdef"; // gitleaks:allow (a made-up test key)
   const NOW = Date.parse("2026-06-01T00:00:00.000Z");
@@ -846,17 +919,17 @@ describe("verifyApiKey", () => {
   });
 
   it.each([
-    ["read-write metadata", {}, { keyId: "key-1", access: "read-write" }],
+    ["read-write metadata", {}, { keyId: "key-1", access: "read-write", scope: null }],
     [
       "read-only metadata",
       { metadata: { access: "read-only" } },
-      { keyId: "key-1", access: "read-only" },
+      { keyId: "key-1", access: "read-only", scope: null },
     ],
-    ["no metadata", { metadata: null }, { keyId: "key-1", access: "read-only" }],
+    ["no metadata", { metadata: null }, { keyId: "key-1", access: "read-only", scope: null }],
     [
       "an expiry after now",
       { expiresAt: new Date(NOW + 1) },
-      { keyId: "key-1", access: "read-write" },
+      { keyId: "key-1", access: "read-write", scope: null },
     ],
     ["an expiry at now", { expiresAt: new Date(NOW) }, null],
     ["an expiry before now", { expiresAt: new Date(NOW - 1) }, null],

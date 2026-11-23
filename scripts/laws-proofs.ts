@@ -29,6 +29,7 @@ const FINITE: Record<string, string[]> = {
     "P.MOther{}",
   ],
   "C.Check": ["C.Unset{}", "C.Holds{}", "C.Fails{}"],
+  "P.Relation": ["P.Inside{}", "P.Above{}", "P.Outside{}"],
 };
 
 const laws = await Bun.file(join(lawsDir, "LAWS.bend")).text();
