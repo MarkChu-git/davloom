@@ -1,22 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
-import {
-  cardWith,
-  installClock,
-  listed,
-  onScreen,
-  shown,
-  sideNavigation,
-  stopTimers,
-} from "./helpers";
+import { cardWith, filesAt, listed, onScreen, shown, withUnavailableBackend } from "./helpers";
+import { createMount, dav, scratchFolder, unique } from "./instances";
 
-// The Storage & Mounts scenarios about the backends, checking one, adding, editing and removing a
-// mount. The ones about the backend cards on one grid and about opening the form again have their
-// tests in dashboard.spec.ts. The Overview's scenario of the same name as "The sample backends"
-// has its test in overview.spec.ts.
+// The Storage & Mounts scenarios about the backends, adding, renaming and removing a mount, on the
+// Worker's real API. Mounts and backends are shared by every test, so each test names its own
+// uniquely. The ones about the backend cards on one grid and about opening the form again have
+// their tests in dashboard.spec.ts.
 
 /** The card of a backend, found by its name. */
 const backendCard = (page: Page, name: string) =>
   cardWith(page, page.getByRole("heading", { level: 3, name, exact: true }));
+
+/** The row of a mount, found by its path. */
+const mountRow = (page: Page, path: string) =>
+  page.getByRole("row").filter({
+    has: page.getByRole("button", { name: `Actions for mount ${path}`, exact: true }),
+  });
 
 /** Opens the form that adds a mount. */
 const openAddForm = async (page: Page) => {
@@ -25,77 +24,98 @@ const openAddForm = async (page: Page) => {
   return page.getByRole("dialog");
 };
 
-/** Opens a mount's form from the menu of its row. */
-const openEditForm = async (page: Page, path: string) => {
-  await page.getByRole("button", { name: `Actions for mount ${path}` }).click();
-  await page.getByRole("menuitem", { name: "Edit" }).click();
-  return page.getByRole("dialog");
-};
-
-test("The sample backends: Durable Objects shows 1.9 GB of 5 GB with a bar, R2 photos shows 41.2 GB with no fixed limit, and RustFS archive is marked Unreachable", async ({
+test("The default backend: its card names Durable Objects, says it is available, and counts what it holds", async ({
   page,
 }) => {
   await page.goto("/storage");
-  const durable = backendCard(page, "Durable Objects");
-  const photos = backendCard(page, "R2 photos");
-  const archive = backendCard(page, "RustFS archive");
-  await shown(durable);
-
-  await expect(durable).toContainText("1.9 GB of 5 GB");
-  const bar = durable.getByRole("progressbar", { name: "Durable Objects capacity used" });
-  await expect(bar).toBeVisible();
-  await expect(bar).toHaveAttribute("aria-valuenow", "1860000000");
-  await expect(bar).toHaveAttribute("aria-valuemax", "5000000000");
-
-  await expect(photos).toContainText("41.2 GB, no fixed limit");
-  await expect(photos.getByRole("progressbar")).toHaveCount(0);
-
-  await expect(archive).toContainText("Unreachable");
-  await expect(durable).not.toContainText("Unreachable");
-  await expect(photos).not.toContainText("Unreachable");
+  const card = backendCard(page, "Default");
+  await shown(card);
+  await expect(card).toContainText("Cloudflare Durable Objects");
+  await expect(card).toContainText("Available");
+  await expect(card).toContainText(/Stored\s*[\d.]+ (bytes|kB|MB)/);
+  await expect(card).toContainText(/Files\s*\d+/);
+  await expect(card).toContainText(/Folders\s*\d+/);
+  // No capacity is known, so no bar pretends to show one.
+  await expect(card.getByRole("progressbar")).toHaveCount(0);
+  // Connections are checked when the list is read, so there is no button for it.
+  await expect(card.getByRole("button", { name: "Verify connection" })).toHaveCount(0);
 });
 
-test("A backend that still does not answer: the button shows the check running, then the card and an assertive announcement say RustFS archive is still unreachable", async ({
+test("A backend that does not answer: its card says Unavailable, its counts are unknown, and the navigation names it on every page", async ({
   page,
 }) => {
-  await installClock(page);
-  await stopTimers(page);
+  await withUnavailableBackend(page);
   await page.goto("/storage");
-  const card = backendCard(page, "RustFS archive");
-  const verify = card.getByRole("button", { name: "Verify connection" });
-  await shown(verify);
-
-  await verify.click();
-  await expect(verify).toHaveAttribute("aria-busy", "true");
-
-  // The check ends after a short pause, as it would while the backend is asked.
-  await page.clock.runFor(1000);
-  await expect(verify).not.toHaveAttribute("aria-busy", "true");
-  await expect(card).toContainText("Still unreachable, no answer within 30 s");
-  // An unreachable backend is announced at once, not politely.
-  await expect(page.locator('[data-astryx-live-region="assertive"]')).toHaveText(
-    "RustFS archive is still unreachable: no answer within 30 s.",
-  );
+  const card = backendCard(page, "Default");
+  await expect(card).toContainText("Unavailable");
+  await expect(card).toContainText(/Stored\s*Unknown/);
+  await expect(
+    page.getByRole("navigation", { name: "Side navigation" }).getByRole("link", {
+      name: /^Storage & Mounts\b.*unavailable/,
+    }),
+  ).toBeVisible();
 });
 
-test("A folder name already in use: adding a mount named documents keeps the form open and says another mount already uses this folder", async ({
+test("Adding a backend: a Durable Objects backend with its own name joins the list, empty", async ({
+  page,
+}) => {
+  const name = unique("Archive");
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Add backend" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Cloudflare Durable Objects");
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("button", { name: "Add backend" }).click();
+
+  await shown(onScreen(page, `Added backend “${name}”.`));
+  const card = backendCard(page, name);
+  await expect(card).toContainText(/Files\s*0/);
+  await expect(card).toContainText(/Mounts\s*0/);
+});
+
+test("Adding a mount: the new mount shows a folder of the backend, and Files lists what that folder holds", async ({
+  page,
+}) => {
+  const folder = await scratchFolder(page.request, { withSample: false });
+  await dav(page.request, "PUT", `${folder}/inside.txt`, { body: "inside" });
+  const root = folder.split("/").at(-1) ?? "";
+  const name = unique("projects");
+  const dialog = await openAddForm(page);
+  await dialog.getByLabel("Folder name").fill(` /${name}/ `);
+  // The default backend's folder holds what the Mount "files" shows, which is its whole backend.
+  await dialog.getByLabel("Folder in the backend").fill(root);
+  await dialog.getByRole("button", { name: "Add mount" }).click();
+
+  await shown(onScreen(page, `Added /${name}.`));
+  await expect(mountRow(page, `/${name}`)).toContainText("Default");
+  await expect(mountRow(page, `/${name}`)).toContainText(`/${root}`);
+  await page.goto(filesAt(`/${name}`));
+  await expect.poll(() => listed(page)).toEqual(["inside.txt"]);
+});
+
+test("A folder the backend does not have: adding the mount is refused at the folder field", async ({
   page,
 }) => {
   const dialog = await openAddForm(page);
-  await dialog.getByLabel("Folder name").fill("documents");
+  await dialog.getByLabel("Folder name").fill(unique("nowhere"));
+  await dialog.getByLabel("Folder in the backend").fill(unique("missing"));
+  await dialog.getByRole("button", { name: "Add mount" }).click();
+  await shown(onScreen(page, "No folder of this name is in the backend."));
+  await expect(dialog).toBeVisible();
+});
+
+test("A folder name already in use: adding a mount named files keeps the form open and says another mount already uses this folder", async ({
+  page,
+}) => {
+  const dialog = await openAddForm(page);
+  await dialog.getByLabel("Folder name").fill("files");
   await dialog.getByRole("button", { name: "Add mount" }).click();
 
   await shown(onScreen(page, "Another mount already uses this folder."));
   await expect(dialog).toBeVisible();
-  // Nothing was added or replaced: the header row and the four mounts, and /documents as it was.
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("row")).toHaveCount(5);
-  await expect(
-    page.getByRole("row").filter({
-      has: page.getByRole("button", { name: "Actions for mount /documents" }),
-    }),
-  ).toContainText("default/documents/");
+  await expect(mountRow(page, "/files")).toHaveCount(1);
 });
 
 test("A dot segment: adding a mount named .. keeps the form open and asks for another folder name", async ({
@@ -107,57 +127,56 @@ test("A dot segment: adding a mount named .. keeps the form open and asks for an
 
   await shown(onScreen(page, "Choose another folder name."));
   await expect(dialog).toBeVisible();
-  // Nothing was added: the header row and the four mounts.
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(dialog).toHaveCount(0);
-  await expect(page.getByRole("row")).toHaveCount(5);
 });
 
-test("Editing a mount: the form for /photos shows R2 photos and davloom-photos, the one for /archive shows its prefix, and the folder name cannot change", async ({
+test("Renaming a mount: the form keeps its backend and folder, and the new name reaches Files and WebDAV", async ({
   page,
 }) => {
+  const before = unique("old");
+  const after = unique("new");
+  await createMount(page.request, before);
   await page.goto("/storage");
-  const dialog = await openEditForm(page, "/photos");
-  await shown(dialog.getByRole("heading", { name: "Edit /photos" }));
-  const folder = dialog.getByLabel("Folder name");
-  await expect(folder).toHaveValue("photos");
-  await expect(folder).toBeDisabled();
-  // Typing does nothing, which the attributes alone do not prove.
-  await folder.focus();
-  await page.keyboard.type("x");
-  await expect(folder).toHaveValue("photos");
-  await expect(dialog.getByRole("combobox", { name: /^Backend/ })).toContainText("R2 photos");
-  await expect(dialog.getByLabel("Bucket")).toHaveValue("davloom-photos");
-  await expect(dialog.getByLabel("Prefix")).toHaveValue("");
-  await dialog.getByRole("button", { name: "Cancel" }).click();
-  await expect(dialog).toHaveCount(0);
+  await page.getByRole("button", { name: `Actions for mount /${before}` }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const dialog = page.getByRole("dialog");
+  await shown(dialog.getByRole("heading", { name: `Rename /${before}` }));
+  await expect(dialog).toContainText(/Backend\s*Default/);
+  await expect(dialog).toContainText(/Folder\s*Whole backend/);
+  await dialog.getByLabel("Folder name").fill(after);
+  await dialog.getByRole("button", { name: "Rename" }).click();
 
-  // /photos has no prefix, so a mount that has one shows what the form does with it.
-  const archive = await openEditForm(page, "/archive");
-  await shown(archive.getByRole("heading", { name: "Edit /archive" }));
-  await expect(archive.getByRole("combobox", { name: /^Backend/ })).toContainText("RustFS archive");
-  await expect(archive.getByLabel("Bucket")).toHaveValue("davloom-archive");
-  await expect(archive.getByLabel("Prefix")).toHaveValue("backups/");
+  await shown(onScreen(page, `Renamed to /${after}.`));
+  await expect(mountRow(page, `/${after}`)).toHaveCount(1);
+  await expect(mountRow(page, `/${before}`)).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      (
+        await page.request.fetch(`/dav/${after}/`, {
+          method: "PROPFIND",
+          headers: { depth: "0", "x-davloom-dashboard": "1" },
+        })
+      ).status(),
+    )
+    .toBe(207);
 });
 
-test("Removing a mount keeps its files: the confirmation says the files stay in the bucket, and /shared leaves the mount list and the top level of Files", async ({
+test("Removing a mount keeps its files: the confirmation says the files stay in the backend, and the mount leaves the list and the top level of Files", async ({
   page,
 }) => {
+  const name = unique("shared");
+  await createMount(page.request, name);
   await page.goto("/storage");
-  await page.getByRole("button", { name: "Actions for mount /shared" }).click();
+  await page.getByRole("button", { name: `Actions for mount /${name}` }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
 
   const confirmation = page.getByRole("alertdialog");
-  await expect(confirmation).toContainText("Remove /shared?");
-  await expect(confirmation).toContainText("Its files stay in the bucket.");
+  await expect(confirmation).toContainText(`Remove /${name}?`);
+  await expect(confirmation).toContainText("Its files stay in the backend");
   await confirmation.getByRole("button", { name: "Remove mount" }).click();
 
   await expect(confirmation).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Actions for mount /shared" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /^Actions for mount \// })).toHaveCount(3);
-  // Files is reached from inside the page, since a reload would bring the samples back.
-  await sideNavigation(page).getByRole("link", { name: "Files" }).click();
-  await expect
-    .poll(async () => (await listed(page)).toSorted())
-    .toEqual(["archive", "documents", "photos"]);
+  await expect(page.getByRole("button", { name: `Actions for mount /${name}` })).toHaveCount(0);
+  await page.goto("/files");
+  await shown(page.getByRole("row").getByRole("link", { name: "files", exact: true }));
+  expect(await listed(page)).not.toContain(name);
 });

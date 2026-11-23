@@ -1,10 +1,21 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
+  api,
+  createKey,
+  createMount,
+  LONG_LOG_NAME,
+  SAMPLE_NAMES,
+  scratchFolder,
+  unique,
+  WORKERS_ORIGIN,
+} from "./instances";
+import {
   PREVIEW,
+  filesAt,
+  withUnavailableBackend,
   blockClipboard,
   boxOf,
   cardWith,
-  installClock,
   levelOne,
   onScreen,
   openList,
@@ -13,10 +24,11 @@ import {
   shown,
   sideNavigation,
   sidewaysOverflow,
-  stopTimers,
 } from "./helpers";
 
-// The Dashboard prototype: its pages, how they are reached, and the colors they render.
+// The Dashboard: its pages, how they are reached, the colors they render, and how they lay out,
+// against the Worker's real API. Tests that change data change their own: a folder, a key or a
+// mount named for the test alone (instances.ts).
 const PAGES = [
   { path: "/", name: "Overview" },
   { path: "/files", name: "Files" },
@@ -25,97 +37,67 @@ const PAGES = [
   { path: "/settings", name: "Settings" },
 ] as const;
 
-/** The Overview's card of recent operation errors. */
-const errorsPanel = (page: Page) =>
-  page
-    .getByRole("main")
-    .locator(".astryx-card")
-    .filter({ has: page.getByRole("heading", { name: "Recent operation errors" }) });
-
-/** The timeline view of the recent operation errors. */
-const errorTimeline = (page: Page) =>
-  page.getByRole("img", { name: "Operation errors, last 24 hours" });
-
-/** The timeline's markers, 20 px in radius; the ring around a marker in focus is larger. */
-const errorMarkers = (page: Page) => errorTimeline(page).locator('circle[r="20"]');
-
-/** The center and radius of each marker on the timeline, in the order of the sample errors. */
-const markerCenters = async (page: Page) =>
-  Promise.all(
-    (await errorMarkers(page).all()).map(async (marker) => {
-      const { x, y, width } = await marker.evaluate((node) =>
-        node.getBoundingClientRect().toJSON(),
-      );
-      return { x: x + width / 2, y: y + width / 2, radius: width / 2 };
-    }),
-  );
-
-/**
- * The markers' centers once the timeline has drawn again for a new width, read when they stay
- * where they are from one frame to the next.
- */
-const settledMarkerCenters = async (page: Page) => {
-  let centers = await markerCenters(page);
-  await expect
-    .poll(async () => {
-      const before = JSON.stringify(centers);
-      await nextFrame(page);
-      centers = await markerCenters(page);
-      return JSON.stringify(centers) === before;
-    })
-    .toBe(true);
-  return centers;
-};
-
 interface PageState {
   name: string;
-  path: string;
+  /** The page's address, or a function that prepares what the page shows and returns it. */
+  path: string | ((page: Page) => Promise<string>);
   /** A window width other than the default 1280 px. */
   width?: number;
-  /** Runs before the page opens, for example to stop its timers so a passing state stays. */
+  /** Runs before the page opens, for example to hold back an answer so a passing state stays. */
   before?: (page: Page) => Promise<void>;
   show: (page: Page) => Promise<void>;
   /** Checks, after the scan, that the page still shows the passing state the scan read. */
   still?: (page: Page) => Promise<void>;
 }
 
+/** A folder of the test's own with the sample in it, opened on Files. */
+const sampleFolder = async (page: Page): Promise<string> =>
+  filesAt(await scratchFolder(page.request));
+
+/** A key of the test's own on Credentials, so the list has a row whatever the other tests do. */
+const withKey = async (page: Page): Promise<string> => {
+  await createKey(page.request, unique("Scan key"));
+  return "/credentials";
+};
+
+/** A mount of the test's own on Storage & Mounts. */
+const withMount =
+  (name: string) =>
+  async (page: Page): Promise<string> => {
+    // The light and the dark scans share the mount, so the second finds it made.
+    await createMount(page.request, name).catch(() => undefined);
+    return "/storage";
+  };
+
+/** Holds every WebDAV listing back, so a folder stays loading. */
+const holdListings = async (page: Page) => {
+  await page.route("**/dav/**", (route) =>
+    route.request().method() === "PROPFIND" ? new Promise(() => undefined) : route.continue(),
+  );
+};
+
+/** Holds uploads back, so an upload stays in progress. */
+const holdUploads = async (page: Page) => {
+  await page.route("**/dav/**", (route) =>
+    route.request().method() === "PUT" ? new Promise(() => undefined) : route.continue(),
+  );
+};
+
+const SCAN_MOUNT = unique("scan");
+
 /**
  * The page states the scan covers: each page and Settings section, the dialogs, menus, option
  * lists and confirmations the pages open, the details dialog and the navigation menu of narrower
  * windows, and what components show only on focus, on hover, while they work or when they fail:
  * keyboard focus, a tooltip, notifications, warnings, field errors, a checked switch, empty
- * states, a loading listing, a busy button, upload progress and finished uploads, and row
- * selection.
+ * states, a loading listing, a failed listing, upload progress and finished uploads, row
+ * selection, and a backend that does not answer.
  */
 const STATES: readonly PageState[] = [
-  { name: "Overview", path: "/", show: (page) => shown(page.getByText("Recent operation errors")) },
   {
-    name: "Overview with a toast",
+    name: "Overview",
     path: "/",
-    show: async (page) => {
-      await page.getByRole("button", { name: "Check connections" }).click();
-      await shown(onScreen(page, /still unreachable/));
-    },
-  },
-  {
-    name: "Overview with a busy button",
-    path: "/",
-    before: async (page) => {
-      await installClock(page);
-      await stopTimers(page);
-    },
-    show: async (page) => {
-      await page.getByRole("button", { name: "Check connections" }).click();
-      await expect(page.getByRole("button", { name: "Check connections" })).toHaveAttribute(
-        "aria-busy",
-        "true",
-      );
-    },
-    still: (page) =>
-      expect(page.getByRole("button", { name: "Check connections" })).toHaveAttribute(
-        "aria-busy",
-        "true",
-      ),
+    show: (page) => shown(page.getByRole("img", { name: "Bytes stored on each backend" })),
   },
   {
     name: "Overview with copying blocked",
@@ -130,7 +112,7 @@ const STATES: readonly PageState[] = [
     name: "Overview with keyboard focus",
     path: "/",
     show: async (page) => {
-      await shown(page.getByText("Recent operation errors"));
+      await shown(page.getByRole("heading", { name: "Connections" }));
       await page.keyboard.press("Tab");
       await expect(page.locator(":focus-visible")).toHaveCount(1);
     },
@@ -139,81 +121,45 @@ const STATES: readonly PageState[] = [
     name: "Overview with a chart's tooltip",
     path: "/",
     show: async (page) => {
-      await page.getByRole("img", { name: "Operations per hour, last 24 hours" }).hover();
-      await shown(page.getByRole("status", { name: /Operations: \d/ }));
+      await page.getByRole("img", { name: "Bytes stored on each backend" }).hover();
+      await shown(page.getByRole("status", { name: /Stored/ }));
     },
-    still: (page) => shown(page.getByRole("status", { name: /Operations: \d/ })),
+    still: (page) => shown(page.getByRole("status", { name: /Stored/ })),
   },
   {
-    name: "Overview with a chart in keyboard focus",
+    name: "Overview with a backend that does not answer",
     path: "/",
-    show: async (page) => {
-      const chart = page.getByRole("img", { name: "Operations per hour, last 24 hours" });
-      await shown(chart);
-      // Tabs through the page, as a keyboard user reaches the chart.
-      for (let step = 0; step < 30; step += 1) {
-        if (await chart.evaluate((node) => node === document.activeElement)) {
-          break;
-        }
-        await page.keyboard.press("Tab");
-      }
-      await expect(chart).toBeFocused();
-      await expect(page.locator(":focus-visible")).toHaveCount(1);
-    },
-    still: (page) =>
-      expect(page.getByRole("img", { name: "Operations per hour, last 24 hours" })).toBeFocused(),
+    before: withUnavailableBackend,
+    show: (page) => shown(page.getByText("Unavailable", { exact: true }).first()),
   },
   {
-    name: "Overview with an error open in the list, in a narrow window",
+    name: "Overview that cannot be read",
     path: "/",
-    width: 375,
-    show: async (page) => {
-      await page.getByRole("button", { name: "Details for 2026-11-16.tar.zst" }).click();
-      await shown(page.getByRole("group", { name: "Details for 2026-11-16.tar.zst" }));
+    before: async (page) => {
+      await page.route("**/api/overview", (route) => route.fulfill({ status: 500 }));
     },
+    show: (page) => shown(page.getByText("Cannot read the overview")),
   },
   {
-    name: "Overview with an error's details on the timeline",
+    name: "the folded side navigation, with a backend that does not answer",
     path: "/",
-    show: async (page) => {
-      await page.getByRole("radio", { name: "Timeline" }).click();
-      await errorMarkers(page).first().hover();
-      await shown(page.getByRole("status", { name: /^2026-11-16\.tar\.zst/ }));
-    },
-    still: (page) => shown(page.getByRole("status", { name: /^2026-11-16\.tar\.zst/ })),
-  },
-  {
-    name: "Overview with an error's tile open",
-    path: "/",
-    show: async (page) => {
-      await page.getByRole("radio", { name: "Tiles" }).click();
-      // The tile's face lies over its button and takes the click, as it takes a tap.
-      await page.getByRole("button", { name: /^Drafts, / }).click({ force: true });
-      await shown(page.getByRole("dialog", { name: "Drafts" }));
-    },
-  },
-  {
-    name: "the folded side navigation",
-    path: "/",
+    before: withUnavailableBackend,
     show: async (page) => {
       await sideNavigation(page).getByRole("button", { name: "Collapse sidebar" }).click();
       await shown(
-        sideNavigation(page).getByRole("link", { name: "Storage & Mounts, 1 backend unreachable" }),
+        sideNavigation(page).getByRole("link", { name: "Storage & Mounts, 1 backend unavailable" }),
       );
     },
   },
   {
     name: "the top level of Files",
     path: "/files",
-    show: (page) => shown(page.getByRole("link", { name: "documents", exact: true })),
+    show: (page) => shown(page.getByRole("link", { name: "files", exact: true })),
   },
   {
     name: "a folder while it loads",
-    path: "/files?path=%2Fdocuments",
-    before: async (page) => {
-      await installClock(page);
-      await stopTimers(page);
-    },
+    path: sampleFolder,
+    before: holdListings,
     show: async (page) => {
       await expect(levelOne(page)).toHaveText("Files");
       await expect(placeholderRows(page)).toHaveCount(15);
@@ -238,30 +184,32 @@ const STATES: readonly PageState[] = [
     show: (page) => shown(page.getByRole("dialog").getByRole("heading", { name: "Preview" })),
   },
   {
-    name: "a backend that does not answer, with a tooltip",
-    path: "/files?path=%2Farchive",
-    show: async (page) => {
-      await shown(onScreen(page, "Cannot list /archive"));
-      await page.getByRole("button", { name: "New folder" }).hover();
-      await shown(page.getByRole("tooltip"));
+    name: "a folder that cannot be listed",
+    path: sampleFolder,
+    before: async (page) => {
+      await page.route("**/dav/**", (route) =>
+        route.request().method() === "PROPFIND" ? route.fulfill({ status: 503 }) : route.continue(),
+      );
     },
+    show: (page) => shown(onScreen(page, /^Cannot list /)),
   },
   {
     name: "a folder that does not exist",
-    path: "/files?path=%2Fdocuments%2Fmissing",
+    path: filesAt("/files/missing-folder"),
     show: (page) => shown(page.getByRole("heading", { name: "This folder does not exist" })),
   },
   {
     name: "a search that matches nothing",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
+      await shown(page.getByRole("row").nth(1));
       await page.getByRole("searchbox", { name: "Search this folder" }).fill("zzz");
       await shown(page.getByRole("heading", { name: "Nothing here matches “zzz”" }));
     },
   },
   {
     name: "selected rows",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
       await selectFirstRow(page);
       await shown(page.getByRole("button", { name: "Move" }));
@@ -269,7 +217,7 @@ const STATES: readonly PageState[] = [
   },
   {
     name: "a row's menu",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
       await page
         .getByRole("button", { name: /^Actions for / })
@@ -280,7 +228,7 @@ const STATES: readonly PageState[] = [
   },
   {
     name: "the New folder dialog",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
       await page.getByRole("button", { name: "New folder" }).click();
       const name = page.getByRole("dialog").getByLabel("Name");
@@ -289,17 +237,18 @@ const STATES: readonly PageState[] = [
     },
   },
   {
-    name: "the Move dialog with its list open",
-    path: "/files?path=%2Fdocuments",
+    name: "the Move dialog with a refused destination",
+    path: sampleFolder,
     show: async (page) => {
       await selectFirstRow(page);
       await page.getByRole("button", { name: "Move" }).click();
-      await openList(page, "button", /^Destination/);
+      await page.getByRole("dialog").getByRole("button", { name: "Move" }).click();
+      await shown(onScreen(page, "Choose another folder than the one they are in."));
     },
   },
   {
     name: "the Delete confirmation",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
       await selectFirstRow(page);
       await page.getByRole("button", { name: "Delete" }).click();
@@ -308,12 +257,10 @@ const STATES: readonly PageState[] = [
   },
   {
     name: "an upload in progress",
-    path: "/files?path=%2Fdocuments",
-    before: installClock,
+    path: sampleFolder,
+    before: holdUploads,
     show: async (page) => {
-      // The listing arrives first, and then the timers stop, so the upload stays in progress.
       await shown(page.getByRole("row").nth(1));
-      await stopTimers(page);
       await page.getByRole("button", { name: "Upload" }).click();
       await page.locator('input[type="file"]').setInputFiles({
         name: "scan.pdf",
@@ -326,26 +273,27 @@ const STATES: readonly PageState[] = [
   },
   {
     name: "a finished upload and a refused one",
-    path: "/files?path=%2Fdocuments",
+    path: sampleFolder,
     show: async (page) => {
+      await shown(page.getByRole("row").nth(1));
       await page.getByRole("button", { name: "Upload" }).click();
       await page.locator('input[type="file"]').setInputFiles([
         { name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("Notes") },
         // A folder of this name is already here, so the upload is refused.
         { name: "Drafts", mimeType: "text/plain", buffer: Buffer.from("Drafts") },
       ]);
-      await shown(onScreen(page, "Uploaded to /documents"));
+      await shown(onScreen(page, /^Uploaded to \/files\//));
       await shown(onScreen(page, /A folder named “Drafts” is already here/));
     },
   },
   {
     name: "Credentials",
-    path: "/credentials",
-    show: (page) => shown(page.getByText("Old tablet", { exact: true })),
+    path: withKey,
+    show: (page) => shown(page.getByRole("button", { name: /^Actions for key / }).first()),
   },
   {
     name: "a key's menu",
-    path: "/credentials",
+    path: withKey,
     show: async (page) => {
       await page
         .getByRole("button", { name: /^Actions for key / })
@@ -358,7 +306,7 @@ const STATES: readonly PageState[] = [
     name: "the Create key form with a field error and a checked switch",
     path: "/credentials",
     show: async (page) => {
-      await page.getByRole("button", { name: "Create key" }).click();
+      await page.getByRole("button", { name: "Create key" }).first().click();
       await page.getByRole("dialog").getByRole("switch", { name: "Read only" }).check();
       await page.getByRole("dialog").getByRole("button", { name: "Create key" }).click();
       await shown(onScreen(page, "Name the key after the device or person that will use it."));
@@ -368,31 +316,23 @@ const STATES: readonly PageState[] = [
     name: "a new key, shown once",
     path: "/credentials",
     show: async (page) => {
-      await page.getByRole("button", { name: "Create key" }).click();
+      await page.getByRole("button", { name: "Create key" }).first().click();
       await page.getByRole("dialog").getByLabel("Name").fill("Work laptop");
       await page.getByRole("dialog").getByRole("button", { name: "Create key" }).click();
       await shown(page.getByRole("heading", { name: "Key “Work laptop” is ready" }));
     },
   },
   {
-    name: "the Create key dialog with its Mount list open",
-    path: "/credentials",
-    show: async (page) => {
-      await page.getByRole("button", { name: "Create key" }).click();
-      await openList(page, "combobox", "Mount");
-    },
-  },
-  {
     name: "the Create key dialog with its Expires list open",
     path: "/credentials",
     show: async (page) => {
-      await page.getByRole("button", { name: "Create key" }).click();
+      await page.getByRole("button", { name: "Create key" }).first().click();
       await openList(page, "combobox", "Expires");
     },
   },
   {
     name: "the Revoke confirmation",
-    path: "/credentials",
+    path: withKey,
     show: async (page) => {
       await page
         .getByRole("button", { name: /^Actions for key / })
@@ -405,13 +345,19 @@ const STATES: readonly PageState[] = [
   {
     name: "Storage & Mounts",
     path: "/storage",
-    show: (page) => shown(page.getByText("RustFS archive").first()),
+    show: (page) => shown(page.getByRole("heading", { level: 3, name: "Default" })),
+  },
+  {
+    name: "Storage & Mounts with a backend that does not answer",
+    path: "/storage",
+    before: withUnavailableBackend,
+    show: (page) => shown(onScreen(page, "Unavailable").first()),
   },
   {
     name: "a mount's menu",
     path: "/storage",
     show: async (page) => {
-      await page.getByRole("button", { name: "Actions for mount /documents" }).click();
+      await page.getByRole("button", { name: "Actions for mount /files" }).click();
       await shown(page.getByRole("menu"));
     },
   },
@@ -424,10 +370,19 @@ const STATES: readonly PageState[] = [
     },
   },
   {
-    name: "the Remove mount confirmation",
+    name: "the Add backend dialog with a field error",
     path: "/storage",
     show: async (page) => {
-      await page.getByRole("button", { name: "Actions for mount /photos" }).click();
+      await page.getByRole("button", { name: "Add backend" }).click();
+      await page.getByRole("dialog").getByRole("button", { name: "Add backend" }).click();
+      await shown(onScreen(page, "Enter a name for the backend."));
+    },
+  },
+  {
+    name: "the Remove mount confirmation",
+    path: withMount(SCAN_MOUNT),
+    show: async (page) => {
+      await page.getByRole("button", { name: `Actions for mount /${SCAN_MOUNT}` }).click();
       await page.getByRole("menuitem", { name: "Remove" }).click();
       await shown(page.getByRole("alertdialog"));
     },
@@ -435,12 +390,12 @@ const STATES: readonly PageState[] = [
   {
     name: "Profile settings",
     path: "/settings?section=profile",
-    show: (page) => shown(page.getByLabel("Display name")),
+    show: (page) => shown(page.getByText("Administrator")),
   },
   {
     name: "Sign-in and security settings",
     path: "/settings?section=security",
-    show: (page) => shown(page.getByRole("button", { name: "Change password" })),
+    show: (page) => shown(page.getByRole("main").getByRole("button", { name: "Sign out" })),
   },
   {
     name: "WebDAV settings",
@@ -453,37 +408,23 @@ const STATES: readonly PageState[] = [
     show: (page) => shown(page.getByRole("radio", { name: "System" })),
   },
   {
-    name: "Storage settings",
-    path: "/settings?section=storage",
-    show: (page) => shown(page.getByRole("button", { name: "Save storage settings" })),
-  },
-  {
-    name: "Storage settings with the backend list open",
-    path: "/settings?section=storage",
-    show: (page) => openList(page, "combobox", "Default backend for new mounts", page),
-  },
-  {
-    name: "Data export with a notification",
-    path: "/settings?section=export",
-    show: async (page) => {
-      await page.getByRole("button", { name: "Export" }).click();
-      await shown(onScreen(page, /^Exported davloom-export/));
-    },
-  },
-  {
     name: "About this instance",
     path: "/settings?section=about",
-    show: (page) => shown(page.getByRole("heading", { name: "About this instance" })),
+    show: (page) => shown(page.getByText("Cloudflare Durable Objects")),
   },
   {
     name: "Credentials as a list in a narrow window, with two keys open",
-    path: "/credentials",
+    path: async (page) => {
+      await createKey(page.request, unique("Narrow one"));
+      await createKey(page.request, unique("Narrow two"));
+      return "/credentials";
+    },
     width: 375,
     show: async (page) => {
-      for (const name of ["Old tablet", "Conference laptop"]) {
-        await page.getByRole("button", { name: `Details for key ${name}` }).click();
-      }
-      await shown(page.getByRole("main").getByRole("button", { name: "Revoke" }));
+      const toggles = page.getByRole("button", { name: /^Details for key / });
+      await toggles.nth(0).click();
+      await toggles.nth(1).click();
+      await shown(page.getByRole("main").getByRole("button", { name: "Revoke" }).first());
     },
   },
   {
@@ -491,7 +432,7 @@ const STATES: readonly PageState[] = [
     path: "/storage",
     width: 320,
     show: async (page) => {
-      await page.getByRole("button", { name: "Details for mount /documents" }).click();
+      await page.getByRole("button", { name: "Details for mount /files" }).click();
       await shown(page.getByRole("main").getByRole("button", { name: "Remove" }));
     },
   },
@@ -743,7 +684,7 @@ for (const scheme of ["light", "dark"] as const) {
         await page.setViewportSize({ width, height: 900 });
       }
       await before?.(page);
-      await page.goto(path);
+      await page.goto(typeof path === "string" ? path : await path(page));
       await show(page);
 
       expect(await page.evaluate(bodyIsDark)).toBe(scheme === "dark");
@@ -955,35 +896,43 @@ test("Moving between pages: the side navigation changes the page without a reloa
 /** The icon of the Storage & Mounts row, a drive, as Lucide names it. */
 const driveIcon = (scope: Locator) => scope.locator("svg.lucide-hard-drive");
 
-test("Storage status in the navigation: an unreachable backend marks Storage & Mounts on every page", async ({
+test("Storage status in the navigation: a backend that does not answer marks Storage & Mounts on every page", async ({
   page,
 }) => {
   const navigation = sideNavigation(page);
+  // While every backend answers, the row names no problem.
+  await page.goto("/");
+  await expect(levelOne(page)).toHaveText("Overview");
+  await expect(
+    navigation.getByRole("link", { name: "Storage & Mounts", exact: true }),
+  ).toBeVisible();
+
+  await withUnavailableBackend(page);
   for (const { path, name } of PAGES) {
     await page.goto(path);
     await expect(levelOne(page)).toHaveText(name);
     // The glyph's label joins the link's name, after the visible label.
     await expect(
-      navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ }),
+      navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unavailable$/ }),
       path,
     ).toBeVisible();
     await expect(
-      navigation.getByRole("img", { name: "1 backend unreachable", exact: true }),
+      navigation.getByRole("img", { name: "1 backend unavailable", exact: true }),
       path,
     ).toBeVisible();
   }
 
   // The rail draws only icons, so the glyph takes the row's icon and the status joins its name.
   await expect(
-    driveIcon(navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ })),
+    driveIcon(navigation.getByRole("link", { name: /^Storage & Mounts\s*1 backend unavailable$/ })),
   ).toHaveCount(1);
   await navigation.getByRole("button", { name: "Collapse sidebar" }).click();
-  const link = navigation.getByRole("link", { name: "Storage & Mounts, 1 backend unreachable" });
+  const link = navigation.getByRole("link", { name: "Storage & Mounts, 1 backend unavailable" });
   await expect(link).toBeVisible();
   await expect(link.locator('[data-color="error"]')).toBeVisible();
   await expect(driveIcon(link)).toHaveCount(0);
   await link.hover();
-  await expect(page.getByRole("tooltip")).toHaveText("Storage & Mounts, 1 backend unreachable");
+  await expect(page.getByRole("tooltip")).toHaveText("Storage & Mounts, 1 backend unavailable");
 });
 
 /**
@@ -1152,8 +1101,11 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   const main = page.getByRole("main");
   const figures = async () =>
     Promise.all(
-      ["Stored", "Known capacity", "Mounts"].map(async (label) => {
-        const box = await main.getByText(label, { exact: true }).boundingBox();
+      ["Stored", "Mounts", "Backends"].map(async (label) => {
+        const box = await main
+          .getByText(label, { exact: true })
+          .and(page.locator('[data-type="label"]'))
+          .boundingBox();
         if (box === null) {
           throw new Error(`The ${label} figure has no box.`);
         }
@@ -1163,6 +1115,7 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
 
   await page.setViewportSize({ width: 900, height: 900 });
   await page.goto("/");
+  await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
   const [stored, capacity, mounts] = await figures();
   expect(capacity?.y).toBeCloseTo(stored?.y ?? Number.NaN, 0);
   expect(mounts?.y).toBeCloseTo(stored?.y ?? Number.NaN, 0);
@@ -1195,39 +1148,37 @@ const baselineOf = (element: Element): number => {
   return Number.NaN;
 };
 
-test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line, with a capacity bar or without", async ({
+test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line", async ({
   page,
 }) => {
-  const tiles = [
-    { label: "Stored", figure: "255.1 GB", caption: "24,597 objects" },
-    { label: "Known capacity", figure: "10.7%", caption: "213.9 GB of 2 TB" },
-    { label: "Mounts", figure: "4", caption: "On 3 of 3 backends" },
-  ];
+  const labels = ["Stored", "Mounts", "Backends"];
   // The default width, and the narrowest that still sets the three side by side.
   for (const width of [1280, 900]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
+    await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
     const lines = await Promise.all(
-      tiles.map(async ({ label, figure, caption }) => {
+      labels.map(async (label) => {
         const tile = cardWith(page, page.getByText(label, { exact: true }));
-        const labelBox = await boxOf(tile.getByText(label, { exact: true }));
+        const [labelPart, figure, caption] = await tile.locator(":scope > *").all();
+        if (labelPart === undefined || figure === undefined || caption === undefined) {
+          throw new Error(`The ${label} tile lacks a part.`);
+        }
+        const labelBox = await boxOf(labelPart);
         return {
-          label: await tile.getByText(label, { exact: true }).evaluate(baselineOf),
-          figure: await tile.getByText(figure, { exact: true }).evaluate(baselineOf),
-          caption: await tile.getByText(caption, { exact: true }).evaluate(baselineOf),
-          gap:
-            (await boxOf(tile.getByText(figure, { exact: true }))).y - labelBox.y - labelBox.height,
-          bars: await tile.getByRole("progressbar").count(),
+          label: await labelPart.evaluate(baselineOf),
+          figure: await figure.evaluate(baselineOf),
+          caption: await caption.evaluate(baselineOf),
+          gap: (await boxOf(figure)).y - labelBox.y - labelBox.height,
         };
       }),
     );
-    expect(lines.map(({ bars }) => bars)).toEqual([0, 1, 0]);
     for (const [index, line] of lines.entries()) {
       // A tile keeps its parts 4 px apart, the gap it had before it took the grid's rows, rather
       // than the 16 px between tiles.
-      expect(line.gap, `${tiles[index]?.label}'s gap at ${width} px`).toBeCloseTo(4, 0);
+      expect(line.gap, `${labels[index]}'s gap at ${width} px`).toBeCloseTo(4, 0);
       for (const part of ["label", "figure", "caption"] as const) {
-        expect(line[part], `${tiles[index]?.label}'s ${part} at ${width} px`).toBeCloseTo(
+        expect(line[part], `${labels[index]}'s ${part} at ${width} px`).toBeCloseTo(
           lines[0]?.[part] ?? Number.NaN,
           0,
         );
@@ -1236,81 +1187,41 @@ test("Figures on one grid: side by side, the tiles' labels, figures and captions
   }
 });
 
-test("A count and its status: the failures stand on the line of the operations count beside them", async ({
-  page,
-}) => {
-  for (const width of [1280, PHONE_WIDTH]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto("/");
-    const card = cardWith(page, page.getByRole("heading", { name: "Operations", exact: true }));
-    const count = await card.getByText("3,732", { exact: true }).evaluate(baselineOf);
-    const failed = await card.getByText("4 failed", { exact: true }).evaluate(baselineOf);
-    expect(failed, `at ${width} px`).toBeCloseTo(count, 0);
-  }
-});
-
 test("Backend cards on one grid: with room, each status stands on its name's line, and side by side every part starts on a shared line", async ({
   page,
 }) => {
-  const names = ["Durable Objects", "R2 photos", "RustFS archive"];
-  // The three cards sit in one row at both widths, and R2 photos alone has no capacity bar. At
-  // 1440 px each card has room for its status beside its name; at 1280 px the status moves under
-  // the backend's kind.
+  await api(page.request, "POST", "/api/backends", {
+    name: unique("Photos"),
+    kind: "durable-object",
+  });
+  // The first two cards sit in one row at both widths. At 1440 px each card has room for its
+  // status beside its name; at 1280 px the status moves under the backend's kind.
   for (const width of [1440, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/storage");
+    const headings = page.getByRole("main").getByRole("heading", { level: 3 });
+    await expect.poll(() => headings.count()).toBeGreaterThan(1);
+    const names = (await headings.allTextContents()).slice(0, 2);
     const lines = await Promise.all(
       names.map(async (name) => {
         const card = cardWith(page, page.getByRole("heading", { level: 3, name, exact: true }));
         return {
           top: (await boxOf(card)).y,
           title: await card.getByRole("heading", { level: 3 }).evaluate(baselineOf),
-          status: await card.getByText(/^(Connected|Slow|Unreachable)$/).evaluate(baselineOf),
-          details: (await boxOf(card.getByText("Endpoint", { exact: true }))).y,
-          action: (await boxOf(card.getByRole("button", { name: "Verify connection" }))).y,
-          bars: await card.getByRole("progressbar").count(),
+          status: await card.getByText(/^(Available|Unavailable)$/).evaluate(baselineOf),
+          details: (await boxOf(card.getByText("Stored", { exact: true }))).y,
         };
       }),
     );
-    expect(lines.map(({ bars }) => bars)).toEqual([1, 0, 1]);
     for (const [index, line] of lines.entries()) {
       const where = `${names[index]} at ${width} px`;
       if (width === 1440) {
         expect(line.status, `${where}: status`).toBeCloseTo(line.title, 0);
       }
-      for (const part of ["top", "title", "status", "details", "action"] as const) {
+      for (const part of ["top", "title", "status", "details"] as const) {
         expect(line[part], `${where}: ${part}`).toBeCloseTo(lines[0]?.[part] ?? Number.NaN, 0);
       }
     }
-  }
-
-  // Verified at 1440 px, RustFS archive's answer wraps under its button and makes the row of
-  // actions taller. Every card's button keeps the top of that row, so none of them moves.
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/storage");
-  const buttons = names.map((name) =>
-    cardWith(page, page.getByRole("heading", { level: 3, name, exact: true })).getByRole("button", {
-      name: "Verify connection",
-    }),
-  );
-  const tops = async () => Promise.all(buttons.map(async (button) => (await boxOf(button)).y));
-  const before = await tops();
-  const archive = cardWith(
-    page,
-    page.getByRole("heading", { level: 3, name: "RustFS archive", exact: true }),
-  );
-  await archive.getByRole("button", { name: "Verify connection" }).click();
-  const answer = archive.getByText(/^Still unreachable/);
-  await shown(answer);
-  const verify = await boxOf(archive.getByRole("button", { name: "Verify connection" }));
-  expect((await boxOf(answer)).y, "the answer under its button").toBeGreaterThanOrEqual(
-    verify.y + verify.height,
-  );
-  for (const [index, top] of (await tops()).entries()) {
-    expect(top, `${names[index]}'s button once RustFS archive is verified`).toBeCloseTo(
-      before[index] ?? Number.NaN,
-      0,
-    );
   }
 });
 
@@ -1349,16 +1260,22 @@ const settle = (page: Page): Promise<void> =>
   });
 
 /**
- * Runs in the page: where the row of "Conference laptop" is on each frame, from before a tap on
- * the chevron of "Old tablet" above it, which opens or closes that row, until a second later.
+ * Runs in the page: where the row of `rowName` is on each frame, from before a tap on the chevron
+ * labelled `chevronLabel` above it, which opens or closes that row, until a second later.
  */
-const placesWhileToggling = async (): Promise<number[]> => {
+const placesWhileToggling = async ({
+  chevronLabel,
+  rowName,
+}: {
+  chevronLabel: string;
+  rowName: string;
+}): Promise<number[]> => {
   const main = document.querySelector('[role="main"]');
   const chevron = [...(main?.querySelectorAll("button") ?? [])].find(
-    (button) => button.getAttribute("aria-label") === "Details for key Old tablet",
+    (button) => button.getAttribute("aria-label") === chevronLabel,
   );
   const row = [...(main?.querySelectorAll("li") ?? [])].find((item) =>
-    (item.textContent ?? "").startsWith("Conference laptop"),
+    (item.textContent ?? "").startsWith(rowName),
   );
   if (chevron === undefined || row === undefined) {
     return [];
@@ -1480,14 +1397,15 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
   test("Narrow screens: the navigation sits behind a Menu button and no page scrolls sideways", async ({
     page,
   }) => {
+    const folder = await scratchFolder(page.request);
     for (const { path, name } of [
       ...PAGES,
-      { path: "/files?path=%2Fdocuments", name: "Files" },
-      ...["security", "webdav", "storage"].map((section) => ({
+      { path: filesAt(folder), name: "Files" },
+      ...["security", "webdav", "about"].map((section) => ({
         path: `/settings?section=${section}`,
         name: "Settings",
       })),
-      { path: PREVIEW, name: "Files" },
+      { path: filesAt(folder, "README.txt"), name: "Files" },
     ]) {
       await page.goto(path);
       await expect(levelOne(page)).toHaveText(name);
@@ -1518,29 +1436,6 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
       true,
     );
-
-    // The default backend's mark leads the line of the mounts it serves, so the window cuts the
-    // paths short rather than the mark.
-    await page.goto("/");
-    const mark = page.getByRole("main").getByText("Default · /documents, /shared", { exact: true });
-    await expect(mark).toBeVisible();
-    expect(
-      await mark.evaluate((element) => {
-        const text = element.firstChild;
-        if (text === null) {
-          return false;
-        }
-        const word = document.createRange();
-        word.setStart(text, 0);
-        word.setEnd(text, "Default".length);
-        // An ellipsis takes about a letter's width at the end of the line.
-        const fontSize = Number.parseFloat(getComputedStyle(element).fontSize);
-        return (
-          word.getBoundingClientRect().right <= element.getBoundingClientRect().right - fontSize
-        );
-      }),
-      "the default backend's mark, whole",
-    ).toBe(true);
   });
 
   test("The Menu button: the navigation drops down from it, marks the page and closes on a choice", async ({
@@ -1559,9 +1454,8 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     for (const name of ["Files", "Credentials", "Settings"]) {
       await expect(dropdown.getByRole("link", { name, exact: true })).toBeVisible();
     }
-    await expect(
-      dropdown.getByRole("link", { name: /^Storage & Mounts\s*1 backend unreachable$/ }),
-    ).toBeVisible();
+    await expect(dropdown.getByRole("link", { name: "Storage & Mounts" })).toBeVisible();
+    await expect(dropdown.getByRole("button", { name: "Sign out" })).toBeVisible();
     // It hangs below the button, inside the window.
     const button = await menu.boundingBox();
     const panel = await dropdown.boundingBox();
@@ -1647,9 +1541,12 @@ test.describe("in a window 1024 px wide", () => {
   test("Tables beside the navigation: no page scrolls sideways, so every row's actions or chevron are in view", async ({
     page,
   }) => {
-    for (const { path, name } of [...PAGES, { path: "/files?path=%2Fdocuments", name: "Files" }]) {
+    const folder = await scratchFolder(page.request);
+    const name = unique("Laptop (Finder)");
+    await createKey(page.request, name);
+    for (const { path, name: title } of [...PAGES, { path: filesAt(folder), name: "Files" }]) {
       await page.goto(path);
-      await expect(levelOne(page)).toHaveText(name);
+      await expect(levelOne(page)).toHaveText(title);
       if (path.startsWith("/files")) {
         await shown(page.getByRole("row").nth(1));
       }
@@ -1659,15 +1556,17 @@ test.describe("in a window 1024 px wide", () => {
     // Credentials lists each key as a row here, and gives each detail a column where there is room.
     await page.goto("/credentials");
     const chevrons = page.getByRole("main").getByRole("button", { name: /^Details for key / });
-    await expect(chevrons).toHaveCount(5);
-    for (const chevron of await chevrons.all()) {
-      await expect(chevron).toBeInViewport({ ratio: 1 });
+    const chevron = page.getByRole("main").getByRole("button", { name: `Details for key ${name}` });
+    await shown(chevron);
+    // The list may run below the window, so each chevron is checked sideways only.
+    for (const each of await chevrons.all()) {
+      expect(await insideWindow(each, 1024)).toBe(true);
     }
-    await chevrons.first().hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Details for key Laptop (Finder)");
+    await chevron.hover();
+    await expect(page.getByRole("tooltip")).toHaveText(`Details for key ${name}`);
     await expect(page.getByRole("table")).toHaveCount(0);
     await page.setViewportSize({ width: 1280, height: 768 });
-    await expect(page.getByRole("columnheader", { name: "Scope" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Access" })).toBeVisible();
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
   });
 });
@@ -1678,8 +1577,10 @@ test.describe("in a window 375 px wide", () => {
   test("Sorting a narrow listing: a menu in the Name header's place sorts by name, size or time, either way", async ({
     page,
   }) => {
-    await page.goto("/files?path=%2Fdocuments");
+    const folder = await scratchFolder(page.request);
+    await page.goto(filesAt(folder));
     const main = page.getByRole("main");
+    await shown(main.getByRole("link", { name: "Contracts", exact: true }));
     await expect(main.getByRole("columnheader", { name: "Size" })).toHaveCount(0);
     const order = () =>
       main
@@ -1709,32 +1610,16 @@ test.describe("in a window 375 px wide", () => {
       await page.getByRole("menuitemradio", { name: choice }).click();
       await expect(menu(next)).toBeVisible();
     };
-    const FOLDERS = ["Contracts", "Drafts", "Invoices 2026", "Scans"];
-    const EXPORT =
-      "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
-    const REPORT = "Quarterly report — Q3 2026, final version (signed by both parties).pdf";
-    const BY_NAME = [
-      EXPORT,
-      "budget-2027.xlsx",
-      "meeting-notes-2026-11-14.md",
-      REPORT,
-      "README.txt",
-    ];
+    const FOLDERS = SAMPLE_NAMES.slice(0, 4);
+    const BY_NAME = SAMPLE_NAMES.slice(4);
     const BY_SIZE = [
-      "README.txt",
       "meeting-notes-2026-11-14.md",
-      "budget-2027.xlsx",
-      EXPORT,
-      REPORT,
-    ];
-    const BY_TIME = [
       "README.txt",
-      REPORT,
-      "meeting-notes-2026-11-14.md",
+      "wifi-guest.txt",
+      LONG_LOG_NAME,
+      "Quarterly report — Q3 2026, final version (signed by both parties).pdf",
       "budget-2027.xlsx",
-      EXPORT,
     ];
-    const FOLDERS_BY_TIME = ["Scans", "Contracts", "Invoices 2026", "Drafts"];
     // Folders of one size keep no order of their own among themselves.
     const foldersThenFiles = async (files: string[]) => {
       const names = await order();
@@ -1751,11 +1636,10 @@ test.describe("in a window 375 px wide", () => {
     await foldersThenFiles(BY_SIZE.toReversed());
     await sortBy("Size, largest first", "Smallest first", "Size, smallest first");
     await foldersThenFiles(BY_SIZE);
+    // The sample was stored within a second or two, so times tie, and only the menu is checked.
     await sortBy("Size, smallest first", "Modified", "Modified, oldest first");
-    expect(await order()).toEqual([...FOLDERS_BY_TIME, ...BY_TIME]);
     await sortBy("Modified, oldest first", "Newest first", "Modified, newest first");
-    const NEWEST_FIRST = [...FOLDERS_BY_TIME.toReversed(), ...BY_TIME.toReversed()];
-    expect(await order()).toEqual(NEWEST_FIRST);
+    const newestFirst = await order();
 
     // A wider window brings the columns back in the same order, which the Modified header shows.
     await page.setViewportSize({ width: 1280, height: 812 });
@@ -1763,7 +1647,7 @@ test.describe("in a window 375 px wide", () => {
       "aria-sort",
       "descending",
     );
-    expect(await order()).toEqual(NEWEST_FIRST);
+    expect(await order()).toEqual(newestFirst);
   });
 });
 
@@ -1773,20 +1657,27 @@ test.describe("on a touch screen", () => {
   test("Lists on a phone: each key and each mount is a row with its name and one line under it", async ({
     page,
   }) => {
+    const KEYS = [unique("Phone"), unique("Laptop")];
+    for (const name of KEYS) {
+      await createKey(page.request, name);
+    }
+    const mountName = unique("photos");
+    await createMount(page.request, mountName);
     await page.goto("/credentials");
     const main = page.getByRole("main");
     const keys = main.getByRole("listitem");
+    for (const name of KEYS) {
+      await shown(keys.filter({ hasText: name }));
+    }
     // Once the keys are drawn as rows, no table is drawn beside them.
-    await expect(keys).toHaveCount(5);
     await expect(page.getByRole("table")).toHaveCount(0);
     // A row shows a key's name, first characters and status, and the rest waits until it opens.
-    expect(await keys.evaluateAll(linesOf)).toEqual([
-      ["Laptop (Finder)", "dvl_7Q2M…", "Active"],
-      ["Phone photo backup", "dvl_K9XA…", "Active"],
-      ["Accountant, invoices only", "dvl_P3VD…", "Active"],
-      ["Old tablet", "dvl_2HTE…", "Revoked"],
-      ["Conference laptop", "dvl_M4RC…", "Expired"],
-    ]);
+    for (const name of KEYS) {
+      const [lines] = await keys.filter({ hasText: name }).evaluateAll(linesOf);
+      expect(lines?.[0]).toBe(name);
+      expect(lines?.[1]).toMatch(/^dav_\w+…$/);
+      expect(lines?.[2]).toBe("Active");
+    }
     for (const key of await keys.all()) {
       const toggle = key.getByRole("button", { name: /^Details for key / });
       await expect(toggle).toHaveAttribute("aria-expanded", "false");
@@ -1797,20 +1688,13 @@ test.describe("on a touch screen", () => {
     // Each name has a line of its own, so even the narrowest phone shows it whole in the larger
     // type of a touch screen. Under it, a key's first characters share a line with its status, and
     // the statuses end in one column.
-    const KEYS = [
-      ["Laptop (Finder)", "Active"],
-      ["Phone photo backup", "Active"],
-      ["Accountant, invoices only", "Active"],
-      ["Old tablet", "Revoked"],
-      ["Conference laptop", "Expired"],
-    ] as const;
     for (const width of [375, 320]) {
       await page.setViewportSize({ width, height: 812 });
       // The page lays itself out for the new width two frames after the window changes, so the
       // rows are measured once it has.
       await settle(page);
       const ends = new Set<number>();
-      for (const [name, state] of KEYS) {
+      for (const name of KEYS) {
         const key = keys.filter({ hasText: name });
         const where = `${name} at ${width} px`;
         const title = key.getByText(name, { exact: true });
@@ -1819,8 +1703,8 @@ test.describe("on a touch screen", () => {
           where,
         ).toBe(true);
         const titleBox = await boxOf(title);
-        const prefix = await boxOf(key.getByText(/^dvl_\w{4}…$/));
-        const status = await boxOf(key.getByText(state, { exact: true }));
+        const prefix = await boxOf(key.getByText(/^dav_\w+…$/));
+        const status = await boxOf(key.getByText("Active", { exact: true }));
         expect(prefix.y, where).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
         expect(
           Math.abs(prefix.y + prefix.height / 2 - (status.y + status.height / 2)),
@@ -1834,19 +1718,18 @@ test.describe("on a touch screen", () => {
     await page.setViewportSize({ width: 375, height: 812 });
 
     await page.goto("/storage");
-    const toggles = main.getByRole("button", { name: /^Details for mount / });
-    await expect(toggles).toHaveCount(4);
+    const toggle = main.getByRole("button", { name: `Details for mount /${mountName}` });
+    await shown(toggle);
     await expect(page.getByRole("table")).toHaveCount(0);
     // A mount's row shows its path and backend, and the rest waits until it opens.
-    expect(await main.getByRole("listitem").evaluateAll(linesOf)).toEqual([
-      ["/documents", "Durable Objects"],
-      ["/shared", "Durable Objects"],
-      ["/photos", "R2 photos"],
-      ["/archive", "RustFS archive"],
-    ]);
-    for (const toggle of await toggles.all()) {
-      await expect(toggle).toHaveAttribute("aria-expanded", "false");
-      expect(await insideWindow(toggle, 375)).toBe(true);
+    const [lines] = await main
+      .getByRole("listitem")
+      .filter({ hasText: `/${mountName}` })
+      .evaluateAll(linesOf);
+    expect(lines).toEqual([`/${mountName}`, "Default"]);
+    for (const each of await main.getByRole("button", { name: /^Details for mount / }).all()) {
+      await expect(each).toHaveAttribute("aria-expanded", "false");
+      expect(await insideWindow(each, 375)).toBe(true);
     }
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
   });
@@ -1854,148 +1737,122 @@ test.describe("on a touch screen", () => {
   test("Opening a row: a tap shows the details and actions under it, and another tap hides them", async ({
     page,
   }) => {
+    const reader = unique("Accountant");
+    const writer = unique("Conference laptop");
+    await createKey(page.request, reader, "read-only", 30);
+    await createKey(page.request, writer, "read-write", null);
     await page.goto("/credentials");
     const main = page.getByRole("main");
     const key = (name: string) =>
       main.getByRole("button", { name: `Details for key ${name}`, exact: true });
-    await expect(main.getByRole("listitem")).toHaveCount(5);
+    await shown(key(reader));
 
     // A tap anywhere on the row opens it, not only on its chevron.
-    await main.getByText("Old tablet", { exact: true }).tap();
-    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
-    const tablet = await detailsOf(key("Old tablet"));
-    await expect(tablet).toBeVisible();
+    await main.getByText(reader, { exact: true }).tap();
+    await expect(key(reader)).toHaveAttribute("aria-expanded", "true");
+    const readerDetails = await detailsOf(key(reader));
+    await expect(readerDetails).toBeVisible();
     // The rows glide into place, so where they rest is measured once they stop.
     await settle(page);
-    const tabletRow = await boxOf(main.getByRole("listitem").filter({ hasText: "Old tablet" }));
-    expect((await boxOf(tablet)).y, "the details under their row").toBeGreaterThanOrEqual(
-      tabletRow.y + tabletRow.height - 1,
+    const readerRow = await boxOf(main.getByRole("listitem").filter({ hasText: reader }));
+    expect((await boxOf(readerDetails)).y, "the details under their row").toBeGreaterThanOrEqual(
+      readerRow.y + readerRow.height - 1,
     );
     // The details are a group named for their key, so a screen reader says whose they are.
-    await expect(main.getByRole("group", { name: "Details for key Old tablet" })).toBeVisible();
-    for (const words of ["Read only", "All mounts", "2 months ago"]) {
-      await expect(tablet.getByText(words, { exact: true })).toBeVisible();
-    }
-    // Past its expiry time a key says it expired, revoked or not. A revoked key has no action.
-    await expect(tablet.getByText("Expired", { exact: true })).toBeVisible();
-    await expect(tablet.getByText("Sep 30, 2026", { exact: true })).toBeVisible();
-    await expect(tablet.getByRole("button")).toHaveCount(0);
+    await expect(main.getByRole("group", { name: `Details for key ${reader}` })).toBeVisible();
+    await expect(readerDetails.getByText("Read only", { exact: true })).toBeVisible();
+    await expect(readerDetails.getByText("Expires", { exact: true })).toBeVisible();
+    await expect(readerDetails.getByRole("button", { name: "Revoke" })).toBeVisible();
 
     // Several rows stay open at once, so two keys can be compared.
-    await key("Conference laptop").tap();
-    const conference = await detailsOf(key("Conference laptop"));
-    await expect(conference.getByText("Expired", { exact: true })).toBeVisible();
-    await expect(conference.getByText("Oct 31, 2026", { exact: true })).toBeVisible();
-    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "true");
+    await key(writer).tap();
+    const writerDetails = await detailsOf(key(writer));
+    await expect(writerDetails.getByText("Read and write", { exact: true })).toBeVisible();
+    await expect(writerDetails.getByText("Never", { exact: true })).toBeVisible();
+    await expect(key(reader)).toHaveAttribute("aria-expanded", "true");
     await page.setViewportSize({ width: 320, height: 812 });
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
     await page.setViewportSize({ width: 375, height: 812 });
 
     // Another tap closes the row and leaves the other open.
-    await main.getByText("Old tablet", { exact: true }).tap();
-    await expect(key("Old tablet")).toHaveAttribute("aria-expanded", "false");
-    await expect(key("Old tablet")).not.toHaveAttribute("aria-controls");
-    await expect(tablet).toHaveCount(0);
-    await expect(conference).toBeVisible();
+    await main.getByText(reader, { exact: true }).tap();
+    await expect(key(reader)).toHaveAttribute("aria-expanded", "false");
+    await expect(key(reader)).not.toHaveAttribute("aria-controls");
+    await expect(readerDetails).toHaveCount(0);
+    await expect(writerDetails).toBeVisible();
 
-    // Revoke asks first. Once the key is revoked, its details keep no action and focus moves to
-    // its row.
-    await conference.getByRole("button", { name: "Revoke" }).tap();
+    // Revoke asks first. Once the key is revoked, its row leaves the list and focus moves to the
+    // row of another key.
+    await writerDetails.getByRole("button", { name: "Revoke" }).tap();
     const confirm = page.getByRole("alertdialog");
-    await expect(confirm).toContainText("Revoke “Conference laptop”?");
+    await expect(confirm).toContainText(`Revoke “${writer}”?`);
     await confirm.getByRole("button", { name: "Revoke", exact: true }).tap();
     await expect(confirm).toHaveCount(0);
-    await expect(main.getByRole("listitem").filter({ hasText: "Conference laptop" })).toContainText(
-      "Revoked",
-    );
-    await expect(conference.getByRole("button")).toHaveCount(0);
-    await expect(key("Conference laptop")).toBeFocused();
+    await expect(key(writer)).toHaveCount(0);
+    await expect(page.locator(":focus")).toHaveAttribute("aria-label", /^Details for key /);
 
-    // A mount's row opens the same way, with its bucket, its prefix, and Edit and Remove.
+    // A mount's row opens the same way, with its folder, and Rename and Remove.
+    const first = unique("albums");
+    const second = unique("backups");
+    await createMount(page.request, first);
+    await createMount(page.request, second);
     await page.goto("/storage");
     const mount = (path: string) =>
       main.getByRole("button", { name: `Details for mount ${path}`, exact: true });
-    await main.getByText("/photos", { exact: true }).tap();
-    const photos = await detailsOf(mount("/photos"));
+    await main.getByText(`/${first}`, { exact: true }).tap();
+    const albums = await detailsOf(mount(`/${first}`));
     await settle(page);
-    const bucket = await boxOf(photos.getByText("davloom-photos", { exact: true }));
-    const prefix = await boxOf(photos.getByText("None", { exact: true }));
-    expect(prefix.y, "the prefix on a line under the bucket").toBeGreaterThanOrEqual(
-      bucket.y + bucket.height - 1,
-    );
+    await expect(albums.getByText("Whole backend", { exact: true })).toBeVisible();
     const form = page.getByRole("dialog");
-    // Safari does not focus a button it taps, so Edit's dialog then returns focus to the chevron.
-    // This runs first, while nothing else on the page is still watching where focus goes.
+    // Safari does not focus a button it taps, so Rename's dialog then returns focus to the
+    // chevron. This runs first, while nothing else on the page is still watching where focus goes.
     await page.evaluate(() => {
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
     });
-    await photos.getByRole("button", { name: "Edit" }).dispatchEvent("click");
-    await expect(form).toContainText("Edit /photos");
+    await albums.getByRole("button", { name: "Rename" }).dispatchEvent("click");
+    await expect(form).toContainText(`Rename /${first}`);
     await page.keyboard.press("Escape");
     await expect(form).toHaveCount(0);
-    await expect(mount("/photos")).toBeFocused();
-    // A browser that focuses the button it taps gets focus back on Edit.
-    await photos.getByRole("button", { name: "Edit" }).tap();
-    await expect(form).toContainText("Edit /photos");
+    await expect(mount(`/${first}`)).toBeFocused();
+    // A browser that focuses the button it taps gets focus back on Rename.
+    await albums.getByRole("button", { name: "Rename" }).tap();
+    await expect(form).toContainText(`Rename /${first}`);
     await form.getByRole("button", { name: "Cancel" }).tap();
     await expect(form).toHaveCount(0);
-    await expect(photos.getByRole("button", { name: "Edit" })).toBeFocused();
-    // Removing the mount takes its row away, so focus moves to the next mount's row.
-    await photos.getByRole("button", { name: "Remove" }).tap();
+    await expect(albums.getByRole("button", { name: "Rename" })).toBeFocused();
+    // Removing the mount takes its row away, so focus moves to another mount's row.
+    await albums.getByRole("button", { name: "Remove" }).tap();
     await page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" }).tap();
-    await expect(mount("/photos")).toHaveCount(0);
-    await expect(mount("/archive")).toBeFocused();
+    await expect(mount(`/${first}`)).toHaveCount(0);
+    await expect(page.locator(":focus")).toHaveAttribute("aria-label", /^Details for mount /);
 
     // The chevron is a button, so a keyboard opens a row too.
-    await page.keyboard.press("Shift+Tab");
-    await expect(mount("/shared")).toBeFocused();
+    await mount(`/${second}`).focus();
     await page.keyboard.press("Enter");
-    await expect(mount("/shared")).toHaveAttribute("aria-expanded", "true");
-
-    // A mount added again under the removed one's name starts closed.
-    await page.getByRole("button", { name: "Add mount", exact: true }).tap();
-    const added = page.getByRole("dialog");
-    await added.getByLabel("Folder name").fill("photos");
-    await added.getByRole("button", { name: "Add mount" }).tap();
-    await expect(added).toHaveCount(0);
-    await expect(mount("/photos")).toHaveAttribute("aria-expanded", "false");
-  });
-
-  test("A revoked key past its expiry: its row says Expired with the date, as an expired key's does", async ({
-    page,
-  }) => {
-    await page.goto("/credentials");
-    const main = page.getByRole("main");
-    // Before its expiry time a key says Expires instead.
-    for (const [name, label, date] of [
-      ["Old tablet", "Expired", "Sep 30, 2026"],
-      ["Conference laptop", "Expired", "Oct 31, 2026"],
-      ["Phone photo backup", "Expires", "May 1, 2027"],
-    ] as const) {
-      const toggle = main.getByRole("button", { name: `Details for key ${name}`, exact: true });
-      await toggle.tap();
-      const details = await detailsOf(toggle);
-      await expect(details.getByText(label, { exact: true }), name).toBeVisible();
-      await expect(details.getByText(date, { exact: true }), name).toBeVisible();
-    }
-    await expect(main.getByRole("listitem").filter({ hasText: "Old tablet" })).toContainText(
-      "Revoked",
-    );
+    await expect(mount(`/${second}`)).toHaveAttribute("aria-expanded", "true");
   });
 
   test("Rows that glide: the rows under a row that opens or closes move to their places, at once with reduced motion", async ({
     page,
   }) => {
+    // Keys list newest first, so the second key's row lies above the first's.
+    const below = unique("Glide below");
+    const above = unique("Glide above");
+    await createKey(page.request, below);
+    await createKey(page.request, above);
     for (const motion of ["no-preference", "reduce"] as const) {
       await page.emulateMedia({ reducedMotion: motion });
       await page.goto("/credentials");
-      await expect(page.getByRole("main").getByRole("listitem")).toHaveCount(5);
-      // The first tap opens "Old tablet", which moves the row under it down, and the second
+      await shown(page.getByRole("main").getByRole("listitem").filter({ hasText: below }));
+      // The first tap opens the row above, which moves the row under it down, and the second
       // closes it, which moves that row back up.
       for (const tap of ["opening", "closing"] as const) {
-        const places = await page.evaluate(placesWhileToggling);
+        const places = await page.evaluate(placesWhileToggling, {
+          chevronLabel: `Details for key ${above}`,
+          rowName: below,
+        });
         const [first = 0] = places;
         const last = places.at(-1) ?? first;
         const moved = tap === "opening" ? last - first : first - last;
@@ -2019,11 +1876,10 @@ test.describe("on a touch screen", () => {
   });
 
   test("Holding a row: its background is rounded and stays inside the card", async ({ page }) => {
+    const name = unique("Held key");
+    await createKey(page.request, name);
     await page.goto("/credentials");
-    const row = page
-      .getByRole("main")
-      .getByRole("listitem")
-      .filter({ hasText: "Accountant, invoices only" });
+    const row = page.getByRole("main").getByRole("listitem").filter({ hasText: name });
     await expect(row).toBeVisible();
     const box = await boxOf(row);
     const touch = await page.context().newCDPSession(page);
@@ -2039,179 +1895,22 @@ test.describe("on a touch screen", () => {
     await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
   });
 
-  test("Opening an error in the list: a tap shows an error's details under its line, and another hides them", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: PHONE_WIDTH, height: 812 });
-    await page.goto("/");
-    const panel = errorsPanel(page);
-    const toggle = (name: string) =>
-      panel.getByRole("button", { name: `Details for ${name}`, exact: true });
-    const rows = panel.getByRole("listitem");
-    await expect(rows).toHaveCount(4);
-    const title = await boxOf(panel.getByRole("heading", { name: "Recent operation errors" }));
-    // Each error keeps to one line in the window, starting where the title does: its cause and
-    // its age share the line with its name.
-    for (const row of await rows.all()) {
-      expect(await insideWindow(row, PHONE_WIDTH)).toBe(true);
-      const start = await row
-        .getByRole("img")
-        .first()
-        .evaluate((icon) => (icon.closest(".astryx-stack") ?? icon).getBoundingClientRect().left);
-      expect(Math.abs(start - title.x), "the line starts where the title does").toBeLessThanOrEqual(
-        1,
-      );
-      const cause = await middleOf(row.getByRole("img").first());
-      expect(Math.abs(cause - (await middleOf(row.getByText(/^\d+[mh]$/))))).toBeLessThanOrEqual(2);
-      // Every line starts closed.
-      await expect(row.getByRole("button", { name: /^Details for / })).toHaveAttribute(
-        "aria-expanded",
-        "false",
-      );
-    }
-    // A name cut short keeps its extension whole.
-    const extension = panel.getByText(".zst", { exact: true });
-    await expect(extension).toBeVisible();
-    expect(await extension.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
-    expect(await insideWindow(extension, PHONE_WIDTH)).toBe(true);
-
-    // A tap anywhere on the line opens it, not only on its chevron.
-    await panel.getByRole("img", { name: "Timed out", exact: true }).tap();
-    const archive = await detailsOf(toggle("2026-11-16.tar.zst"));
-    await expect(archive).toBeVisible();
-    await expect(
-      panel.getByRole("group", { name: "Details for 2026-11-16.tar.zst" }),
-    ).toBeVisible();
-    for (const words of ["504", "Timed out", "/archive/2026-11-16.tar.zst"]) {
-      await expect(archive.getByText(words, { exact: true })).toBeVisible();
-    }
-    await expect(archive.getByRole("img", { name: "PUT", exact: true })).toBeVisible();
-    await expect(archive.getByText(/did not answer within 30/)).toBeVisible();
-    await settle(page);
-    expect(await insideWindow(archive, PHONE_WIDTH)).toBe(true);
-
-    // Several stay open at once, and a second tap closes its own line alone.
-    await panel.getByRole("img", { name: "Too large", exact: true }).tap();
-    await expect(toggle("holiday.mov")).toHaveAttribute("aria-expanded", "true");
-    await expect(toggle("2026-11-16.tar.zst")).toHaveAttribute("aria-expanded", "true");
-    await panel.getByRole("img", { name: "Timed out", exact: true }).tap();
-    await expect(toggle("2026-11-16.tar.zst")).toHaveAttribute("aria-expanded", "false");
-    await expect(toggle("holiday.mov")).toHaveAttribute("aria-expanded", "true");
-    await expect(archive).toBeHidden();
-
-    // A held line draws a rounded background inside the card, not a band across it.
-    const budget = rows.filter({ hasText: "budget-2027.xlsx" });
-    const box = await boxOf(budget);
-    const touch = await page.context().newCDPSession(page);
-    await touch.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
-    });
-    await expect.poll(() => budget.evaluate(pressedBackground)).not.toBeNull();
-    const pressed = await budget.evaluate(pressedBackground);
-    expect(pressed?.radius).toBeGreaterThan(0);
-    expect(pressed?.inset).toBeGreaterThan(0);
-    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  });
-
-  test("Opening a tile: a tap shows an error's details beside its tile, and Escape returns to the tile", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    const panel = errorsPanel(page);
-    await panel.getByRole("radio", { name: "Tiles" }).tap();
-    const tile = (name: RegExp) => panel.getByRole("button", { name });
-    // A tile is the card that holds its button. The button itself is hidden, a pixel wide.
-    const card = (name: RegExp) => tile(name).locator("..");
-    const tiles = [
-      /^2026-11-16\.tar\.zst, /,
-      /^Drafts, /,
-      /^budget-2027\.xlsx, /,
-      /^holiday\.mov, /,
-    ];
-    const [first, second, third] = await Promise.all(tiles.map((name) => boxOf(card(name))));
-    if (first === undefined || second === undefined || third === undefined) {
-      throw new Error("The tiles are missing.");
-    }
-    // Two tiles side by side, and the next two under them.
-    expect(Math.abs(first.y - second.y)).toBeLessThanOrEqual(1);
-    expect(second.x).toBeGreaterThanOrEqual(first.x + first.width);
-    expect(third.y).toBeGreaterThanOrEqual(first.y + first.height);
-    // Each name keeps its extension whole inside the window. The details of each tile wait in the
-    // page, hidden, until it opens, so only the tiles' own names are on screen.
-    for (const extension of [".zst", ".xlsx", ".mov"]) {
-      const text = panel.getByText(extension, { exact: true }).filter({ visible: true });
-      expect(await text.evaluate((node) => node.scrollWidth <= node.clientWidth), extension).toBe(
-        true,
-      );
-      expect(await insideWindow(text, 375), extension).toBe(true);
-    }
-
-    // The tile's face lies over its button and takes the tap.
-    const drafts = tile(/^Drafts, Already exists, 47 minutes ago$/);
-    await drafts.tap({ force: true });
-    const details = page.getByRole("dialog", { name: "Drafts" });
-    await expect(details).toBeVisible();
-    for (const words of ["412", "Already exists", "/documents/Drafts → /shared/Drafts"]) {
-      await expect(details.getByText(words, { exact: true })).toBeVisible();
-    }
-    await expect(details.getByRole("img", { name: "MOVE", exact: true })).toBeVisible();
-    await expect(details.getByText(/already has Drafts/)).toBeVisible();
-    // Beside the tile: just above or just below it, over the same columns.
-    const at = await boxOf(details);
-    const of = await boxOf(card(/^Drafts, Already exists, 47 minutes ago$/));
-    const apart = Math.min(Math.abs(at.y + at.height - of.y), Math.abs(of.y + of.height - at.y));
-    expect(apart).toBeLessThanOrEqual(16);
-    expect(at.x).toBeLessThan(of.x + of.width);
-    expect(at.x + at.width).toBeGreaterThan(of.x);
-
-    await page.keyboard.press("Escape");
-    await expect(details).toBeHidden();
-    await expect(drafts).toBeFocused();
-  });
-
-  test("Holding a marker: a finger shows an error's details above the timeline while it holds", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    await errorsPanel(page).getByRole("radio", { name: "Timeline" }).tap();
-    const chart = errorTimeline(page);
-    await chart.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    await expect(errorMarkers(page)).toHaveCount(4);
-    // The fourth sample error, the holiday video, is the oldest and lies furthest left.
-    const { x, y, width } = await boxOf(errorMarkers(page).nth(3));
-    const holiday = { x: x + width / 2, y: y + width / 2 };
-    const session = await page.context().newCDPSession(page);
-    const finger = (type: "touchStart" | "touchEnd", at?: { x: number; y: number }) =>
-      session.send("Input.dispatchTouchEvent", { type, touchPoints: at === undefined ? [] : [at] });
-    const details = page.getByRole("status", { name: /^holiday\.mov\s+Status: 413 Too large/ });
-
-    await finger("touchStart", holiday);
-    await expect(details).toBeVisible();
-    await expect(details.getByText("413", { exact: true })).toBeVisible();
-    const top = (await boxOf(chart)).y;
-    // Once placed, they sit above the plot, where the finger does not cover them.
-    await expect
-      .poll(async () => {
-        const shownAt = await boxOf(details);
-        return shownAt.y + shownAt.height;
-      })
-      .toBeLessThanOrEqual(top);
-    await finger("touchEnd");
-    await expect(details).toBeHidden();
-  });
-
   test("Holding a chart: a finger shows a bar's values only while it holds the chart, above the chart", async ({
     page,
   }) => {
+    // A second, empty backend, so the chart has a bar below the default backend's.
+    await api(page.request, "POST", "/api/backends", {
+      name: unique("Empty"),
+      kind: "durable-object",
+    });
     await page.goto("/");
     const chart = page.getByRole("img", { name: "Bytes stored on each backend" });
     await chart.evaluate((element) => element.scrollIntoView({ block: "center" }));
     const values = page.getByRole("status", { name: /Stored: / });
-    const { x, y, width, height } = await boxOf(chart);
-    // A row per backend, largest first.
-    const archive = { x: x + width / 2, y: y + height / 6 };
-    const photos = { x: x + width / 2, y: y + height / 2 };
+    const { x, y, width } = await boxOf(chart);
+    // A row 44 px tall per backend, largest first: the default backend holds the sample.
+    const archive = { x: x + width / 2, y: y + 22 };
+    const photos = { x: x + width / 2, y: y + 66 };
     const session = await page.context().newCDPSession(page);
     const finger = (type: "touchStart" | "touchMove" | "touchEnd", at?: { x: number; y: number }) =>
       session.send("Input.dispatchTouchEvent", { type, touchPoints: at === undefined ? [] : [at] });
@@ -2226,7 +1925,7 @@ test.describe("on a touch screen", () => {
 
     // A held finger shows the bar under it, above the chart, where the finger does not cover it.
     await finger("touchStart", archive);
-    await expect(values).toHaveAccessibleName(/^RustFS archive /);
+    await expect(values).toHaveAccessibleName(/^Default /);
     const shownAt = await boxOf(values);
     expect(shownAt.y + shownAt.height).toBeLessThanOrEqual(y);
 
@@ -2239,7 +1938,7 @@ test.describe("on a touch screen", () => {
       });
       await nextFrame(page);
     }
-    await expect(values).toHaveAccessibleName(/^R2 photos /);
+    await expect(values).not.toHaveAccessibleName(/^Default /);
     expect(await scrollOf(chart)).toBe(scrolled);
 
     // Lifting the finger hides the values.
@@ -2263,21 +1962,20 @@ test.describe("on a touch screen", () => {
 });
 
 test("Closing a dialog: focus returns to the control that opened it", async ({ page }) => {
+  const mount = unique("focus");
+  await createMount(page.request, mount);
+  const folder = filesAt(await scratchFolder(page.request));
   // A dialog opened from a menu returns focus to the menu's button, since the menu has closed.
   const cases = [
     { path: "/storage", opener: "Add mount", close: "Cancel" },
     { path: "/storage", opener: "Add mount", close: "Escape" },
-    { path: "/storage", opener: "Actions for mount /photos", item: "Edit", close: "Cancel" },
-    { path: "/storage", opener: "Actions for mount /photos", item: "Remove", close: "Cancel" },
+    { path: "/storage", opener: "Add backend", close: "Cancel" },
+    { path: "/storage", opener: `Actions for mount /${mount}`, item: "Rename", close: "Cancel" },
+    { path: "/storage", opener: `Actions for mount /${mount}`, item: "Remove", close: "Cancel" },
     { path: "/credentials", opener: "Create key", close: "Cancel" },
     { path: "/credentials", opener: "Create key", close: "Escape" },
-    { path: "/files?path=%2Fdocuments", opener: "New folder", close: "Cancel" },
-    {
-      path: "/files?path=%2Fdocuments",
-      opener: "Actions for Contracts",
-      item: "Rename",
-      close: "Escape",
-    },
+    { path: folder, opener: "New folder", close: "Cancel" },
+    { path: folder, opener: "Actions for Contracts", item: "Rename", close: "Escape" },
   ];
   for (const { path, opener, item, close } of cases) {
     await page.goto(path);
@@ -2300,10 +1998,11 @@ test("Closing a dialog: focus returns to the control that opened it", async ({ p
 });
 
 test("A new name the search hides: focus moves to the search field", async ({ page }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  await page.goto(filesAt(await scratchFolder(page.request)));
   const search = page.getByRole("searchbox", { name: "Search this folder" });
-  await search.fill("con");
   await shown(page.getByRole("link", { name: "Contracts", exact: true }));
+  await search.fill("con");
+  await expect(page.getByRole("link", { name: "Drafts", exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "New folder" }).click();
   await page.getByRole("dialog").getByLabel("Name").fill("Receipts");
@@ -2320,24 +2019,26 @@ test("A new name the search hides: focus moves to the search field", async ({ pa
 });
 
 test("Clearing finished uploads: focus moves to the upload area's button", async ({ page }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  const folder = await scratchFolder(page.request);
+  await page.goto(filesAt(folder));
+  await shown(page.getByRole("link", { name: "Contracts", exact: true }));
   await page.getByRole("button", { name: "Upload" }).click();
   await page.locator('input[type="file"]').setInputFiles({
     name: "notes.txt",
     mimeType: "text/plain",
     buffer: Buffer.from("Notes"),
   });
-  await expect(onScreen(page, "Uploaded to /documents")).toBeVisible();
+  await expect(onScreen(page, `Uploaded to ${folder}`)).toBeVisible();
   await page.getByRole("button", { name: "Clear finished" }).click();
 
   await expect(page.getByRole("button", { name: "Clear finished" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Upload files to /documents" })).toBeFocused();
+  await expect(page.getByRole("button", { name: `Upload files to ${folder}` })).toBeFocused();
 });
 
 test("Clearing a selection: focus moves to the checkbox of the first row that was selected", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  await page.goto(filesAt(await scratchFolder(page.request)));
   await page.getByRole("checkbox", { name: "Select Drafts" }).check();
   await page.getByRole("checkbox", { name: "Select Scans" }).check();
   await page.getByRole("button", { name: "Unselect All" }).click();
@@ -2347,7 +2048,7 @@ test("Clearing a selection: focus moves to the checkbox of the first row that wa
 });
 
 test("Deleting a row: focus moves to the row that took its place", async ({ page }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  await page.goto(filesAt(await scratchFolder(page.request)));
   await expect(page.getByRole("row").nth(1)).toContainText("Contracts");
   await selectFirstRow(page);
   await page.getByRole("button", { name: "Delete" }).click();
@@ -2375,22 +2076,16 @@ for (const { width, where } of [
 }
 
 test("Removing a mount: focus moves to the next mount's menu", async ({ page }) => {
+  const first = unique("aaa-first");
+  await createMount(page.request, first);
+  await createMount(page.request, unique("aaa-second"));
   await page.goto("/storage");
-  await page.getByRole("button", { name: "Actions for mount /documents" }).click();
+  await page.getByRole("button", { name: `Actions for mount /${first}` }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" }).click();
 
-  await expect(page.getByRole("button", { name: "Actions for mount /shared" })).toBeFocused();
-});
-
-test("Signing out a session: focus moves to Set up, the control above the sessions", async ({
-  page,
-}) => {
-  await page.goto("/settings?section=security");
-  await page.getByRole("button", { name: "Sign out Firefox on Windows" }).click();
-
-  await expect(page.getByRole("button", { name: "Sign out Firefox on Windows" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Set up" })).toBeFocused();
+  await expect(page.getByRole("button", { name: `Actions for mount /${first}` })).toHaveCount(0);
+  await expect(page.locator(":focus")).toHaveAttribute("aria-label", /^Actions for mount \//);
 });
 
 /** Whether a computed `rgb()` or `rgba()` color is a visible gray: its channels differ by 1 at most. */
@@ -2473,7 +2168,7 @@ const textOnBackground = (text: Locator) =>
     };
   });
 
-test("Status colors: statuses, failed hours and destructive actions take their status colors", async ({
+test("Status colors: statuses and destructive actions take their status colors", async ({
   page,
 }) => {
   await page.goto("/");
@@ -2486,82 +2181,17 @@ test("Status colors: statuses, failed hours and destructive actions take their s
       .locator("xpath=..")
       .locator(`[data-color="${tone}"]`);
 
-  await expect(iconBeside("Unreachable", "error")).toHaveCount(1);
-  expect(await computed(iconBeside("Unreachable", "error"), "color")).toBe(
-    await tokenColor(page, "--color-icon-error"),
-  );
-  await expect(iconBeside("Connected", "success")).toHaveCount(1);
-  expect(await computed(iconBeside("Connected", "success"), "color")).toBe(
+  await expect(iconBeside("Available", "success")).toHaveCount(1);
+  expect(await computed(iconBeside("Available", "success"), "color")).toBe(
     await tokenColor(page, "--color-icon-success"),
   );
-
-  // A ring on each of the 3 hours with a failed operation.
-  const rings = page
-    .getByRole("img", { name: "Operations per hour, last 24 hours" })
-    .locator("circle");
-  await expect(rings).toHaveCount(3);
-  for (const ring of await rings.all()) {
-    expect(await computed(ring, "stroke")).toBe(await tokenColor(page, "--color-error"));
-  }
-
-  // The status code of each recent operation error, in its details.
-  for (const name of ["2026-11-16.tar.zst", "Drafts", "budget-2027.xlsx", "holiday.mov"]) {
-    await main.getByRole("button", { name: `Details for ${name}`, exact: true }).click();
-  }
-  for (const code of ["504", "412", "423", "413"]) {
-    expect(await computed(main.getByText(code, { exact: true }), "color"), code).toBe(
-      await tokenColor(page, "--color-text-error"),
-    );
-  }
-  // The disc of each error's cause takes the error color's muted shade under its own ink, and so
-  // does each marker of the timeline.
-  for (const cause of ["Timed out", "Already exists", "Locked", "Too large"]) {
-    const disc = await main.getByRole("img", { name: cause, exact: true }).evaluate((icon) => {
-      const style = getComputedStyle(icon.closest(".astryx-stack") ?? icon);
-      return { background: style.backgroundColor, ink: style.color };
-    });
-    expect(disc, cause).toEqual({
-      background: await tokenColor(page, "--color-error-muted"),
-      ink: await tokenColor(page, "--color-on-error-muted"),
-    });
-  }
-  // Each marker draws the picture of its own error's cause, the one its line shows in the list:
-  // as many shapes, and the same data in each path, where the list's icon keeps shapes such as a
-  // rectangle that the timeline draws as paths. The markers' keys carry the sample errors' ids.
-  const pictures = new Map<string, { shapes: number; paths: string[] }>();
-  for (const [id, cause] of [
-    ["e1", "Timed out"],
-    ["e2", "Already exists"],
-    ["e3", "Locked"],
-    ["e4", "Too large"],
-  ] as const) {
-    const icon = main.getByRole("img", { name: cause, exact: true });
-    pictures.set(
-      id,
-      await icon.evaluate((node) => ({
-        shapes: node.querySelectorAll("path, line, circle, ellipse, rect, polyline, polygon")
-          .length,
-        paths: [...node.querySelectorAll("path")].map((path) => path.getAttribute("d") ?? ""),
-      })),
-    );
-  }
-  await main.getByRole("radio", { name: "Timeline" }).click();
-  await expect(errorMarkers(page)).toHaveCount(4);
-  for (const marker of await errorMarkers(page).all()) {
-    expect(await computed(marker, "fill")).toBe(await tokenColor(page, "--color-error-muted"));
-  }
-  for (const [id, picture] of pictures) {
-    const drawn = errorTimeline(page).locator(`path[data-ts-key*=":${id}:glyph:"]`);
-    await expect(drawn, id).toHaveCount(picture.shapes);
-    const data = await drawn.evaluateAll((paths) => paths.map((path) => path.getAttribute("d")));
-    expect(data, id).toEqual(expect.arrayContaining(picture.paths));
-  }
-  // The picture of each cause is drawn in lines of the ink, with nothing filled.
-  const glyphs = errorTimeline(page).locator('path[data-ts-key*=":glyph:"]');
-  for (const glyph of await glyphs.all()) {
-    expect(await computed(glyph, "fill")).toBe("none");
-    expect(await computed(glyph, "stroke")).toBe(await tokenColor(page, "--color-on-error-muted"));
-  }
+  await withUnavailableBackend(page);
+  await page.reload();
+  await expect(iconBeside("Unavailable", "error")).toHaveCount(1);
+  expect(await computed(iconBeside("Unavailable", "error"), "color")).toBe(
+    await tokenColor(page, "--color-icon-error"),
+  );
+  await page.unrouteAll();
 
   // Astryx fills a destructive button with the error color's muted shade, under its own text:
   // the Delete of a selection, the Delete in a file's details and a confirmation's action.
@@ -2571,26 +2201,37 @@ test("Status colors: statuses, failed hours and destructive actions take their s
     );
     expect(await computed(button, "color")).toBe(await tokenColor(page, "--color-on-error-muted"));
   };
-  await page.goto("/files?path=%2Fshared");
+  const folder = await scratchFolder(page.request);
+  await page.goto(filesAt(folder));
   await selectFirstRow(page);
   await destructive(main.getByRole("button", { name: "Delete", exact: true }));
   await page.goto(PREVIEW);
   await shown(page.getByRole("heading", { name: "Preview" }));
   await destructive(main.getByRole("button", { name: "Delete", exact: true }));
 
+  const mount = unique("colors");
+  await createMount(page.request, mount);
   await page.goto("/storage");
-  await page.getByRole("button", { name: "Actions for mount /photos" }).click();
+  await page.getByRole("button", { name: `Actions for mount /${mount}` }).click();
   await page.getByRole("menuitem", { name: "Remove" }).click();
   await destructive(page.getByRole("alertdialog").getByRole("button", { name: "Remove mount" }));
 
   // The error notification draws on Astryx's own red, whose text reaches 4.5:1 in either mode.
+  // A delete the server refuses brings one up.
+  await page.route("**/dav/**", (route) =>
+    route.request().method() === "DELETE" ? route.fulfill({ status: 500 }) : route.continue(),
+  );
   for (const colorScheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme });
-    await page.goto("/");
+    await page.goto(filesAt(folder));
     // The token resolves in the page's own mode, so the mode is checked before it is trusted.
     expect(await page.evaluate(bodyIsDark), colorScheme).toBe(colorScheme === "dark");
-    await page.getByRole("button", { name: "Check connections" }).click();
-    const { color, background } = await textOnBackground(onScreen(page, /still unreachable/));
+    await selectFirstRow(page);
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
+    const notice = onScreen(page, "The server refused the request (500).");
+    await shown(notice);
+    const { color, background } = await textOnBackground(notice);
     expect(background, colorScheme).toBe(
       await tokenColor(page, "--color-background-error-inverted"),
     );
@@ -2613,11 +2254,8 @@ test("Rendered pages: the scan reports a red spelling mark and a checkbox left t
 test("The name a screen reader hears: a file's link is named with the whole file name", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
-
-  const name =
-    "an-export-from-the-old-nas-with-a-very-long-file-name-that-keeps-going-2026-11-16.log";
-  await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  await page.goto(filesAt("/files"));
+  await expect(page.getByRole("link", { name: LONG_LOG_NAME, exact: true })).toBeVisible();
 });
 
 /**
@@ -2635,21 +2273,12 @@ const imageDescriptions = async (page: Page): Promise<Map<string, string>> => {
   );
 };
 
-test("The operations chart in words: it describes the failures and the busiest hour", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await shown(page.getByRole("img", { name: "Operations per hour, last 24 hours" }));
-  expect((await imageDescriptions(page)).get("Operations per hour, last 24 hours")).toBe(
-    "3,732 operations, 4 of them failed, 5 hours ago, 1 hour ago, and now. The busiest hour was 12 hours ago, with 426.",
-  );
-});
-
 test("The storage chart in words: it names the bytes on each backend", async ({ page }) => {
   await page.goto("/");
   await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
-  expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toBe(
-    "RustFS archive stores 212 GB, R2 photos stores 41.2 GB, and Durable Objects stores 1.9 GB.",
+  // The default backend holds the sample, more than any backend the other tests add.
+  expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toMatch(
+    /^Default stores [\d.]+ (bytes|kB|MB)(, .+ stores 0 bytes)*\.$/,
   );
 });
 
@@ -2666,315 +2295,24 @@ const labelEdges = (chart: Element): { start: number; end: number } => {
   };
 };
 
-// Runs in the page: where a card's content ends on the right, inside its padding and border.
-const contentRight = (card: Element): number => {
-  const style = getComputedStyle(card);
-  return (
-    card.getBoundingClientRect().right -
-    Number.parseFloat(style.paddingRight) -
-    Number.parseFloat(style.borderRightWidth)
-  );
-};
-
-test("Charts on their card's grid: the longest label on the y axis starts where the title does, and the last hour ends where the card's content does", async ({
+test("Charts on their card's grid: the longest label on the y axis starts where the title does", async ({
   page,
 }) => {
   for (const width of [1280, 800, PHONE_WIDTH]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/");
-    for (const [title, name] of [
-      ["Operations", "Operations per hour, last 24 hours"],
-      ["Storage by backend", "Bytes stored on each backend"],
-    ] as const) {
+    for (const [title, name] of [["Storage by backend", "Bytes stored on each backend"]] as const) {
       const heading = page.getByRole("heading", { name: title, exact: true });
       const card = cardWith(page, heading);
-      const { start, end } = await card.getByRole("img", { name }).evaluate(labelEdges);
+      const { start } = await card.getByRole("img", { name }).evaluate(labelEdges);
       // Within 0.05 px: on a Mac, a label measured by its ink, as TanStack measures it, starts
       // 0.69 px out. Each edge is checked on its own, so one run reports every chart and width
       // that misses.
       expect
         .soft(start, `${title}'s longest label at ${width} px`)
         .toBeCloseTo((await boxOf(heading)).x, 1);
-      // The storage chart's last labels are its bars' values, which end where the bars do. Within
-      // half a pixel: on CI's Linux, Chromium draws Now 0.66 px wider than its canvas measure at
-      // every width, for a reason not found, and ends it 0.33 px past the content's edge.
-      if (title === "Operations") {
-        expect
-          .soft(end, `${title}'s last hour at ${width} px`)
-          .toBeCloseTo(await card.evaluate(contentRight), 0);
-      }
     }
   }
-});
-
-test("A rejected upload: an error shows its cause, its name and its age, and its details on demand", async ({
-  page,
-}) => {
-  await page.goto("/");
-  const panel = errorsPanel(page);
-  const row = panel.getByRole("listitem").filter({ hasText: "holiday.mov" });
-  await expect(row.getByRole("img", { name: "Too large", exact: true })).toBeVisible();
-  await expect(row.getByText("5h", { exact: true })).toBeVisible();
-  // Assistive technology hears the age in words, and not its short form.
-  await expect(row).toMatchAriaSnapshot(`
-    - listitem:
-      - img "Too large"
-      - text: holiday.mov 5 hours ago
-  `);
-  // The details wait for a tap: no status code, request or reason shows before it.
-  await expect(panel.getByText("413", { exact: true })).toHaveCount(0);
-  await expect(panel.getByText(/Cloudflare Free/)).toHaveCount(0);
-
-  const toggle = panel.getByRole("button", { name: "Details for holiday.mov", exact: true });
-  await toggle.click();
-  const details = await detailsOf(toggle);
-  const code = details.getByText("413", { exact: true });
-  await expect(code).toBeVisible();
-  expect(await computed(code, "color")).toBe(await tokenColor(page, "--color-text-error"));
-  await expect(details.getByText("Too large", { exact: true })).toBeVisible();
-  await expect(details.getByRole("img", { name: "PUT", exact: true })).toBeVisible();
-  await expect(details.getByText("/photos/2026/holiday.mov", { exact: true })).toBeVisible();
-  await expect(
-    details.getByText(/^Uploads over 100\sMB do not fit one request on Cloudflare Free\.$/),
-  ).toBeVisible();
-  await expect(details.getByText("5 hours ago", { exact: true })).toBeVisible();
-});
-
-test("Choosing a view: the list shows first, and the view chosen lasts for the visit", async ({
-  page,
-}) => {
-  await page.goto("/");
-  const panel = errorsPanel(page);
-  const views = panel.getByRole("radiogroup", { name: "Show errors as" });
-  const view = (name: string) => views.getByRole("radio", { name, exact: true });
-  await expect(view("List")).toHaveAttribute("aria-checked", "true");
-  await expect(panel.getByRole("button", { name: "Details for holiday.mov" })).toBeVisible();
-  await expect(errorTimeline(page)).toHaveCount(0);
-  // Each choice is a picture, named for assistive technology and in a tooltip. The tooltip repeats
-  // the name, so it does not describe the choice too, and a screen reader reads the word once.
-  for (const name of ["List", "Timeline", "Tiles"]) {
-    await expect(view(name)).toHaveText("");
-    await view(name).hover();
-    await expect(page.getByRole("tooltip").filter({ hasText: name })).toBeVisible();
-    await expect(view(name)).toHaveAccessibleDescription("");
-  }
-
-  await view("Timeline").click();
-  await expect(errorTimeline(page)).toBeVisible();
-  await expect(panel.getByRole("listitem")).toHaveCount(0);
-  await sideNavigation(page).getByRole("link", { name: "Files" }).click();
-  await expect(levelOne(page)).toHaveText("Files");
-  await sideNavigation(page).getByRole("link", { name: "Overview" }).click();
-  await expect(view("Timeline")).toHaveAttribute("aria-checked", "true");
-  await expect(errorTimeline(page)).toBeVisible();
-
-  await page.reload();
-  await expect(view("List")).toHaveAttribute("aria-checked", "true");
-  await expect(panel.getByRole("button", { name: "Details for holiday.mov" })).toBeVisible();
-  await expect(errorTimeline(page)).toHaveCount(0);
-});
-
-/**
- * The timeline's axis runs on the panel's grid: from the line where the panel's title starts to the
- * end of the panel's content, which the chart spans. A horizontal line has no height, so its edges
- * are read from the page rather than from a visible box.
- */
-const expectAxisOnGrid = async (page: Page): Promise<void> => {
-  const panel = errorsPanel(page);
-  const title = await boxOf(panel.getByRole("heading", { name: "Recent operation errors" }));
-  const chart = await boxOf(errorTimeline(page));
-  const axis = await errorTimeline(page)
-    .locator('line[data-ts-key$=":axis"]')
-    .evaluate((line) => {
-      const edges = line.getBoundingClientRect();
-      return { start: edges.left, end: edges.right };
-    });
-  expect(
-    Math.abs(axis.start - title.x),
-    "the axis starts where the title does",
-  ).toBeLessThanOrEqual(1);
-  expect(
-    Math.abs(axis.end - (chart.x + chart.width)),
-    "the axis ends with the panel",
-  ).toBeLessThanOrEqual(1);
-};
-
-/** Moves keyboard focus with Tab until `target` has it, as a keyboard user reaches it. */
-const tabTo = async (page: Page, target: Locator): Promise<void> => {
-  for (let step = 0; step < 40; step += 1) {
-    if (await target.evaluate((node) => node === document.activeElement)) {
-      return;
-    }
-    await page.keyboard.press("Tab");
-  }
-  await expect(target).toBeFocused();
-};
-
-test("Reading the timeline: the errors lie along the last day, the last hour over half of it, and each shows its details", async ({
-  page,
-}) => {
-  await page.goto("/");
-  await errorsPanel(page).getByRole("radio", { name: "Timeline" }).click();
-  const chart = errorTimeline(page);
-  await chart.scrollIntoViewIfNeeded();
-  await expect(errorMarkers(page)).toHaveCount(4);
-  const centers = await markerCenters(page);
-  // The markers keep the order of the sample errors: 12, 47, 95 and 310 minutes ago.
-  const [archive, drafts, budget, holiday] = centers;
-  if (
-    archive === undefined ||
-    drafts === undefined ||
-    budget === undefined ||
-    holiday === undefined
-  ) {
-    throw new Error("The timeline has fewer than four markers.");
-  }
-  expect(holiday.x).toBeLessThan(budget.x);
-  expect(budget.x).toBeLessThan(drafts.x);
-  expect(drafts.x).toBeLessThan(archive.x);
-  // The last hour, from the tick marked 1h to Now, takes more than half of the width, with the
-  // two errors of the last hour in it and the older ones before it.
-  const hour = await boxOf(chart.getByText("1h", { exact: true }));
-  const now = await boxOf(chart.getByText("Now", { exact: true }));
-  const hourAt = hour.x + hour.width / 2;
-  const plot = await boxOf(chart);
-  expect(hourAt).toBeLessThan(plot.x + plot.width / 2);
-  expect(now.x + now.width).toBeGreaterThan(plot.x + plot.width * 0.9);
-  for (const recent of [archive, drafts]) {
-    expect(recent.x, "an error of the last hour").toBeGreaterThan(hourAt);
-  }
-  for (const older of [budget, holiday]) {
-    expect(older.x, "an older error").toBeLessThan(hourAt);
-  }
-  centers.forEach((one, first) => {
-    for (const other of centers.slice(first + 1)) {
-      expect(Math.hypot(one.x - other.x, one.y - other.y)).toBeGreaterThanOrEqual(
-        one.radius + other.radius,
-      );
-    }
-  });
-  await expectAxisOnGrid(page);
-  // Every stem is drawn before every marker, so a stem rising to the upper lane passes behind a
-  // marker on the lower one. Each marker lies on a disc of the card's color that reaches as far as
-  // the marker and its ring, which hides that stem where the error color's muted shade is
-  // translucent, as in dark mode.
-  const layers = await chart.evaluate((svg) =>
-    [
-      ...svg.querySelectorAll(
-        'line[data-ts-key$=":stem"], circle[data-ts-key$=":base"], circle[r="20"]',
-      ),
-    ].map((node) => {
-      if (node.tagName === "line") {
-        return "stem";
-      }
-      return node.getAttribute("r") === "20" ? "marker" : "base";
-    }),
-  );
-  expect(layers).toEqual([
-    ...Array.from({ length: 4 }, () => "stem"),
-    ...Array.from({ length: 4 }, () => ["base", "marker"]).flat(),
-  ]);
-  const card = await tokenColor(page, "--color-background-card");
-  for (const marker of await errorMarkers(page).all()) {
-    const key = await marker.getAttribute("data-ts-key");
-    const base = chart.locator(`circle[data-ts-key="${key}:base"]`);
-    const [under, over] = await Promise.all(
-      [base, marker].map((circle) =>
-        circle.evaluate((node) => {
-          const style = getComputedStyle(node);
-          const ring = style.stroke === "none" ? 0 : Number.parseFloat(style.strokeWidth) / 2;
-          return {
-            center: `${node.getAttribute("cx")},${node.getAttribute("cy")}`,
-            reach: Number(node.getAttribute("r")) + ring,
-          };
-        }),
-      ),
-    );
-    expect(under, `the base under ${key}`).toEqual(over);
-    expect(await computed(base, "fill"), `the base under ${key}`).toBe(card);
-  }
-
-  // Pointing at a marker shows its error's name and details.
-  await page.mouse.move(budget.x, budget.y);
-  const details = page.getByRole("status", { name: /^budget-2027\.xlsx\s+Status: 423 Locked/ });
-  await expect(details).toBeVisible();
-  await expect(details).toContainText("budget-2027.xlsx");
-  for (const words of ["423", "Locked", "/documents/budget-2027.xlsx"]) {
-    await expect(details.getByText(words, { exact: true })).toBeVisible();
-  }
-  // They show above the plot, once placed, on a surface of the popover's color, as the charts'
-  // tooltips do.
-  await expect
-    .poll(async () => {
-      const shownAt = await boxOf(details);
-      return shownAt.y + shownAt.height;
-    })
-    .toBeLessThanOrEqual(plot.y);
-  const surface = await details.evaluate((node) => {
-    const painted = [node, ...node.querySelectorAll("*")].find(
-      (element) => getComputedStyle(element).backgroundColor !== "rgba(0, 0, 0, 0)",
-    );
-    return painted === undefined ? null : getComputedStyle(painted).backgroundColor;
-  });
-  expect(surface).toBe(await tokenColor(page, "--color-background-popover"));
-
-  // The keyboard reaches the oldest error first, and each arrow key the next one.
-  await page.mouse.move(0, 0);
-  await tabTo(page, chart);
-  for (const [step, name] of [
-    [0, /^holiday\.mov\s/],
-    [1, /^budget-2027\.xlsx\s/],
-    [2, /^Drafts\s/],
-    [3, /^2026-11-16\.tar\.zst\s/],
-  ] as const) {
-    if (step > 0) {
-      await page.keyboard.press("ArrowRight");
-    }
-    await expect(page.getByRole("status", { name })).toBeVisible();
-  }
-
-  // In a window 375 px wide the two oldest errors fall between 40 and 46 px apart. Their discs
-  // would not touch, but they come within 46 px, a marker's width and a gap, so the later one
-  // takes the second lane. The chart draws again for its new width, so the markers are read once
-  // they stay where they are.
-  await page.setViewportSize({ width: 375, height: 812 });
-  await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(375);
-  const [, , budgetAt375, holidayAt375] = await settledMarkerCenters(page);
-  if (budgetAt375 === undefined || holidayAt375 === undefined) {
-    throw new Error("The timeline has fewer than four markers at 375 px.");
-  }
-  const apart = budgetAt375.x - holidayAt375.x;
-  expect(apart, "the oldest errors' distance at 375 px").toBeGreaterThan(
-    budgetAt375.radius + holidayAt375.radius,
-  );
-  expect(apart, "the oldest errors' distance at 375 px").toBeLessThan(46);
-  // A whole marker higher, as markers on one lane differ by a fraction of a pixel.
-  expect(holidayAt375.y - budgetAt375.y, "the later of them a lane higher").toBeGreaterThan(
-    budgetAt375.radius + holidayAt375.radius,
-  );
-
-  // In the narrowest window the markers stack rather than cover each other.
-  await page.setViewportSize({ width: PHONE_WIDTH, height: 812 });
-  await expect.poll(async () => (await boxOf(chart)).width).toBeLessThan(PHONE_WIDTH);
-  const narrow = await settledMarkerCenters(page);
-  expect(narrow).toHaveLength(4);
-  narrow.forEach((one, first) => {
-    for (const other of narrow.slice(first + 1)) {
-      expect(Math.hypot(one.x - other.x, one.y - other.y)).toBeGreaterThanOrEqual(
-        one.radius + other.radius,
-      );
-    }
-  });
-  await expectAxisOnGrid(page);
-});
-
-test("The timeline in words: it names each error's file, cause and age", async ({ page }) => {
-  await page.goto("/");
-  await errorsPanel(page).getByRole("radio", { name: "Timeline" }).click();
-  await expect(errorTimeline(page)).toBeVisible();
-  expect((await imageDescriptions(page)).get("Operation errors, last 24 hours")).toBe(
-    "4 operations failed in the last 24 hours. holiday.mov: too large, 5 hours ago. budget-2027.xlsx: locked, 2 hours ago. Drafts: already exists, 47 minutes ago. 2026-11-16.tar.zst: timed out, 12 minutes ago.",
-  );
 });
 
 test("Focusing a chart: a click draws no ring, and the keyboard draws the theme's", async ({
@@ -3028,7 +2366,7 @@ test("The address field's name: a screen reader hears the field's label alone", 
 }) => {
   await page.goto("/");
   await expect(page.getByRole("textbox", { name: "WebDAV address", exact: true })).toHaveValue(
-    /^https:\/\//,
+    `${WORKERS_ORIGIN}/dav/`,
   );
 });
 
@@ -3037,20 +2375,24 @@ test("The WebDAV section's address field: a screen reader hears its label alone"
 }) => {
   await page.goto("/settings?section=webdav");
   await expect(page.getByRole("textbox", { name: "Address", exact: true })).toHaveValue(
-    /^https:\/\//,
+    `${WORKERS_ORIGIN}/dav/`,
   );
 });
 
 test("Opening the form again: the mount form starts from its own mount or the defaults", async ({
   page,
 }) => {
+  const first = unique("again-one");
+  const second = unique("again-two");
+  await createMount(page.request, first);
+  await createMount(page.request, second);
   await page.goto("/storage");
-  await page.getByRole("button", { name: "Actions for mount /photos" }).click();
-  await page.getByRole("menuitem", { name: "Edit" }).click();
+  await page.getByRole("button", { name: `Actions for mount /${first}` }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
-  await page.getByRole("button", { name: "Actions for mount /documents" }).click();
-  await page.getByRole("menuitem", { name: "Edit" }).click();
-  await expect(page.getByRole("dialog").getByLabel("Folder name")).toHaveValue("documents");
+  await page.getByRole("button", { name: `Actions for mount /${second}` }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await expect(page.getByRole("dialog").getByLabel("Folder name")).toHaveValue(second);
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "Add mount" }).click();
   await expect(page.getByRole("dialog").getByLabel("Folder name")).toHaveValue("");
@@ -3059,87 +2401,12 @@ test("Opening the form again: the mount form starts from its own mount or the de
 test("Opening the name dialog again: New folder starts empty after a canceled rename", async ({
   page,
 }) => {
-  await page.goto("/files?path=%2Fdocuments");
+  await page.goto(filesAt(await scratchFolder(page.request)));
   await page.getByRole("button", { name: "Actions for Contracts" }).click();
   await page.getByRole("menuitem", { name: "Rename" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("button", { name: "New folder" }).click();
   await expect(page.getByRole("dialog").getByLabel("Name")).toHaveValue("");
-});
-
-test("A folder outside the mount: the form refuses a scope with ..", async ({ page }) => {
-  await page.goto("/credentials");
-  await page.getByRole("button", { name: "Create key" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByLabel("Name").fill("Escape attempt");
-  await dialog.getByRole("combobox", { name: "Mount" }).click();
-  await page.getByRole("option", { name: "/documents" }).click();
-  await dialog.getByLabel("Folder inside the mount").fill("../photos");
-  await dialog.getByRole("button", { name: "Create key" }).click();
-
-  await expect(onScreen(page, /without \. or \.\. in its path/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Key “Escape attempt” is ready" })).toHaveCount(0);
-});
-
-test("A profile without a name: saving refuses it and an address without an @", async ({
-  page,
-}) => {
-  await page.goto("/settings?section=profile");
-  await page.getByLabel("Display name").fill("");
-  await page.getByLabel("Email").fill("home-admin");
-  await page.getByRole("button", { name: "Save profile" }).click();
-
-  await expect(onScreen(page, "Enter the name Davloom should call you.")).toBeVisible();
-  await expect(onScreen(page, /^Enter an email address/)).toBeVisible();
-  await expect(onScreen(page, "Profile saved.")).toHaveCount(0);
-});
-
-test("No requests to the API: browsing and changing sample data stays in the browser", async ({
-  page,
-}) => {
-  const paths: string[] = [];
-  page.on("request", (request) => paths.push(new URL(request.url()).pathname));
-
-  for (const { path, name } of PAGES) {
-    await page.goto(path);
-    await expect(levelOne(page)).toHaveText(name);
-  }
-
-  await page.goto("/credentials");
-  await page.getByRole("button", { name: "Create key" }).click();
-  await page.getByRole("dialog").getByLabel("Name").fill("Test key");
-  await page.getByRole("dialog").getByRole("button", { name: "Create key" }).click();
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("table").getByText("Test key", { exact: true })).toBeVisible();
-
-  await page.goto("/storage");
-  await page.getByRole("button", { name: "Add mount" }).click();
-  // Typed with the slash and spaces a user might add, which the folder name drops.
-  await page.getByRole("dialog").getByLabel("Folder name").fill(" / music ");
-  await page.getByRole("dialog").getByRole("button", { name: "Add mount" }).click();
-  await expect(page.getByRole("cell", { name: "/music", exact: true })).toBeVisible();
-
-  await page.goto("/files?path=%2Fdocuments");
-  await page.getByRole("button", { name: "New folder" }).click();
-  await page.getByRole("dialog").getByLabel("Name").fill("Receipts");
-  await page.getByRole("dialog").getByRole("button", { name: "Create folder" }).click();
-  await expect(page.getByRole("link", { name: "Receipts" })).toBeVisible();
-
-  expect(paths.filter((path) => path.startsWith("/api/") || path.startsWith("/dav/"))).toEqual([]);
-});
-
-test("Changes last for the visit: a new mount shows in Files until a reload", async ({ page }) => {
-  await page.goto("/storage");
-  await page.getByRole("button", { name: "Add mount" }).click();
-  await page.getByRole("dialog").getByLabel("Folder name").fill("music");
-  await page.getByRole("dialog").getByRole("button", { name: "Add mount" }).click();
-
-  await sideNavigation(page).getByRole("link", { name: "Files" }).click();
-  await expect(page.getByRole("link", { name: "music", exact: true })).toBeVisible();
-
-  await page.reload();
-  await expect(page.getByRole("link", { name: "documents", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "music", exact: true })).toHaveCount(0);
 });
 
 test.describe("in a window 1100 px wide", () => {
@@ -3193,26 +2460,21 @@ test.describe("in a window 1100 px wide", () => {
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
   });
 
-  test("Folding the navigation on Settings: the open section keeps what was typed and finishes an export", async ({
+  test("Folding the navigation on Settings: the open section stays open in either layout", async ({
     page,
   }) => {
     // Beside the navigation at its default width, a window 1000 px wide leaves a narrow page.
     await page.setViewportSize({ width: 1000, height: 800 });
     const sections = page.getByRole("navigation", { name: "Settings sections" });
     const selector = page.getByRole("combobox", { name: "Section" });
-    await page.goto("/settings?section=profile");
+    await page.goto("/settings?section=webdav");
     await expect(selector).toBeVisible();
-    const field = page.getByRole("textbox", { name: "Display name" });
-    await field.fill("Edited but unsaved");
+    await expect(selector).toHaveText("WebDAV");
     await sideNavigation(page).getByRole("button", { name: "Collapse sidebar" }).click();
     await expect(sections).toBeVisible();
-    await expect(field).toHaveValue("Edited but unsaved");
-
-    // An export started before the navigation opens again still says it finished.
-    await page.goto("/settings?section=export");
-    await page.getByRole("button", { name: "Export" }).click();
+    await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
     await sideNavigation(page).getByRole("button", { name: "Expand sidebar" }).click();
     await expect(selector).toBeVisible();
-    await shown(onScreen(page, /^Exported davloom-export/));
+    await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
   });
 });

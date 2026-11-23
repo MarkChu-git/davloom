@@ -3,6 +3,7 @@
 // `apps/api` starts it for development. It bundles the Worker once, so restart it after changing
 // the code.
 // Usage: bun scripts/serve-workers.ts <Wrangler config, relative to the repository root> <port>
+// DAVLOOM_SECRET, DAVLOOM_SETUP_TOKEN and DAVLOOM_URL in the environment become the Worker's vars.
 //
 // It installs no signal handlers of its own. On those signals, `servers.ts` stops the bundler,
 // removes the bundle and exits the process, also while the Worker is still bundling, and on exit
@@ -15,5 +16,14 @@ if (!configPath || !port) {
   process.exit(1);
 }
 
-const server = await startWorkerdServer(configPath, { port: Number(port) });
+// The instance's secrets come from the environment, as `wrangler secret put` gives them to a
+// deployment, so that Playwright can start a Worker that signs sessions and takes a setup.
+const vars = Object.fromEntries(
+  ["DAVLOOM_SECRET", "DAVLOOM_SETUP_TOKEN", "DAVLOOM_URL"].flatMap((name) => {
+    const value = process.env[name];
+    return value === undefined || value === "" ? [] : [[name, value]];
+  }),
+);
+
+const server = await startWorkerdServer(configPath, { port: Number(port), vars });
 console.log(`listening on ${server.url}`);
