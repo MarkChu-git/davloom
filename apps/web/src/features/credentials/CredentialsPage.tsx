@@ -1,7 +1,9 @@
 import { useImperativeAlertDialog } from "@astryxdesign/core/AlertDialog";
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Icon } from "@astryxdesign/core/Icon";
 import {
   HStack,
@@ -20,25 +22,25 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useToast } from "@astryxdesign/core/Toast";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { Store, useStore } from "@tanstack/react-store";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { credentials, SAMPLE_NOW, type Credential } from "../sample-data/data";
-import { formatDate, formatRelative } from "../sample-data/format";
-import { sampleId } from "../sample-data/id";
+import { describeError } from "../api/client";
+import { webdavAddress } from "../api/dav";
+import { useApiKeys, useCreateKey, useRevokeKey, type ApiKey } from "../api/queries";
 import { CopyField } from "../shell/CopyField";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
+import { formatDate } from "../shell/format";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
+import { QueryState } from "../shell/QueryState";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
 import { TitleAction } from "../shell/TitleRow";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
-import { useMounts } from "../storage/mountStore";
 import { hasExpired, keyStateOf, type KeyState } from "./keyState";
-import { scopeOf, type Scope } from "./scope";
 
-const credentialStore = new Store<Credential[]>(credentials);
+// Rows keep the API's fields; the table wants records.
+type KeyRow = ApiKey & Record<string, unknown>;
 
 const EXPIRY_OPTIONS = [
   { value: "30", label: "In 30 days" },
@@ -47,102 +49,96 @@ const EXPIRY_OPTIONS = [
   { value: "never", label: "Never" },
 ] as const;
 
-const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-
-/** A sample secret. The real one comes from the server, which keeps only its hash. */
-const sampleSecret = (): string =>
-  `dvl_${Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => BASE32[byte % 32]).join("")}`;
-
 const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
   active: { tone: "success", label: "Active" },
   expired: { tone: "warning", label: "Expired" },
-  revoked: { tone: "error", label: "Revoked" },
+  disabled: { tone: "error", label: "Off" },
 };
 
-const accessOf = (credential: Credential): string =>
-  credential.permission === "read-only" ? "Read only" : "Read and write";
+const accessOf = (key: ApiKey): string =>
+  key.access === "read-only" ? "Read only" : "Read and write";
 
-const lastUsedOf = (credential: Credential): string =>
-  credential.lastUsedAt === null ? "Never" : formatRelative(credential.lastUsedAt);
+const expiresOf = (key: ApiKey): string =>
+  key.expiresAt === null ? "Never" : formatDate(key.expiresAt);
 
-const expiresOf = (credential: Credential): string =>
-  credential.expiresAt === null ? "Never" : formatDate(credential.expiresAt);
+const startOf = (key: ApiKey): string => (key.start === null ? "—" : `${key.start}…`);
 
-const KeyName = ({ credential }: { credential: Credential }) => (
+const KeyName = ({ apiKey }: { apiKey: ApiKey }) => (
   <VStack gap={0.5}>
     <Text weight="semibold" maxLines={1}>
-      {credential.name}
+      {apiKey.name}
     </Text>
-    <Text type="code" color="secondary">{`${credential.prefix}…`}</Text>
+    <Text type="code" color="secondary">
+      {startOf(apiKey)}
+    </Text>
   </VStack>
 );
 
-const KeyStatus = ({ credential }: { credential: Credential }) => (
-  <StatusLabel {...KEY_STATES[keyStateOf(credential, SAMPLE_NOW)]} />
+/** The time the page opened, which a key's status and expiry are measured against. */
+const useNow = (): Date => useState(() => new Date())[0];
+
+const KeyStatus = ({ apiKey }: { apiKey: ApiKey }) => (
+  <StatusLabel {...KEY_STATES[keyStateOf(apiKey, useNow())]} />
 );
 
 /** The narrowest table, in rem, that has room for a column per detail. */
-const WIDE_TABLE = 58;
+const WIDE_TABLE = 46;
 
-const WIDE_COLUMNS: TableColumn<Credential>[] = [
+const WIDE_COLUMNS: TableColumn<KeyRow>[] = [
   {
     key: "name",
     header: "Name",
     width: proportional(2, { minWidth: 180 }),
-    renderCell: (credential) => <KeyName credential={credential} />,
+    renderCell: (key) => <KeyName apiKey={key} />,
   },
-  { key: "permission", header: "Access", width: pixel(136), renderCell: accessOf },
+  { key: "access", header: "Access", width: pixel(136), renderCell: accessOf },
   {
-    key: "scope",
-    header: "Scope",
-    width: proportional(2, { minWidth: 160 }),
-    renderCell: (credential) => <Text maxLines={1}>{credential.scope}</Text>,
-  },
-  {
-    key: "lastUsedAt",
-    header: "Last used",
+    key: "createdAt",
+    header: "Created",
     width: pixel(120),
-    renderCell: (credential) => <Text color="secondary">{lastUsedOf(credential)}</Text>,
+    renderCell: (key) => <Text color="secondary">{formatDate(key.createdAt)}</Text>,
   },
   {
     key: "expiresAt",
     header: "Expires",
     width: pixel(120),
-    renderCell: (credential) => <Text color="secondary">{expiresOf(credential)}</Text>,
+    renderCell: (key) => <Text color="secondary">{expiresOf(key)}</Text>,
   },
   {
     key: "state",
     header: "Status",
     width: pixel(120),
-    renderCell: (credential) => <KeyStatus credential={credential} />,
+    renderCell: (key) => <KeyStatus apiKey={key} />,
   },
 ];
 
 /** A key's first characters, with its status at the end of the line. */
-const KeySummary = ({ credential }: { credential: Credential }) => (
+const KeySummary = ({ apiKey }: { apiKey: ApiKey }) => (
   <HStack gap={3} vAlign="center">
     <StackItem size="fill">
       <Text type="code" color="secondary" maxLines={1}>
-        {`${credential.prefix}…`}
+        {startOf(apiKey)}
       </Text>
     </StackItem>
-    <KeyStatus credential={credential} />
+    <KeyStatus apiKey={apiKey} />
   </HStack>
 );
 
 /** What a key's row shows once opened: the details the table has columns for. */
-const KeyFacts = ({ credential }: { credential: Credential }) => (
-  <MetadataList>
-    <MetadataListItem label="Access">{accessOf(credential)}</MetadataListItem>
-    <MetadataListItem label="Scope">{credential.scope}</MetadataListItem>
-    <MetadataListItem label="Last used">{lastUsedOf(credential)}</MetadataListItem>
-    {/* Past its expiry time a key says it expired, whether or not it was revoked. */}
-    <MetadataListItem label={hasExpired(credential, SAMPLE_NOW) ? "Expired" : "Expires"}>
-      {expiresOf(credential)}
-    </MetadataListItem>
-  </MetadataList>
-);
+const KeyFacts = ({ apiKey }: { apiKey: ApiKey }) => {
+  const now = useNow();
+  return (
+    <MetadataList>
+      <MetadataListItem label="Access">{accessOf(apiKey)}</MetadataListItem>
+      <MetadataListItem label="Created">{formatDate(apiKey.createdAt)}</MetadataListItem>
+      <MetadataListItem label={hasExpired(apiKey, now) ? "Expired" : "Expires"}>
+        {expiresOf(apiKey)}
+      </MetadataListItem>
+    </MetadataList>
+  );
+};
 
+/** The new key, shown this once, and how a WebDAV client signs in with it. */
 const ShowOnce = ({
   name,
   secret,
@@ -157,7 +153,17 @@ const ShowOnce = ({
     content={
       <LayoutContent>
         <VStack gap={4}>
+          <Text color="secondary">
+            Copy the key now: Davloom keeps only its hash and cannot show it again.
+          </Text>
           <CopyField label="API key" value={secret} copyLabel="Copy key" />
+          <MetadataList label={{ position: "top" }}>
+            <MetadataListItem label="WebDAV address">
+              <Text type="code">{webdavAddress()}</Text>
+            </MetadataListItem>
+            <MetadataListItem label="Username">Any name</MetadataListItem>
+            <MetadataListItem label="Password">This key</MetadataListItem>
+          </MetadataList>
         </VStack>
       </LayoutContent>
     }
@@ -176,44 +182,34 @@ const CreateKeyForm = ({
   onCreate,
 }: {
   onCancel: () => void;
-  onCreate: (credential: Credential, secret: string) => void;
+  onCreate: (name: string, secret: string) => void;
 }) => {
-  const mounts = useMounts();
+  const create = useCreateKey();
   const [name, setName] = useState("");
   const [isReadOnly, setIsReadOnly] = useState(false);
-  const [mount, setMount] = useState("all");
-  const [folder, setFolder] = useState("");
   const [expiry, setExpiry] = useState<string>("90");
   const [problem, setProblem] = useState<string>();
-  const [folderProblem, setFolderProblem] = useState<string>();
 
   const submit = () => {
-    const scope: Scope = mount === "all" ? { scope: "All mounts" } : scopeOf(`/${mount}`, folder);
-    setProblem(
-      name.trim() === "" ? "Name the key after the device or person that will use it." : undefined,
-    );
-    setFolderProblem(scope.problem);
-    if (name.trim() === "" || scope.problem !== undefined) {
+    const trimmed = name.trim();
+    if (trimmed === "") {
+      setProblem("Name the key after the device or person that will use it.");
       return;
     }
-    const secret = sampleSecret();
-    const days = expiry === "never" ? undefined : Number(expiry);
-    onCreate(
+    if (trimmed.length > 64) {
+      setProblem("Use at most 64 characters.");
+      return;
+    }
+    if (create.isPending) {
+      return;
+    }
+    create.mutate(
       {
-        id: sampleId(),
-        name: name.trim(),
-        prefix: secret.slice(0, 8),
-        permission: isReadOnly ? "read-only" : "read-write",
-        scope: scope.scope,
-        createdAt: SAMPLE_NOW.toISOString(),
-        expiresAt:
-          days === undefined
-            ? null
-            : new Date(SAMPLE_NOW.getTime() + days * 86_400_000).toISOString(),
-        lastUsedAt: null,
-        isRevoked: false,
+        name: trimmed,
+        access: isReadOnly ? "read-only" : "read-write",
+        expiresInDays: expiry === "never" ? null : Number(expiry),
       },
-      secret,
+      { onSuccess: ({ key }) => onCreate(trimmed, key) },
     );
   };
 
@@ -223,6 +219,9 @@ const CreateKeyForm = ({
       content={
         <LayoutContent>
           <VStack gap={4}>
+            {create.isError ? (
+              <Banner status="error" title={describeError(create.error)} container="card" />
+            ) : null}
             <TextInput
               label="Name"
               value={name}
@@ -237,35 +236,6 @@ const CreateKeyForm = ({
               hasSpellCheck={false}
               status={problem === undefined ? undefined : { type: "error", message: problem }}
             />
-            <Selector
-              label="Mount"
-              value={mount}
-              onChange={setMount}
-              options={[
-                { value: "all", label: "All mounts" },
-                ...mounts.map((item) => ({ value: item.id, label: item.path })),
-              ]}
-            />
-            <TextInput
-              label="Folder inside the mount"
-              value={folder}
-              onChange={(value) => {
-                setFolder(value);
-                setFolderProblem(undefined);
-              }}
-              onEnter={submit}
-              isOptional
-              isDisabled={mount === "all"}
-              // The field is off while the key covers every mount, and then shows no error.
-              status={
-                folderProblem === undefined || mount === "all"
-                  ? undefined
-                  : { type: "error", message: folderProblem }
-              }
-              autoCapitalize="none"
-              hasAutoCorrect={false}
-              hasSpellCheck={false}
-            />
             <Switch label="Read only" value={isReadOnly} onChange={setIsReadOnly} />
             <Selector
               label="Expires"
@@ -273,6 +243,9 @@ const CreateKeyForm = ({
               onChange={setExpiry}
               options={EXPIRY_OPTIONS.map((option) => ({ ...option }))}
             />
+            <Text type="supporting" color="secondary">
+              A key reaches every mount. Keys limited to one mount or folder come later.
+            </Text>
           </VStack>
         </LayoutContent>
       }
@@ -280,7 +253,12 @@ const CreateKeyForm = ({
         <LayoutFooter>
           <HStack gap={2} hAlign="end">
             <Button label="Cancel" variant="secondary" onClick={onCancel} />
-            <Button label="Create key" variant="primary" onClick={submit} />
+            <Button
+              label="Create key"
+              variant="primary"
+              isLoading={create.isPending}
+              onClick={submit}
+            />
           </HStack>
         </LayoutFooter>
       }
@@ -289,11 +267,12 @@ const CreateKeyForm = ({
 };
 
 /** What the key dialog shows: the form, then the new key in its place. */
-type KeyDialog = { step: "form" } | { step: "secret"; credential: Credential; secret: string };
+type KeyDialog = { step: "form" } | { step: "secret"; name: string; secret: string };
 
 /** Credentials (PRD §8.3): the API keys WebDAV clients sign in with. */
 export const CredentialsPage = () => {
-  const rows = useStore(credentialStore, (items) => items);
+  const apiKeys = useApiKeys();
+  const revoke = useRevokeKey();
   const toast = useToast();
   const confirm = useImperativeAlertDialog();
   // Held in state rather than in an imperative dialog, so the key leaves the page with Done.
@@ -301,14 +280,9 @@ export const CredentialsPage = () => {
   const gutter = usePageGutter();
   const [tableRef, isNarrowTable] = useNarrowerThan(WIDE_TABLE);
 
-  const showSecret = (credential: Credential, secret: string) => {
-    credentialStore.setState((items) => [credential, ...items]);
-    setKeyDialog({ step: "secret", credential, secret });
-  };
-
   const finish = () => {
     if (keyDialog?.step === "secret") {
-      toast({ body: `Created key “${keyDialog.credential.name}”.` });
+      toast({ body: `Created key “${keyDialog.name}”.` });
     }
     setKeyDialog(undefined);
     // The form's Name field focuses itself as the dialog opens, which Astryx Dialog then takes for
@@ -316,51 +290,41 @@ export const CredentialsPage = () => {
     refocusIfLost(() => buttonNamed("Create key"));
   };
 
-  const openRevoke = (credential: Credential) =>
+  const openRevoke = (key: ApiKey, rows: readonly ApiKey[]) =>
     confirm.show({
-      title: `Revoke “${credential.name}”?`,
+      title: `Revoke “${key.name}”?`,
       description: "Clients signed in with it lose access, and this cannot be undone.",
       actionLabel: "Revoke",
       onAction: () => {
-        credentialStore.setState((items) =>
-          items.map((item) => (item.id === credential.id ? { ...item, isRevoked: true } : item)),
-        );
         confirm.hide();
-        toast({ body: `Revoked “${credential.name}”.` });
-        // On a phone, Revoke leaves the key's details with the key, so focus moves to its row.
-        refocusIfLost(
-          () =>
-            buttonLabelled(`Actions for key ${credential.name}`) ??
-            buttonLabelled(`Details for key ${credential.name}`),
-        );
+        const index = rows.findIndex((row) => row.id === key.id);
+        const rest = rows.filter((row) => row.id !== key.id);
+        const next = rest[Math.min(index, rest.length - 1)];
+        revoke.mutate(key.id, {
+          onSuccess: () => {
+            toast({ body: `Revoked “${key.name}”.` });
+            // The key leaves the list with its menu, so focus moves to the key that took its
+            // place, or to Create key.
+            refocusIfLost(() =>
+              next === undefined
+                ? buttonNamed("Create key")
+                : (buttonLabelled(`Actions for key ${next.name}`) ??
+                  buttonLabelled(`Details for key ${next.name}`)),
+            );
+          },
+          onError: (error) => toast({ type: "error", body: describeError(error) }),
+        });
       },
     });
 
-  const keyMenu = (credential: Credential) => (
+  const keyMenu = (key: ApiKey, rows: readonly ApiKey[]) => (
     <MoreMenu
-      label={`Actions for key ${credential.name}`}
+      label={`Actions for key ${key.name}`}
       size="sm"
       alignment="end"
-      items={[
-        {
-          label: "Revoke",
-          variant: "destructive",
-          isDisabled: credential.isRevoked,
-          onClick: () => openRevoke(credential),
-        },
-      ]}
+      items={[{ label: "Revoke", variant: "destructive", onClick: () => openRevoke(key, rows) }]}
     />
   );
-  const columns: TableColumn<Credential>[] = [
-    ...WIDE_COLUMNS,
-    {
-      key: "actions",
-      header: <VisuallyHidden>Actions</VisuallyHidden>,
-      width: pixel(64),
-      align: "end",
-      renderCell: keyMenu,
-    },
-  ];
 
   return (
     <Layout
@@ -379,43 +343,71 @@ export const CredentialsPage = () => {
                 />
               }
             />
-            {isNarrowTable ? (
-              // Where a column per detail has no room, as on a phone, each key is a row with its
-              // name, first characters and status. Opening the row shows the rest and Revoke.
-              <ExpandableList
-                ref={tableRef}
-                records={rows.map((credential) => ({
-                  id: credential.id,
-                  title: credential.name,
-                  summary: <KeySummary credential={credential} />,
-                  // A revoked key has no action left, so its details end with its expiry.
-                  details: (
-                    <>
-                      <KeyFacts credential={credential} />
-                      {credential.isRevoked ? null : (
-                        <Button
-                          label="Revoke"
-                          variant="destructive"
-                          width="100%"
-                          onClick={() => openRevoke(credential)}
-                        />
-                      )}
-                    </>
-                  ),
-                  toggleLabel: `Details for key ${credential.name}`,
-                }))}
-              />
-            ) : (
-              <Card ref={tableRef} padding={0} elevation="low">
-                <Table<Credential>
-                  data={rows}
-                  columns={columns}
-                  idKey="id"
-                  textOverflow="truncate"
-                  hasHover
-                />
-              </Card>
-            )}
+            <VStack ref={tableRef}>
+              <QueryState query={apiKeys} title="Cannot read the keys">
+                {(data) => {
+                  const rows = data.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+                  if (rows.length === 0) {
+                    return (
+                      <EmptyState
+                        title="No keys yet"
+                        description="A WebDAV client signs in with a key as its password."
+                        actions={
+                          <Button
+                            label="Create a key"
+                            variant="primary"
+                            onClick={() => setKeyDialog({ step: "form" })}
+                          />
+                        }
+                      />
+                    );
+                  }
+                  return isNarrowTable ? (
+                    // Where a column per detail has no room, as on a phone, each key is a row with
+                    // its name, first characters and status. Opening the row shows the rest and
+                    // Revoke.
+                    <ExpandableList
+                      records={rows.map((key) => ({
+                        id: key.id,
+                        title: key.name,
+                        summary: <KeySummary apiKey={key} />,
+                        details: (
+                          <>
+                            <KeyFacts apiKey={key} />
+                            <Button
+                              label="Revoke"
+                              variant="destructive"
+                              width="100%"
+                              onClick={() => openRevoke(key, rows)}
+                            />
+                          </>
+                        ),
+                        toggleLabel: `Details for key ${key.name}`,
+                      }))}
+                    />
+                  ) : (
+                    <Card padding={0} elevation="low">
+                      <Table<KeyRow>
+                        data={rows.map((key) => ({ ...key }))}
+                        columns={[
+                          ...WIDE_COLUMNS,
+                          {
+                            key: "actions",
+                            header: <VisuallyHidden>Actions</VisuallyHidden>,
+                            width: pixel(64),
+                            align: "end",
+                            renderCell: (key) => keyMenu(key, rows),
+                          },
+                        ]}
+                        idKey="id"
+                        textOverflow="truncate"
+                        hasHover
+                      />
+                    </Card>
+                  );
+                }}
+              </QueryState>
+            </VStack>
           </VStack>
           <Dialog
             isOpen={keyDialog !== undefined}
@@ -430,13 +422,12 @@ export const CredentialsPage = () => {
             width={520}
           >
             {keyDialog?.step === "form" ? (
-              <CreateKeyForm onCancel={finish} onCreate={showSecret} />
-            ) : keyDialog?.step === "secret" ? (
-              <ShowOnce
-                name={keyDialog.credential.name}
-                secret={keyDialog.secret}
-                onDone={finish}
+              <CreateKeyForm
+                onCancel={finish}
+                onCreate={(name, secret) => setKeyDialog({ step: "secret", name, secret })}
               />
+            ) : keyDialog?.step === "secret" ? (
+              <ShowOnce name={keyDialog.name} secret={keyDialog.secret} onDone={finish} />
             ) : null}
           </Dialog>
           {confirm.element}

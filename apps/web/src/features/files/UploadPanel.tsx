@@ -5,7 +5,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
-import { formatBytes } from "../sample-data/format";
+import { formatBytes } from "../shell/format";
 import { buttonLabelled, refocusIfLost } from "../shell/focus";
 import { StatusLabel } from "../shell/StatusLabel";
 import { FileName } from "./FileName";
@@ -47,9 +47,12 @@ const UploadRow = ({ upload }: { upload: Upload }) => (
 /** Upload UI (PRD §13, Phase 4 deliverable 3): a drop zone and the progress of every file. */
 export const UploadPanel = ({
   path,
+  folders,
   onSettled,
 }: {
   path: string;
+  /** The names of the folder's subfolders, which an upload cannot replace. */
+  folders: ReadonlySet<string>;
   onSettled: (uploads: Upload[]) => void;
 }) => {
   const uploads = useUploads();
@@ -83,7 +86,7 @@ export const UploadPanel = ({
           onChange={(files) => {
             const list = Array.isArray(files) ? files : files === null ? [] : [files];
             if (list.length > 0) {
-              startUploads(path, list, onSettled);
+              startUploads(path, list, folders, onSettled);
             }
           }}
           placeholder="Drop files here or choose them"

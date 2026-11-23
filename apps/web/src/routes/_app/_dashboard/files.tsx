@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { FileExplorerPage } from "../../../features/files/FileExplorerPage";
-import { normalizePath } from "../../../features/files/tree";
+import { normalizePath } from "../../../features/files/paths";
 
 interface FilesSearch {
   path?: string;
