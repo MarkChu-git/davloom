@@ -2277,9 +2277,11 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   await page.goto("/");
   await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
   // The default backend holds the sample, more than any backend the other tests add.
-  expect((await imageDescriptions(page)).get("Bytes stored on each backend")).toMatch(
-    /^Default stores [\d.]+ (bytes|kB|MB)(, .+ stores 0 bytes)*\.$/,
-  );
+  const description = (await imageDescriptions(page)).get("Bytes stored on each backend") ?? "";
+  expect(description.endsWith(".")).toBe(true);
+  const [first = "", ...others] = description.slice(0, -1).split(", ");
+  expect(first).toMatch(/^Default stores [\d.]+ (bytes|kB|MB)$/);
+  for (const other of others) expect(other).toMatch(/^[^,]+ stores 0 bytes$/);
 });
 
 // Runs in the page: where the labels of a chart start and end, sideways. The y axis's labels all end
