@@ -783,7 +783,7 @@ describe("hashApiKey", () => {
     ["dav_ÿ-é-漢字-🔑", "fR9jgXiqGOo9kr5_6PG0Itt2qm9KaFsk3A9yqeWbvGw"],
     ["x".repeat(256), "heYqzXUMTrVre2odZtylv6rF8GJgihqJNBDQKIk2wJo"],
     // The base64 of this digest holds both + and /, so the base64url alphabet matters.
-    ["key-1", "vil0VGl443OebW2oXEvp8zTOMt8rn9S2_xtVwNV-nUQ"],
+    ["key-1", "vil0VGl443OebW2oXEvp8zTOMt8rn9S2_xtVwNV-nUQ"], // gitleaks:allow (a test digest)
   ])("hashes %j as %s", async (key, expected) => {
     const hash = await hashApiKey(key);
 
@@ -793,7 +793,7 @@ describe("hashApiKey", () => {
 });
 
 describe("verifyApiKey", () => {
-  const KEY = "dav_0123456789abcdef";
+  const KEY = "dav_0123456789abcdef"; // gitleaks:allow (a made-up test key)
   const NOW = Date.parse("2026-06-01T00:00:00.000Z");
 
   const worldWith = async (record: ApiKeyRecord) =>
