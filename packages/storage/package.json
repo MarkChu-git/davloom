@@ -5,14 +5,20 @@
   "type": "module",
   "exports": {
     "./durable-object": "./src/durable-object.ts",
-    "./testing": "./test/worker.ts"
+    "./testing": "./test/worker.ts",
+    "./object-store": "./src/object-store.ts",
+    "./s3": "./src/s3.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.s3.json",
+    "test:s3": "bun --bun vitest run --config vitest.s3.config.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1176.0",
+    "@aws-sdk/lib-storage": "3.1176.0",
     "@davloom/core": "workspace:*",
-    "@davloom/laws": "workspace:*"
+    "@davloom/laws": "workspace:*",
+    "@smithy/fetch-http-handler": "5.8.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "1.8.3",

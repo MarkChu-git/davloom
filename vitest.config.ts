@@ -6,7 +6,9 @@ import { defineConfig } from "vitest/config";
 // lowers it (PRD §11). Functions are gated where PRD §11 gates them. The branch thresholds of
 // core, database, laws and webdav were 100% of packages that held almost no branches; with the
 // storage, protocol and instance code they start again at the coverage measured on 2026-11-23.
-// packages/storage runs in workerd (tests/integration/compat, test:storage), outside this report.
+// packages/storage holds the object-store adapter and its S3 driver, which these unit tests cover,
+// and the Durable Objects adapter, which runs in workerd (tests/integration/compat, test:storage)
+// outside this report; its entry started at the coverage measured on 2026-11-23 with the first.
 // scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
 export const thresholds = {
   "apps/api/src/**": { lines: 0, branches: 0 },
@@ -15,7 +17,7 @@ export const thresholds = {
   "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
   "packages/database/src/**": { lines: 93, branches: 95 },
   "packages/laws/src/**": { lines: 100, branches: 97 },
-  "packages/storage/src/**": { lines: 0, branches: 0 },
+  "packages/storage/src/**": { lines: 63.92, branches: 65.8 },
   "packages/ui/src/**": { lines: 34.37, branches: 100 },
   "packages/webdav/src/**": { lines: 97, branches: 88.9, functions: 96 },
 };
