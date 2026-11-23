@@ -33,17 +33,20 @@ export const createSqlLockStore = (locks: Repositories["locks"]): LockStore => (
           (descendants && lock.root.length > path.length),
       );
   },
-  create: async (lock) => {
-    await locks.create({
-      token: lock.token,
-      root: pathKey(lock.root),
-      depth: lock.depth,
-      scope: lock.scope,
-      owner: lock.owner,
-      timeout: lock.timeout,
-      expiresAt: lock.expires,
-    });
-  },
+  create: async (lock, now) =>
+    await locks.createIfFree(
+      {
+        token: lock.token,
+        root: pathKey(lock.root),
+        depth: lock.depth,
+        scope: lock.scope,
+        owner: lock.owner,
+        timeout: lock.timeout,
+        expiresAt: lock.expires,
+      },
+      ancestors(lock.root.slice(0, -1)).filter((key) => key !== pathKey(lock.root)),
+      now,
+    ),
   refresh: async (token, timeout, expires, now) => {
     const record = await locks.refresh(token, timeout, expires, now);
     return record ? toLock(record) : null;

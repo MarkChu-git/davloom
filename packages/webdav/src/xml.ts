@@ -5,6 +5,7 @@ import { SaxesParser } from "saxes";
 // element count keep a hostile body from exhausting the Worker (PRD §12).
 
 export const DAV = "DAV:";
+export const XML_NAMESPACE = "http://www.w3.org/XML/1998/namespace";
 
 export interface XmlAttribute {
   readonly ns: string;
@@ -126,6 +127,9 @@ export const serializeElement = (element: XmlElement, inheritedDefault = ""): st
   element.attributes.forEach((attribute, index) => {
     if (attribute.ns === "") {
       attributes += ` ${attribute.local}="${escapeAttribute(attribute.value)}"`;
+    } else if (attribute.ns === XML_NAMESPACE) {
+      // The `xml` prefix is bound by definition and may not be declared for another prefix.
+      attributes += ` xml:${attribute.local}="${escapeAttribute(attribute.value)}"`;
     } else {
       declarations += ` xmlns:a${index}="${escapeAttribute(attribute.ns)}"`;
       attributes += ` a${index}:${attribute.local}="${escapeAttribute(attribute.value)}"`;

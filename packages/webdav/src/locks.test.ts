@@ -40,6 +40,15 @@ describe("LOCK and UNLOCK", () => {
     expect((await put("/f", "z")).status).toBe(204);
   });
 
+  it("of two concurrent exclusive LOCKs exactly one succeeds", async () => {
+    const { put, dav } = setup();
+    await put("/f", "x");
+    const statuses = await Promise.all(
+      Array.from({ length: 5 }, async () => (await dav("LOCK", "/f", { body: lockBody() })).status),
+    );
+    expect(statuses.toSorted((a, b) => a - b)).toEqual([200, 423, 423, 423, 423]);
+  });
+
   it("locking an unmapped URL creates an empty file", async () => {
     const { dav } = setup();
     const response = await dav("LOCK", "/new", { body: lockBody() });

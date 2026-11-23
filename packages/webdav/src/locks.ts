@@ -26,8 +26,11 @@ export interface LockStore {
     path: Path,
     options: { readonly descendants: boolean; readonly now: number },
   ): Promise<Lock[]>;
-  /** Stores a lock; the caller has checked for conflicts. */
-  create(lock: Lock): Promise<void>;
+  /**
+   * Stores a lock unless an unexpired lock conflicts with it, atomically, so two requests never
+   * both get conflicting locks. Returns whether the lock was stored.
+   */
+  create(lock: Lock, now: number): Promise<boolean>;
   /** Extends an unexpired lock; null when no such lock exists. */
   refresh(token: string, timeout: number, expires: number, now: number): Promise<Lock | null>;
   remove(token: string): Promise<boolean>;
@@ -52,9 +55,12 @@ export const createMemoryLockStore = (): LockStore => {
   return {
     covering: (path, { descendants, now }) =>
       Promise.resolve(live(now).filter((lock) => covers(lock, path, descendants))),
-    create: (lock) => {
-      locks.set(lock.token, lock);
-      return Promise.resolve();
+    create: (lock, now) => {
+      const blocked = live(now).some(
+        (held) => covers(held, lock.root, lock.depth === "infinity") && conflicts(held, lock.scope),
+      );
+      if (!blocked) locks.set(lock.token, lock);
+      return Promise.resolve(!blocked);
     },
     refresh: (token, timeout, expires, now) => {
       const lock = locks.get(token);

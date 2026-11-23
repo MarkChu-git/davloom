@@ -170,6 +170,34 @@ export const createRepositories = (db: Database) => ({
     create: async (lock: LockRecord) => {
       await db.insert(schema.davLocks).values(lock);
     },
+    /**
+     * Stores a lock unless an unexpired lock conflicts with it, in one statement, so two requests
+     * can never both get conflicting locks. `ancestors` holds the keys of every proper ancestor of
+     * the lock's root, the root "" included. Returns whether the lock was stored.
+     */
+    createIfFree: async (
+      lock: LockRecord,
+      ancestors: readonly string[],
+      now: number,
+    ): Promise<boolean> => {
+      const t = schema.davLocks;
+      const covered = or(
+        eq(t.root, lock.root),
+        ancestors.length > 0
+          ? and(eq(t.depth, "infinity"), inArray(t.root, [...ancestors]))
+          : sql`0`,
+        lock.depth === "infinity" ? (lock.root === "" ? sql`1` : strictlyUnder(lock.root)) : sql`0`,
+      );
+      const scopes = lock.scope === "exclusive" ? sql`1` : eq(t.scope, "exclusive");
+      const conflicting = and(sql`${t.expiresAt} > ${now}`, covered, scopes);
+      const inserted = await db.all<{ token: string }>(
+        sql`INSERT INTO dav_locks (token, root, depth, scope, owner, timeout, expires_at)
+            SELECT ${lock.token}, ${lock.root}, ${lock.depth}, ${lock.scope}, ${lock.owner}, ${lock.timeout}, ${lock.expiresAt}
+            WHERE NOT EXISTS (SELECT 1 FROM dav_locks WHERE ${conflicting})
+            RETURNING token`,
+      );
+      return inserted.length > 0;
+    },
     refresh: async (token: string, timeout: number, expiresAt: number, now: number) =>
       (
         await db

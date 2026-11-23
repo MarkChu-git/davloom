@@ -494,7 +494,8 @@ export class StorageObject extends DurableObject {
       const facts = {
         sourceIsRoot: from.length === 0,
         source: source.node,
-        inside: isWithin(to, from),
+        // Either path inside the other: replacing an ancestor of the source would delete the source.
+        inside: isWithin(to, from) || (to.length > 0 && isWithin(from, to)),
         destinationIsRoot: to.length === 0,
         destination: destination.node,
         destinationParent: destinationParent.node,

@@ -735,7 +735,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       timeout,
       expires: time + timeout * 1000,
     };
-    await store.create(granted);
+    if (!(await store.create(granted, time))) return davError(423, "<D:no-conflicting-lock/>");
     return xmlResponse(
       status,
       `<D:prop xmlns:D="DAV:"><D:lockdiscovery>${activeLockXml(granted, basePath, time)}</D:lockdiscovery></D:prop>`,

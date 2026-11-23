@@ -209,6 +209,25 @@ export const storageContract = (adapter: string, { make, runs = 60 }: ContractOp
         "into-itself",
       ],
       [
+        "move over an ancestor of the source",
+        [
+          { op: "mkcol", path: ["a"] },
+          { op: "mkcol", path: ["a", "b"] },
+          { op: "write", path: ["a", "b", "f"], text: "x" },
+        ],
+        { op: "move", from: ["a", "b"], to: ["a"], overwrite: true },
+        "into-itself",
+      ],
+      [
+        "copy over an ancestor of the source",
+        [
+          { op: "mkcol", path: ["a"] },
+          { op: "write", path: ["a", "f"], text: "x" },
+        ],
+        { op: "copy", from: ["a", "f"], to: ["a"], overwrite: true, shallow: false },
+        "into-itself",
+      ],
+      [
         "move a file",
         [{ op: "write", path: ["f"], text: "x" }],
         { op: "move", from: ["f"], to: ["g"], overwrite: false },

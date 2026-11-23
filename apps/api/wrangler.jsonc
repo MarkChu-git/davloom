@@ -20,6 +20,8 @@
       "migrations_dir": "../../packages/database/drizzle",
     },
   ],
+  // The project's own deployment answers on its custom domain as well as on workers.dev.
+  "routes": [{ "pattern": "davloom.markchu.work", "custom_domain": true }],
   // One Durable Object per storage backend, on the SQLite storage that Workers Free offers.
   "durable_objects": {
     "bindings": [{ "name": "STORAGE", "class_name": "StorageObject" }],

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BASE, hrefs, ORIGIN, propfindBody, setup } from "./test/harness";
+import { parseXml } from "./xml";
 
 describe("OPTIONS", () => {
   it("advertises Class 1 and 2 with locks", async () => {
@@ -299,6 +300,8 @@ describe("COPY and MOVE", () => {
     ["MOVE", "/c", "/d", { depth: "infinity" }, 201],
     ["MOVE", "/", "/x", {}, 403],
     ["MOVE", "/missing", "/x", {}, 404],
+    ["MOVE", "/c/inner", "/c", {}, 403],
+    ["COPY", "/c/inner", "/c", {}, 403],
   ])("%s %s to %s with %j gives %i", async (method, from, to, headers, status) => {
     const { put, mkcol, dav } = setup();
     await put("/f", "file");
@@ -452,6 +455,17 @@ const update = (inner: string) =>
   `<?xml version="1.0"?><D:propertyupdate xmlns:D="DAV:" xmlns:Z="urn:z">${inner}</D:propertyupdate>`;
 
 describe("PROPPATCH", () => {
+  it("keeps xml:lang on a property value and answers well-formed XML", async () => {
+    const { put, dav } = setup();
+    await put("/f", "x");
+    await dav("PROPPATCH", "/f", {
+      body: update('<D:set><D:prop><Z:a xml:lang="en" Z:q="1">hi</Z:a></D:prop></D:set>'),
+    });
+    const xml = await (await dav("PROPFIND", "/", { headers: { depth: "1" } })).text();
+    expect(xml).toContain('<a xmlns="urn:z" xmlns:a1="urn:z" xml:lang="en" a1:q="1">hi</a>');
+    expect(() => parseXml(xml)).not.toThrow();
+  });
+
   it("sets, reads back and removes a dead property", async () => {
     const { put, dav } = setup();
     await put("/f", "x");

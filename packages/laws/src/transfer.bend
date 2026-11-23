@@ -20,7 +20,7 @@ type Outcome is Data:
   Exists{}
   # A collection is the target of a write.
   IsFolder{}
-  # A collection would be copied or moved into itself, or onto itself.
+  # The source would be copied or moved into itself, onto itself, or over one of its ancestors.
   IntoItself{}
   # The operation targets the root, which never changes.
   Root{}
@@ -128,7 +128,8 @@ def copy_inside(
     case False{}:
       copy_root(dest_is_root, dest, dest_parent, overwrite)
 
-# Copying `source` to `dest`. `inside` holds when the destination equals the source or lies under it.
+# Copying `source` to `dest`. `inside` holds when the destination equals the source, lies under it,
+# or contains it: replacing an ancestor of the source would delete the source with it.
 # `dest_parent` is what the destination's parent path reaches.
 def decide_copy(
   source: Node, inside: Bool, dest_is_root: Bool, dest: Node, dest_parent: Node, overwrite: Bool

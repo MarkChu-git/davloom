@@ -43,7 +43,7 @@ export const decideRemove = (isRoot: boolean, target: Node): Outcome =>
 export interface TransferFacts {
   readonly sourceIsRoot: boolean;
   readonly source: Node;
-  /** The destination equals the source or lies under it. */
+  /** The destination equals the source, lies under it, or contains it. */
   readonly inside: boolean;
   readonly destinationIsRoot: boolean;
   readonly destination: Node;

@@ -112,7 +112,8 @@ export const createMemoryStorage = (options: MemoryStorageOptions = {}): Storage
     const facts = {
       sourceIsRoot: from.length === 0,
       source: nodeOf(from),
-      inside: isWithin(to, from),
+      // Either path inside the other: replacing an ancestor of the source would delete the source.
+      inside: isWithin(to, from) || (to.length > 0 && isWithin(from, to)),
       destinationIsRoot: to.length === 0,
       destination: nodeOf(to),
       destinationParent: to.length === 0 ? ("absent" as const) : nodeOf(parentOf(to)),

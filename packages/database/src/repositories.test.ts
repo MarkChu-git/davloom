@@ -395,3 +395,53 @@ describe("isUniqueViolation", () => {
     expect(isUniqueViolation(error)).toBe(expected);
   });
 });
+
+const record = (token: string, root: string, depth: string, scope: string) => ({
+  token,
+  root,
+  depth,
+  scope,
+  owner: "",
+  timeout: 60,
+  expiresAt: 2_000,
+});
+const ancestorsOf = (root: string) => {
+  const names = root === "" ? [] : root.split("/");
+  return ["", ...names.slice(0, -1).map((_, i) => names.slice(0, i + 1).join("/"))].filter(
+    (k) => k !== root,
+  );
+};
+
+describe("locks.createIfFree", () => {
+  it.each([
+    // existing lock, new lock, stored?
+    [["a", "0", "exclusive"], ["a", "0", "exclusive"], false],
+    [["a", "0", "shared"], ["a", "0", "shared"], true],
+    [["a", "0", "shared"], ["a", "0", "exclusive"], false],
+    [["a", "0", "exclusive"], ["a/b", "0", "exclusive"], true],
+    [["a", "infinity", "exclusive"], ["a/b", "0", "exclusive"], false],
+    [["a", "infinity", "shared"], ["a/b", "0", "shared"], true],
+    [["a/b", "0", "exclusive"], ["a", "0", "exclusive"], true],
+    [["a/b", "0", "exclusive"], ["a", "infinity", "exclusive"], false],
+    [["a/b", "0", "exclusive"], ["", "infinity", "exclusive"], false],
+    [["", "infinity", "exclusive"], ["x/y", "0", "exclusive"], false],
+    [["ab", "0", "exclusive"], ["a", "infinity", "exclusive"], true],
+    [["a0", "0", "exclusive"], ["a", "infinity", "exclusive"], true],
+    [["b", "infinity", "exclusive"], ["a", "infinity", "exclusive"], true],
+  ] as const)("existing %j and new %j: stored %s", async (held, wanted, stored) => {
+    await repositories.locks.create(record("held", held[0], held[1], held[2]));
+    const wantedLock = record("new", wanted[0], wanted[1], wanted[2]);
+    expect(
+      await repositories.locks.createIfFree(wantedLock, ancestorsOf(wantedLock.root), 1_000),
+    ).toBe(stored);
+    const found = await repositories.locks.find([wantedLock.root], null, 1_000);
+    expect(found.some((l) => l.token === "new")).toBe(stored);
+  });
+
+  it("an expired lock does not conflict", async () => {
+    await repositories.locks.create({ ...record("held", "a", "0", "exclusive"), expiresAt: 500 });
+    expect(
+      await repositories.locks.createIfFree(record("new", "a", "0", "exclusive"), [""], 1_000),
+    ).toBe(true);
+  });
+});
