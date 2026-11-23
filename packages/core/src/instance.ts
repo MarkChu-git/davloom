@@ -256,7 +256,7 @@ export interface KeyView {
   readonly name: string;
   readonly start: string | null;
   readonly access: Access;
-  /** The roots the key is limited to; null for every Mount. */
+  /** The roots the key is limited to; null for every Mount, empty when its scope cannot be read. */
   readonly paths: readonly string[] | null;
   readonly enabled: boolean;
   readonly expiresAt: string | null;
@@ -278,23 +278,23 @@ const scopeOf = (metadata: unknown): Scope =>
     : null;
 
 /**
- * Whether stored metadata asks for a scope it cannot express: a key whose `paths` do not parse
- * must reach nothing rather than everything.
+ * Whether stored metadata cannot be trusted to say what a key reaches: text that is not JSON, or a
+ * `paths` that is not a list of roots. Such a key reaches nothing rather than everything.
  */
 const brokenScope = (metadata: unknown): boolean =>
-  typeof metadata === "object" &&
-  metadata !== null &&
-  "paths" in metadata &&
-  metadata.paths !== undefined &&
-  metadata.paths !== null &&
-  parseScope(metadata.paths) === null;
+  typeof metadata === "string" ||
+  (typeof metadata === "object" &&
+    metadata !== null &&
+    "paths" in metadata &&
+    metadata.paths !== undefined &&
+    parseScope(metadata.paths) === null);
 
 const keyView = (key: ApiKeyRecord): KeyView => ({
   id: key.id,
   name: key.name ?? "",
   start: key.start,
   access: accessOf(key.metadata),
-  paths: scopeOf(key.metadata)?.map(formatRoot) ?? null,
+  paths: brokenScope(key.metadata) ? [] : (scopeOf(key.metadata)?.map(formatRoot) ?? null),
   enabled: key.enabled,
   expiresAt: key.expiresAt?.toISOString() ?? null,
   createdAt: key.createdAt.toISOString(),

@@ -201,10 +201,12 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
     const cacheKey = JSON.stringify([credential.access, credential.scope]);
     let handler = namespace.handlerFor.get(cacheKey);
     if (!handler) {
-      namespace.storage ??= await Effect.runPromiseExit(
+      const cache = namespace;
+      cache.storage ??= await Effect.runPromiseExit(
         Effect.provide(openNamespace, current.instance.layer),
       );
-      const opened = namespace.storage;
+      // Read from the cache this request filled: another request may have replaced `namespace`.
+      const opened = cache.storage;
       if (opened._tag !== "Success") return new Response(null, { status: 503 });
       const { access, scope } = credential;
       handler = createWebDavHandler({

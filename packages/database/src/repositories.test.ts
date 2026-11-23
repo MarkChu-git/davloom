@@ -240,8 +240,9 @@ describe("apiKeys", () => {
       JSON.stringify(JSON.stringify({ access: "read-write" })),
       { access: "read-write" },
     ],
-    ["a JSON string that is not JSON inside", '"read-write"', null],
-    ["invalid JSON", "{access:", null],
+    // Text that is not JSON comes back as it is, so the services refuse the key.
+    ["a JSON string that is not JSON inside", '"read-write"', '"read-write"'],
+    ["invalid JSON", "{access:", "{access:"],
     ["no metadata", null, null],
   ])("parses %s metadata", async (_case, metadata, expected) => {
     await insertKey({ id: "k-1", metadata });

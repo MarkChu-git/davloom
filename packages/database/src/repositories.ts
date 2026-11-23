@@ -46,6 +46,10 @@ export interface LockRecord {
   readonly expiresAt: number;
 }
 
+/**
+ * Reads a key's metadata. Text that is not JSON comes back as it is, a string, so the services can
+ * tell metadata that cannot be read from metadata that is absent, and refuse the key.
+ */
 const parseMetadata = (value: string | null): unknown => {
   if (value === null) return null;
   try {
@@ -53,7 +57,7 @@ const parseMetadata = (value: string | null): unknown => {
     // Better Auth has stored metadata stringified twice in older releases.
     return typeof parsed === "string" ? JSON.parse(parsed) : parsed;
   } catch {
-    return null;
+    return value;
   }
 };
 

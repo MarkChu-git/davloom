@@ -863,6 +863,16 @@ describe("key scopes", () => {
     },
   );
 
+  it("lists a key whose scope cannot be read as reaching nothing", async () => {
+    const { run } = makeWorld({
+      keys: [
+        apiKey({ metadata: { access: "read-only", paths: "x" } }),
+        apiKey({ id: "k-2", metadata: "{bad" }),
+      ],
+    });
+    expect(valueOf(await run(listKeys)).map((key) => key.paths)).toEqual([[], []]);
+  });
+
   it("lists a key's roots", async () => {
     const { run } = makeWorld({
       keys: [apiKey({ metadata: { access: "read-only", paths: ["/files/a"] } })],
@@ -875,10 +885,9 @@ describe("key scopes", () => {
       { access: "read-write", paths: ["/files/a"] },
       { keyId: "key-1", access: "read-write", scope: [["files", "a"]] },
     ],
-    [
-      { access: "read-write", paths: null },
-      { keyId: "key-1", access: "read-write", scope: null },
-    ],
+    [{ access: "read-write", paths: null }, null],
+    ["{not json", null],
+    [{ access: "read-write" }, { keyId: "key-1", access: "read-write", scope: null }],
     [{ access: "read-write", paths: ["/"] }, null],
     [{ access: "read-write", paths: "files" }, null],
   ])("verifies a key with metadata %j as %j", async (metadata, expected) => {

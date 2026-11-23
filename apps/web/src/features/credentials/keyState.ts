@@ -50,4 +50,8 @@ export const parseFolders = (text: string): { folders: string[] } | { problem: s
 
 /** How a key's reach reads in the list. */
 export const reachOf = (paths: readonly string[] | null): string =>
-  paths === null ? "Every mount" : paths.join(", ");
+  paths === null
+    ? "Every mount"
+    : paths.length === 0
+      ? "Nothing: its folders cannot be read"
+      : paths.join(", ");
