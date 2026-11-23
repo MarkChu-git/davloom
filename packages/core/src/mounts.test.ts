@@ -217,6 +217,10 @@ describe("mounted storage", () => {
       { name: "x", backendId: "x", backend: broken, root: ["missing"] },
     ]);
     expect(await storage.usage()).toEqual({ ok: false, failure: "unavailable" });
+    const noQuota = createMountedStorage([
+      { name: "x", backendId: "x", backend: { ...broken, quota: undefined }, root: [] },
+    ]);
+    expect(await noQuota.quota?.(["x"])).toEqual({ ok: false, failure: "unavailable" });
     expect(await storage.properties([["x"]])).toEqual({ ok: false, failure: "unavailable" });
     // A Mount whose root is missing is left out of the listing.
     expect(await storage.list([])).toEqual({ ok: true, value: [] });
