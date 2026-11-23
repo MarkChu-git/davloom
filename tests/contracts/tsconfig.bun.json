@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "types": ["bun"] },
+  "include": [
+    "database/suite.ts",
+    "database/schema.ts",
+    "database/bun-sqlite.test.ts",
+    "database/bun-sqlite-schema.setup.ts",
+    "vitest.database-bun-sqlite.config.ts",
+    "vitest.database-d1.config.ts"
+  ]
+}

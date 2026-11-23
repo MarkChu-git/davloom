@@ -1,0 +1,23 @@
+{
+  "name": "@davloom/contract-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.bun.json && tsc -p tsconfig.workers.json",
+    "test:database:d1": "bun --bun vitest run --config vitest.database-d1.config.ts",
+    "test:database:bun-sqlite": "bun --bun vitest run --config vitest.database-bun-sqlite.config.ts",
+    "test:database": "bun run test:database:d1 && bun run test:database:bun-sqlite"
+  },
+  "dependencies": {
+    "@davloom/core": "workspace:*",
+    "@davloom/database": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.8.3",
+    "@cloudflare/workers-types": "5.20261116.1",
+    "vitest": "5.1.0"
+  }
+}

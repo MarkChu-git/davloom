@@ -110,6 +110,21 @@
       "name": "@davloom/webdav",
       "version": "0.0.0",
     },
+    "tests/contracts": {
+      "name": "@davloom/contract-tests",
+      "version": "0.0.0",
+      "dependencies": {
+        "@davloom/core": "workspace:*",
+        "@davloom/database": "workspace:*",
+        "drizzle-orm": "0.45.4",
+        "effect": "4.1.4",
+      },
+      "devDependencies": {
+        "@cloudflare/vitest-plugin": "1.8.3",
+        "@cloudflare/workers-types": "5.20261116.1",
+        "vitest": "5.1.0",
+      },
+    },
     "tests/integration/compat": {
       "name": "@davloom/compat-tests",
       "version": "0.0.0",
@@ -262,6 +277,8 @@
     "@davloom/auth": ["@davloom/auth@workspace:packages/auth"],
 
     "@davloom/compat-tests": ["@davloom/compat-tests@workspace:tests/integration/compat"],
+
+    "@davloom/contract-tests": ["@davloom/contract-tests@workspace:tests/contracts"],
 
     "@davloom/core": ["@davloom/core@workspace:packages/core"],
 

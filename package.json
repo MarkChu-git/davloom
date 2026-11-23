@@ -4,6 +4,7 @@
   "workspaces": [
     "apps/*",
     "packages/*",
+    "tests/contracts",
     "tests/integration/compat"
   ],
   "type": "module",
@@ -12,7 +13,7 @@
     "lint": "oxlint -c oxlint.json --deny-warnings",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/integration/compat' typecheck",
+    "typecheck": "tsc -p tsconfig.json && bun run --filter './apps/*' --filter './packages/*' --filter './tests/contracts' --filter './tests/integration/compat' typecheck",
     "test": "bun --bun vitest run",
     "test:coverage": "bun --bun vitest run --coverage",
     "coverage:summary": "bun scripts/coverage-summary.ts",
@@ -22,7 +23,8 @@
     "scan:zizmor": "bun scripts/tool.ts zizmor --offline --strict-collection .",
     "laws:setup": "bun scripts/laws-setup.ts",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
-    "test:compat": "bun run --filter @davloom/compat-tests test"
+    "test:compat": "bun run --filter @davloom/compat-tests test",
+    "test:contracts:database": "bun run --filter @davloom/contract-tests test:database"
   },
   "devDependencies": {
     "@astryxdesign/cli": "0.7.16",
