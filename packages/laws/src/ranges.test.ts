@@ -1,5 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import bend, { type BendSpec } from "./compiled/ranges.mjs";
 import { resolveRange, type RangeSpec, type Resolved } from "./ranges";
 
 // RFC 9110 §14.1.2 examples for a representation of 10000 bytes.
@@ -50,6 +51,17 @@ const spec: fc.Arbitrary<RangeSpec> = fc.oneof(
   nat.map((length) => ({ kind: "suffix", length }) as const),
 );
 
+// Specs as the compiled module takes them, last positions below first ones included, with small
+// values often enough to reach the edges around the size.
+const edge = fc.oneof(fc.integer({ min: 0, max: 12 }), nat);
+const bendSpec: fc.Arbitrary<BendSpec> = fc.oneof(
+  fc.tuple(edge, edge).map(([first, last]) => ({ $: "FromTo", first, last }) as const),
+  edge.map((first) => ({ $: "From", first }) as const),
+  edge.map((length) => ({ $: "Suffix", length }) as const),
+);
+// RFC 9110 §14.1.1: a range-spec whose last position is below its first is invalid.
+const valid = (range: BendSpec) => range.$ !== "FromTo" || range.first <= range.last;
+
 describe("ranges", () => {
   it.each(RFC_EXAMPLES)("%s", (_, range, expected) => {
     expect(resolveRange(range, 10000)).toEqual(expected);
@@ -68,7 +80,7 @@ describe("ranges", () => {
     expect(() => resolveRange({ kind: "from", first: 0 }, 1.5)).toThrow(RangeError);
   });
 
-  it("ranges_inside: every resolved range lies inside the representation", () => {
+  it("range_inside: every range resolveRange returns lies inside the representation", () => {
     fc.assert(
       fc.property(spec, nat, (range, size) => {
         const resolved = resolveRange(range, size);
@@ -76,6 +88,29 @@ describe("ranges", () => {
           resolved === "unsatisfiable" || (resolved.start < resolved.stop && resolved.stop <= size)
         );
       }),
+    );
+  });
+
+  it("range_inside: the module resolves a valid spec to a non-empty span inside the size", () => {
+    fc.assert(
+      fc.property(bendSpec.filter(valid), edge, (range, size) => {
+        const resolved = bend.resolve(range, size);
+        return (
+          resolved.$ === "Unsatisfiable" ||
+          (resolved.start < resolved.stop && resolved.stop <= size)
+        );
+      }),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("range_unsatisfiable_exactly: the module answers 416 exactly when no byte is selected", () => {
+    fc.assert(
+      fc.property(bendSpec, edge, (range, size) => {
+        const none = range.$ === "Suffix" ? range.length === 0 || size === 0 : range.first >= size;
+        expect(bend.resolve(range, size).$ === "Unsatisfiable").toBe(none);
+      }),
+      { numRuns: 2000 },
     );
   });
 

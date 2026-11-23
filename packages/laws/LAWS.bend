@@ -2,6 +2,8 @@ import Base
 import ./src/transfer.bend as T
 import ./src/policy.bend as P
 import ./src/preconditions.bend as C
+import ./src/ranges.bend as R
+import ./src/names.bend as N
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -385,3 +387,117 @@ law scope_destination_inside:
   for target: P.Relation
   for dest: P.Relation
   {implies(Bool.and(spec_has_destination(m), P.authorize_scoped(a, m, target, dest)), inside(dest)) == True{} : Bool}
+
+# --- Byte ranges (RFC 9110 §14.1) ------------------------------------------------------------
+
+# A range-spec is invalid when its last position is below its first (RFC 9110 §14.1.1); the
+# parser rejects such a header, so only valid specs reach `resolve`.
+def range_valid(spec: R.RangeSpec) -> Bool:
+  match spec:
+    case R.FromTo{first, last}:
+      Nat.is_le(first, last)
+    case R.From{first}:
+      True{}
+    case R.Suffix{length}:
+      True{}
+
+# Whether a resolved range lies inside a representation of `size` bytes and is not empty.
+def span_ok(r: R.Resolved, +size: Nat) -> Bool:
+  match r:
+    case R.Span{start, +stop}:
+      Bool.and(Nat.is_lt(start, stop), Nat.is_le(stop, size))
+    case R.Unsatisfiable{}:
+      True{}
+
+# Every byte a valid range selects lies inside the representation, and it selects at least one.
+law range_inside:
+  for spec: R.RangeSpec
+  for +size: Nat
+  {implies(range_valid(spec), span_ok(R.resolve(spec, size), size)) == True{} : Bool}
+
+def unsatisfiable(r: R.Resolved) -> Bool:
+  match r:
+    case R.Span{start, stop}:
+      False{}
+    case R.Unsatisfiable{}:
+      True{}
+
+def zero(n: Nat) -> Bool:
+  match n:
+    case 0n:
+      True{}
+    case 1n+p:
+      False{}
+
+# RFC 9110 §14.1.2: a range selects no byte when its first position is not below the size, and a
+# suffix selects none when it is empty or the representation is.
+def spec_unsatisfiable(spec: R.RangeSpec, +size: Nat) -> Bool:
+  match spec:
+    case R.FromTo{first, last}:
+      Nat.is_ge(first, size)
+    case R.From{first}:
+      Nat.is_ge(first, size)
+    case R.Suffix{length}:
+      Bool.or(zero(length), zero(size))
+
+# A range is unsatisfiable (416) exactly when it selects no byte.
+law range_unsatisfiable_exactly:
+  for spec: R.RangeSpec
+  for +size: Nat
+  {unsatisfiable(R.resolve(spec, size)) == spec_unsatisfiable(spec, size) : Bool}
+
+# --- Names and paths (PRD §6) ----------------------------------------------------------------
+
+# `.` and `..` are never names.
+law name_rejects_dots:
+  {Bool.or(N.name_ok([46n]), N.name_ok([46n, 46n])) == False{} : Bool}
+
+def contains(xs: +List<Nat>, +n: Nat) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Con{h, t}:
+      Bool.or(Nat.is_eq(h, n), contains(t, n))
+
+# A name never holds NUL or `/`.
+law name_rejects_separators:
+  for +xs: +List<Nat>
+  {implies(Bool.or(contains(xs, 0n), contains(xs, 47n)), Bool.not(N.name_ok(xs))) == True{} : Bool}
+
+# The bytes a code point takes in UTF-8 (RFC 3629 §3).
+def utf8_bytes(+c: Nat) -> Nat:
+  Bool.pick(Nat, Nat.is_le(c, 127n), 1n,
+    Bool.pick(Nat, Nat.is_le(c, 2047n), 2n,
+      Bool.pick(Nat, Nat.is_le(c, 65535n), 3n, 4n)))
+
+def utf8_size(xs: +List<Nat>) -> Nat:
+  match xs:
+    case Nil{}:
+      0n
+    case Con{h, t}:
+      Nat.add(utf8_bytes(h), utf8_size(t))
+
+def nonempty(xs: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Con{h, t}:
+      True{}
+
+# A name holds at least one code point and at most 255 bytes of UTF-8.
+law name_bounded:
+  for +xs: +List<Nat>
+  {implies(N.name_ok(xs), Bool.and(nonempty(xs), Nat.is_le(utf8_size(xs), 255n))) == True{} : Bool}
+
+# The bytes of a path written with a `/` before each name.
+def path_size(xss: +List<+List<Nat>>) -> Nat:
+  match xss:
+    case Nil{}:
+      0n
+    case Con{h, t}:
+      1n+Nat.add(utf8_size(h), path_size(t))
+
+# A path takes at most 900 bytes.
+law path_bounded:
+  for +xss: +List<+List<Nat>>
+  {implies(N.path_ok(xss), Nat.is_le(path_size(xss), 900n)) == True{} : Bool}

@@ -1,5 +1,7 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { toList } from "./bend";
+import bend from "./compiled/names.mjs";
 import { isValidName, isValidPath } from "./names";
 
 // The oracle counts bytes with the platform's UTF-8 encoder, and finds lone surrogates with
@@ -15,6 +17,21 @@ const nameOracle = (name: string) =>
   utf8(name) <= 255;
 const pathOracle = (names: string[]) =>
   names.every(nameOracle) && names.reduce((sum, name) => sum + 1 + utf8(name), 0) <= 900;
+
+// The laws' statements over code points, checked against the compiled module. The width follows
+// RFC 3629 §3 and is written apart from both the module and the platform's encoder.
+const width = (c: number) => (c <= 0x7f ? 1 : c <= 0x7ff ? 2 : c <= 0xffff ? 3 : 4);
+const bytes = (cps: readonly number[]) => cps.reduce((sum, c) => sum + width(c), 0);
+const nameOk = (cps: readonly number[]) => bend.name_ok(toList(cps));
+const pathOk = (names: readonly (readonly number[])[]) =>
+  bend.path_ok(toList(names.map((cps) => toList(cps))));
+const codePoint = fc.oneof(
+  fc.integer({ min: 1, max: 0x7f }),
+  fc.integer({ min: 0, max: 0x10ffff + 16 }),
+  fc.constantFrom(0, 46, 47, 0x7f, 0x80, 0x7ff, 0x800, 0xd7ff, 0xd800, 0xdfff, 0xe000, 0xffff),
+  fc.constantFrom(0x10000, 0x10ffff, 0x110000),
+);
+const codePoints = (maxLength: number) => fc.array(codePoint, { maxLength });
 
 describe("names", () => {
   it.each([
@@ -75,6 +92,44 @@ describe("names", () => {
         },
       ),
       { numRuns: 2000 },
+    );
+  });
+
+  it("name_rejects_dots: neither . nor .. is a name", () => {
+    expect(nameOk([46])).toBe(false);
+    expect(nameOk([46, 46])).toBe(false);
+  });
+
+  it("name_rejects_separators: a name holding NUL or / is never accepted", () => {
+    fc.assert(
+      fc.property(
+        codePoints(40),
+        fc.constantFrom(0, 47),
+        codePoints(40),
+        (before, separator, after) => !nameOk([...before, separator, ...after]),
+      ),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("name_bounded: an accepted name is non-empty and takes at most 255 bytes", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(codePoints(8), codePoints(300), fc.array(fc.constant(0xe9), { maxLength: 300 })),
+        (cps) => !nameOk(cps) || (cps.length > 0 && bytes(cps) <= 255),
+      ),
+      { numRuns: 2000 },
+    );
+  });
+
+  it("path_bounded: an accepted path takes at most 900 bytes with a / before each name", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.array(fc.integer({ min: 1, max: 0x7ff }), { maxLength: 130 }), {
+          maxLength: 10,
+        }),
+        (names) => !pathOk(names) || names.reduce((sum, cps) => sum + 1 + bytes(cps), 0) <= 900,
+      ),
     );
   });
 

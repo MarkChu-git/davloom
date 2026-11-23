@@ -2,7 +2,8 @@
 // whose parameters all range over finite types, the constructors of which are listed below. Each
 // leaf is `{==}`, so the checker evaluates both sides of the law for every combination. Laws over
 // other types get their proofs by hand, in packages/laws/proofs/<law>.bend, which this script
-// appends: `bun run laws:proofs`.
+// appends. The lemmas those proofs share live in packages/laws/proofs/lemmas.bend, which comes
+// before every proof: `bun run laws:proofs`.
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,6 +43,9 @@ try {
 } catch {
   // No hand-written proofs yet.
 }
+if (manual.delete("lemmas")) {
+  out.push((await Bun.file(join(lawsDir, "proofs", "lemmas.bend")).text()).trimEnd(), "");
+}
 
 const caseTree = (params: [string, string][], depth: number): string[] => {
   const pad = "  ".repeat(depth);
@@ -55,7 +59,7 @@ const caseTree = (params: [string, string][], depth: number): string[] => {
   ];
 };
 
-const lawPattern = /^law (\w+):\n((?:  for .*\n)+)/gm;
+const lawPattern = /^law (\w+):\n((?:  for .*\n)*)/gm;
 for (const match of laws.matchAll(lawPattern)) {
   const name = match[1] ?? "";
   if (manual.has(name)) {
