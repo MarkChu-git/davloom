@@ -1,0 +1,25 @@
+# Davloom with RustFS as its S3-compatible storage: `docker compose -f deploy/docker/compose.yaml up`.
+# Set DAVLOOM_SECRET (32+ bytes) and DAVLOOM_SETUP_TOKEN in an .env file beside this one first.
+services:
+  davloom:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    ports: ["3000:3000"]
+    environment:
+      DAVLOOM_SECRET: ${DAVLOOM_SECRET:?set DAVLOOM_SECRET}
+      DAVLOOM_SETUP_TOKEN: ${DAVLOOM_SETUP_TOKEN:-}
+      DAVLOOM_URL: ${DAVLOOM_URL:-http://localhost:3000}
+    volumes: ["davloom-data:/data"]
+    depends_on: [rustfs]
+    restart: unless-stopped
+  rustfs:
+    image: rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+    environment:
+      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY:-davloom}
+      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY:?set RUSTFS_SECRET_KEY}
+    volumes: ["rustfs-data:/data"]
+    restart: unless-stopped
+volumes:
+  davloom-data:
+  rustfs-data:
