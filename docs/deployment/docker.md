@@ -11,7 +11,8 @@ Create `deploy/docker/.env` (never commit it; the image build leaves it out):
 DAVLOOM_SECRET=<at least 32 random bytes, e.g. from: openssl rand -base64 48>
 DAVLOOM_SETUP_TOKEN=<a token for the first-run setup, e.g. from: openssl rand -hex 16>
 RUSTFS_SECRET_KEY=<a password for RustFS>
-DAVLOOM_URL=https://files.example.com
+# The address people open. For a first try on this machine, leave it out and open localhost.
+# DAVLOOM_URL=https://files.example.com
 ```
 
 Point Davloom at RustFS by adding these to the `davloom` service's environment in `compose.yaml`
@@ -23,7 +24,8 @@ DAVLOOM_S3_ACCESS_KEY_ID: davloom
 DAVLOOM_S3_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_KEY}
 ```
 
-Then start it and open `http://localhost:3000`:
+Then start it and open `http://localhost:3000` (or the address in `DAVLOOM_URL`, which sign-in
+then expects):
 
 ```bash
 docker compose -f deploy/docker/compose.yaml up -d

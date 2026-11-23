@@ -19,13 +19,21 @@ R2 kind only when the Worker has an R2 binding.
 
 ## Steps
 
-You need Bun and a Cloudflare account. From a clone of the repository:
+You need Bun and a Cloudflare account. From a clone of the repository, build the Dashboard first
+(from the repository root, so the build runs on Bun):
 
 ```bash
 bun install --frozen-lockfile
+bun run --filter @davloom/web build
 cd apps/api
 bunx --bun wrangler login
 ```
+
+`apps/api/wrangler.jsonc` describes the project's own deployment. Before you deploy your own, edit it:
+
+- Delete the `routes` entry, which names the project's custom domain, or replace its `pattern`
+  with a domain on your account. Without a route the Worker answers on `davloom.<you>.workers.dev`.
+- Replace the D1 `database_id` with the id of the database you create next.
 
 Create the D1 database and put its id into `apps/api/wrangler.jsonc` under `d1_databases`:
 
@@ -33,11 +41,10 @@ Create the D1 database and put its id into `apps/api/wrangler.jsonc` under `d1_d
 bunx --bun wrangler d1 create davloom
 ```
 
-Apply the migrations, build the Dashboard and deploy:
+Apply the migrations and deploy:
 
 ```bash
 bunx --bun wrangler d1 migrations apply davloom --remote
-bun run --filter @davloom/web build
 bunx --bun wrangler deploy
 ```
 
