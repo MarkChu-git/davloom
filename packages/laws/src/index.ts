@@ -11,3 +11,4 @@ export {
   type Relation,
 } from "./policy";
 export { isValidName, isValidPath } from "./names";
+export { planImport, type ImportEntry } from "./imports";

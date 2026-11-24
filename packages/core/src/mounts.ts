@@ -28,8 +28,12 @@ interface Located {
   readonly isMountRoot: boolean;
 }
 
-/** The failure for an operation on the virtual root or on a name that is not a Mount. */
-const outside = <T>(path: Path): StorageResult<T> => fail(path.length <= 1 ? "root" : "not-found");
+/**
+ * The failure for creating at a path outside every Mount: at the root's level a new member would be
+ * a new Mount, which WebDAV cannot make; deeper, its parent collection does not exist (RFC 4918
+ * §9.3.1, §9.7.1).
+ */
+const outside = <T>(path: Path): StorageResult<T> => fail(path.length <= 1 ? "root" : "no-parent");
 
 export const createMountedStorage = (mounts: readonly Mount[], created = 0): StorageBackend => {
   const byName = new Map(mounts.map((mount) => [mount.name, mount]));
@@ -121,7 +125,7 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
     },
     remove: async (path) => {
       const located = locate(path);
-      if (!located) return outside(path);
+      if (!located) return fail(path.length <= 1 ? "root" : "not-found");
       if (located.isMountRoot) return fail("root");
       return await located.mount.backend.remove(located.path);
     },

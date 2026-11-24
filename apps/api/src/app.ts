@@ -1,5 +1,8 @@
 import {
   completeSetup,
+  exportInstance,
+  importInstance,
+  type Archive,
   createBackend,
   createKey,
   createMount,
@@ -28,12 +31,12 @@ import {
 } from "@davloom/core";
 import { authorizeScoped } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
-import { Cause, Effect, type Exit, type Layer } from "effect";
+import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
 
 /** The application's Ports, which every deployment provides. */
-type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher;
+type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher | Archive;
 
 /** What a deployment provides: the Layer of the application's Ports, Better Auth and the locks. */
 export interface Instance {
@@ -65,6 +68,8 @@ const ERRORS = {
   NameTaken: { status: 409, code: "name_taken" },
   Unauthorized: { status: 401, code: "unauthorized" },
   MountInUse: { status: 409, code: "mount_in_use" },
+  ArchiveInvalid: { status: 422, code: "archive_invalid" },
+  CredentialsError: { status: 500, code: "credentials_error" },
 } as const;
 type ErrorTag = keyof typeof ERRORS;
 const errors: ErrorResponses<{ _tag: ErrorTag }> = ERRORS;
@@ -267,6 +272,28 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
           201,
         ),
         { parse: "none" },
+      )
+      .post(
+        "/api/setup/import",
+        api(
+          (request) =>
+            Effect.flatMap(
+              Effect.promise(() => readJson(request)),
+              (body) =>
+                Effect.tap(
+                  importInstance({ token: text(body.token), key: text(body.key), file: body.file }),
+                  () => Effect.sync(invalidate),
+                ),
+            ),
+          201,
+        ),
+        { parse: "none" },
+      )
+      .post(
+        "/api/export",
+        authed(() =>
+          Effect.map(exportInstance, ({ key, file }) => ({ key: Redacted.value(key), file })),
+        ),
       )
       .get(
         "/api/me",

@@ -11,3 +11,13 @@ export const createBunSqliteDatabase = (sqlite: Database) => drizzle(sqlite, { s
 /** Brings a self-hosted database up to date. D1 uses `wrangler d1 migrations apply` instead. */
 export const migrateBunSqliteDatabase = (database: ReturnType<typeof createBunSqliteDatabase>) =>
   migrate(database, { migrationsFolder: MIGRATIONS_FOLDER });
+
+/** Runs statements in one Bun SQLite transaction. */
+export const bunSqliteAtomic =
+  (db: ReturnType<typeof createBunSqliteDatabase>) =>
+  (statements: readonly { run: () => unknown }[]): Promise<void> => {
+    db.transaction(() => {
+      for (const statement of statements) statement.run();
+    });
+    return Promise.resolve();
+  };

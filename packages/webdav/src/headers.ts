@@ -49,16 +49,23 @@ export interface EntityTag {
 export const parseEntityTags = (header: string): "*" | EntityTag[] | null => {
   const value = header.trim();
   if (value === "*") return "*";
+  // A list may hold empty elements, which recipients must accept and skip (RFC 9110 §5.6.1). A tag
+  // may itself hold a comma, so the list is scanned rather than split.
   const tags: EntityTag[] = [];
-  const pattern = /\s*(W\/)?"([^"]*)"\s*(,|$)/gy;
-  let match: RegExpExecArray | null;
-  let consumed = 0;
-  while (consumed < value.length && (match = pattern.exec(value)) !== null) {
+  const tag = /(W\/)?"([^"]*)"/y;
+  let position = 0;
+  for (;;) {
+    while (position < value.length && /[\s,]/.test(value[position] ?? "")) position += 1;
+    if (position >= value.length) break;
+    tag.lastIndex = position;
+    const match = tag.exec(value);
+    if (!match) return null;
     tags.push({ weak: match[1] !== undefined, tag: match[2] ?? "" });
-    consumed = pattern.lastIndex;
-    if (match[3] === "") break;
+    position = tag.lastIndex;
+    while (position < value.length && /\s/.test(value[position] ?? "")) position += 1;
+    if (position < value.length && value[position] !== ",") return null;
   }
-  return consumed === value.length && tags.length > 0 ? tags : null;
+  return tags.length > 0 ? tags : null;
 };
 
 /** An HTTP date in milliseconds, or null. */

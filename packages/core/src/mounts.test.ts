@@ -105,11 +105,16 @@ describe("mounted storage", () => {
     [
       "write under an unknown Mount",
       (s: StorageBackend) => s.write(["x", "y"], null, {}),
-      "not-found",
+      "no-parent",
     ],
     ["create a Mount's root", (s: StorageBackend) => s.createCollection(["a"]), "exists"],
     ["create the root", (s: StorageBackend) => s.createCollection([]), "exists"],
     ["create at the root", (s: StorageBackend) => s.createCollection(["new"]), "root"],
+    [
+      "create under an unknown Mount",
+      (s: StorageBackend) => s.createCollection(["x", "y"]),
+      "no-parent",
+    ],
     ["remove a Mount's root", (s: StorageBackend) => s.remove(["a"]), "root"],
     ["remove the root", (s: StorageBackend) => s.remove([]), "root"],
     ["remove under an unknown Mount", (s: StorageBackend) => s.remove(["x", "y"]), "not-found"],

@@ -44,7 +44,7 @@ test("Opening a section by its address: the WebDAV section shows and the section
   await expect(current).toHaveText("WebDAV");
 });
 
-test("The sections on offer: only those the instance can fill, with no storage settings or data export yet", async ({
+test("The sections on offer: only those the instance can fill, with no storage settings yet", async ({
   page,
 }) => {
   await page.goto("/settings");
@@ -53,6 +53,7 @@ test("The sections on offer: only those the instance can fill, with no storage s
     "Sign-in and security",
     "Appearance",
     "WebDAV",
+    "Data export",
     "About this instance",
   ]);
 });

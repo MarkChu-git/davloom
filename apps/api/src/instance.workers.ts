@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import { createAuth, createIdentity } from "@davloom/auth";
 import {
+  Archive,
   checkR2Config,
   credentialCipherLayer,
   Identity,
@@ -13,7 +14,8 @@ import { createSqlPropertyStore } from "@davloom/database/properties";
 import { createObjectStoreStorage } from "@davloom/storage/object-store";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
 import { createR2Driver } from "@davloom/storage/r2";
-import { createD1Database } from "@davloom/database/d1";
+import { createArchive } from "@davloom/database/archive";
+import { createD1Database, d1Atomic } from "@davloom/database/d1";
 import { createRepositories } from "@davloom/database/repositories";
 import { durableObjectStorage, type StorageObject } from "@davloom/storage/durable-object";
 import { Effect, Layer, Redacted } from "effect";
@@ -61,6 +63,7 @@ export const workersInstance = (origin: string): Instance => {
   const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
   const layer = Layer.mergeAll(
     Layer.succeed(Records, repositories),
+    Layer.succeed(Archive, createArchive(db, d1Atomic(db))),
     Layer.succeed(Identity, createIdentity(auth)),
     Layer.succeed(StorageOpener, {
       open: (backend) => {

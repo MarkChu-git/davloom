@@ -173,8 +173,10 @@ const protocolStatus = (method: Method, path: readonly string[], state: MountSta
       if (down) return [503];
       return node.kind === "missing" ? [404] : [207];
     case "PUT":
-      // RFC 4918 §9.7.2: PUT on an existing collection may fail with 405.
-      if (isCollection(node) || mountRoot) return [405];
+      // RFC 4918 §9.7.2: PUT on an existing collection may fail with 405. A Mount's root is one,
+      // but its backend being down is also an answer (RFC 9110 §15.6.4).
+      if (mountRoot) return [405, 503];
+      if (isCollection(node)) return [405];
       if (down) return [503];
       if (node.kind === "file") return [204];
       // RFC 4918 §9.7.1: no parent collection is 409.
@@ -217,32 +219,6 @@ const protocolStatus = (method: Method, path: readonly string[], state: MountSta
       // UNLOCK. RFC 4918 §9.11.1: a token that is no lock on the resource is 409.
       return [409];
   }
-};
-
-// --- Known product bugs, kept out of the table until they are fixed ----------------------------
-// 1. The handler reads `stat` failures as "not found": on a Mount whose backend is unavailable,
-//    GET, HEAD, PROPFIND, DELETE, PROPPATCH, COPY and MOVE answer 404 instead of 503, and LOCK
-//    of the Mount's root, taken for a new resource, answers 405.
-// 2. Under a Mount that does not exist, PUT, MKCOL and LOCK of a new member answer 404 instead of
-//    the 409 that RFC 4918 gives a request without a parent collection.
-const STAT_METHODS = new Set<Method>([
-  "GET",
-  "HEAD",
-  "PROPFIND",
-  "DELETE",
-  "PROPPATCH",
-  "COPY",
-  "MOVE",
-]);
-const CREATE_METHODS = new Set<Method>(["PUT", "MKCOL", "LOCK"]);
-
-const hitsKnownBug = (method: Method, path: readonly string[], state: MountState) => {
-  const node = nodeOf(path, state);
-  if (node.kind === "unavailable")
-    return STAT_METHODS.has(method) || (method === "LOCK" && path.length === 1);
-  if (state === "missing" && path[0] === "files" && path.length > 2)
-    return CREATE_METHODS.has(method);
-  return false;
 };
 
 // --- The table ----------------------------------------------------------------------------------
@@ -302,11 +278,10 @@ const expectationOf = (row: Row) => {
     target,
     permitted,
     statuses: permitted ? protocolStatus(row.method, target, row.state) : [403],
-    bug: permitted && hitsKnownBug(row.method, target, row.state),
   };
 };
 
-const TABLE = ROWS.filter((row) => !expectationOf(row).bug).map(
+const TABLE = ROWS.map(
   (row) => [row.access, row.scope.name, row.method, row.relation, row.state, row] as const,
 );
 

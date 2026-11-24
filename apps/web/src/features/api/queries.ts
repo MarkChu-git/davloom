@@ -227,3 +227,11 @@ export const completeSetup = (input: {
   password: string;
   token: string;
 }) => apiFetch<{ userId: string }>("/api/setup", { method: "POST", body: input });
+
+/** An export of this instance: the encrypted file and the key that opens it, shown once. */
+export const exportInstance = () =>
+  apiFetch<{ key: string; file: unknown }>("/api/export", { method: "POST" });
+
+/** Imports an export into this instance in place of the first-run setup. */
+export const importInstance = (input: { token: string; key: string; file: unknown }) =>
+  apiFetch<Record<string, number>>("/api/setup/import", { method: "POST", body: input });

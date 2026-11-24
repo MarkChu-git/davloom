@@ -134,3 +134,71 @@ test("Setup without a token on the deployment: the page says setup is closed and
   await shown(onScreen(page, "Set DAVLOOM_SETUP_TOKEN on this deployment, then reload this page."));
   await expect(page.getByRole("button", { name: "Create administrator" })).toHaveCount(0);
 });
+
+test("Setup from an export: the form asks for the file, its key and the token, shows why an import is refused, and sends a person to sign in once it is done", async ({
+  page,
+}) => {
+  await freshInstance(page);
+  let answer: { status: number; json: unknown } = {
+    status: 422,
+    json: {
+      error: {
+        code: "archive_invalid",
+        message: "The key does not open this file, or the file is damaged.",
+      },
+    },
+  };
+  const sent: unknown[] = [];
+  await page.route("**/api/setup/import", (route) => {
+    sent.push(route.request().postDataJSON());
+    return route.fulfill(answer);
+  });
+  await page.goto("/setup");
+  await page.getByRole("radio", { name: "From an export" }).click();
+  await page.getByRole("button", { name: "Import" }).click();
+  await shown(onScreen(page, "Choose the export file."));
+  await shown(onScreen(page, "Enter the key shown with the export."));
+  await shown(onScreen(page, "Enter the setup token."));
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "davloom-export.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ format: "davloom-export", version: 1 })),
+  });
+  await page.getByLabel("Export key").fill("dvx_key");
+  await page.getByLabel("Setup token").fill("token");
+  await page.getByRole("button", { name: "Import" }).click();
+  await shown(onScreen(page, "The key does not open this file, or the file is damaged."));
+  expect(sent).toEqual([
+    { token: "token", key: "dvx_key", file: { format: "davloom-export", version: 1 } },
+  ]);
+
+  answer = { status: 201, json: { user: 1 } };
+  await page.unroute("**/api/setup");
+  await page.route("**/api/setup", (route) =>
+    route.fulfill({ json: { needed: false, open: false } }),
+  );
+  await page.getByRole("button", { name: "Import" }).click();
+  await expect(levelOne(page)).toHaveText("Sign in");
+});
+
+test("Setup from a file that is not JSON: the form says so and sends nothing", async ({ page }) => {
+  await freshInstance(page);
+  let calls = 0;
+  await page.route("**/api/setup/import", (route) => {
+    calls += 1;
+    return route.fulfill({ status: 201, json: {} });
+  });
+  await page.goto("/setup");
+  await page.getByRole("radio", { name: "From an export" }).click();
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "notes.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("not json"),
+  });
+  await page.getByLabel("Export key").fill("dvx_key");
+  await page.getByLabel("Setup token").fill("token");
+  await page.getByRole("button", { name: "Import" }).click();
+  await shown(onScreen(page, "That file is not a Davloom export."));
+  expect(calls).toBe(0);
+});

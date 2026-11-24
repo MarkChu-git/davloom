@@ -159,17 +159,11 @@ beforeAll(async () => {
   };
 });
 
-/** Davloom ignores DAV:include, so a quota that `prop` returns is missing: a known bug. */
-const hitsIncludeBug = (form: Form, name: string, kind: Kind) =>
-  form === "include" &&
-  name === "quota-used-bytes" &&
-  (kind === "collection" || kind === "mount root");
-
 const FORMS: readonly Form[] = ["prop", "propname", "allprop", "include"];
 const KINDS: readonly Kind[] = ["file", "collection", "root", "mount root"];
-const TABLE = Object.keys(PROPERTIES)
-  .flatMap((name) => KINDS.flatMap((kind) => FORMS.map((form) => [name, kind, form] as const)))
-  .filter(([name, kind, form]) => !hitsIncludeBug(form, name, kind));
+const TABLE = Object.keys(PROPERTIES).flatMap((name) =>
+  KINDS.flatMap((kind) => FORMS.map((form) => [name, kind, form] as const)),
+);
 
 describe("PROPFIND live properties", () => {
   it.each(TABLE)("%s on the %s with %s", async (name, kind, form) => {

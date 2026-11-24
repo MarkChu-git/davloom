@@ -18,6 +18,8 @@ S3-compatible storage such as RustFS.
 
 - [Cloudflare Workers Free](docs/deployment/cloudflare.md): Workers, D1 and Durable Objects.
 - [Docker](docs/deployment/docker.md): Bun, SQLite and RustFS or another S3-compatible store.
+- [Moving an instance](docs/deployment/migration.md): export the records of one deployment and
+  import them into another.
 
 ## Use
 

@@ -5,6 +5,7 @@ import ./src/policy.bend as P
 import ./src/preconditions.bend as C
 import ./src/ranges.bend as R
 import ./src/names.bend as N
+import ./src/imports.bend as I
 
 # Lemmas the hand-written proofs share.
 
@@ -710,6 +711,108 @@ def Lemma.nonempty(+xs: +List<Nat>) -> {Bool.not(List.is_empty(&2, Nat, xs)) == 
     case Nil{}:
       {==}
     case Con{h, t}:
+      {==}
+
+# --- Imports ---
+
+def Lemma.or_assoc(f: Bool, e: Bool, c: Bool) -> {Bool.or(f, Bool.or(e, c)) == Bool.or(Bool.or(f, e), c) : Bool}:
+  match f:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.or_false(f: Bool) -> {Bool.or(f, False{}) == f : Bool}:
+  match f:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.member_go(+xs: +List<Nat>, +n: Nat, +f: Bool) -> {Bool.or(f, L.contains(xs, n)) == I.member_go(xs, n, f) : Bool}:
+  match xs:
+    case Nil{}:
+      Lemma.or_false(f)
+    case Con{h, t}:
+      %Lemma.member_go(t, n, Bool.or(f, Nat.is_eq(h, n))) : {Bool.or(f, L.contains(Con{h, t}, n)) == _ : Bool}
+      Lemma.or_assoc(f, Nat.is_eq(h, n), L.contains(t, n))
+
+def Lemma.member(+xs: +List<Nat>, +n: Nat) -> {L.contains(xs, n) == I.member(xs, n) : Bool}:
+  Lemma.member_go(xs, n, False{})
+
+def Lemma.known(+xs: +List<Nat>, +k: +List<Nat>) -> {L.keys_known(xs, k) == I.all_known(xs, k) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.known(t, k) : {L.keys_known(Con{h, t}, k) == Bool.and(I.member(k, h), _) : Bool}
+      %Lemma.member(k, h) : {L.keys_known(Con{h, t}, k) == Bool.and(_, L.keys_known(t, k)) : Bool}
+      {==}
+
+def Lemma.fresh(+xs: +List<Nat>, +k: +List<Nat>) -> {L.keys_fresh(xs, k) == I.all_new(xs, k) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+h, t}:
+      %Lemma.fresh(t, Con{h, k}) : {L.keys_fresh(Con{h, t}, k) == Bool.and(Bool.not(I.member(k, h)), _) : Bool}
+      %Lemma.member(k, h) : {L.keys_fresh(Con{h, t}, k) == Bool.and(Bool.not(_), L.keys_fresh(t, Con{h, k})) : Bool}
+      {==}
+
+def Lemma.extend(+xs: +List<Nat>, +k: +List<Nat>) -> {L.extend(xs, k) == I.prepend(xs, k) : +List<Nat>}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.extend(t, k) : {L.extend(Con{h, t}, k) == Con{h, _} : +List<Nat>}
+      {==}
+
+def Lemma.swap(a: Bool, b: Bool, c: Bool, d: Bool) -> {Bool.and(Bool.and(a, c), Bool.and(b, d)) == Bool.and(Bool.and(a, b), Bool.and(c, d)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      match b:
+        case False{}:
+          match c:
+            case False{}:
+              {==}
+            case True{}:
+              match d:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          {==}
+
+def Lemma.swap2(ok: Bool, a: Bool, b: Bool, c: Bool, d: Bool) -> {Bool.and(ok, Bool.and(Bool.and(a, c), Bool.and(b, d))) == Bool.and(Bool.and(ok, Bool.and(a, b)), Bool.and(c, d)) : Bool}:
+  match ok:
+    case False{}:
+      {==}
+    case True{}:
+      Lemma.swap(a, b, c, d)
+
+def Lemma.valid_go(+e: +List<I.Entry>, +k: +List<Nat>, +ok: Bool) -> {Bool.and(ok, L.spec_valid(e, k)) == I.valid_go(e, k, ok) : Bool}:
+  match e:
+    case Nil{}:
+      Lemma.and_true(ok)
+    case Con{h, t}:
+      match h:
+        case I.Entry{+d, +n}:
+          %Lemma.valid_go(t, I.prepend(d, k), Bool.and(ok, Bool.and(I.all_known(n, k), I.all_new(d, k)))) : {Bool.and(ok, L.spec_valid(Con{I.Entry{d, n}, t}, k)) == _ : Bool}
+          %Lemma.extend(d, k) : {Bool.and(ok, L.spec_valid(Con{I.Entry{d, n}, t}, k)) == Bool.and(Bool.and(ok, Bool.and(I.all_known(n, k), I.all_new(d, k))), L.spec_valid(t, _)) : Bool}
+          %Lemma.known(n, k) : {Bool.and(ok, L.spec_valid(Con{I.Entry{d, n}, t}, k)) == Bool.and(Bool.and(ok, Bool.and(_, I.all_new(d, k))), L.spec_valid(t, L.extend(d, k))) : Bool}
+          %Lemma.fresh(d, k) : {Bool.and(ok, L.spec_valid(Con{I.Entry{d, n}, t}, k)) == Bool.and(Bool.and(ok, Bool.and(L.keys_known(n, k), _)), L.spec_valid(t, L.extend(d, k))) : Bool}
+          Lemma.swap2(ok, L.keys_known(n, k), L.keys_fresh(d, k), L.needs_met(t, L.extend(d, k)), L.defines_fresh(t, L.extend(d, k)))
+
+def Lemma.valid(+e: +List<I.Entry>, +k: +List<Nat>) -> {L.spec_valid(e, k) == I.valid(e, k) : Bool}:
+  Lemma.valid_go(e, k, True{})
+
+def Lemma.decide(b: Bool, +e: +List<I.Entry>) -> {I.decide(b, e) == Bool.pick(I.Plan, b, I.Apply{e}, I.Reject{}) : I.Plan}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
       {==}
 
 def L.write_into_folder(target, parent):
@@ -5831,3 +5934,7 @@ def L.name_accepted(xs):
   %Lemma.chars(xs) : {N.name_ok(xs) == Bool.and(Bool.not(List.is_empty(&2, Nat, xs)), Bool.and(Bool.not(N.is_dots(xs)), Bool.and(_, Nat.is_le(L.utf8_size(xs), 255n)))) : Bool}
   %Lemma.utf8(xs) : {N.name_ok(xs) == Bool.and(Bool.not(List.is_empty(&2, Nat, xs)), Bool.and(Bool.not(N.is_dots(xs)), Bool.and(N.chars_ok(xs), Nat.is_le(_, 255n)))) : Bool}
   Lemma.name_bool(Bool.not(List.is_empty(&2, Nat, xs)), Bool.not(N.is_dots(xs)), N.chars_ok(xs), Nat.is_le(N.utf8_length(xs), 255n))
+
+def L.import_all_or_nothing(entries, known):
+  %Lemma.valid(entries, known) : {I.decide(_, entries) == Bool.pick(I.Plan, L.spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
+  Lemma.decide(L.spec_valid(entries, known), entries)

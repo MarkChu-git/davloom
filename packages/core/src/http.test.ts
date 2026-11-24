@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { makeHttpRunner, responseFromExit } from "./http";
 
 class FileNotFound extends Data.TaggedError("FileNotFound")<{ readonly path: string }> {}
+class Refused extends Data.TaggedError("Refused")<{ readonly reason: unknown }> {}
 
 const errors = {
   FileNotFound: { status: 404, code: "file_not_found" },
+  Refused: { status: 422, code: "refused" },
 };
 
 describe("responseFromExit", () => {
@@ -35,6 +37,19 @@ describe("responseFromExit", () => {
 
     expect(response.status).toBe(404);
     expect(await response.text()).toBe('{"error":{"code":"file_not_found"}}');
+  });
+
+  it.each([
+    [
+      "a text reason as its message",
+      "The key does not open this file.",
+      '{"error":{"code":"refused","message":"The key does not open this file."}}',
+    ],
+    ["no message for a reason that is not text", 42, '{"error":{"code":"refused"}}'],
+  ])("sends %s", async (_, reason, body) => {
+    const response = responseFromExit(Exit.fail(new Refused({ reason })), { errors });
+    expect(response.status).toBe(422);
+    expect(await response.text()).toBe(body);
   });
 
   it("hides a defect behind a 500 and reports it to the caller only", async () => {

@@ -408,6 +408,11 @@ const STATES: readonly PageState[] = [
     show: (page) => shown(page.getByRole("radio", { name: "System" })),
   },
   {
+    name: "Data export settings",
+    path: "/settings?section=export",
+    show: (page) => shown(page.getByRole("main").getByRole("button", { name: "Export" })),
+  },
+  {
     name: "About this instance",
     path: "/settings?section=about",
     show: (page) => shown(page.getByText("Cloudflare Durable Objects")),
@@ -1401,7 +1406,7 @@ test.describe(`in a window ${PHONE_WIDTH} px wide`, () => {
     for (const { path, name } of [
       ...PAGES,
       { path: filesAt(folder), name: "Files" },
-      ...["security", "webdav", "about"].map((section) => ({
+      ...["security", "webdav", "export", "about"].map((section) => ({
         path: `/settings?section=${section}`,
         name: "Settings",
       })),
@@ -2370,6 +2375,27 @@ test("The address field's name: a screen reader hears the field's label alone", 
   await expect(page.getByRole("textbox", { name: "WebDAV address", exact: true })).toHaveValue(
     `${WORKERS_ORIGIN}/dav/`,
   );
+});
+
+test("Data export: Export downloads an encrypted file and shows its key once, in a field to copy", async ({
+  page,
+}) => {
+  await page.goto("/settings?section=export");
+  const download = page.waitForEvent("download");
+  await page.getByRole("main").getByRole("button", { name: "Export" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^davloom-export-\d{4}-\d{2}-\d{2}\.json$/);
+  const path = await file.path();
+  const saved: unknown = JSON.parse(
+    await (await import("node:fs/promises")).readFile(path, "utf8"),
+  );
+  expect(saved).toMatchObject({ format: "davloom-export", version: 1 });
+  expect(JSON.stringify(saved)).not.toContain("@");
+  await shown(page.getByText("The export is in your downloads"));
+  await expect(page.getByRole("textbox", { name: "Export key", exact: true })).toHaveValue(
+    /^dvx_[A-Za-z0-9_-]{43}$/,
+  );
+  await expect(page.getByRole("main").getByRole("button", { name: "Export again" })).toBeVisible();
 });
 
 test("The WebDAV section's address field: a screen reader hears its label alone", async ({

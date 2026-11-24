@@ -171,6 +171,9 @@ const limitStream = (body: ReadableStream<Uint8Array> | null, limit: number) => 
   return { body: limited, exceeded: () => exceeded };
 };
 
+/** A backend that cannot answer; the handler turns it into 503 Service Unavailable. */
+class BackendUnavailable extends Error {}
+
 const nameOf = (path: Path) => path.at(-1) ?? "";
 
 // Live properties (RFC 4918 §15), each a function of the entry. null: not defined for it.
@@ -300,8 +303,10 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   const maxFileSize = options.maxFileSize ?? Number.MAX_SAFE_INTEGER;
   const methods = locks ? `${CLASS_1_METHODS}, LOCK, UNLOCK` : CLASS_1_METHODS;
 
+  /** The entry at a path, or null when there is none; a backend that cannot answer ends the request with 503. */
   const stat = async (path: Path): Promise<Entry | null> => {
     const result = await storage.stat(path);
+    if (!result.ok && result.failure === "unavailable") throw new BackendUnavailable();
     return result.ok ? result.value : null;
   };
 
@@ -349,7 +354,8 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       const held =
         path && locks ? await locks.covering(path, { descendants: false, now: now() }) : [];
       for (const condition of list.conditions) {
-        if (condition.kind === "token" && !condition.not) tokens.add(condition.value);
+        // A token anywhere in the header is submitted, under Not too (RFC 4918 §10.4.1).
+        if (condition.kind === "token") tokens.add(condition.value);
         const holds =
           condition.kind === "token"
             ? held.some((lock) => lock.token === condition.value)
@@ -391,9 +397,12 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       "ms-author-via": "DAV",
     });
 
-  const get = async (request: Request, path: Path, head: boolean) => {
+  const get = async (request: Request, url: URL, path: Path, head: boolean) => {
     const entry = await stat(path);
     if (!entry) return empty(404);
+    // An If header that is false fails every method, reads included (RFC 4918 §10.4.1).
+    const ifResult = await evaluateIf(request, url, path);
+    if ("response" in ifResult) return ifResult.response;
     if (entry.kind === "collection") return empty(405, { allow: methods });
     const verdict = preconditions(request, entry, true);
     if (verdict !== "pass") return preconditionResponse(verdict, entry);
@@ -555,7 +564,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     return empty(result.value.replaced ? 204 : 201);
   };
 
-  const propfind = async (request: Request, path: Path) => {
+  const propfind = async (request: Request, url: URL, path: Path) => {
     const parsedDepth = parseDepth(request.headers.get("depth"));
     if (parsedDepth === null) return empty(400);
     const depth = parsedDepth ?? "infinity";
@@ -565,6 +574,8 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     if (!query) return empty(400);
     const entry = await stat(path);
     if (!entry) return empty(404);
+    const ifResult = await evaluateIf(request, url, path);
+    if ("response" in ifResult) return ifResult.response;
     if (depth === "infinity" && entry.kind === "collection") {
       return davError(403, "<D:propfind-finite-depth/>");
     }
@@ -607,6 +618,17 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
           if (value !== null) found.push(liveElement(local, value));
         }
         for (const property of deadProps) found.push(property.xml);
+        // DAV:include names properties that allprop leaves out, such as the quota (RFC 4918 §9.1).
+        for (const prop of query.include) {
+          if (prop.ns !== DAV || !QUOTA_NAMES.has(prop.local) || item.kind !== "collection")
+            continue;
+          const scope = item.path[0] ?? "";
+          if (!quotas.has(scope))
+            quotas.set(scope, storage.quota ? await storage.quota(item.path) : null);
+          const quota = quotas.get(scope);
+          const value = quota?.ok ? quotaValue(prop.local, quota.value) : null;
+          if (value !== null) found.push(liveElement(prop.local, value));
+        }
       } else {
         for (const prop of query.props) {
           if (prop.ns === DAV && QUOTA_NAMES.has(prop.local) && item.kind === "collection") {
@@ -803,6 +825,15 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   };
 
   return async (request) => {
+    try {
+      return await dispatch(request);
+    } catch (error) {
+      if (error instanceof BackendUnavailable) return empty(503);
+      throw error;
+    }
+  };
+
+  async function dispatch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = parseDavPath(url.pathname, basePath);
     if (!path)
@@ -822,9 +853,9 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       case "OPTIONS":
         return answerOptions();
       case "GET":
-        return get(request, path, false);
+        return get(request, url, path, false);
       case "HEAD":
-        return get(request, path, true);
+        return get(request, url, path, true);
       case "PUT":
         return put(request, url, path);
       case "MKCOL":
@@ -836,7 +867,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       case "MOVE":
         return transfer(request, url, path, true);
       case "PROPFIND":
-        return propfind(request, path);
+        return propfind(request, url, path);
       case "PROPPATCH":
         return proppatch(request, url, path);
       case "LOCK":
@@ -846,7 +877,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       default:
         return empty(405, { allow: methods });
     }
-  };
+  }
 };
 
 const splitClark = (name: string) => {

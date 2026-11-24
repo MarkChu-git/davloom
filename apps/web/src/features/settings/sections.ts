@@ -7,6 +7,7 @@ export const SETTINGS_SECTIONS = [
   { id: "security", label: "Sign-in and security" },
   { id: "appearance", label: "Appearance" },
   { id: "webdav", label: "WebDAV" },
+  { id: "export", label: "Data export" },
   { id: "about", label: "About this instance" },
 ] as const;
 
