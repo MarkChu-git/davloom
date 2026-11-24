@@ -9,6 +9,7 @@ import ./src/imports.bend as I
 import ./src/copying.bend as M
 import ./src/locks.bend as K
 import ./src/statuses.bend as S
+import ./src/properties.bend as F
 
 # Lemmas the hand-written proofs share.
 
@@ -6682,3 +6683,344 @@ def L.failure_status_exact(f):
       {==}
     case S.FTooMany{}:
       {==}
+
+def L.propfind_reads_dead_exact(readable, q):
+  match readable:
+    case False{}:
+      match q:
+        case F.QAllProp{}:
+          {==}
+        case F.QPropName{}:
+          {==}
+        case F.QPropDav{}:
+          {==}
+        case F.QPropOther{}:
+          {==}
+    case True{}:
+      match q:
+        case F.QAllProp{}:
+          {==}
+        case F.QPropName{}:
+          {==}
+        case F.QPropDav{}:
+          {==}
+        case F.QPropOther{}:
+          {==}
+
+def L.property_source_exact(dav, quota_name, collection, quota_value, live_value, dead_present):
+  match dav:
+    case False{}:
+      match quota_name:
+        case False{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+        case True{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+    case True{}:
+      match quota_name:
+        case False{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+        case True{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+
+def L.propfind_dav_skip_sound(quota_name, collection, quota_value, live_value):
+  match quota_name:
+    case False{}:
+      match collection:
+        case False{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case True{}:
+      match collection:
+        case False{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}

@@ -38,3 +38,10 @@ export {
   type UnlockDecision,
 } from "./locks";
 export { FAILURE_NAMES, failureStatus, type FailureName } from "./statuses";
+export {
+  propertySource,
+  readsDeadProperties,
+  type PropertyFacts,
+  type PropertySource,
+  type PropfindQuery,
+} from "./properties";

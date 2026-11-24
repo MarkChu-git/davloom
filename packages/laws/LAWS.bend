@@ -8,6 +8,7 @@ import ./src/imports.bend as I
 import ./src/copying.bend as M
 import ./src/locks.bend as K
 import ./src/statuses.bend as S
+import ./src/properties.bend as F
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1001,3 +1002,50 @@ def spec_status(f: S.Failure) -> Nat:
 law failure_status_exact:
   for f: S.Failure
   {S.status(f) == spec_status(f) : Nat}
+
+# --- PROPFIND (RFC 4918 §9.1, RFC 4331) -------------------------------------------------------
+
+# A prop query that names only DAV: properties.
+def dav_only(q: F.Query) -> Bool:
+  match q:
+    case F.QAllProp{}:
+      False{}
+    case F.QPropName{}:
+      False{}
+    case F.QPropDav{}:
+      True{}
+    case F.QPropOther{}:
+      False{}
+
+# Dead properties are read exactly when the credential may see an entry and the body is not a
+# prop query naming DAV: properties only.
+law propfind_reads_dead_exact:
+  for readable: Bool
+  for q: F.Query
+  {F.reads_dead(readable, q) == Bool.and(readable, Bool.not(dav_only(q))) : Bool}
+
+# A requested property's value: the quota for a quota name on a collection whose quota is known,
+# else a live property's value, else a dead property's, and live properties, the quota and no dead
+# property are in DAV: (RFC 4918 §9.1, RFC 4331 §3).
+def spec_source(+dav: Bool, +quota_name: Bool, +collection: Bool, +quota_value: Bool, +live_value: Bool, +dead_present: Bool) -> F.Source:
+  Bool.pick(F.Source, Bool.and(dav, Bool.and(quota_name, Bool.and(collection, quota_value))), F.FromQuota{},
+    Bool.pick(F.Source, Bool.and(dav, live_value), F.FromLive{},
+      Bool.pick(F.Source, Bool.and(Bool.not(dav), dead_present), F.FromDead{}, F.NotFound{})))
+
+law property_source_exact:
+  for dav: Bool
+  for quota_name: Bool
+  for collection: Bool
+  for quota_value: Bool
+  for live_value: Bool
+  for dead_present: Bool
+  {F.source(dav, quota_name, collection, quota_value, live_value, dead_present) == spec_source(dav, quota_name, collection, quota_value, live_value, dead_present) : F.Source}
+
+# Whatever the store holds, a DAV: property's answer is the same, so a request that names only
+# DAV: properties loses nothing by not reading dead properties.
+law propfind_dav_skip_sound:
+  for quota_name: Bool
+  for collection: Bool
+  for quota_value: Bool
+  for live_value: Bool
+  {F.source(True{}, quota_name, collection, quota_value, live_value, True{}) == F.source(True{}, quota_name, collection, quota_value, live_value, False{}) : F.Source}

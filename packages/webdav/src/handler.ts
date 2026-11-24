@@ -16,6 +16,8 @@ import {
   failureStatus,
   ifState,
   lockGate,
+  propertySource,
+  readsDeadProperties,
   resolveRange,
   type Check,
   type IfClause,
@@ -620,11 +622,15 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     // only DAV: properties, quota and unknown ones included, needs no read of dead properties. Nor
     // does an entry whose properties this key may not see.
     const deadPaths = entries.map((e) => e.path).filter((p) => mayRead(p));
-    const deadResult =
-      (query.kind === "prop" && query.props.every((prop) => prop.ns === DAV)) ||
-      deadPaths.length === 0
-        ? null
-        : await storage.properties(deadPaths);
+    const queryKind =
+      query.kind !== "prop"
+        ? query.kind
+        : query.props.every((prop) => prop.ns === DAV)
+          ? "prop-dav"
+          : "prop-other";
+    const deadResult = readsDeadProperties(deadPaths.length > 0, queryKind)
+      ? await storage.properties(deadPaths)
+      : null;
     // Dead properties that cannot be read fail the request: a 207 without them would tell the
     // client the entries have none, and allprop or propname cannot name what is missing to give it
     // a status of its own in a propstat.
@@ -670,27 +676,33 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         }
       } else {
         for (const prop of query.props) {
-          if (prop.ns === DAV && QUOTA_NAMES.has(prop.local) && item.kind === "collection") {
+          const dav = prop.ns === DAV;
+          const quotaName = QUOTA_NAMES.has(prop.local);
+          const collection = item.kind === "collection";
+          let quota: string | null = null;
+          if (dav && quotaName && collection) {
             // One answer per top-level collection: each Mount has its own backend.
             const scope = item.path[0] ?? "";
             if (!quotas.has(scope))
               quotas.set(scope, storage.quota ? await storage.quota(item.path) : null);
-            const quota = quotas.get(scope);
-            const value = quota?.ok ? quotaValue(prop.local, quota.value) : null;
-            if (value !== null) {
-              found.push(liveElement(prop.local, value));
-              continue;
-            }
+            const known = quotas.get(scope);
+            quota = known?.ok ? quotaValue(prop.local, known.value) : null;
           }
-          const live =
-            prop.ns === DAV && Object.hasOwn(LIVE, prop.local) ? LIVE[prop.local] : undefined;
-          const value = live ? live(item, context) : null;
-          if (value !== null) {
-            found.push(liveElement(prop.local, value));
-            continue;
-          }
+          const live = Object.hasOwn(LIVE, prop.local) ? LIVE[prop.local] : undefined;
+          const liveValue = dav && live ? live(item, context) : null;
           const property = deadProps.find((p) => p.name === clark(prop.ns, prop.local));
-          if (property) found.push(property.xml);
+          const source = propertySource({
+            dav,
+            quotaName,
+            collection,
+            quotaValue: quota !== null,
+            liveValue: liveValue !== null,
+            deadPresent: property !== undefined,
+          });
+          if (source === "quota" && quota !== null) found.push(liveElement(prop.local, quota));
+          else if (source === "live" && liveValue !== null)
+            found.push(liveElement(prop.local, liveValue));
+          else if (source === "dead" && property) found.push(property.xml);
           else missing.push(emptyElement(prop.ns, prop.local));
         }
       }

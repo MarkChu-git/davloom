@@ -54,6 +54,7 @@ const FINITE: Record<string, string[]> = {
     "S.FCrossBackend{}",
     "S.FTooMany{}",
   ],
+  "F.Query": ["F.QAllProp{}", "F.QPropName{}", "F.QPropDav{}", "F.QPropOther{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
 };
 
