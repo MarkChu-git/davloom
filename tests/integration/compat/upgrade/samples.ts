@@ -160,4 +160,25 @@ export const SAMPLES: Readonly<Record<string, readonly Sample[]>> = {
       },
     },
   ],
+  "0004_settings_and_operations": [
+    {
+      table: "settings",
+      row: { key: "storage", value: '{"defaultBackendId":"backend-1"}', updated_at: LATER },
+    },
+    {
+      table: "operation_hours",
+      row: { hour: 498_888, operations: 42, failed: 3 },
+    },
+    {
+      table: "operation_errors",
+      row: {
+        id: "error-1",
+        at: LATER,
+        method: "MOVE",
+        path: "/files/Drafts/report 2026 – final.txt",
+        destination: "/files/Archive/report.txt",
+        status: 412,
+      },
+    },
+  ],
 };
