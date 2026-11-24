@@ -32,7 +32,14 @@ import {
   toSeconds,
   type EntityTag,
 } from "./headers";
-import { conflicts, parseIfHeader, type Lock, type LockScope, type LockStore } from "./locks";
+import {
+  conflicts,
+  covers,
+  parseIfHeader,
+  type Lock,
+  type LockScope,
+  type LockStore,
+} from "./locks";
 import { contentTypeFor } from "./mime";
 import { hrefOf, parseDavPath, parseDestination } from "./paths";
 import {
@@ -350,12 +357,25 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   const mayLock = (root: Path): boolean =>
     !options.authorize || options.authorize({ method: "LOCK", target: root, destination: null });
 
-  const lockDiscoveryOf = async (path: Path): Promise<string | null> => {
-    if (!locks) return null;
+  /**
+   * The DAV:lockdiscovery of a resource and, with `children`, of the resources in it, from one read
+   * of the lock store: the locks covering the resource and the locks under it. Every lock that
+   * covers a child is among them, so a listing costs one query however many children it has (the
+   * Free plan allows 50 D1 queries per request). Without a lock store every answer is null.
+   */
+  const lockDiscoveriesOf = async (
+    path: Path,
+    children: boolean,
+  ): Promise<(path: Path) => string | null> => {
+    if (!locks) return () => null;
     const time = now();
-    const held = await locks.covering(path, { descendants: false, now: time });
+    const held = await locks.covering(path, { descendants: children, now: time });
     // A lock rooted where the credential may not lock still shows, without its token.
-    return held.map((lock) => activeLockXml(lock, basePath, time, mayLock(lock.root))).join("");
+    return (item) =>
+      held
+        .filter((lock) => covers(lock, item, false))
+        .map((lock) => activeLockXml(lock, basePath, time, mayLock(lock.root)))
+        .join("");
   };
 
   /**
@@ -638,12 +658,13 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     const dead: Record<string, readonly DeadProperty[]> = deadResult?.value ?? {};
 
     const responses: string[] = [];
+    const lockDiscoveryOf = await lockDiscoveriesOf(path, entries.length > 1);
     // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.
     const quotas = new Map<string, StorageResult<Quota> | null>();
     for (const item of entries) {
       // Above a scoped key's roots a folder shows only what leads to them: no locks, no properties.
       const readable = mayRead(item.path);
-      const lockDiscovery = readable ? await lockDiscoveryOf(item.path) : locks ? "" : null;
+      const lockDiscovery = readable ? lockDiscoveryOf(item.path) : locks ? "" : null;
       const context = { lockDiscovery };
       const deadProps =
         readable && Object.hasOwn(dead, pathKey(item.path)) ? (dead[pathKey(item.path)] ?? []) : [];
