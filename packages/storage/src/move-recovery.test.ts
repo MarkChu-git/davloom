@@ -279,6 +279,30 @@ describe("the record of a move", () => {
     ).toEqual(["b/", "b/new"]);
   });
 
+  it("left by a move that failed to drop it is dropped when a collection is made there", async () => {
+    const { driver, properties, storage } = make();
+    await storage.createCollection(["src"]);
+    seedFiles(driver, 2);
+    // Everything moved, but dropping the record failed: the source is gone and the record stays.
+    // The move drops the destination's properties, then records under it, then its own record.
+    let removals = 0;
+    properties.failWhen((call) => call === "removeTree" && (removals += 1) === 3);
+    expect(await storage.move(["src"], ["dst"], { overwrite: true })).toEqual(
+      failed("unavailable"),
+    );
+    properties.failWhen(null);
+    await storage.createCollection(["src"]);
+    await storage.write(["src", "new"], text("n"), {});
+    await storage.write(["dst", "other"], text("o"), {});
+    await storage.move(["src"], ["dst"], { overwrite: true });
+    const tree = await snapshot(storage);
+    expect(
+      Object.keys(tree)
+        .filter((key) => key.startsWith("dst/"))
+        .toSorted(),
+    ).toEqual(["dst/", "dst/new"]);
+  });
+
   it("is dropped when the source is deleted, so a new collection there moves as usual", async () => {
     const { storage } = await stopped();
     await storage.remove(["src"]);

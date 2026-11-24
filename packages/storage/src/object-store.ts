@@ -713,6 +713,8 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
         );
         if (outcome.kind !== "proceed") return fail(failureOf(outcome.kind));
         must(await properties.removeTree(path));
+        // A record that a stopped move of an earlier collection here left belongs to nothing now.
+        must(await properties.removeTree(journalPath(path)));
         must(await driver.put(markerKey(prefix, path), null, { length: 0, created: now() }));
         return ok(collectionEntry(path));
       }),
