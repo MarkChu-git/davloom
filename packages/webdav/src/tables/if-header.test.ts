@@ -122,16 +122,6 @@ const evaluate = (
   return submitted ? "true, token submitted" : "true, no token";
 };
 
-/** Davloom counts only tokens outside `Not` as submitted: a known bug, kept out of the table. */
-const submittedOnlyUnderNot = (header: string, lockToken: string) => {
-  const lists = parseIf(header) ?? [];
-  const conditions = lists.flatMap((list) => list.conditions);
-  return (
-    conditions.some((c) => c.kind === "token" && c.value === lockToken) &&
-    !conditions.some((c) => c.kind === "token" && c.value === lockToken && !c.not)
-  );
-};
-
 const ATOMS: readonly string[] = [
   "<@T>",
   `<${UNKNOWN}>`,
@@ -224,22 +214,7 @@ const STATUS: Readonly<Record<Outcome, number>> = {
   "true, no token": 423,
 };
 
-// The rows the bug changes: a true header whose only mention of the lock token is under Not.
-const SYMBOLIC: Readonly<Record<string, State>> = {
-  "/a.txt": { locks: new Set(["urn:t"]), etag: "a" },
-  "/b.txt": { locks: new Set(), etag: "b" },
-};
-const TABLE = CASES.filter(([target, template]) => {
-  const header = template
-    .replaceAll("@URL", `${ORIGIN}${BASE}`)
-    .replaceAll("@T", "urn:t")
-    .replaceAll("@A", "a")
-    .replaceAll("@B", "b");
-  return !(
-    submittedOnlyUnderNot(header, "urn:t") &&
-    evaluate(header, target, SYMBOLIC, "urn:t").startsWith("true")
-  );
-});
+const TABLE = CASES;
 
 describe("the If header", () => {
   it.each(TABLE)("PUT %s with If: %s", async (target, template) => {

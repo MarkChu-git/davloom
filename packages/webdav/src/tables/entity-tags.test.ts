@@ -91,9 +91,16 @@ const VALUES: readonly string[] = [
   `"a", "b", "c", "${CURRENT}"`,
   `   "${CURRENT}"   `,
   `"${CURRENT}" , "other"`,
-  // §5.6.1 empty list elements. Davloom accepts one trailing comma; other empty elements are a
-  // known bug in Davloom, which reads them as an invalid field; those rows wait for its fix.
+  // §5.6.1 empty list elements, which a recipient ignores.
   `"${CURRENT}",`,
+  `, "${CURRENT}"`,
+  `,"${CURRENT}"`,
+  `"other",, "${CURRENT}"`,
+  `"other" , , W/"${CURRENT}"`,
+  `, , "${CURRENT}", ,`,
+  `"other",,`,
+  ",",
+  " , , ",
   // Not valid fields.
   CURRENT,
   `"${CURRENT}`,
