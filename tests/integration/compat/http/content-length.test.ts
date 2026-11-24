@@ -60,22 +60,7 @@ const bodyOf = async (response: Response, required = true) => {
   return body;
 };
 
-/**
- * Known product bug: Bun.serve (Bun 1.4.4) drops the Content-Length of an answer whose body is a
- * stream of more than a few bytes and sends it chunked, as workerd did, so on the self-hosted
- * deployment GET of a file of some kilobytes tells the client no size. The cases of a Bun target
- * whose body is this long fail until the Bun entry passes the length on (as the Workers entry's
- * FixedLengthStream does); bodies of up to 23 bytes keep it.
- */
-const BUN_DROPS_LENGTH_FROM = 4_000;
-/** The length of the bytes a range selects, or of the whole file when it selects none. */
-const lengthOf = (selected: readonly [number, number] | null, size: number) =>
-  selected === null ? size : selected[1] - selected[0] + 1;
-
-const dropsLength = (target: string, length: number) =>
-  target.startsWith("Bun") && length >= BUN_DROPS_LENGTH_FROM;
-
-describe.each(TARGETS)("Content-Length on %s", (name, skip, start) => {
+describe.each(TARGETS)("Content-Length on %s", (_name, skip, start) => {
   let deployment: Deployment;
   const path = (size: number) => `${deployment.mount}/length/${size}.bin`;
 
@@ -99,14 +84,7 @@ describe.each(TARGETS)("Content-Length on %s", (name, skip, start) => {
     expect(response.headers.get("content-length")).toBe(String(size));
     expect(await bodyOf(response)).toEqual(bytesOf(size));
   };
-  it.skipIf(skip).each(SIZES.filter((size) => !dropsLength(name, size)))(
-    "GET of a file of %i bytes",
-    getWhole,
-  );
-  (skip ? it.skip : it.fails).each(SIZES.filter((size) => dropsLength(name, size)))(
-    "GET of a file of %i bytes (known bug)",
-    getWhole,
-  );
+  it.skipIf(skip).each(SIZES)("GET of a file of %i bytes", getWhole);
 
   it.skipIf(skip).each(SIZES)("HEAD of a file of %i bytes", async (size) => {
     const response = await deployment.davloom.dav(path(size), { method: "HEAD" });
@@ -118,7 +96,6 @@ describe.each(TARGETS)("Content-Length on %s", (name, skip, start) => {
   const rangeRows = SIZES.flatMap((size) =>
     RANGES.map(([header, select]) => [header, size, select(size)] as const),
   );
-  const drops = (row: (typeof rangeRows)[number]) => dropsLength(name, lengthOf(row[2], row[1]));
   const getRange = async (header: string, size: number, selected: [number, number] | null) => {
     const response = await deployment.davloom.dav(path(size), { headers: { range: header } });
     const body = await bodyOf(response);
@@ -141,14 +118,7 @@ describe.each(TARGETS)("Content-Length on %s", (name, skip, start) => {
     expect(response.headers.get("content-length")).toBe(String(expected.byteLength));
     expect(body).toEqual(expected);
   };
-  it.skipIf(skip).each(rangeRows.filter((row) => !drops(row)))(
-    "GET with Range %s of a file of %i bytes",
-    getRange,
-  );
-  (skip ? it.skip : it.fails).each(rangeRows.filter((row) => drops(row)))(
-    "GET with Range %s of a file of %i bytes (known bug)",
-    getRange,
-  );
+  it.skipIf(skip).each(rangeRows)("GET with Range %s of a file of %i bytes", getRange);
 
   it.skipIf(skip).each(SIZES.filter((size) => size > 0))(
     "GET with a Range past the end of a file of %i bytes",
