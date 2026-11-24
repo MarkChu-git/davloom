@@ -216,6 +216,7 @@ describe("apiKeys", () => {
       expiresAt,
       createdAt: T0,
       metadata: { access: "read-write" },
+      lastUsedAt: null,
     });
     expect(await repositories.apiKeys.findByHash("hash-two")).toBeNull();
     expect(await repositories.apiKeys.findByHash("k-1")).toBeNull();
@@ -248,6 +249,29 @@ describe("apiKeys", () => {
     await insertKey({ id: "k-1", metadata });
 
     expect((await repositories.apiKeys.findByHash("hash-k-1"))?.metadata).toEqual(expected);
+  });
+
+  it("renames a known key and reports an unknown one", async () => {
+    await insertKey({ id: "k-1", name: "Laptop" });
+
+    expect(await repositories.apiKeys.rename("k-1", "Work laptop")).toBe(true);
+    expect(await repositories.apiKeys.rename("k-9", "Other")).toBe(false);
+    expect((await repositories.apiKeys.findByHash("hash-k-1"))?.name).toBe("Work laptop");
+  });
+
+  it("records a key's last use and reads it back", async () => {
+    await insertKey({ id: "k-1" });
+    await insertKey({ id: "k-2" });
+    const at = new Date(T0.getTime() + 60_000);
+
+    await repositories.apiKeys.recordUse("k-1", at);
+    await repositories.apiKeys.recordUse("unknown", at);
+
+    expect((await repositories.apiKeys.findByHash("hash-k-1"))?.lastUsedAt).toEqual(at);
+    expect((await repositories.apiKeys.findByHash("hash-k-2"))?.lastUsedAt).toBeNull();
+    const later = new Date(at.getTime() + 600_000);
+    await repositories.apiKeys.recordUse("k-1", later);
+    expect((await repositories.apiKeys.list()).map((key) => key.lastUsedAt)).toEqual([later, null]);
   });
 
   it("lists keys oldest first", async () => {

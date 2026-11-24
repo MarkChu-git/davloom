@@ -4,7 +4,7 @@ import { CredentialCipher } from "./credentials";
 import { isValidName, isValidPath, type Access } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
 import { formatRoot, parseScope, type Scope } from "./scope";
-import type { Path, StorageBackend, Usage } from "./storage";
+import type { Path, StorageBackend, StorageFailure, StorageResult, Usage } from "./storage";
 
 // The application services of one Davloom instance: first-run setup, API Keys, storage backends and
 // Mounts, and the credential check of WebDAV requests. They reach the database, the identity
@@ -38,6 +38,8 @@ export interface ApiKeyRecord {
   readonly expiresAt: Date | null;
   readonly createdAt: Date;
   readonly metadata: unknown;
+  /** When a WebDAV client last signed in with the key, to within USE_RECORD_INTERVAL_MS. */
+  readonly lastUsedAt: Date | null;
 }
 
 /** The Port to the instance database. */
@@ -72,6 +74,10 @@ export class Records extends Context.Service<
       readonly findByHash: (hash: string) => Promise<ApiKeyRecord | null>;
       readonly list: () => Promise<ApiKeyRecord[]>;
       readonly remove: (id: string) => Promise<boolean>;
+      /** Renames a key; false when no key has the id. */
+      readonly rename: (id: string, name: string) => Promise<boolean>;
+      /** Records that a WebDAV client signed in with the key at `at`. */
+      readonly recordUse: (id: string, at: Date) => Promise<void>;
     };
   }
 >()("@davloom/core/Records") {}
@@ -266,6 +272,8 @@ export interface KeyView {
   readonly enabled: boolean;
   readonly expiresAt: string | null;
   readonly createdAt: string;
+  /** When a WebDAV client last signed in with it, to within a few minutes; null for never. */
+  readonly lastUsedAt: string | null;
 }
 
 const accessOf = (metadata: unknown): Access =>
@@ -303,6 +311,7 @@ const keyView = (key: ApiKeyRecord): KeyView => ({
   enabled: key.enabled,
   expiresAt: key.expiresAt?.toISOString() ?? null,
   createdAt: key.createdAt.toISOString(),
+  lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
 });
 
 export const listKeys = Effect.gen(function* () {
@@ -356,6 +365,18 @@ export const createKey = (
     return { id: created.id, key: created.key };
   });
 
+/** Renames a key, as the admin tells keys apart; its secret, access and scope stay as they are. */
+export const renameKey = (id: string, input: { name: string }) =>
+  Effect.gen(function* () {
+    const records = yield* Records;
+    const name = input.name.trim();
+    if (name === "" || name.length > 64)
+      return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    if (!(yield* promise(() => records.apiKeys.rename(id, name))))
+      return yield* Effect.fail(new NotFound());
+    return { id, name };
+  });
+
 export const revokeKey = (id: string) =>
   Effect.gen(function* () {
     const records = yield* Records;
@@ -366,6 +387,22 @@ export const revokeKey = (id: string) =>
 
 // --- Backends and Mounts -------------------------------------------------------------------
 
+/**
+ * How a backend answered when the list was read: in how many milliseconds, or what went wrong. A
+ * backend this runtime cannot open, for its kind or its saved settings, was never asked.
+ */
+export type BackendStatus =
+  | { readonly state: "answered"; readonly ms: number }
+  | { readonly state: "failed"; readonly failure: StorageFailure; readonly ms: number }
+  | { readonly state: "not-opened" };
+
+const backendStatusOf = (usage: StorageResult<Usage> | null, ms: number): BackendStatus =>
+  usage === null
+    ? { state: "not-opened" }
+    : usage.ok
+      ? { state: "answered", ms }
+      : { state: "failed", failure: usage.failure, ms };
+
 export const listBackends = Effect.gen(function* () {
   const records = yield* Records;
   const opener = yield* StorageOpener;
@@ -373,7 +410,14 @@ export const listBackends = Effect.gen(function* () {
   return yield* Effect.forEach(backends, (backend) =>
     Effect.gen(function* () {
       const storage = opener.open(backend);
-      const usage = storage ? yield* promise(() => storage.usage()) : null;
+      const started = Date.now();
+      const usage = storage
+        ? yield* promise(() =>
+            storage
+              .usage()
+              .catch((): StorageResult<Usage> => ({ ok: false, failure: "unavailable" })),
+          )
+        : null;
       return {
         id: backend.id,
         name: backend.name,
@@ -381,6 +425,7 @@ export const listBackends = Effect.gen(function* () {
         createdAt: backend.createdAt.toISOString(),
         available: usage?.ok === true,
         usage: usage?.ok ? usage.value : null,
+        status: backendStatusOf(usage, Date.now() - started),
       };
     }),
   );
@@ -591,6 +636,17 @@ export interface Credential {
   readonly scope: Scope;
 }
 
+/**
+ * How stale a key's last use may get before a sign-in records it again. Each record is a database
+ * write, and Workers Free allows 100,000 a day, so a busy client writes at most once per key in
+ * this time rather than once per request.
+ */
+export const USE_RECORD_INTERVAL_MS = 5 * 60_000;
+
+/** Whether a sign-in at `now` records the key's use: never recorded, or recorded long enough ago. */
+export const shouldRecordUse = (lastUsedAt: Date | null, now: number): boolean =>
+  lastUsedAt === null || now - lastUsedAt.getTime() >= USE_RECORD_INTERVAL_MS;
+
 /** Checks an API Key sent as the password of Basic Auth; null when it is unknown, off or expired. */
 export const verifyApiKey = (key: string, now: number) =>
   Effect.gen(function* () {
@@ -605,6 +661,14 @@ export const verifyApiKey = (key: string, now: number) =>
     )
       return null;
     if (brokenScope(record.metadata)) return null;
+    if (shouldRecordUse(record.lastUsedAt, now)) {
+      // The sign-in stands whether or not the record is written.
+      yield* promise(() =>
+        records.apiKeys.recordUse(record.id, new Date(now)).catch((error: unknown) => {
+          console.error("Could not record the use of an API Key:", error);
+        }),
+      );
+    }
     return {
       keyId: record.id,
       access: accessOf(record.metadata),

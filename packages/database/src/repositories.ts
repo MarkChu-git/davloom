@@ -34,6 +34,7 @@ export interface ApiKeyRecord {
   readonly expiresAt: Date | null;
   readonly createdAt: Date;
   readonly metadata: unknown;
+  readonly lastUsedAt: Date | null;
 }
 
 export interface LockRecord {
@@ -69,6 +70,7 @@ const toApiKey = (row: typeof schema.apikey.$inferSelect): ApiKeyRecord => ({
   expiresAt: row.expiresAt,
   createdAt: row.createdAt,
   metadata: parseMetadata(row.metadata),
+  lastUsedAt: row.lastRequest,
 });
 
 /** Whether a SQL error is a unique constraint failure, on D1 or on Bun SQLite. */
@@ -173,6 +175,18 @@ export const createRepositories = (db: Database) => ({
           .where(eq(schema.apikey.id, id))
           .returning({ id: schema.apikey.id })
       ).length > 0,
+    rename: async (id: string, name: string) =>
+      (
+        await db
+          .update(schema.apikey)
+          .set({ name, updatedAt: new Date() })
+          .where(eq(schema.apikey.id, id))
+          .returning({ id: schema.apikey.id })
+      ).length > 0,
+    /** Keeps when a WebDAV client last signed in with the key, in Better Auth's own column. */
+    recordUse: async (id: string, at: Date): Promise<void> => {
+      await db.update(schema.apikey).set({ lastRequest: at }).where(eq(schema.apikey.id, id));
+    },
   },
   locks: {
     /** Locks rooted at any of `roots`, or, with `under`, rooted under it. */

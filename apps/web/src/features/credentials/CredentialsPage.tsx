@@ -26,18 +26,27 @@ import { Plus } from "lucide-react";
 import { useState } from "react";
 import { describeError } from "../api/client";
 import { webdavAddress } from "../api/dav";
-import { useApiKeys, useCreateKey, useRevokeKey, type ApiKey } from "../api/queries";
+import {
+  useApiKeys,
+  useCreateKey,
+  useMounts,
+  useRenameKey,
+  useRevokeKey,
+  type ApiKey,
+} from "../api/queries";
+import { NameForm } from "../files/dialogs";
 import { CopyField } from "../shell/CopyField";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
-import { formatDate } from "../shell/format";
+import { formatDate, formatRelative } from "../shell/format";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { QueryState } from "../shell/QueryState";
 import { StatusLabel, type Tone } from "../shell/StatusLabel";
 import { TitleAction } from "../shell/TitleRow";
+import { nextFormKey, useFormDialog } from "../shell/useFormDialog";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
-import { hasExpired, keyStateOf, parseFolders, reachOf, type KeyState } from "./keyState";
+import { ALL_MOUNTS, hasExpired, keyStateOf, reachOf, scopeOf, type KeyState } from "./keyState";
 
 // Rows keep the API's fields; the table wants records.
 type KeyRow = ApiKey & Record<string, unknown>;
@@ -58,17 +67,8 @@ const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
 const accessOf = (key: ApiKey): string =>
   key.access === "read-only" ? "Read only" : "Read and write";
 
-/** The access level, with the folders under it when the key is limited to some. */
-const KeyAccess = ({ apiKey }: { apiKey: ApiKey }) => (
-  <VStack gap={0.5}>
-    <Text>{accessOf(apiKey)}</Text>
-    {apiKey.paths === null ? null : (
-      <Text type="code" color="secondary" maxLines={2}>
-        {reachOf(apiKey.paths)}
-      </Text>
-    )}
-  </VStack>
-);
+const lastUsedOf = (key: ApiKey): string =>
+  key.lastUsedAt === null ? "Never" : formatRelative(key.lastUsedAt);
 
 const expiresOf = (key: ApiKey): string =>
   key.expiresAt === null ? "Never" : formatDate(key.expiresAt);
@@ -94,7 +94,7 @@ const KeyStatus = ({ apiKey }: { apiKey: ApiKey }) => (
 );
 
 /** The narrowest table, in rem, that has room for a column per detail. */
-const WIDE_TABLE = 46;
+const WIDE_TABLE = 58;
 
 const WIDE_COLUMNS: TableColumn<KeyRow>[] = [
   {
@@ -103,17 +103,18 @@ const WIDE_COLUMNS: TableColumn<KeyRow>[] = [
     width: proportional(2, { minWidth: 180 }),
     renderCell: (key) => <KeyName apiKey={key} />,
   },
+  { key: "access", header: "Access", width: pixel(136), renderCell: accessOf },
   {
-    key: "access",
-    header: "Access",
-    width: pixel(168),
-    renderCell: (key) => <KeyAccess apiKey={key} />,
+    key: "paths",
+    header: "Scope",
+    width: proportional(2, { minWidth: 160 }),
+    renderCell: (key) => <Text maxLines={1}>{reachOf(key.paths)}</Text>,
   },
   {
-    key: "createdAt",
-    header: "Created",
+    key: "lastUsedAt",
+    header: "Last used",
     width: pixel(120),
-    renderCell: (key) => <Text color="secondary">{formatDate(key.createdAt)}</Text>,
+    renderCell: (key) => <Text color="secondary">{lastUsedOf(key)}</Text>,
   },
   {
     key: "expiresAt",
@@ -147,7 +148,8 @@ const KeyFacts = ({ apiKey }: { apiKey: ApiKey }) => {
   return (
     <MetadataList>
       <MetadataListItem label="Access">{accessOf(apiKey)}</MetadataListItem>
-      <MetadataListItem label="Reaches">{reachOf(apiKey.paths)}</MetadataListItem>
+      <MetadataListItem label="Scope">{reachOf(apiKey.paths)}</MetadataListItem>
+      <MetadataListItem label="Last used">{lastUsedOf(apiKey)}</MetadataListItem>
       <MetadataListItem label="Created">{formatDate(apiKey.createdAt)}</MetadataListItem>
       <MetadataListItem label={hasExpired(apiKey, now) ? "Expired" : "Expires"}>
         {expiresOf(apiKey)}
@@ -203,26 +205,25 @@ const CreateKeyForm = ({
   onCreate: (name: string, secret: string) => void;
 }) => {
   const create = useCreateKey();
+  const mounts = useMounts();
   const [name, setName] = useState("");
   const [isReadOnly, setIsReadOnly] = useState(false);
   const [expiry, setExpiry] = useState<string>("90");
-  const [folders, setFolders] = useState("");
+  const [mount, setMount] = useState(ALL_MOUNTS);
+  const [folder, setFolder] = useState("");
   const [problem, setProblem] = useState<string>();
-  const [foldersProblem, setFoldersProblem] = useState<string>();
+  const [folderProblem, setFolderProblem] = useState<string>();
 
   const submit = () => {
     const trimmed = name.trim();
-    if (trimmed === "") {
-      setProblem("Name the key after the device or person that will use it.");
+    const nameIssue = keyNameProblem(name);
+    if (nameIssue !== undefined) {
+      setProblem(nameIssue);
       return;
     }
-    if (trimmed.length > 64) {
-      setProblem("Use at most 64 characters.");
-      return;
-    }
-    const reach = parseFolders(folders);
-    if ("problem" in reach) {
-      setFoldersProblem(reach.problem);
+    const scope = scopeOf(mount, folder);
+    if ("problem" in scope) {
+      setFolderProblem(scope.problem);
       return;
     }
     if (create.isPending) {
@@ -233,7 +234,7 @@ const CreateKeyForm = ({
         name: trimmed,
         access: isReadOnly ? "read-only" : "read-write",
         expiresInDays: expiry === "never" ? null : Number(expiry),
-        ...(reach.folders.length > 0 ? { paths: reach.folders } : {}),
+        ...(scope.paths === null ? {} : { paths: scope.paths }),
       },
       { onSuccess: ({ key }) => onCreate(trimmed, key) },
     );
@@ -262,29 +263,48 @@ const CreateKeyForm = ({
               hasSpellCheck={false}
               status={problem === undefined ? undefined : { type: "error", message: problem }}
             />
+            <Selector
+              label="Mount"
+              value={mount}
+              onChange={(value) => {
+                setMount(value);
+                setFolderProblem(undefined);
+              }}
+              options={[
+                { value: ALL_MOUNTS, label: "All mounts" },
+                ...(mounts.data ?? []).map((item) => ({
+                  value: item.name,
+                  label: `/${item.name}`,
+                })),
+              ]}
+            />
+            <TextInput
+              label="Folder inside the mount"
+              value={folder}
+              onChange={(value) => {
+                setFolder(value);
+                setFolderProblem(undefined);
+              }}
+              onEnter={submit}
+              isOptional
+              isDisabled={mount === ALL_MOUNTS}
+              placeholder="photos/2026"
+              autoCapitalize="none"
+              hasAutoCorrect={false}
+              hasSpellCheck={false}
+              // The field is off while the key covers every mount, and then shows no error.
+              status={
+                folderProblem === undefined || mount === ALL_MOUNTS
+                  ? undefined
+                  : { type: "error", message: folderProblem }
+              }
+            />
             <Switch label="Read only" value={isReadOnly} onChange={setIsReadOnly} />
             <Selector
               label="Expires"
               value={expiry}
               onChange={setExpiry}
               options={EXPIRY_OPTIONS.map((option) => ({ ...option }))}
-            />
-            <TextInput
-              label="Folders"
-              value={folders}
-              onChange={(value) => {
-                setFolders(value);
-                setFoldersProblem(undefined);
-              }}
-              onEnter={submit}
-              placeholder="/files/photos"
-              hasSpellCheck={false}
-              description="Optional. Limit the key to these folders, separated by commas; empty reaches every mount."
-              status={
-                foldersProblem === undefined
-                  ? undefined
-                  : { type: "error", message: foldersProblem }
-              }
             />
           </VStack>
         </LayoutContent>
@@ -306,6 +326,14 @@ const CreateKeyForm = ({
   );
 };
 
+/** Why a name cannot name a key, as the server checks it; undefined when it can. */
+const keyNameProblem = (name: string): string | undefined =>
+  name.trim() === ""
+    ? "Name the key after the device or person that will use it."
+    : name.trim().length > 64
+      ? "Use at most 64 characters."
+      : undefined;
+
 /** What the key dialog shows: the form, then the new key in its place. */
 type KeyDialog = { step: "form" } | { step: "secret"; name: string; secret: string };
 
@@ -313,6 +341,8 @@ type KeyDialog = { step: "form" } | { step: "secret"; name: string; secret: stri
 export const CredentialsPage = () => {
   const apiKeys = useApiKeys();
   const revoke = useRevokeKey();
+  const rename = useRenameKey();
+  const nameDialog = useFormDialog(440);
   const toast = useToast();
   const confirm = useImperativeAlertDialog();
   // Held in state rather than in an imperative dialog, so the key leaves the page with Done.
@@ -357,12 +387,48 @@ export const CredentialsPage = () => {
       },
     });
 
+  const openRename = (key: ApiKey) =>
+    nameDialog.show(
+      <NameForm
+        key={nextFormKey()}
+        title={`Rename “${key.name}”`}
+        submitLabel="Rename"
+        initialName={key.name}
+        onCancel={() => nameDialog.hide()}
+        onSubmit={async (name) => {
+          const problem = keyNameProblem(name);
+          if (problem !== undefined) {
+            return problem;
+          }
+          const to = name.trim();
+          if (to !== key.name) {
+            try {
+              await rename.mutateAsync({ id: key.id, name: to });
+            } catch (error) {
+              return describeError(error);
+            }
+            toast({ body: `Renamed to “${to}”.` });
+          }
+          // The menu or the details that opened the dialog now carry the new name.
+          nameDialog.hide(
+            () =>
+              buttonLabelled(`Actions for key ${to}`) ?? buttonLabelled(`Details for key ${to}`),
+          );
+          return undefined;
+        }}
+      />,
+    );
+
   const keyMenu = (key: ApiKey, rows: readonly ApiKey[]) => (
     <MoreMenu
       label={`Actions for key ${key.name}`}
       size="sm"
       alignment="end"
-      items={[{ label: "Revoke", variant: "destructive", onClick: () => openRevoke(key, rows) }]}
+      items={[
+        { label: "Rename", onClick: () => openRename(key) },
+        { type: "divider" },
+        { label: "Revoke", variant: "destructive", onClick: () => openRevoke(key, rows) },
+      ]}
     />
   );
 
@@ -414,6 +480,12 @@ export const CredentialsPage = () => {
                         details: (
                           <>
                             <KeyFacts apiKey={key} />
+                            <Button
+                              label="Rename"
+                              variant="secondary"
+                              width="100%"
+                              onClick={() => openRename(key)}
+                            />
                             <Button
                               label="Revoke"
                               variant="destructive"
@@ -470,6 +542,7 @@ export const CredentialsPage = () => {
               <ShowOnce name={keyDialog.name} secret={keyDialog.secret} onDone={finish} />
             ) : null}
           </Dialog>
+          {nameDialog.element}
           {confirm.element}
         </LayoutContent>
       }

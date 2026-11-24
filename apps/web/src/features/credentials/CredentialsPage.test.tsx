@@ -12,7 +12,7 @@ import {
   WIDE,
 } from "../../test/layout";
 import { json, renderPage, type Handler } from "../../test/render";
-import type { ApiKey } from "../api/queries";
+import type { ApiKey, Mount } from "../api/queries";
 import { CredentialsPage } from "./CredentialsPage";
 
 handleCanceledAnimations();
@@ -38,6 +38,7 @@ const key = (fields: Partial<ApiKey> & Pick<ApiKey, "id" | "name">): ApiKey => (
   enabled: true,
   expiresAt: null,
   createdAt: "2026-03-15T12:00:00Z",
+  lastUsedAt: null,
   ...fields,
 });
 
@@ -49,7 +50,13 @@ const READER = key({
   expiresAt: "2099-06-01T12:00:00Z",
   createdAt: "2026-03-10T12:00:00Z",
 });
-const WRITER = key({ id: "k2", name: "Writer", createdAt: "2026-03-20T12:00:00Z" });
+// Used a minute ago: "Last used" reads relative to the time the page renders.
+const WRITER = key({
+  id: "k2",
+  name: "Writer",
+  createdAt: "2026-03-20T12:00:00Z",
+  lastUsedAt: new Date(Date.now() - 61_000).toISOString(),
+});
 const OLD = key({
   id: "k3",
   name: "Old",
@@ -61,8 +68,19 @@ const OLD = key({
 const OFF = key({ id: "k4", name: "Paused", enabled: false, createdAt: "2026-02-01T12:00:00Z" });
 const KEYS = [READER, WRITER, OLD, OFF];
 
+const mount = (name: string): Mount => ({
+  id: `m-${name}`,
+  name,
+  backendId: "b1",
+  backendKind: "durable-object",
+  root: "",
+  createdAt: "2026-01-01T00:00:00Z",
+});
+const MOUNTS = [mount("files"), mount("photos")];
+
 const keysApi = (rows: ApiKey[], more: Record<string, Handler> = {}) => ({
   "GET /api/keys": () => json(rows),
+  "GET /api/mounts": () => json(MOUNTS),
   ...more,
 });
 
@@ -90,7 +108,15 @@ describe("CredentialsPage, wide", () => {
   it.each([
     {
       name: "Writer",
-      cells: ["Writer", "dvk_ab…", "Read and write", "Mar 20, 2026", "Never", "Active"],
+      cells: [
+        "Writer",
+        "dvk_ab…",
+        "Read and write",
+        "All mounts",
+        "1 minute ago",
+        "Never",
+        "Active",
+      ],
     },
     {
       name: "Reader",
@@ -99,7 +125,7 @@ describe("CredentialsPage, wide", () => {
         "dvk_ab…",
         "Read only",
         "/files/photos, /files/albums",
-        "Mar 10, 2026",
+        "Never",
         "Jun 1, 2099",
         "Active",
       ],
@@ -200,11 +226,19 @@ describe("CredentialsPage, narrow", () => {
   it.each([
     {
       name: "Writer",
-      facts: ["Read and write", "Every mount", "Mar 20, 2026", "Expires", "Never"],
+      facts: [
+        "Read and write",
+        "All mounts",
+        "Last used",
+        "1 minute ago",
+        "Mar 20, 2026",
+        "Expires",
+        "Never",
+      ],
     },
     {
       name: "Reader",
-      facts: ["Read only", "/files/photos, /files/albums", "Expires", "Jun 1, 2099"],
+      facts: ["Read only", "/files/photos, /files/albums", "Last used", "Never", "Jun 1, 2099"],
     },
     { name: "Old", facts: ["Nothing: its folders cannot be read", "Expired", "Jan 1, 2020"] },
   ])("opens $name to show its details", async ({ name, facts }) => {
@@ -279,41 +313,34 @@ describe("CredentialsPage, states", () => {
 });
 
 describe("CredentialsPage, create", () => {
+  const FOLDER = /^Folder inside the mount/;
+  const DOTS = "Name a folder inside the mount, without . or .. in its path.";
+
   it.each([
-    { name: "", folders: "", problem: "Name the key after the device or person that will use it." },
+    { name: "", folder: "", problem: "Name the key after the device or person that will use it." },
     {
       name: "   ",
-      folders: "",
+      folder: "",
       problem: "Name the key after the device or person that will use it.",
     },
-    { name: "x".repeat(65), folders: "", problem: "Use at most 64 characters." },
-    {
-      name: "Phone",
-      folders: "/",
-      problem: "Name a mount or a folder inside one, such as /files/photos.",
-    },
-    {
-      name: "Phone",
-      folders: "files/../x",
-      problem: "Name the folders without . or .. in their paths.",
-    },
-  ])(
-    "keeps the form open for name $name and folders $folders",
-    async ({ name, folders, problem }) => {
-      const { calls } = await renderPage(<Page />, { api: keysApi([]) });
-      const dialog = await openForm();
-      expect(within(dialog).queryByText(problem)).toBeNull();
-      if (name !== "") {
-        await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), name);
-      }
-      if (folders !== "") {
-        await fill(within(dialog).getByRole("textbox", { name: /^Folders/ }), folders);
-      }
-      await userEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
-      expect(await within(dialog).findByText(problem)).toBeTruthy();
-      expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
-    },
-  );
+    { name: "x".repeat(65), folder: "", problem: "Use at most 64 characters." },
+    { name: "Phone", folder: "photos/../x", problem: DOTS },
+    { name: "Phone", folder: "./x", problem: DOTS },
+  ])("keeps the form open for name $name and folder $folder", async ({ name, folder, problem }) => {
+    const { calls } = await renderPage(<Page />, { api: keysApi([]) });
+    const dialog = await openForm();
+    expect(within(dialog).queryByText(problem)).toBeNull();
+    if (name !== "") {
+      await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), name);
+    }
+    if (folder !== "") {
+      await chooseOption("Mount", "/files");
+      await fill(within(dialog).getByRole("textbox", { name: FOLDER }), folder);
+    }
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
+    expect(await within(dialog).findByText(problem)).toBeTruthy();
+    expect(calls.filter((call) => call.method === "POST")).toHaveLength(0);
+  });
 
   it("clears the name's problem once the name changes", async () => {
     await renderPage(<Page />, { api: keysApi([]) });
@@ -330,64 +357,97 @@ describe("CredentialsPage, create", () => {
       title: "with the defaults",
       readOnly: false,
       expiry: undefined,
-      folders: "",
+      mount: undefined,
+      folder: "",
       body: { name: "Phone", access: "read-write", expiresInDays: 90 },
     },
     {
-      title: "read only, limited to folders, never expiring",
+      title: "read only, limited to a folder, never expiring",
       readOnly: true,
       expiry: "Never",
-      folders: "files/photos, /files/albums/, files/photos",
+      mount: "/files",
+      folder: " /photos//2026/ ",
       body: {
         name: "Phone",
         access: "read-only",
         expiresInDays: null,
-        paths: ["/files/photos", "/files/albums"],
+        paths: ["/files/photos/2026"],
       },
+    },
+    {
+      title: "limited to a whole mount",
+      readOnly: false,
+      expiry: undefined,
+      mount: "/photos",
+      folder: "",
+      body: { name: "Phone", access: "read-write", expiresInDays: 90, paths: ["/photos"] },
+    },
+    {
+      title: "for all mounts, though a folder was typed first",
+      readOnly: false,
+      expiry: undefined,
+      mount: "All mounts",
+      folder: "photos",
+      body: { name: "Phone", access: "read-write", expiresInDays: 90 },
     },
     {
       title: "expiring in a year",
       readOnly: false,
       expiry: "In a year",
-      folders: "",
+      mount: undefined,
+      folder: "",
       body: { name: "Phone", access: "read-write", expiresInDays: 365 },
     },
-  ])("creates a key $title and shows it once", async ({ readOnly, expiry, folders, body }) => {
-    let rows: ApiKey[] = [];
-    const { calls } = await renderPage(<Page />, {
-      api: {
-        "GET /api/keys": () => json(rows),
-        "POST /api/keys": () => {
-          rows = [key({ id: "new", name: "Phone" })];
-          return json({ id: "new", key: "dvk_secret_value" });
+  ])(
+    "creates a key $title and shows it once",
+    async ({ readOnly, expiry, mount: choice, folder, body }) => {
+      let rows: ApiKey[] = [];
+      const { calls } = await renderPage(<Page />, {
+        api: {
+          "GET /api/keys": () => json(rows),
+          "GET /api/mounts": () => json(MOUNTS),
+          "POST /api/keys": () => {
+            rows = [key({ id: "new", name: "Phone" })];
+            return json({ id: "new", key: "dvk_secret_value" });
+          },
         },
-      },
-    });
-    const dialog = await openForm();
-    await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), "  Phone ");
-    if (readOnly) {
-      await userEvent.click(within(dialog).getByRole("switch", { name: "Read only" }));
-    }
-    if (expiry !== undefined) {
-      await chooseOption("Expires", expiry);
-    }
-    if (folders !== "") {
-      await fill(within(dialog).getByRole("textbox", { name: /^Folders/ }), folders);
-    }
-    await userEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
-    expect(await screen.findByRole("heading", { name: "Key “Phone” is ready" })).toBeTruthy();
-    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "API key" }).value).toBe(
-      "dvk_secret_value",
-    );
-    expect(screen.getByText(`${location.origin}/dav/`)).toBeTruthy();
-    const post = calls.find((call) => call.method === "POST");
-    expect(await post?.json()).toEqual(body);
-    await userEvent.click(screen.getByRole("button", { name: "Done" }));
-    expect(await screen.findAllByText("Created key “Phone”.")).not.toHaveLength(0);
-    await waitFor(() =>
-      expect(screen.queryByRole("heading", { name: "Key “Phone” is ready" })).toBeNull(),
-    );
-  });
+      });
+      const dialog = await openForm();
+      await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), "  Phone ");
+      if (readOnly) {
+        await userEvent.click(within(dialog).getByRole("switch", { name: "Read only" }));
+      }
+      if (expiry !== undefined) {
+        await chooseOption("Expires", expiry);
+      }
+      if (folder !== "") {
+        // The folder belongs to a mount, so the field is off until one is chosen.
+        expect(
+          within(dialog)
+            .getByRole("textbox", { name: FOLDER })
+            .matches(":disabled, [aria-disabled=true]"),
+        ).toBe(true);
+        await chooseOption("Mount", "/files");
+        await fill(within(dialog).getByRole("textbox", { name: FOLDER }), folder);
+      }
+      if (choice !== undefined) {
+        await chooseOption("Mount", choice);
+      }
+      await userEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
+      expect(await screen.findByRole("heading", { name: "Key “Phone” is ready" })).toBeTruthy();
+      expect(screen.getByRole<HTMLInputElement>("textbox", { name: "API key" }).value).toBe(
+        "dvk_secret_value",
+      );
+      expect(screen.getByText(`${location.origin}/dav/`)).toBeTruthy();
+      const post = calls.find((call) => call.method === "POST");
+      expect(await post?.json()).toEqual(body);
+      await userEvent.click(screen.getByRole("button", { name: "Done" }));
+      expect(await screen.findAllByText("Created key “Phone”.")).not.toHaveLength(0);
+      await waitFor(() =>
+        expect(screen.queryByRole("heading", { name: "Key “Phone” is ready" })).toBeNull(),
+      );
+    },
+  );
 
   it("creates a key with Enter in the name field", async () => {
     const { calls } = await renderPage(<Page />, {
@@ -399,14 +459,34 @@ describe("CredentialsPage, create", () => {
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
   });
 
-  it("creates a key with Enter in the folders field", async () => {
-    await renderPage(<Page />, {
+  it("creates a key with Enter in the folder field", async () => {
+    const { calls } = await renderPage(<Page />, {
       api: keysApi([], { "POST /api/keys": () => json({ id: "new", key: "dvk_x" }) }),
     });
     const dialog = await openForm();
     await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), "Tablet");
-    await fill(within(dialog).getByRole("textbox", { name: /^Folders/ }), "/files{Enter}");
+    await chooseOption("Mount", "/files");
+    await fill(within(dialog).getByRole("textbox", { name: FOLDER }), "inbox{Enter}");
     expect(await screen.findByRole("heading", { name: "Key “Tablet” is ready" })).toBeTruthy();
+    const post = calls.find((call) => call.method === "POST");
+    expect(await post?.json()).toMatchObject({ paths: ["/files/inbox"] });
+  });
+
+  it("offers every mount, and clears the folder's problem when the mount changes", async () => {
+    await renderPage(<Page />, { api: keysApi([]) });
+    const dialog = await openForm();
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Mount" }));
+    for (const option of ["All mounts", "/files", "/photos"]) {
+      expect(await screen.findByRole("option", { name: option, hidden: true })).toBeTruthy();
+    }
+    await userEvent.keyboard("{Escape}");
+    await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), "Phone");
+    await chooseOption("Mount", "/files");
+    await fill(within(dialog).getByRole("textbox", { name: FOLDER }), "..");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create key" }));
+    expect(await within(dialog).findByText(DOTS)).toBeTruthy();
+    await chooseOption("Mount", "/photos");
+    expect(within(dialog).queryByText(DOTS)).toBeNull();
   });
 
   it.each([
@@ -456,5 +536,102 @@ describe("CredentialsPage, create", () => {
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(await screen.findAllByText("Created key “Tablet”.")).not.toHaveLength(0);
+  });
+});
+
+const renameApi = (onPatch: (body: unknown) => Response) => {
+  let rows = [WRITER];
+  return keysApi([], {
+    "GET /api/keys": () => json(rows),
+    "PATCH /api/keys/k2": async (request) => {
+      const body: unknown = await request.json();
+      const answer = onPatch(body);
+      if (answer.ok) {
+        rows = [{ ...WRITER, name: "Work phone" }];
+      }
+      return answer;
+    },
+  });
+};
+
+describe("CredentialsPage, rename", () => {
+  it.each([
+    { width: WIDE, open: () => chooseFromMenu("Actions for key Writer", "Rename") },
+    {
+      width: NARROW,
+      open: async () => {
+        await userEvent.click(
+          await screen.findByRole("button", { name: "Details for key Writer" }),
+        );
+        const details = await screen.findByRole("group", { name: "Details for key Writer" });
+        await userEvent.click(within(details).getByRole("button", { name: "Rename" }));
+      },
+    },
+  ])("renames a key at $width px", async ({ width, open }) => {
+    layOutAt(width);
+    const bodies: unknown[] = [];
+    await renderPage(<Page />, {
+      api: renameApi((body) => {
+        bodies.push(body);
+        return json({ id: "k2", name: "Work phone" });
+      }),
+    });
+    await screen.findByText("Writer");
+    await open();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Rename “Writer”")).toBeTruthy();
+    const field = within(dialog).getByRole<HTMLInputElement>("textbox", { name: /^Name/ });
+    expect(field.value).toBe("Writer");
+    await userEvent.clear(field);
+    await fill(field, "  Work phone {Enter}");
+    expect(await screen.findAllByText("Renamed to “Work phone”.")).not.toHaveLength(0);
+    expect(bodies).toEqual([{ name: "Work phone" }]);
+    expect(await screen.findByText("Work phone")).toBeTruthy();
+  });
+
+  it.each([
+    { name: "", problem: "Name the key after the device or person that will use it." },
+    { name: "x".repeat(65), problem: "Use at most 64 characters." },
+  ])("keeps the dialog open for the name $name", async ({ name, problem }) => {
+    layOutAt(WIDE);
+    const bodies: unknown[] = [];
+    await renderPage(<Page />, {
+      api: renameApi((body) => {
+        bodies.push(body);
+        return json({});
+      }),
+    });
+    await chooseFromMenu("Actions for key Writer", "Rename");
+    const dialog = await screen.findByRole("dialog");
+    const field = within(dialog).getByRole("textbox", { name: /^Name/ });
+    await userEvent.clear(field);
+    if (name !== "") {
+      await fill(field, name);
+    }
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+    expect(await within(dialog).findByText(problem)).toBeTruthy();
+    expect(bodies).toEqual([]);
+  });
+
+  it("sends nothing for the same name, and says why the server refused", async () => {
+    layOutAt(WIDE);
+    let calls = 0;
+    await renderPage(<Page />, {
+      api: renameApi(() => {
+        calls += 1;
+        return json({ error: { code: "not_found" } }, 404);
+      }),
+    });
+    await chooseFromMenu("Actions for key Writer", "Rename");
+    let dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(calls).toBe(0);
+    await chooseFromMenu("Actions for key Writer", "Rename");
+    dialog = await screen.findByRole("dialog");
+    await fill(within(dialog).getByRole("textbox", { name: /^Name/ }), "2");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
+    expect(await within(dialog).findByText("It is no longer there.")).toBeTruthy();
+    expect(calls).toBe(1);
   });
 });

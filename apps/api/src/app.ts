@@ -16,6 +16,7 @@ import {
   retargetMount,
   requireUser,
   revokeKey,
+  renameKey,
   setupStatus,
   verifyApiKey,
   relationOf,
@@ -369,6 +370,17 @@ export const createApp = ({
             ),
           201,
         ),
+        { parse: "none" },
+      )
+      .patch(
+        "/api/keys/:id",
+        ({ params, request }) =>
+          authed((_, req) =>
+            Effect.flatMap(
+              Effect.promise(() => readJson(req)),
+              (body) => renameKey(params.id, { name: text(body.name) }),
+            ),
+          )({ request }),
         { parse: "none" },
       )
       .delete("/api/keys/:id", ({ params, request }) =>

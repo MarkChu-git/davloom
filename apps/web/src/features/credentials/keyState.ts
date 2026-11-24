@@ -20,38 +20,35 @@ export const keyStateOf = (key: Pick<ApiKey, "enabled" | "expiresAt">, now: Date
   return "active";
 };
 
+/** The Mount choice that leaves a key unlimited: no Mount name holds a slash. */
+export const ALL_MOUNTS = "/";
+
 /**
- * Reads the folders a new key is limited to, one per comma or line, such as "/files/photos";
- * an empty field limits nothing. Returns why the text cannot be used, or the folders.
+ * The roots a new key is limited to, from the Mount and the folder inside it chosen in the form:
+ * null for every mount, else the Mount or the folder. Slashes are normalized and spaces around a
+ * name dropped; a `.` or `..` is refused, so a scope never reaches outside its Mount.
  */
-export const parseFolders = (text: string): { folders: string[] } | { problem: string } => {
-  const folders = text
-    .split(/[,\n]/)
-    .map((folder) => folder.trim())
-    .filter((folder) => folder !== "")
-    .map(
-      (folder) =>
-        `/${folder
-          .split("/")
-          .filter((name) => name !== "")
-          .join("/")}`,
-    );
-  if (folders.some((folder) => folder === "/")) {
-    return { problem: "Name a mount or a folder inside one, such as /files/photos." };
+export const scopeOf = (
+  mount: string,
+  folder: string,
+): { paths: string[] | null } | { problem: string } => {
+  if (mount === ALL_MOUNTS) {
+    return { paths: null };
   }
-  if (folders.some((folder) => folder.split("/").some((name) => name === "." || name === ".."))) {
-    return { problem: "Name the folders without . or .. in their paths." };
+  const names = folder
+    .split("/")
+    .map((name) => name.trim())
+    .filter((name) => name !== "");
+  if (names.some((name) => name === "." || name === "..")) {
+    return { problem: "Name a folder inside the mount, without . or .. in its path." };
   }
-  if (folders.length > 16) {
-    return { problem: "Limit a key to at most 16 folders." };
-  }
-  return { folders: [...new Set(folders)] };
+  return { paths: [`/${[mount, ...names].join("/")}`] };
 };
 
-/** How a key's reach reads in the list. */
+/** How a key's scope reads in the list. */
 export const reachOf = (paths: readonly string[] | null): string =>
   paths === null
-    ? "Every mount"
+    ? "All mounts"
     : paths.length === 0
       ? "Nothing: its folders cannot be read"
       : paths.join(", ");

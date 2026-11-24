@@ -61,6 +61,8 @@ const world = (options: World = {}) => {
         findByHash: () => Promise.resolve(null),
         list: () => Promise.resolve([]),
         remove: () => Promise.resolve(false),
+        recordUse: () => Promise.resolve(),
+        rename: () => Promise.resolve(false),
       },
     }),
     Layer.effect(CredentialCipher, makeCredentialCipher(Redacted.make(SECRET))),

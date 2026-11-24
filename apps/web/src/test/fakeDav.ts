@@ -2,8 +2,19 @@ import { vi } from "vitest";
 import { hrefParts, type EntryKind } from "../features/api/dav";
 import type { Handler } from "./render";
 
-// An in-memory WebDAV server for the Files page: PROPFIND, GET, MKCOL, MOVE, COPY and DELETE
-// through `fetch`, and PUT through a stand-in for XMLHttpRequest, as the page sends them.
+// An in-memory WebDAV server for the Files page: PROPFIND, GET, MKCOL, MOVE, COPY, DELETE, LOCK
+// and UNLOCK through `fetch`, and PUT through a stand-in for XMLHttpRequest, as the page sends them.
+
+export interface FakeLock {
+  token: string;
+  owner: string;
+  /** "0" or "infinity". */
+  depth: string;
+  /** Seconds left; null for an Infinite lock. */
+  seconds: number | null;
+  /** Whether lockdiscovery shows the token, as the server does for a credential that may unlock. */
+  showsToken?: boolean;
+}
 
 export interface FakeNode {
   kind: EntryKind;
@@ -87,6 +98,44 @@ export class FakeDav {
   /** Requests that wait for `release()` before they are answered, by "METHOD /files/path". */
   readonly held = new Set<string>();
   private readonly waiting: (() => void)[] = [];
+  /** Write locks, by the path they are rooted at. */
+  readonly locks = new Map<string, FakeLock>();
+  /** Every LOCK and UNLOCK request, in order, for tests to read their headers. */
+  readonly lockRequests: Request[] = [];
+  private nextToken = 1;
+
+  lock(path: string, lock: Partial<FakeLock> = {}): this {
+    this.locks.set(path, {
+      token: `urn:uuid:lock-${this.nextToken++}`,
+      owner: "Finder",
+      depth: "0",
+      seconds: 600,
+      ...lock,
+    });
+    return this;
+  }
+
+  /** The lock rooted at a path or, with Depth infinity, at a folder above it. */
+  private lockOn(key: string): [string, FakeLock] | undefined {
+    for (const [root, lock] of this.locks) {
+      if (root === key || (lock.depth === "infinity" && key.startsWith(`${root}/`))) {
+        return [root, lock];
+      }
+    }
+    return undefined;
+  }
+
+  private lockDiscovery(key: string): string {
+    const found = this.lockOn(key);
+    if (found === undefined) {
+      return "<lockdiscovery/>";
+    }
+    const [root, lock] = found;
+    const rootKind = this.nodes.get(root)?.kind ?? "file";
+    return `<lockdiscovery><activelock><locktype><write/></locktype><lockscope><exclusive/></lockscope><depth>${lock.depth}</depth><owner><href>${escapeXml(lock.owner)}</href></owner><timeout>${lock.seconds === null ? "Infinite" : `Second-${lock.seconds}`}</timeout>${
+      lock.showsToken === false ? "" : `<locktoken><href>${lock.token}</href></locktoken>`
+    }<lockroot><href>${escapeXml(encodedHref(root, rootKind))}</href></lockroot></activelock></lockdiscovery>`;
+  }
 
   folder(path: string): this {
     this.nodes.set(path, { kind: "folder", body: "", contentType: "", modifiedAt: "" });
@@ -144,7 +193,7 @@ export class FakeDav {
       node.modifiedAt === ""
         ? ""
         : `<getlastmodified>${new Date(node.modifiedAt).toUTCString()}</getlastmodified>`;
-    return `<response><href>${escapeXml(encodedHref(key, node.kind))}</href><propstat><prop>${props}${modified}</prop><status>HTTP/1.1 200 OK</status></propstat></response>`;
+    return `<response><href>${escapeXml(encodedHref(key, node.kind))}</href><propstat><prop>${props}${modified}${this.lockDiscovery(key)}</prop><status>HTTP/1.1 200 OK</status></propstat></response>`;
   }
 
   private propfind(key: string, node: FakeNode): Response {
@@ -223,6 +272,34 @@ export class FakeDav {
           this.nodes.delete(path);
         }
         return status(204);
+      case "LOCK": {
+        this.lockRequests.push(request);
+        if (node === undefined) {
+          return status(404);
+        }
+        if (this.lockOn(key) !== undefined) {
+          return status(423);
+        }
+        const seconds = Number(/^Second-(\d+)$/i.exec(request.headers.get("timeout") ?? "")?.[1]);
+        this.lock(key, {
+          owner: "Davloom Dashboard",
+          depth: request.headers.get("depth") ?? "infinity",
+          seconds: Number.isFinite(seconds) ? seconds : null,
+        });
+        return new Response(null, {
+          status: 200,
+          headers: { "lock-token": `<${this.locks.get(key)?.token ?? ""}>` },
+        });
+      }
+      case "UNLOCK": {
+        this.lockRequests.push(request);
+        const found = this.lockOn(key);
+        if (found === undefined || `<${found[1].token}>` !== request.headers.get("lock-token")) {
+          return status(409);
+        }
+        this.locks.delete(found[0]);
+        return status(204);
+      }
       default:
         return status(405);
     }

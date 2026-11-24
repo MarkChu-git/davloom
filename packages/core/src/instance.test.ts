@@ -1,6 +1,6 @@
 import { Cause, Context, Effect, Exit, Layer, Option, Redacted } from "effect";
 import { CredentialCipher } from "./credentials";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   completeSetup,
   createBackend,
@@ -21,9 +21,12 @@ import {
   retargetMount,
   requireUser,
   revokeKey,
+  renameKey,
   setupStatus,
   StorageOpener,
   verifyApiKey,
+  shouldRecordUse,
+  USE_RECORD_INTERVAL_MS,
   type ApiKeyRecord,
   type BackendRecord,
   type MountRecord,
@@ -74,6 +77,8 @@ const makeWorld = (options: WorldOptions = {}) => {
     renames: [] as [string, string][],
     retargets: [] as [string, string, string][],
     keyRemoves: [] as string[],
+    uses: [] as [string, number][],
+    keyRenames: [] as [string, string][],
     hashLookups: [] as string[],
     admins: [] as Parameters<IdentityShape["createAdmin"]>[0][],
     apiKeys: [] as Parameters<IdentityShape["createApiKey"]>[0][],
@@ -123,6 +128,14 @@ const makeWorld = (options: WorldOptions = {}) => {
       remove: (id) => {
         calls.keyRemoves.push(id);
         return Promise.resolve((options.keys ?? []).some((key) => key.id === id));
+      },
+      rename: (id, name) => {
+        calls.keyRenames.push([id, name]);
+        return Promise.resolve((options.keys ?? []).some((key) => key.id === id));
+      },
+      recordUse: (id, at) => {
+        calls.uses.push([id, at.getTime()]);
+        return Promise.resolve();
       },
       ...options.records?.apiKeys,
     },
@@ -204,6 +217,7 @@ const apiKey = (overrides: Partial<ApiKeyRecord> = {}): ApiKeyRecord => ({
   expiresAt: null,
   createdAt: CREATED,
   metadata: { access: "read-write" },
+  lastUsedAt: null,
   ...overrides,
 });
 
@@ -389,7 +403,7 @@ describe("listKeys", () => {
     const expiresAt = new Date("2027-05-06T07:08:09.000Z");
     const { run } = makeWorld({
       keys: [
-        apiKey({ expiresAt }),
+        apiKey({ expiresAt, lastUsedAt: new Date("2026-11-20T10:00:00.000Z") }),
         apiKey({ id: "key-2", name: null, start: null, enabled: false, metadata: null }),
       ],
     });
@@ -404,6 +418,7 @@ describe("listKeys", () => {
         enabled: true,
         expiresAt: "2027-05-06T07:08:09.000Z",
         createdAt: "2026-01-02T03:04:05.000Z",
+        lastUsedAt: "2026-11-20T10:00:00.000Z",
       },
       {
         id: "key-2",
@@ -414,6 +429,7 @@ describe("listKeys", () => {
         enabled: false,
         expiresAt: null,
         createdAt: "2026-01-02T03:04:05.000Z",
+        lastUsedAt: null,
       },
     ]);
   });
@@ -510,6 +526,34 @@ describe("revokeKey", () => {
   });
 });
 
+describe("renameKey", () => {
+  it.each([
+    ["Phone", "Phone"],
+    ["  Work phone ", "Work phone"],
+    ["k".repeat(64), "k".repeat(64)],
+    ["中文 📱", "中文 📱"],
+  ])("renames a key to %j as %j", async (name, stored) => {
+    const { run, calls } = makeWorld({ keys: [apiKey()] });
+
+    expect(valueOf(await run(renameKey("key-1", { name })))).toEqual({ id: "key-1", name: stored });
+    expect(calls.keyRenames).toEqual([["key-1", stored]]);
+  });
+
+  it.each(["", "   ", "k".repeat(65)])("refuses the name %j without a write", async (name) => {
+    const { run, calls } = makeWorld({ keys: [apiKey()] });
+
+    const error = errorOf(await run(renameKey("key-1", { name })));
+    expect(error?._tag).toBe("InvalidInput");
+    expect(calls.keyRenames).toEqual([]);
+  });
+
+  it("fails with NotFound for an unknown key", async () => {
+    const { run } = makeWorld({ keys: [apiKey()] });
+
+    expect(errorOf(await run(renameKey("key-9", { name: "X" })))?._tag).toBe("NotFound");
+  });
+});
+
 describe("listBackends", () => {
   it("reports each backend's availability and usage", async () => {
     const storage = await seededStorage();
@@ -530,6 +574,7 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: true,
         usage: { files: 2, collections: 1, bytes: 8 },
+        status: { state: "answered", ms: expect.any(Number) },
       },
       {
         id: "closed",
@@ -538,6 +583,7 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        status: { state: "not-opened" },
       },
       {
         id: "down",
@@ -546,8 +592,40 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        status: { state: "failed", failure: "unavailable", ms: expect.any(Number) },
       },
     ]);
+  });
+
+  it("times a slow backend and reports one that throws as unavailable", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = Date.parse("2026-06-01T00:00:00Z");
+    vi.setSystemTime(start);
+    const slow: StorageBackend = {
+      ...createMemoryStorage(),
+      usage: () => {
+        vi.setSystemTime(start + 1234);
+        return Promise.resolve({ ok: true, value: { files: 0, collections: 0, bytes: 0 } });
+      },
+    };
+    const throwing: StorageBackend = {
+      ...createMemoryStorage(),
+      usage: () => Promise.reject(new Error("the Durable Object reset")),
+    };
+    const { run } = makeWorld({
+      backends: [backend("slow"), backend("throwing")],
+      storages: { slow, throwing },
+    });
+    try {
+      const listed = valueOf(await run(listBackends));
+      expect(listed.map((item) => item.status)).toEqual([
+        { state: "answered", ms: 1234 },
+        { state: "failed", failure: "unavailable", ms: 0 },
+      ]);
+      expect(listed.map((item) => item.available)).toEqual([true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1012,6 +1090,59 @@ describe("verifyApiKey", () => {
     const { run } = await worldWith(apiKey(overrides));
 
     expect(valueOf(await run(verifyApiKey(KEY, NOW)))).toEqual(expected);
+  });
+
+  const MINUTE = 60_000;
+  it.each([
+    ["never used", null, true],
+    ["used just now", new Date(NOW), false],
+    ["used 4 minutes 59 seconds ago", new Date(NOW - 5 * MINUTE + 1000), false],
+    ["used exactly 5 minutes ago", new Date(NOW - 5 * MINUTE), true],
+    ["used a day ago", new Date(NOW - 1440 * MINUTE), true],
+    // A clock that went back leaves a time ahead of now, which needs no new record.
+    ["used in the future", new Date(NOW + MINUTE), false],
+  ])("records the use of a key %s: %s", async (_case, lastUsedAt, records) => {
+    const { run, calls } = await worldWith(apiKey({ lastUsedAt }));
+
+    expect(valueOf(await run(verifyApiKey(KEY, NOW)))).not.toBeNull();
+    expect(calls.uses).toEqual(records ? [["key-1", NOW]] : []);
+  });
+
+  it.each([
+    ["an expired key", { expiresAt: new Date(NOW - 1) }],
+    ["a disabled key", { enabled: false }],
+    ["a key with a broken scope", { metadata: { access: "read-write", paths: "files" } }],
+  ])("records no use of %s", async (_case, overrides: Partial<ApiKeyRecord>) => {
+    const { run, calls } = await worldWith(apiKey(overrides));
+
+    expect(valueOf(await run(verifyApiKey(KEY, NOW)))).toBeNull();
+    expect(calls.uses).toEqual([]);
+  });
+
+  it("signs in even when the use cannot be recorded", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { run } = makeWorld({
+      keysByHash: { [await hashApiKey(KEY)]: apiKey() },
+      records: { apiKeys: { recordUse: () => Promise.reject(new Error("D1 is read-only")) } },
+    });
+
+    expect(valueOf(await run(verifyApiKey(KEY, NOW)))).toEqual({
+      keyId: "key-1",
+      access: "read-write",
+      scope: null,
+    });
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it.each(
+    Array.from({ length: 40 }, (_, index) => {
+      const gap = (index - 10) * 17_000 + (index % 3) * 999;
+      return [gap] as const;
+    }),
+  )("shouldRecordUse agrees with the interval for a gap of %i ms", (gap) => {
+    expect(shouldRecordUse(new Date(NOW - gap), NOW)).toBe(gap >= USE_RECORD_INTERVAL_MS);
+    expect(shouldRecordUse(null, NOW)).toBe(true);
   });
 
   it("returns null for an unknown key", async () => {

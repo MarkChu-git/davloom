@@ -38,7 +38,15 @@ export interface Backend {
   /** Whether the backend answered when the list was read. */
   available: boolean;
   usage: Usage | null;
+  /** How the backend answered then; absent from an older server. */
+  status?: BackendStatus;
 }
+
+/** How a backend answered when the list was read (packages/core listBackends). */
+export type BackendStatus =
+  | { state: "answered"; ms: number }
+  | { state: "failed"; failure: string; ms: number }
+  | { state: "not-opened" };
 
 export interface Mount {
   id: string;
@@ -69,6 +77,8 @@ export interface ApiKey {
   enabled: boolean;
   expiresAt: string | null;
   createdAt: string;
+  /** When a WebDAV client last signed in with it, to within a few minutes; null for never. */
+  lastUsedAt: string | null;
 }
 
 /** The storage kinds this Dashboard can name; the API decides which a deployment offers. */
@@ -163,6 +173,18 @@ export const useCreateKey = () => {
       expiresInDays: number | null;
       paths?: string[];
     }) => apiFetch<{ id: string; key: string }>("/api/keys", { method: "POST", body: input }),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
+  });
+};
+
+export const useRenameKey = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) =>
+      apiFetch<{ id: string; name: string }>(`/api/keys/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: { name },
+      }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 };

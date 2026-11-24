@@ -97,7 +97,14 @@ const world = (setupToken: string | null = TOKEN) => {
     headers.set("authorization", `Basic ${btoa(`x:${apiKey}`)}`);
     return fetch(`/dav${path}`, { ...init, headers });
   };
-  return { app, fetch, api, setup, key, dav };
+  /** A WebDAV request of the Dashboard, with its session. */
+  const dashboardDav = (path: string, init: RequestInit = {}) => {
+    const headers = new Headers(init.headers);
+    headers.set(DASHBOARD_HEADER, "1");
+    headers.set("cookie", cookie);
+    return fetch(`/dav${path}`, { ...init, headers });
+  };
+  return { app, fetch, api, setup, key, dav, dashboardDav };
 };
 
 const body = async (response: Response): Promise<unknown> => await response.json();
@@ -409,5 +416,178 @@ describe("HTTPS only (PRD §12)", () => {
       new Request("http://nas.local/dav/", { method: "PROPFIND" }),
     );
     expect(response.status).toBe(207);
+  });
+});
+
+describe("renaming a key", () => {
+  it("renames a key, keeps it working, and refuses a bad name or an unknown key", async () => {
+    const w = world();
+    await w.setup();
+    const created = await w.key("read-write");
+    const renamed = await w.api(`/api/keys/${created.id}`, "PATCH", { name: " Phone " });
+    expect(renamed.status).toBe(200);
+    expect(await body(renamed)).toEqual({ id: created.id, name: "Phone" });
+    expect(fields(await body(await w.api("/api/keys")), "name")).toEqual(["Phone"]);
+    expect(
+      (await w.dav("/files/", created.key, { method: "PROPFIND", headers: { depth: "0" } })).status,
+    ).toBe(207);
+    expect((await w.api(`/api/keys/${created.id}`, "PATCH", { name: "" })).status).toBe(400);
+    expect((await w.api(`/api/keys/${created.id}`, "PATCH", {})).status).toBe(400);
+    expect((await w.api("/api/keys/unknown", "PATCH", { name: "X" })).status).toBe(404);
+  });
+
+  it("asks for a session", async () => {
+    const w = world();
+    await w.setup();
+    const created = await w.key("read-write");
+    const anonymous = await w.fetch(`/api/keys/${created.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "X" }),
+    });
+    expect(anonymous.status).toBe(401);
+  });
+});
+
+const lastUsed = async (w: ReturnType<typeof world>, id: string): Promise<unknown> => {
+  const listed = await body(await w.api("/api/keys"));
+  return Array.isArray(listed)
+    ? listed.find((item: unknown) => field(item, "id") === id)?.lastUsedAt
+    : undefined;
+};
+
+describe("API Key use and scope", () => {
+  it("records when a WebDAV client last signed in with a key", async () => {
+    const w = world();
+    await w.setup();
+    const used = await w.key("read-write");
+    const unused = await w.key("read-only");
+    expect(await lastUsed(w, used.id)).toBeNull();
+    const before = Date.now();
+    expect(
+      (await w.dav("/files/", used.key, { method: "PROPFIND", headers: { depth: "1" } })).status,
+    ).toBe(207);
+    const at = await lastUsed(w, used.id);
+    expect(typeof at).toBe("string");
+    expect(Date.parse(String(at))).toBeGreaterThanOrEqual(before - 1000);
+    expect(await lastUsed(w, unused.id)).toBeNull();
+    // A failed sign-in records nothing.
+    expect((await w.dav("/files/", `${unused.key}x`, { method: "PROPFIND" })).status).toBe(401);
+    expect(await lastUsed(w, unused.id)).toBeNull();
+  });
+
+  // A key limited to a folder inside a Mount, as the Dashboard's Mount and folder fields make it.
+  it.each([
+    ["PROPFIND", "/files/", 207],
+    ["PROPFIND", "/files/photos/", 207],
+    ["GET", "/files/top.txt", 403],
+    ["PUT", "/files/top.txt", 403],
+    ["GET", "/files/photos/a.jpg", 200],
+    ["PUT", "/files/photos/b.jpg", 201],
+    ["DELETE", "/files/photos/a.jpg", 204],
+    ["GET", "/files/other/c.txt", 403],
+    ["MKCOL", "/files/photos/new/", 201],
+    ["MKCOL", "/files/elsewhere/", 403],
+  ])("lets a key scoped to /files/photos %s %s with %i", async (method, path, status) => {
+    const w = world();
+    await w.setup();
+    const admin = (await w.key("read-write")).key;
+    expect((await w.dav("/files/photos", admin, { method: "MKCOL" })).status).toBe(201);
+    expect((await w.dav("/files/other", admin, { method: "MKCOL" })).status).toBe(201);
+    await w.dav("/files/top.txt", admin, { method: "PUT", body: "t" });
+    await w.dav("/files/photos/a.jpg", admin, { method: "PUT", body: "a" });
+    await w.dav("/files/other/c.txt", admin, { method: "PUT", body: "c" });
+    const scoped = (await w.key("read-write", ["/files/photos"])).key;
+
+    const init: RequestInit = {
+      method,
+      ...(method === "PUT" ? { body: "x" } : {}),
+      ...(method === "PROPFIND" ? { headers: { depth: "1" } } : {}),
+    };
+    expect((await w.dav(path, scoped, init)).status).toBe(status);
+  });
+
+  it("lists only the scoped folder above a key's root", async () => {
+    const w = world();
+    await w.setup();
+    const admin = (await w.key("read-write")).key;
+    await w.dav("/files/photos", admin, { method: "MKCOL" });
+    await w.dav("/files/other", admin, { method: "MKCOL" });
+    const scoped = (await w.key("read-only", ["/files/photos"])).key;
+    const listing = await (
+      await w.dav("/files/", scoped, { method: "PROPFIND", headers: { depth: "1" } })
+    ).text();
+    expect(listing).toContain("/dav/files/photos/");
+    expect(listing).not.toContain("/dav/files/other/");
+  });
+});
+
+describe("locks from the Dashboard", () => {
+  const LOCK_BODY =
+    '<?xml version="1.0"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype><D:owner><D:href>Davloom Dashboard</D:href></D:owner></D:lockinfo>';
+  const DISCOVER =
+    '<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:lockdiscovery/></D:prop></D:propfind>';
+
+  it("locks a file that a WebDAV client then cannot change, and unlocks it", async () => {
+    const w = world();
+    await w.setup();
+    const client = (await w.key("read-write")).key;
+    await w.dav("/files/report.txt", client, { method: "PUT", body: "x" });
+    const lock = await w.dashboardDav("/files/report.txt", {
+      method: "LOCK",
+      headers: { timeout: "Second-3600", depth: "0" },
+      body: LOCK_BODY,
+    });
+    expect(lock.status).toBe(200);
+    const token = lock.headers.get("lock-token") ?? "";
+    expect((await w.dav("/files/report.txt", client, { method: "PUT", body: "y" })).status).toBe(
+      423,
+    );
+    // The client sees the lock and who holds it, as Finder does.
+    const seen = await (
+      await w.dav("/files/report.txt", client, {
+        method: "PROPFIND",
+        headers: { depth: "0" },
+        body: DISCOVER,
+      })
+    ).text();
+    expect(seen).toContain("Davloom Dashboard");
+    expect(
+      (
+        await w.dashboardDav("/files/report.txt", {
+          method: "UNLOCK",
+          headers: { "lock-token": token },
+        })
+      ).status,
+    ).toBe(204);
+    expect((await w.dav("/files/report.txt", client, { method: "PUT", body: "y" })).status).toBe(
+      204,
+    );
+  });
+
+  it("unlocks a lock that a WebDAV client holds", async () => {
+    const w = world();
+    await w.setup();
+    const client = (await w.key("read-write")).key;
+    await w.dav("/files/held.txt", client, { method: "PUT", body: "x" });
+    const lock = await w.dav("/files/held.txt", client, { method: "LOCK", body: LOCK_BODY });
+    expect(lock.status).toBe(200);
+    const listing = await (
+      await w.dashboardDav("/files/", {
+        method: "PROPFIND",
+        headers: { depth: "1" },
+        body: DISCOVER,
+      })
+    ).text();
+    const token = /<D:locktoken><D:href>([^<]+)<\/D:href>/.exec(listing)?.[1] ?? "";
+    expect(token).toMatch(/^urn:uuid:/);
+    expect(
+      (
+        await w.dashboardDav("/files/held.txt", {
+          method: "UNLOCK",
+          headers: { "lock-token": `<${token}>` },
+        })
+      ).status,
+    ).toBe(204);
   });
 });

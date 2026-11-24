@@ -192,7 +192,7 @@ export const OverviewPage = () => {
                     {data === undefined ? (
                       <Skeleton width="100%" height={44} />
                     ) : (
-                      <List density="compact" edge="flush" hasDividers>
+                      <List density="compact" edge="outset" hasDividers>
                         {data.backends.map((backend) => {
                           const paths = data.mounts
                             .filter((mount) => mount.backendId === backend.id)
@@ -227,7 +227,7 @@ export const OverviewPage = () => {
                   ) : data.mounts.length === 0 ? (
                     <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
                   ) : (
-                    <List density="compact" edge="flush" hasDividers>
+                    <List density="compact" edge="outset" hasDividers>
                       {data.mounts.map((mount) => (
                         <ListItem
                           key={mount.id}
