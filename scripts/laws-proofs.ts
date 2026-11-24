@@ -82,6 +82,7 @@ const FINITE: Record<string, string[]> = {
   "H.StatusKind": ["H.KInformational{}", "H.KNoContent{}", "H.KNotModified{}", "H.KOther{}"],
   "H.Form": ["H.FOrigin{}", "H.FAbsolute{}", "H.FAsterisk{}", "H.FInvalid{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
+  "I.Count": ["I.CNone{}", "I.COne{}", "I.CMany{}"],
   "U.Effect": [
     "U.EffRead{}",
     "U.EffChange{}",

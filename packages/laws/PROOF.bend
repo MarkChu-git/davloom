@@ -6061,6 +6061,60 @@ def L.import_all_or_nothing(entries, known):
   %Lemma.valid(entries, known) : {I.decide(_, entries) == Bool.pick(I.Plan, L.spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
   Lemma.decide(L.spec_valid(entries, known), entries)
 
+def L.import_needs_one_owner(users, logins):
+  match users:
+    case I.CNone{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.COne{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.CMany{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+
+def L.import_refuses_ownerless(users, logins):
+  match users:
+    case I.CNone{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.COne{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.CMany{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+
 def L.copy_writes_safely(s, t, overwrite):
   match s:
     case M.SFile{}:

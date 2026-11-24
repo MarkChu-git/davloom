@@ -275,7 +275,68 @@ describe("exportInstance", () => {
 const backend = (id: string, name: string, kind = "durable-object") =>
   row({ id, name, kind, config: {}, secret_key: null });
 
+/** An export with its owner: one user, who signs in with a password. */
+const owned = (): ArchiveTables => ({
+  ...empty(),
+  user: [row({ id: "u1", name: "Owner", email: "owner@example.com" })],
+  account: [row({ id: "a1", user_id: "u1", provider_id: "credential", password: "salt:hash" })],
+});
+
 describe("importInstance", () => {
+  it.each([
+    [
+      "no user, only a backend and a Mount",
+      () => ({
+        ...empty(),
+        storage_backends: [backend("b1", "Attacker", "s3")],
+        mounts: [row({ id: "m1", name: "files", backend_id: "b1", root: "" })],
+      }),
+    ],
+    [
+      "two users",
+      () => ({
+        ...owned(),
+        user: [row({ id: "u1", email: "a@x.io" }), row({ id: "u2", email: "b@x.io" })],
+      }),
+    ],
+    ["a user without a login", () => ({ ...owned(), account: [] })],
+    [
+      "a user whose login has no password",
+      () => ({
+        ...owned(),
+        account: [row({ id: "a1", user_id: "u1", provider_id: "credential", password: null })],
+      }),
+    ],
+    [
+      "a login of another user",
+      () => ({
+        ...owned(),
+        account: [row({ id: "a1", user_id: "u9", provider_id: "credential", password: "h" })],
+      }),
+    ],
+    [
+      "only a passkey-less social login",
+      () => ({
+        ...owned(),
+        account: [row({ id: "a1", user_id: "u1", provider_id: "github", password: null })],
+      }),
+    ],
+  ])("refuses an export with %s, and writes nothing", async (_, tables) => {
+    const w = world();
+    const { key, file } = await sealed(tables());
+    expect(reasonOf(await w.run(importInstance({ key, file })))).toBe(
+      "The export must hold exactly one user who signs in with a password.",
+    );
+    expect(w.writes).toEqual([]);
+  });
+
+  it("imports an export with its owner", async () => {
+    const w = world();
+    const { key, file } = await sealed(owned());
+    expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
+    expect(w.read().user).toHaveLength(1);
+  });
+
   const S3 = {
     kind: "s3",
     config: {
@@ -289,7 +350,7 @@ describe("importInstance", () => {
   };
   it("refuses rows the database does not accept, and writes nothing", async () => {
     const w = world({ problem: "The name of row 1 of mounts is not text." });
-    const { key, file } = await sealed(empty());
+    const { key, file } = await sealed(owned());
     expect(reasonOf(await w.run(importInstance({ key, file })))).toBe(
       "The name of row 1 of mounts is not text.",
     );
@@ -298,18 +359,18 @@ describe("importInstance", () => {
 
   it("reports a write the database refused", async () => {
     const w = world({ refuseWrite: true });
-    const { key, file } = await sealed(empty());
+    const { key, file } = await sealed(owned());
     expect(reasonOf(await w.run(importInstance({ key, file })))).toMatch(/database refused/);
   });
 
   it("closes when a registration wins the race with the import", async () => {
     const w = world({ raced: true });
-    const { key, file } = await sealed(empty());
+    const { key, file } = await sealed(owned());
     expect(errorOf(await w.run(importInstance({ key, file })))).toBeInstanceOf(RegistrationClosed);
   });
 
   it("refuses an instance with a user", async () => {
-    const { key, file } = await sealed(empty());
+    const { key, file } = await sealed(owned());
     expect(errorOf(await world({ users: 1 }).run(importInstance({ key, file })))).toBeInstanceOf(
       RegistrationClosed,
     );
@@ -340,7 +401,7 @@ describe("importInstance", () => {
     ],
   ] as const)("with %s, imports the backends it should", async (_, config, expected) => {
     const w = world({ config });
-    const { key, file } = await sealed({ ...empty(), storage_backends: [backend("b1", "A")] });
+    const { key, file } = await sealed({ ...owned(), storage_backends: [backend("b1", "A")] });
     expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
     expect(w.read().storage_backends.map((r) => [r["name"], r["kind"]])).toEqual(expected);
   });
@@ -348,7 +409,7 @@ describe("importInstance", () => {
   it("names the added backend after the names the export uses", async () => {
     const w = world({ config: { defaultBackend: S3 } });
     const { key, file } = await sealed({
-      ...empty(),
+      ...owned(),
       storage_backends: [backend("b1", "Default"), backend("b2", "Default 2")],
     });
     expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
@@ -362,7 +423,7 @@ describe("importInstance", () => {
     const w = world({
       config: { defaultBackend: { ...S3, config: { bucket: 1 }, secretKey: null } },
     });
-    const { key, file } = await sealed(empty());
+    const { key, file } = await sealed(owned());
     expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
     expect(w.read().storage_backends[0]).toMatchObject({ config: { bucket: 1 }, secret_key: null });
   });

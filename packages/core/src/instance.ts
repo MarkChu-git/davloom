@@ -274,44 +274,46 @@ export const registerOwner = (input: {
             : new EmailRefused({ reason }),
       );
     }
-    const backends = yield* promise(() => records.backends.list());
-    let backendId = backends[0]?.id;
-    if (backendId === undefined) {
-      const id = crypto.randomUUID();
-      backendId = id;
-      let chosen = config.defaultBackend ?? {
-        kind: config.storageKinds[0] ?? "durable-object",
-        config: {},
-        secretKey: null,
-      };
-      // The deployment's own S3 settings are checked like any other; an invalid one is stored as
-      // it is and shows as unavailable, so registration still completes and the owner can fix it.
-      const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
-      if (checked?.ok) chosen = { ...chosen, config: checked.config };
-      const cipher = yield* CredentialCipher;
-      const secret = chosen.secretKey;
-      const sealed = secret ? yield* cipher.seal(id, secret) : null;
-      yield* insert(() =>
-        records.backends.create({
-          id,
-          name: "Default",
-          kind: chosen.kind,
-          config: chosen.config,
-          ...(sealed === null ? {} : { secretKey: sealed }),
-        }),
-      );
+    // The owner's files go only to the backend and Mount registration creates now. A record that
+    // exists before the instance has an owner was made by nobody the owner trusts, such as an
+    // import that brought no user, so registration drops it rather than adopt it. Dropping a
+    // record leaves the files of its store where they are.
+    for (const orphan of yield* promise(() => records.mounts.list())) {
+      yield* promise(() => records.mounts.remove(orphan.id));
     }
-    const mounts = yield* promise(() => records.mounts.list());
-    if (mounts.length === 0) {
-      yield* insert(() =>
-        records.mounts.create({
-          id: crypto.randomUUID(),
-          name: DEFAULT_MOUNT,
-          backendId: backendId ?? "",
-          root: "",
-        }),
-      );
+    for (const orphan of yield* promise(() => records.backends.list())) {
+      yield* promise(() => records.backends.remove(orphan.id));
     }
+    const backendId = crypto.randomUUID();
+    let chosen = config.defaultBackend ?? {
+      kind: config.storageKinds[0] ?? "durable-object",
+      config: {},
+      secretKey: null,
+    };
+    // The deployment's own S3 settings are checked like any other; an invalid one is stored as
+    // it is and shows as unavailable, so registration still completes and the owner can fix it.
+    const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
+    if (checked?.ok) chosen = { ...chosen, config: checked.config };
+    const cipher = yield* CredentialCipher;
+    const secret = chosen.secretKey;
+    const sealed = secret ? yield* cipher.seal(backendId, secret) : null;
+    yield* insert(() =>
+      records.backends.create({
+        id: backendId,
+        name: "Default",
+        kind: chosen.kind,
+        config: chosen.config,
+        ...(sealed === null ? {} : { secretKey: sealed }),
+      }),
+    );
+    yield* insert(() =>
+      records.mounts.create({
+        id: crypto.randomUUID(),
+        name: DEFAULT_MOUNT,
+        backendId,
+        root: "",
+      }),
+    );
     return { userId: result.id };
   });
 

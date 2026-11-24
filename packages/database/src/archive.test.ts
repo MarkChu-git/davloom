@@ -228,11 +228,21 @@ describe("export and import", () => {
     expect((await target.archive.read()).storage_backends).toHaveLength(2);
   });
 
-  it("exports an empty instance, and imports it", async () => {
+  it("exports an instance without an owner, and refuses to import it", async () => {
     const { key, file } = await exported(instance(SECRET_A));
     const target = instance(SECRET_B);
-    const exit = await target.run(importInstance({ key, file }));
-    expect(Exit.isSuccess(exit)).toBe(true);
+    const error = failure(await target.run(importInstance({ key, file })));
+    expect(error instanceof ArchiveInvalid && error.reason).toMatch(/exactly one user/);
+    expect(await target.db.select().from(schema.user)).toEqual([]);
+  });
+
+  it("refuses an export of backends and Mounts alone, which would leave registration open", async () => {
+    const { key, file } = await crafted((t) => ({ ...t, user: [], account: [], apikey: [] }));
+    const target = instance(SECRET_B);
+    const error = failure(await target.run(importInstance({ key, file })));
+    expect(error instanceof ArchiveInvalid && error.reason).toMatch(/exactly one user/);
+    expect(await target.db.select().from(schema.storageBackends)).toEqual([]);
+    expect(await target.db.select().from(schema.mounts)).toEqual([]);
   });
 
   it("imports many rows, more than one statement holds", async () => {
@@ -300,12 +310,12 @@ const REJECTED: readonly (readonly [string, (tables: ArchiveTables) => ArchiveTa
   [
     "two users with one email",
     addRow("user", (t) => ({ ...t.user[0], id: "u2" })),
-    /repeats email:admin@davloom.test/,
+    /exactly one user/,
   ],
   [
     "a login of a user not in the export",
     editRow("account", 0, (row) => ({ ...row, user_id: "u9" })),
-    /needs user:u9/,
+    /exactly one user/,
   ],
   [
     "an API Key of a user not in the export",
@@ -478,7 +488,7 @@ describe("an import that fails changes nothing", () => {
   });
 
   it("refuses a backend id that the target holds already", async () => {
-    const { key, file } = await crafted((t) => ({ ...t, user: [], account: [], apikey: [] }));
+    const { key, file } = await crafted((t) => t);
     const target = instance(SECRET_B);
     await target.db.insert(schema.storageBackends).values({
       id: "b1",
