@@ -10,6 +10,8 @@ services:
       DAVLOOM_SECRET: ${DAVLOOM_SECRET:?set DAVLOOM_SECRET}
       DAVLOOM_SETUP_TOKEN: ${DAVLOOM_SETUP_TOKEN:-}
       DAVLOOM_URL: ${DAVLOOM_URL:-http://localhost:3000}
+      # Plain HTTP reaches WebDAV only from this machine; set 1 for a trusted LAN without TLS.
+      DAVLOOM_ALLOW_HTTP: ${DAVLOOM_ALLOW_HTTP:-}
     volumes: ["davloom-data:/data"]
     depends_on: [rustfs]
     restart: unless-stopped

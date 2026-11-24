@@ -57,7 +57,38 @@ export interface AppOptions {
   readonly instance?: (origin: string) => Instance;
   /** Replaces the WebDAV handler; the compatibility probe passes its own. */
   readonly webdavHandler?: WebDavHandler;
+  /**
+   * Serves WebDAV and the API over plain HTTP to any host, for a trusted network
+   * (DAVLOOM_ALLOW_HTTP=1). Without it, plain HTTP reaches them only on the machine itself.
+   */
+  readonly allowHttp?: boolean;
 }
+
+// PRD §12: WebDAV is exposed over HTTPS only. API Keys and session cookies travel with every
+// request, so over plain HTTP anyone on the way could read them. A request that came over plain
+// HTTP is refused unless it comes from the machine itself, or a proxy in front of Davloom says
+// the client used HTTPS, or the deployment allows plain HTTP for a trusted network. A client that
+// claims HTTPS through the header falsely only exposes its own credentials.
+const LOOPBACK = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i;
+
+/** Whether a request reached Davloom over plain HTTP from another machine. */
+export const isInsecure = (request: Request): boolean => {
+  let url: URL;
+  try {
+    url = new URL(request.url);
+  } catch {
+    // A request without a usable Host, as HTTP/1.0 may send, names no machine.
+    return true;
+  }
+  if (url.protocol !== "http:" || LOOPBACK.test(url.hostname)) return false;
+  return request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() !== "https";
+};
+
+const HTTPS_ONLY = () =>
+  new Response(
+    "Davloom serves WebDAV and its API over HTTPS only. Connect with https://, put a TLS proxy in front of Davloom, or set DAVLOOM_ALLOW_HTTP=1 for a trusted network.",
+    { status: 403, headers: { "content-type": "text/plain; charset=utf-8" } },
+  );
 
 const notImplemented: WebDavHandler = () => new Response(null, { status: 501 });
 
@@ -104,7 +135,12 @@ const readJson = async (request: Request): Promise<Record<string, unknown>> => {
 };
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 
-export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {}) => {
+export const createApp = ({
+  adapter,
+  instance,
+  webdavHandler,
+  allowHttp = false,
+}: AppOptions = {}) => {
   let built:
     | {
         instance: Instance;
@@ -238,6 +274,13 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
 
   return (
     new Elysia(adapter ? { adapter } : {})
+      .onRequest(({ request }) => {
+        if (allowHttp || !isInsecure(request)) return undefined;
+        const pathname = URL.canParse(request.url) ? new URL(request.url).pathname : "/api";
+        // The health check carries no credential, and load balancers often probe it over HTTP.
+        if (pathname === "/api/health" || pathname === "/api/health/") return undefined;
+        return /^\/(api|dav)(\/|$)/.test(pathname) ? HTTPS_ONLY() : undefined;
+      })
       .get("/api/health", () => ({ status: "ok" }))
       .all(
         "/api/auth/*",

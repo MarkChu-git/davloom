@@ -25,7 +25,7 @@ import { createSqlLockStore } from "./locks";
 // The management API and the WebDAV entry of the real app, in this process: Better Auth and the
 // records on an in-memory Bun SQLite database, and memory storage behind every backend.
 
-const ORIGIN = "http://davloom.test";
+const ORIGIN = "https://davloom.test";
 const TOKEN = "setup-token-for-app-tests";
 const SECRET = "app-test-instance-secret-0123456789abcdef";
 const ADMIN = { name: "Admin", email: "admin@davloom.test", password: "correct horse battery" };
@@ -350,5 +350,59 @@ describe("WebDAV", () => {
       (await w.dav("/files/l.txt", key, { method: "UNLOCK", headers: { "lock-token": token } }))
         .status,
     ).toBe(204);
+  });
+});
+
+describe("HTTPS only (PRD §12)", () => {
+  const app = createApp({ webdavHandler: () => new Response("dav", { status: 207 }) });
+  const permissive = createApp({
+    allowHttp: true,
+    webdavHandler: () => new Response("dav", { status: 207 }),
+  });
+
+  it.each([
+    ["https from anywhere", "https://davloom.test/dav/", {}, 207],
+    ["plain http from another host", "http://davloom.test/dav/", {}, 403],
+    ["plain http to the API", "http://davloom.test/api/setup", {}, 403],
+    ["plain http to the auth routes", "http://davloom.test/api/auth/get-session", {}, 403],
+    ["the health check over plain http", "http://davloom.test/api/health", {}, 200],
+    ["the health check with a slash over plain http", "http://davloom.test/api/health/", {}, 200],
+    ["plain http on localhost", "http://localhost:3000/dav/", {}, 207],
+    ["plain http on 127.0.0.1", "http://127.0.0.1:3000/dav/", {}, 207],
+    ["plain http on ::1", "http://[::1]:3000/dav/", {}, 207],
+    [
+      "behind a proxy that used https",
+      "http://nas.local/dav/",
+      { "x-forwarded-proto": "https" },
+      207,
+    ],
+    [
+      "behind proxies, the first used https",
+      "http://nas.local/dav/",
+      { "x-forwarded-proto": "HTTPS, http" },
+      207,
+    ],
+    [
+      "behind a proxy that used http",
+      "http://nas.local/dav/",
+      { "x-forwarded-proto": "http" },
+      403,
+    ],
+    ["a lookalike of localhost", "http://localhost.evil.test/dav/", {}, 403],
+    ["a lookalike of a loopback address", "http://127.0.0.1.evil.test/dav/", {}, 403],
+  ])("%s", async (_, url, headers: Record<string, string>, status) => {
+    const method = url.includes("/api/") ? "GET" : "PROPFIND";
+    const response = await app.handle(new Request(url, { method, headers }));
+    expect(response.status).toBe(status);
+    if (status === 403) {
+      expect(await response.text()).toMatch(/over HTTPS only/);
+    }
+  });
+
+  it("serves plain http to any host when the deployment allows it", async () => {
+    const response = await permissive.handle(
+      new Request("http://nas.local/dav/", { method: "PROPFIND" }),
+    );
+    expect(response.status).toBe(207);
   });
 });

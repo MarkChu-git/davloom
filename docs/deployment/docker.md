@@ -35,6 +35,14 @@ On its first start Davloom creates the bucket `davloom` when it is missing, and 
 creates the backend `Default` on it with the Mount `files`. Put Davloom behind HTTPS (a reverse proxy
 such as Caddy) before you expose it: WebDAV clients send the API Key with every request.
 
+Davloom serves WebDAV and its API over plain HTTP only on the machine itself (`localhost`,
+`127.0.0.1`, `::1`). From any other address it answers 403, unless a proxy in front of it sends
+`X-Forwarded-Proto: https`, as Caddy and nginx can, or `DAVLOOM_ALLOW_HTTP=1` allows plain HTTP for
+a trusted network. The health check `/api/health` answers either way. Davloom judges "the machine
+itself" by the address the request names, so a proxy that serves plain HTTP to other machines
+and passes requests on to `localhost` defeats the check: a proxy in front of Davloom must serve
+HTTPS and send `X-Forwarded-Proto`.
+
 ## Settings
 
 | Variable                                                   | Meaning                                                                          |
@@ -49,6 +57,7 @@ such as Caddy) before you expose it: WebDAV clients send the API Key with every 
 | `DAVLOOM_S3_REGION`                                        | `us-east-1` unless set.                                                          |
 | `DAVLOOM_S3_PREFIX`                                        | A key prefix inside the bucket, ending at `/`; empty unless set.                 |
 | `DAVLOOM_S3_FORCE_PATH_STYLE`                              | `false` for stores that want the bucket in the host name; true otherwise.        |
+| `DAVLOOM_ALLOW_HTTP`                                       | `1` serves WebDAV and the API over plain HTTP to any address, for a trusted LAN. |
 | `HOST`, `PORT`                                             | Where the server listens; `0.0.0.0:3000` in the image.                           |
 
 More S3-compatible backends can be added later through the API (`POST /api/backends` with `kind:
