@@ -109,7 +109,8 @@ describe("migrate", () => {
     expect(tag).toMatch(/lang="en"/);
     expect(tag).toMatch(/inner a="1"/);
     expect(await deadProperty(target, "/docs/", "color")).toContain("red");
-  });
+    // It hashes a 3 MiB file several times, which instrumented coverage runs slow down.
+  }, 30_000);
 
   it("copies nothing again on a second run", async () => {
     const source = server("https://old.example");
