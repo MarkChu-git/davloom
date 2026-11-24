@@ -62,11 +62,11 @@ describe("bunInstance", () => {
           DAVLOOM_DATA_DIR: join(dir, "data"),
         }),
       });
-      const status = await app.handle(new Request("http://davloom.test/api/setup"));
+      const status = await app.handle(new Request("https://davloom.test/api/setup"));
       expect(await status.json()).toEqual({ needed: true, open: true });
       expect(existsSync(join(dir, "data", "davloom.sqlite"))).toBe(true);
       const setup = await app.handle(
-        new Request("http://davloom.test/api/setup", {
+        new Request("https://davloom.test/api/setup", {
           method: "POST",
           body: JSON.stringify({
             name: "A",
@@ -92,12 +92,12 @@ describe("bunInstance", () => {
           DAVLOOM_DATA_DIR: dir,
         }),
       });
-      expect(await (await app.handle(new Request("http://davloom.test/api/setup"))).json()).toEqual(
-        {
-          needed: true,
-          open: false,
-        },
-      );
+      expect(
+        await (await app.handle(new Request("https://davloom.test/api/setup"))).json(),
+      ).toEqual({
+        needed: true,
+        open: false,
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
