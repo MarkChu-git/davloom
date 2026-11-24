@@ -2,9 +2,14 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   cardWith,
   filesAt,
+  isNarrow,
   listed,
+  navigationLinks,
   onScreen,
   openList,
+  openRowDetails,
+  recordOf,
+  rowAction,
   shown,
   withUnavailableBackend,
 } from "./helpers";
@@ -13,17 +18,15 @@ import { createMount, dav, scratchFolder, unique } from "./instances";
 // The Storage & Mounts scenarios about the backends, adding, renaming and removing a mount, on the
 // Worker's real API. Mounts and backends are shared by every test, so each test names its own
 // uniquely. The ones about the backend cards on one grid and about opening the form again have
-// their tests in dashboard.spec.ts.
+// their tests in dashboard.spec.ts. A narrow page lists mounts as rows that open in place, with
+// Rename, Move and Remove in their details, so the steps on a mount go through either layout.
 
 /** The card of a backend, found by its name. */
 const backendCard = (page: Page, name: string) =>
   cardWith(page, page.getByRole("heading", { level: 3, name, exact: true }));
 
 /** The row of a mount, found by its path. */
-const mountRow = (page: Page, path: string) =>
-  page.getByRole("row").filter({
-    has: page.getByRole("button", { name: `Actions for mount ${path}`, exact: true }),
-  });
+const mountRow = (page: Page, path: string) => recordOf(page, "mount", path);
 
 /** Opens the form that adds a mount. */
 const openAddForm = async (page: Page) => {
@@ -58,9 +61,7 @@ test("A backend that does not answer: its card says Unavailable, its counts are 
   await expect(card).toContainText("Unavailable");
   await expect(card).toContainText(/Stored\s*Unknown/);
   await expect(
-    page.getByRole("navigation", { name: "Side navigation" }).getByRole("link", {
-      name: /^Storage & Mounts\b.*unavailable/,
-    }),
+    (await navigationLinks(page)).getByRole("link", { name: /^Storage & Mounts\b.*unavailable/ }),
   ).toBeVisible();
 });
 
@@ -96,7 +97,10 @@ test("Adding a mount: the new mount shows a folder of the backend, and Files lis
 
   await shown(onScreen(page, `Added /${name}.`));
   await expect(mountRow(page, `/${name}`)).toContainText("Default");
-  await expect(mountRow(page, `/${name}`)).toContainText(`/${root}`);
+  // A narrow page names the folder in the row's details.
+  await expect(
+    isNarrow(page) ? await openRowDetails(page, "mount", `/${name}`) : mountRow(page, `/${name}`),
+  ).toContainText(`/${root}`);
   await page.goto(filesAt(`/${name}`));
   await expect.poll(() => listed(page)).toEqual(["inside.txt"]);
 });
@@ -144,8 +148,7 @@ test("Renaming a mount: the form keeps its backend and folder, and the new name 
   const after = unique("new");
   await createMount(page.request, before);
   await page.goto("/storage");
-  await page.getByRole("button", { name: `Actions for mount /${before}` }).click();
-  await page.getByRole("menuitem", { name: "Rename" }).click();
+  await rowAction(page, "mount", `/${before}`, "Rename");
   const dialog = page.getByRole("dialog");
   await shown(dialog.getByRole("heading", { name: `Rename /${before}` }));
   await expect(dialog).toContainText(/Backend\s*Default/);
@@ -174,8 +177,7 @@ test("Removing a mount keeps its files: the confirmation says the files stay in 
   const name = unique("shared");
   await createMount(page.request, name);
   await page.goto("/storage");
-  await page.getByRole("button", { name: `Actions for mount /${name}` }).click();
-  await page.getByRole("menuitem", { name: "Remove" }).click();
+  await rowAction(page, "mount", `/${name}`, "Remove");
 
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toContainText(`Remove /${name}?`);
@@ -183,7 +185,7 @@ test("Removing a mount keeps its files: the confirmation says the files stay in 
   await confirmation.getByRole("button", { name: "Remove mount" }).click();
 
   await expect(confirmation).toHaveCount(0);
-  await expect(page.getByRole("button", { name: `Actions for mount /${name}` })).toHaveCount(0);
+  await expect(mountRow(page, `/${name}`)).toHaveCount(0);
   await page.goto("/files");
   await shown(page.getByRole("row").getByRole("link", { name: "files", exact: true }));
   expect(await listed(page)).not.toContain(name);
@@ -223,8 +225,7 @@ test("Moving a mount: the dialog offers the other backends and a folder, says to
     return route.fulfill(answer);
   });
   await page.goto("/storage");
-  await page.getByRole("button", { name: `Actions for mount /${name}` }).click();
-  await page.getByRole("menuitem", { name: "Move to another backend" }).click();
+  await rowAction(page, "mount", `/${name}`, "Move to another backend", "Move");
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText(`Move /${name}`);
   await expect(dialog).toContainText("Copy the files first");

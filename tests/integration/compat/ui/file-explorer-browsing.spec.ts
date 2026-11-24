@@ -3,6 +3,7 @@ import {
   PREVIEW,
   boxOf,
   filesAt,
+  isNarrow,
   levelOne,
   listed,
   onScreen,
@@ -14,7 +15,9 @@ import { createMount, dav, LONG_LOG_NAME, scratchFolder, SAMPLE_NAMES, unique } 
 // The File Explorer's scenarios about finding things: the folder in the address, the loading and
 // empty states, sorting, search, an item's details, long names and a listing that fails. Each test
 // lists a folder of its own in the Mount "files", which holds the sample (instances.ts). The ones
-// about changing content have their tests in file-explorer-changes.spec.ts.
+// about changing content have their tests in file-explorer-changes.spec.ts. A narrow page, as on
+// a tablet or a phone, sorts with a menu in the Name header's place and opens a file's details in a
+// dialog, and the tests that run at every size take either way.
 
 const QUARTERLY_REPORT = "Quarterly report — Q3 2026, final version (signed by both parties).pdf";
 
@@ -131,6 +134,22 @@ test("Sorting by size: both ways, every folder comes before every file and the f
     expect((await listed(page)).slice(0, 4).toSorted()).toEqual(FOLDERS.toSorted());
   };
 
+  if (isNarrow(page)) {
+    // Without a Size column, the menu in the Name header's place sorts, and its button names the
+    // order in use.
+    const sortMenu = (named: string) =>
+      page.getByRole("columnheader", { name: named }).getByRole("button", { name: named });
+    await sortMenu("Name, A to Z").click();
+    await page.getByRole("menuitemradio", { name: "Size" }).click();
+    await shown(sortMenu("Size, smallest first"));
+    await inOrder(FILES_BY_SIZE);
+
+    await sortMenu("Size, smallest first").click();
+    await page.getByRole("menuitemradio", { name: "Largest first" }).click();
+    await shown(sortMenu("Size, largest first"));
+    await inOrder(FILES_BY_SIZE.toReversed());
+    return;
+  }
   await page.getByRole("button", { name: "Size" }).click();
   await expect(size).toHaveAttribute("aria-sort", "ascending");
   await inOrder(FILES_BY_SIZE);
@@ -168,35 +187,43 @@ test("No match: the page says nothing matches and clearing the search brings the
   await expect.poll(() => listed(page)).toHaveLength(SAMPLE_NAMES.length);
 });
 
-test("Details beside the list: a panel gives the size as 120 bytes, the backend, and previews the file's text", async ({
-  page,
-}) => {
-  const folder = await scratchFolder(page.request);
-  await dav(page.request, "PUT", `${folder}/guest.txt`, {
-    body: "Network: guest\nPassword: on the fridge\n".padEnd(120, " "),
-  });
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(filesAt(folder, "guest.txt"));
-  const details = page.locator('[aria-label="Details"]');
-  await expect(details).toContainText(/Size\s+120 bytes/, { useInnerText: true });
-  await expect(details).toContainText(/Stored on\s+Default/, { useInnerText: true });
-  await expect(details).toContainText("Network: guest");
-  await expect(details).toContainText("Password: on the fridge");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+// It sets a window of its own, so the tablet and phone projects skip it.
+test(
+  "Details beside the list: a panel gives the size as 120 bytes, the backend, and previews the file's text",
+  { tag: "@desktop" },
+  async ({ page }) => {
+    const folder = await scratchFolder(page.request);
+    await dav(page.request, "PUT", `${folder}/guest.txt`, {
+      body: "Network: guest\nPassword: on the fridge\n".padEnd(120, " "),
+    });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(filesAt(folder, "guest.txt"));
+    const details = page.locator('[aria-label="Details"]');
+    await expect(details).toContainText(/Size\s+120 bytes/, { useInnerText: true });
+    await expect(details).toContainText(/Stored on\s+Default/, { useInnerText: true });
+    await expect(details).toContainText("Network: guest");
+    await expect(details).toContainText("Password: on the fridge");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
 
-  // Beside the list, not under it.
-  const list = await boxOf(page.getByRole("table"));
-  const panel = await boxOf(details);
-  expect(panel.x).toBeGreaterThanOrEqual(list.x + list.width - 1);
-});
+    // Beside the list, not under it.
+    const list = await boxOf(page.getByRole("table"));
+    const panel = await boxOf(details);
+    expect(panel.x).toBeGreaterThanOrEqual(list.x + list.width - 1);
+  },
+);
 
 test("A file without a preview: a spreadsheet's details say there is no preview", async ({
   page,
 }) => {
   const folder = await scratchFolder(page.request);
-  await page.setViewportSize({ width: 1280, height: 900 });
+  // A narrow page shows the details in a dialog named after the file.
+  if (!isNarrow(page)) {
+    await page.setViewportSize({ width: 1280, height: 900 });
+  }
   await page.goto(filesAt(folder, "budget-2027.xlsx"));
-  const details = page.locator('[aria-label="Details"]');
+  const details = isNarrow(page)
+    ? page.getByRole("dialog", { name: "budget-2027.xlsx" })
+    : page.locator('[aria-label="Details"]');
   await expect(details).toContainText(/Size\s+48.2 kB/, { useInnerText: true });
   await expect(details).toContainText("No preview for this kind of file.");
 });
@@ -204,7 +231,10 @@ test("A file without a preview: a spreadsheet's details say there is no preview"
 test("Details in a dialog: a narrow window opens them in a dialog named after the file, and closing it clears the address", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 375, height: 800 });
+  // A tablet's or a phone's window is narrow already.
+  if (!isNarrow(page)) {
+    await page.setViewportSize({ width: 375, height: 800 });
+  }
   await page.goto(PREVIEW);
   const dialog = page.getByRole("dialog", { name: "wifi-guest.txt" });
   await shown(dialog.getByRole("heading", { name: "Preview" }));
@@ -215,54 +245,57 @@ test("Details in a dialog: a narrow window opens them in a dialog named after th
   await expect.poll(() => new URL(page.url()).searchParams.get("file")).toBeNull();
 });
 
-test("A long log file name: the stem ends in an ellipsis and .log stays whole beside it", async ({
-  page,
-}) => {
-  const folder = await scratchFolder(page.request);
-  // At 1280 px the name fills its column only where the machine's font is wide, since Davloom
-  // loads none, so 1024 px makes the name too long on every machine.
-  for (const width of [1280, 1024]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.goto(filesAt(folder));
-    const name = await page
-      .getByRole("link", { name: LONG_LOG_NAME, exact: true })
-      .evaluate((link, whole) => {
-        const stem = whole.slice(0, -".log".length);
-        const leaves = [...link.querySelectorAll("span")].filter(
-          (span) => span.children.length === 0,
-        );
-        const parts = [stem, ".log"].map((text) =>
-          leaves.find((span) => span.textContent === text),
-        );
-        const [start, end] = parts;
-        if (start === undefined || end === undefined) {
-          return undefined;
-        }
-        const style = getComputedStyle(start);
-        const stemBox = start.getBoundingClientRect();
-        const endBox = end.getBoundingClientRect();
-        return {
-          isCut: start.scrollWidth > start.clientWidth,
-          hasEllipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
-          gap: endBox.left - stemBox.right,
-          extensionWidth: endBox.width,
-          overhang: endBox.right - (link.closest("td")?.getBoundingClientRect().right ?? 0),
-        };
-      }, LONG_LOG_NAME);
-    expect(name, `the stem and the extension at ${width} px`).toBeDefined();
-    expect.soft(name?.hasEllipsis, `an ellipsis at ${width} px`).toBe(true);
-    // The extension is on screen, follows the stem directly and ends inside the cell.
-    expect.soft(name?.extensionWidth, `the extension's width at ${width} px`).toBeGreaterThan(0);
-    expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeGreaterThan(-1);
-    expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeLessThan(2);
-    expect
-      .soft(name?.overhang, `the extension inside the cell at ${width} px`)
-      .toBeLessThanOrEqual(0);
-    if (width === 1024) {
-      expect.soft(name?.isCut, `the stem cut at ${width} px`).toBe(true);
+// It sets the windows it measures, so the tablet and phone projects skip it.
+test(
+  "A long log file name: the stem ends in an ellipsis and .log stays whole beside it",
+  { tag: "@desktop" },
+  async ({ page }) => {
+    const folder = await scratchFolder(page.request);
+    // At 1280 px the name fills its column only where the machine's font is wide, since Davloom
+    // loads none, so 1024 px makes the name too long on every machine.
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(filesAt(folder));
+      const name = await page
+        .getByRole("link", { name: LONG_LOG_NAME, exact: true })
+        .evaluate((link, whole) => {
+          const stem = whole.slice(0, -".log".length);
+          const leaves = [...link.querySelectorAll("span")].filter(
+            (span) => span.children.length === 0,
+          );
+          const parts = [stem, ".log"].map((text) =>
+            leaves.find((span) => span.textContent === text),
+          );
+          const [start, end] = parts;
+          if (start === undefined || end === undefined) {
+            return undefined;
+          }
+          const style = getComputedStyle(start);
+          const stemBox = start.getBoundingClientRect();
+          const endBox = end.getBoundingClientRect();
+          return {
+            isCut: start.scrollWidth > start.clientWidth,
+            hasEllipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+            gap: endBox.left - stemBox.right,
+            extensionWidth: endBox.width,
+            overhang: endBox.right - (link.closest("td")?.getBoundingClientRect().right ?? 0),
+          };
+        }, LONG_LOG_NAME);
+      expect(name, `the stem and the extension at ${width} px`).toBeDefined();
+      expect.soft(name?.hasEllipsis, `an ellipsis at ${width} px`).toBe(true);
+      // The extension is on screen, follows the stem directly and ends inside the cell.
+      expect.soft(name?.extensionWidth, `the extension's width at ${width} px`).toBeGreaterThan(0);
+      expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeGreaterThan(-1);
+      expect.soft(name?.gap, `the extension against the stem at ${width} px`).toBeLessThan(2);
+      expect
+        .soft(name?.overhang, `the extension inside the cell at ${width} px`)
+        .toBeLessThanOrEqual(0);
+      if (width === 1024) {
+        expect.soft(name?.isCut, `the stem cut at ${width} px`).toBe(true);
+      }
     }
-  }
-});
+  },
+);
 
 test("A listing that fails: an error says the backend is not answering, announces it, and offers Try again, with no buttons that change content", async ({
   page,

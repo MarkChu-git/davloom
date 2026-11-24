@@ -1,10 +1,11 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { onScreen, shown } from "./helpers";
+import { isNarrow, onScreen, openRowDetails, recordOf, rowAction, shown } from "./helpers";
 import { createKey, unique, WORKERS_ORIGIN } from "./instances";
 
 // The Credentials scenarios about the key list, creating a key and revoking one, against the
 // Worker's real API. Every test names its keys uniquely, since all tests share one instance. The
-// ones about a key's row on a phone have their tests in dashboard.spec.ts.
+// ones about a key's row on a phone have their tests in dashboard.spec.ts. A narrow page lists keys
+// as rows that open in place rather than in a table, so the checks of a key read either layout.
 
 /** The row of a key in the table, found by its name. */
 const rowOf = (page: Page, name: string): Locator =>
@@ -13,6 +14,37 @@ const rowOf = (page: Page, name: string): Locator =>
 /** What a key's row says in one of its columns. */
 const columnOf = (row: Locator, column: "Access" | "Expires" | "Status"): Locator =>
   row.getByRole("cell").nth({ Access: 1, Expires: 3, Status: 4 }[column]);
+
+/** Text a page shows, as a pattern that lets the layout put space between its parts. */
+const spaced = (...parts: string[]): RegExp =>
+  new RegExp(parts.map((part) => part.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*"));
+
+/** Checks what the list says about a key: in the table's columns, or in its row's details. */
+const expectKey = async (
+  page: Page,
+  name: string,
+  {
+    access,
+    reaches,
+    expires,
+    status,
+  }: { access?: string; reaches?: string; expires?: string; status?: string },
+) => {
+  if (!isNarrow(page)) {
+    const row = rowOf(page, name);
+    if (access !== undefined) {
+      await expect(columnOf(row, "Access")).toHaveText(`${access}${reaches ?? ""}`);
+    }
+    if (expires !== undefined) await expect(columnOf(row, "Expires")).toHaveText(expires);
+    if (status !== undefined) await expect(columnOf(row, "Status")).toHaveText(status);
+    return;
+  }
+  if (status !== undefined) await expect(recordOf(page, "key", name)).toContainText(status);
+  const details = await openRowDetails(page, "key", name);
+  if (access !== undefined) await expect(details).toContainText(spaced("Access", access));
+  if (reaches !== undefined) await expect(details).toContainText(spaced("Reaches", reaches));
+  if (expires !== undefined) await expect(details).toContainText(spaced("Expires", expires));
+};
 
 /** Opens the form that creates a key. */
 const openForm = async (page: Page): Promise<Locator> => {
@@ -36,11 +68,8 @@ test("Keys from the API: each key shows its access, its expiry and its status", 
   await createKey(page.request, reader, "read-only", 30);
   await createKey(page.request, writer, "read-write", null);
   await page.goto("/credentials");
-  await expect(columnOf(rowOf(page, reader), "Access")).toHaveText("Read only");
-  await expect(columnOf(rowOf(page, reader), "Expires")).toHaveText(inDays(30));
-  await expect(columnOf(rowOf(page, reader), "Status")).toHaveText("Active");
-  await expect(columnOf(rowOf(page, writer), "Access")).toHaveText("Read and write");
-  await expect(columnOf(rowOf(page, writer), "Expires")).toHaveText("Never");
+  await expectKey(page, reader, { access: "Read only", expires: inDays(30), status: "Active" });
+  await expectKey(page, writer, { access: "Read and write", expires: "Never" });
 });
 
 test("A key without a name: the form stays open and asks for a name only after the submit", async ({
@@ -66,9 +95,7 @@ test("A key limited to folders: the list shows its access with the folders it re
   await dialog.getByRole("button", { name: "Create key" }).click();
   await shown(page.getByRole("heading", { name: `Key “${name}” is ready` }));
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(columnOf(rowOf(page, name), "Access")).toHaveText(
-    "Read only/files/photos, /files/albums",
-  );
+  await expectKey(page, name, { access: "Read only", reaches: "/files/photos, /files/albums" });
 });
 
 test("Folders that name no folder: the form stays open and says why", async ({ page }) => {
@@ -123,9 +150,8 @@ test("Creating a key: the dialog shows the whole key once, with how to connect, 
   );
   expect(held).toEqual({ inText: false, inField: false });
 
-  const row = rowOf(page, name);
-  await expect(row).toContainText(key.slice(0, 6));
-  await expect(columnOf(row, "Expires")).toHaveText(inDays(90));
+  await expect(recordOf(page, "key", name)).toContainText(key.slice(0, 6));
+  await expectKey(page, name, { expires: inDays(90) });
 });
 
 test("Revoking a key: the confirmation warns that access ends for good, the key leaves the list, and it no longer opens WebDAV", async ({
@@ -135,8 +161,7 @@ test("Revoking a key: the confirmation warns that access ends for good, the key 
   const name = unique("Old tablet");
   const key = await createKey(page.request, name);
   await page.goto("/credentials");
-  await page.getByRole("button", { name: `Actions for key ${name}` }).click();
-  await page.getByRole("menuitem", { name: "Revoke" }).click();
+  await rowAction(page, "key", name, "Revoke");
 
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toContainText(`Revoke “${name}”?`);
@@ -145,7 +170,7 @@ test("Revoking a key: the confirmation warns that access ends for good, the key 
   );
   await confirmation.getByRole("button", { name: "Revoke" }).click();
 
-  await expect(rowOf(page, name)).toHaveCount(0);
+  await expect(recordOf(page, "key", name)).toHaveCount(0);
   await shown(onScreen(page, `Revoked “${name}”.`));
   // An isolate that checked the key in the last 30 s may still take it, so the check polls.
   await expect

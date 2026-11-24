@@ -174,3 +174,79 @@ export const sidewaysOverflow = (): string[] => {
   }
   return found;
 };
+
+// The layouts a window's width chooses, which the tablet and phone projects run the core flows
+// in. Below 768 px Astryx's AppShell trades the side navigation for a Menu button. Below 1024 px,
+// beside the side navigation or without it, a page is too narrow for the tables of keys and mounts,
+// which become rows that open in place, for the Size and Modified columns of a file listing, and
+// for the section list of Settings, which a selector replaces.
+
+/** Whether the window is a phone's, where a Menu button stands in for the side navigation. */
+export const isPhone = (page: Page): boolean => (page.viewportSize()?.width ?? 1280) < 768;
+
+/** Whether the window lays the pages out narrow: rows that open in place, and fewer columns. */
+export const isNarrow = (page: Page): boolean => (page.viewportSize()?.width ?? 1280) < 1024;
+
+/**
+ * What holds the side navigation's links and Sign out: the side navigation, or on a phone the
+ * dropdown of the Menu button, which this opens.
+ */
+export const navigationLinks = async (page: Page): Promise<Locator> => {
+  if (!isPhone(page)) {
+    return sideNavigation(page);
+  }
+  await page.getByRole("button", { name: "Menu" }).click();
+  const dropdown = page.getByRole("dialog", { name: "Menu" });
+  await shown(dropdown);
+  return dropdown;
+};
+
+/** Opens the details that a narrow page shows under a key's or a mount's row, and returns them. */
+export const openRowDetails = async (
+  page: Page,
+  kind: "key" | "mount",
+  name: string,
+): Promise<Locator> => {
+  const label = `Details for ${kind} ${name}`;
+  const toggle = page.getByRole("main").getByRole("button", { name: label, exact: true });
+  await shown(toggle);
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+  const details = page.getByRole("main").getByRole("group", { name: label, exact: true });
+  await shown(details);
+  return details;
+};
+
+/**
+ * Runs an action on a key's or a mount's row: from the row's Actions menu in a table, or with a
+ * button in the details a narrow page opens under the row, which may name it more briefly.
+ */
+export const rowAction = async (
+  page: Page,
+  kind: "key" | "mount",
+  name: string,
+  action: string,
+  narrowAction = action,
+) => {
+  if (isNarrow(page)) {
+    const details = await openRowDetails(page, kind, name);
+    await details.getByRole("button", { name: narrowAction, exact: true }).click();
+    return;
+  }
+  await page.getByRole("button", { name: `Actions for ${kind} ${name}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: action }).click();
+};
+
+/** What lists a key or a mount, by its name or path: its table row, or its row on a narrow page. */
+export const recordOf = (page: Page, kind: "key" | "mount", name: string): Locator =>
+  page
+    .getByRole("row")
+    .filter({
+      has: page.getByRole("button", { name: `Actions for ${kind} ${name}`, exact: true }),
+    })
+    .or(
+      page.getByRole("listitem").filter({
+        has: page.getByRole("button", { name: `Details for ${kind} ${name}`, exact: true }),
+      }),
+    );

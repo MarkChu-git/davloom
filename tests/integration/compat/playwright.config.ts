@@ -27,6 +27,34 @@ const WITHOUT_API = [
   "no-api.spec.ts",
 ];
 
+/**
+ * The core flows (PRD §11): signing in and setup, storage and mounts, credentials, files, settings
+ * and the Overview. `workers` runs them at a desktop size, and the projects of `SIZES` run them
+ * again at tablet and phone sizes.
+ */
+const CORE_FLOWS = [
+  "auth.spec.ts",
+  "storage.spec.ts",
+  "credentials.spec.ts",
+  "file-explorer-browsing.spec.ts",
+  "file-explorer-changes.spec.ts",
+  "settings.spec.ts",
+  "overview.spec.ts",
+];
+
+/**
+ * A tablet, and phones from the narrowest the owner checks, 320 px, to the widest, 430 px, in light
+ * and dark. The tablet keeps the side navigation beside a narrow page; the phones have a Menu
+ * button in its place. `ui/helpers.ts` says which layout a width gets, so that a test takes either.
+ */
+const SIZES = [
+  { name: "tablet", viewport: { width: 820, height: 1180 }, colorScheme: "light" },
+  { name: "phone", viewport: { width: 390, height: 844 }, colorScheme: "light" },
+  { name: "phone-320", viewport: { width: 320, height: 640 }, colorScheme: "light" },
+  { name: "phone-360-dark", viewport: { width: 360, height: 780 }, colorScheme: "dark" },
+  { name: "phone-430-dark", viewport: { width: 430, height: 932 }, colorScheme: "dark" },
+] as const;
+
 /** Starts the production Worker in local workerd, with the secrets a deployment sets. */
 const worker = (port: number) => ({
   command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${port}`,
@@ -71,6 +99,15 @@ export default defineConfig({
       dependencies: ["setup"],
       testMatch: "dev-server.spec.ts",
     },
+    // A test tagged @desktop sets the windows it checks itself, so at another size it would run
+    // the same case again.
+    ...SIZES.map(({ name, viewport, colorScheme }) => ({
+      name,
+      use: { baseURL: WORKERS_ORIGIN, storageState: STATE.workers, viewport, colorScheme },
+      dependencies: ["setup"],
+      testMatch: CORE_FLOWS,
+      grepInvert: /@desktop/,
+    })),
   ],
   webServer: [
     {
