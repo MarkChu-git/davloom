@@ -17,8 +17,10 @@
     "test:cloud": "vitest run --config vitest.cloud.config.ts",
     "test:cloud:local": "DAVLOOM_PROBE_LOCAL=1 vitest run --config vitest.cloud.config.ts",
     "cloud:free": "bun scripts/cloud-free.ts",
+    "test:quota": "vitest run --config vitest.quota.config.ts",
+    "test:load": "bun run build:web && bun scripts/load.ts",
     "test": "bun run test:without-ui && bun run test:ui",
-    "test:without-ui": "bun run test:http && bun run test:d1 && bun run test:workerd && bun run test:storage && bun run test:s3 && bun run test:bun-sqlite && bun run test:ui:brand && bun run test:cloud:local && bun run test:cloud",
+    "test:without-ui": "bun run test:http && bun run test:d1 && bun run test:workerd && bun run test:storage && bun run test:s3 && bun run test:bun-sqlite && bun run test:ui:brand && bun run test:cloud:local && bun run test:cloud && bun run test:quota",
     "test:storage": "vitest run --config vitest.storage.config.ts",
     "test:s3": "bun run --filter @davloom/storage test:s3"
   },
