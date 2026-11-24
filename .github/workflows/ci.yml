@@ -113,7 +113,7 @@ jobs:
 
   compat:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -140,6 +140,10 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ steps.playwright.outputs.key }}
       - run: bun run --filter @davloom/compat-tests playwright:install
+      # The runner image has what Chromium needs, but not the libraries of Firefox and WebKit.
+      - name: Install the system libraries of Firefox and WebKit
+        working-directory: tests/integration/compat
+        run: bunx --bun playwright install-deps firefox webkit
       # The real WebDAV clients that http/clients.test.ts drives against the Worker.
       - name: Install litmus and rclone
         run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone

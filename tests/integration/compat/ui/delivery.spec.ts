@@ -16,7 +16,7 @@ test("the API keeps its own 404s instead of falling back to the Dashboard", asyn
 
 test("a missing asset is a 404, not the Dashboard", async ({ request }, testInfo) => {
   // The SPA fallback of Workers static assets answers every unmatched path with index.html.
-  test.skip(testInfo.project.name === "workers", "Workers static assets have no such distinction");
+  test.skip(testInfo.project.name !== "bun", "Workers static assets have no such distinction");
 
   const response = await request.get("/assets/does-not-exist.js");
 
@@ -29,7 +29,7 @@ for (const method of ["GET", "PROPFIND"]) {
 
     // Bun serves no storage yet (501). The Worker asks for credentials (401), since this request
     // has none, instead of handing the path to the Dashboard.
-    expect(response.status()).toBe(testInfo.project.name === "workers" ? 401 : 503);
+    expect(response.status()).toBe(testInfo.project.name === "bun" ? 503 : 401);
   });
 }
 

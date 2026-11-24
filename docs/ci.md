@@ -70,7 +70,7 @@ To catch a call to Node before CI does, put the same guard first on `PATH`:
 PATH="$PWD/.github/actions/setup/no-node:$PATH" bun run check
 ```
 
-`bun run test:compat` needs Chromium. `playwright:install` downloads the build that Playwright pins, or `DAVLOOM_CHROMIUM_PATH` can point the tests at a Chromium that is already installed. The cases that need a real Cloudflare deployment show as skipped, locally and in CI. `playwright:install` also deletes the builds it takes for unused from the directory it installs into, which can be one that another checkout's Playwright version still needs; `PLAYWRIGHT_BROWSERS_PATH` gives a checkout a browser directory of its own.
+`bun run test:compat` needs Chromium, Firefox and WebKit: the Playwright projects `firefox`, `webkit`, `webkit-phone` and `firefox-tablet-dark` run the Dashboard specs in the other two browsers. `playwright:install` downloads the builds that Playwright pins, and on Linux `bunx --bun playwright install-deps firefox webkit` installs the system libraries Firefox and WebKit need. `DAVLOOM_CHROMIUM_PATH` can point the Chromium projects at a Chromium that is already installed. The cases that need a real Cloudflare deployment show as skipped, locally and in CI. `playwright:install` also deletes the builds it takes for unused from the directory it installs into, which can be one that another checkout's Playwright version still needs; `PLAYWRIGHT_BROWSERS_PATH` gives a checkout a browser directory of its own.
 
 ## Coverage gates
 

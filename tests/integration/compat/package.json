@@ -13,7 +13,7 @@
     "test:bun-sqlite": "bun --bun vitest run --config vitest.bun-sqlite.config.ts",
     "test:ui": "bun run build:web && playwright test",
     "test:ui:brand": "bun scripts/verify-brand-change.ts",
-    "playwright:install": "playwright install chromium",
+    "playwright:install": "playwright install chromium firefox webkit",
     "test:cloud": "vitest run --config vitest.cloud.config.ts",
     "test:cloud:local": "DAVLOOM_PROBE_LOCAL=1 vitest run --config vitest.cloud.config.ts",
     "cloud:free": "bun scripts/cloud-free.ts",

@@ -629,6 +629,9 @@ const huesOnPage = (allowed: readonly string[]): string[] => {
   };
   const found = new Set<string>();
   for (const element of document.querySelectorAll("*")) {
+    // An element clipped to nothing, as a visually hidden file input is, paints none of its
+    // colors. Firefox gives such an input's file button a faintly blue gray of its own.
+    if (/^rect\(0(px)?,? 0(px)?,? 0(px)?,? 0(px)?\)$/.test(getComputedStyle(element).clip)) continue;
     for (const pseudoElement of pseudoElements) {
       const style = getComputedStyle(element, pseudoElement);
       for (const property of properties) {
