@@ -140,6 +140,9 @@ export const createMemoryDriver = (options: MemoryDriverOptions = {}): MemoryDri
         return fail("unavailable");
       }
       if (length !== undefined && bytes.length !== length) return fail("unavailable");
+      // Checked again with the store in one step, as S3 checks a conditional put: another put may
+      // have stored the key while this body was read.
+      if (ifNoneMatch && objects.has(key)) return fail("exists");
       store(key, bytes, created, contentType ?? null);
       return ok({ etag: objects.get(key)?.etag ?? "" });
     },
