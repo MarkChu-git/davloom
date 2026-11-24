@@ -55,9 +55,10 @@ const startServer = ({ command, args, cwd = REPO_ROOT, env }: ServerCommand): Pr
       child.off("exit", onExit);
       child.stdout.off("data", onData);
       child.stderr.off("data", onData);
-      // Keep draining so that a chatty server cannot block on a full pipe.
+      // Keep draining so that a chatty server cannot block on a full pipe. What the server
+      // reports as an error shows in the test log, so that a 503 in CI names its cause.
       child.stdout.resume();
-      child.stderr.resume();
+      child.stderr.on("data", (data: Buffer) => process.stderr.write(data));
       done({
         url,
         fetch: (path, init) => fetch(`${url}${path}`, init),
