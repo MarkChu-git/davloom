@@ -174,16 +174,22 @@ jobs:
       - name: Install litmus and rclone
         if: startsWith(matrix.suite, 'http-')
         run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone
+      # From the repository root, where bunfig.toml starts on Bun the tools whose launchers name
+      # Node; `bun run` inside a package directory does not.
       - name: Run the ${{ matrix.suite }} suite
-        working-directory: tests/integration/compat
         env:
           SUITE: ${{ matrix.suite }}
         run: |
+          compat() { bun run --filter @davloom/compat-tests "$@"; }
           case "$SUITE" in
-            http-*) bun run build:web && bunx --bun vitest run --config vitest.http.config.ts --shard="${SUITE#http-}/5" ;;
-            brand) bun run test:ui:brand ;;
-            cloud) bun run test:cloud:local && bun run test:cloud ;;
-            *) bun run "test:$SUITE" ;;
+            http-*)
+              compat build:web
+              cd tests/integration/compat
+              bunx --bun vitest run --config vitest.http.config.ts --shard="${SUITE#http-}/5"
+              ;;
+            brand) compat test:ui:brand ;;
+            cloud) compat test:cloud:local && compat test:cloud ;;
+            *) compat "test:$SUITE" ;;
           esac
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
@@ -262,8 +268,7 @@ jobs:
         run: bunx --bun playwright install-deps firefox webkit
       - run: bun run --filter @davloom/compat-tests playwright:install
       - name: Build the Dashboard
-        working-directory: tests/integration/compat
-        run: bun run build:web
+        run: bun run --filter @davloom/compat-tests build:web
       - name: Run shard ${{ matrix.shard }} of 6 of the Playwright specs
         working-directory: tests/integration/compat
         env:
