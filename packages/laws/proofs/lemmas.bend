@@ -805,3 +805,40 @@ def Lemma.decide(b: Bool, +e: +List<I.Entry>) -> {I.decide(b, e) == Bool.pick(I.
       {==}
     case True{}:
       {==}
+
+def Lemma.not_or_not(a: Bool, b: Bool) -> {Bool.not(Bool.or(Bool.not(a), b)) == Bool.and(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.not_and_not(a: Bool, b: Bool) -> {Bool.not(Bool.and(Bool.not(a), b)) == Bool.or(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.conditions(+cs: +List<K.Condition>) -> {Bool.not(L.some_false(cs)) == K.conditions_true(cs) : Bool}:
+  match cs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.conditions(t) : {Bool.not(L.some_false(Con{h, t})) == Bool.and(K.condition_true(h), _) : Bool}
+      Lemma.not_or_not(K.condition_true(h), L.some_false(t))
+
+def Lemma.clauses(+cs: +List<K.Clause>) -> {Bool.not(L.all_false(cs)) == K.header_true(cs) : Bool}:
+  match cs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.clauses(t) : {Bool.not(L.all_false(Con{h, t})) == Bool.or(K.clause_true(h), _) : Bool}
+      Lemma.not_and_not(K.clause_true(h), L.all_false(t))
+
+def Lemma.state_of(b: Bool) -> {K.state_of(b) == Bool.pick(K.IfState, b, K.SomeTrue{}, K.NoneTrue{}) : K.IfState}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
+      {==}

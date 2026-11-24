@@ -33,6 +33,10 @@ const FINITE: Record<string, string[]> = {
   "P.Relation": ["P.Inside{}", "P.Above{}", "P.Outside{}"],
   "M.Source": ["M.SFile{}", "M.SFolder{}"],
   "M.Target": ["M.TAbsent{}", "M.TSame{}", "M.TDiffers{}", "M.TFolder{}"],
+  "K.Scope": ["K.Exclusive{}", "K.Shared{}"],
+  "K.Depth": ["K.Shallow{}", "K.Deep{}"],
+  "K.Place": ["K.Same{}", "K.Above{}", "K.Below{}", "K.Apart{}"],
+  "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
 };
 
 const laws = await Bun.file(join(lawsDir, "LAWS.bend")).text();

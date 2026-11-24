@@ -1,6 +1,13 @@
 import { isWithin, type Path } from "@davloom/core";
+import {
+  lockConflicts,
+  lockCovers,
+  lockRefuses,
+  type LockPlace,
+  type LockScope,
+} from "@davloom/laws";
 
-export type LockScope = "exclusive" | "shared";
+export type { LockScope };
 
 export interface Lock {
   /** The lock token, a `urn:uuid:` URI. */
@@ -38,16 +45,26 @@ export interface LockStore {
   removeTree(path: Path): Promise<void>;
 }
 
-/** Whether a lock covers a path, with or without the locks under the path. */
-export const covers = (lock: Lock, path: Path, descendants: boolean): boolean =>
-  (lock.depth === "infinity"
-    ? isWithin(path, lock.root)
-    : lock.root.length === path.length && isWithin(path, lock.root)) ||
-  (descendants && isWithin(lock.root, path));
+/** Where `root` lies, seen from `path`. */
+export const placeOf = (root: Path, path: Path): LockPlace =>
+  isWithin(path, root)
+    ? root.length === path.length
+      ? "same"
+      : "above"
+    : isWithin(root, path)
+      ? "below"
+      : "apart";
 
-/** Two locks conflict unless both are shared (RFC 4918 §6.1). */
-export const conflicts = (existing: Lock, scope: LockScope) =>
-  existing.scope === "exclusive" || scope === "exclusive";
+/** Whether a lock covers a path, with or without the locks under the path (law lock_covers_exact). */
+export const covers = (lock: Lock, path: Path, descendants: boolean): boolean =>
+  lockCovers(lock.depth, placeOf(lock.root, path), descendants);
+
+/** Two locks conflict unless both are shared (law lock_conflict_exact). */
+export const conflicts = (existing: Lock, scope: LockScope) => lockConflicts(existing.scope, scope);
+
+/** Whether a held lock refuses a new one (law lock_refuses_exact). */
+export const refuses = (held: Lock, wanted: Lock) =>
+  lockRefuses(held, placeOf(held.root, wanted.root), wanted);
 
 export const createMemoryLockStore = (): LockStore => {
   const locks = new Map<string, Lock>();
@@ -56,9 +73,7 @@ export const createMemoryLockStore = (): LockStore => {
     covering: (path, { descendants, now }) =>
       Promise.resolve(live(now).filter((lock) => covers(lock, path, descendants))),
     create: (lock, now) => {
-      const blocked = live(now).some(
-        (held) => covers(held, lock.root, lock.depth === "infinity") && conflicts(held, lock.scope),
-      );
+      const blocked = live(now).some((held) => refuses(held, lock));
       if (!blocked) locks.set(lock.token, lock);
       return Promise.resolve(!blocked);
     },

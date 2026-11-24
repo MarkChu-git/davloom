@@ -6,6 +6,7 @@ import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
+import ./src/locks.bend as K
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -757,3 +758,143 @@ law copy_action_exact:
   for t: M.Target
   for overwrite: Bool
   {M.decide(s, t, overwrite) == spec_copy_action(s, t, overwrite) : M.Action}
+
+# --- Write locks (RFC 4918 §6, §9.10, §9.11, §10.4) -------------------------------------------
+
+def shared(s: K.Scope) -> Bool:
+  match s:
+    case K.Exclusive{}:
+      False{}
+    case K.Shared{}:
+      True{}
+
+def deep(d: K.Depth) -> Bool:
+  match d:
+    case K.Shallow{}:
+      False{}
+    case K.Deep{}:
+      True{}
+
+def at(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      True{}
+    case K.Above{}:
+      False{}
+    case K.Below{}:
+      False{}
+    case K.Apart{}:
+      False{}
+
+def above(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      False{}
+    case K.Above{}:
+      True{}
+    case K.Below{}:
+      False{}
+    case K.Apart{}:
+      False{}
+
+def below(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      False{}
+    case K.Above{}:
+      False{}
+    case K.Below{}:
+      True{}
+    case K.Apart{}:
+      False{}
+
+# §6.1: a shared lock is compatible only with other shared locks.
+law lock_conflict_exact:
+  for held: K.Scope
+  for requested: K.Scope
+  {K.conflicts(held, requested) == Bool.not(Bool.and(shared(held), shared(requested))) : Bool}
+
+# A lock covers its root, and with Depth infinity every member under it; a request on a whole tree
+# also meets the locks rooted inside the tree.
+def spec_covers(+d: K.Depth, +p: K.Place, +descendants: Bool) -> Bool:
+  Bool.or(at(p), Bool.or(Bool.and(above(p), deep(d)), Bool.and(below(p), descendants)))
+
+law lock_covers_exact:
+  for d: K.Depth
+  for p: K.Place
+  for descendants: Bool
+  {K.covers(d, p, descendants) == spec_covers(d, p, descendants) : Bool}
+
+# §9.10.6: a new lock is refused exactly when a conflicting lock covers its root, or, for a new
+# Depth infinity lock, lies under its root.
+law lock_refuses_exact:
+  for hs: K.Scope
+  for hd: K.Depth
+  for p: K.Place
+  for s: K.Scope
+  for d: K.Depth
+  {K.refuses(hs, hd, p, s, d) == Bool.and(spec_covers(hd, p, deep(d)), Bool.not(Bool.and(shared(hs), shared(s)))) : Bool}
+
+# §10.4.2: a condition is true when its token or tag matches, or, under Not, when it does not.
+law if_condition_exact:
+  for negated: Bool
+  for holds: Bool
+  {K.condition_true(K.Condition{negated, holds}) == Bool.or(Bool.and(holds, Bool.not(negated)), Bool.and(Bool.not(holds), negated)) : Bool}
+
+def some_false(+cs: +List<K.Condition>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case Con{h, t}:
+      Bool.or(Bool.not(K.condition_true(h)), some_false(t))
+
+# A list is true when its resource is one the request may see and none of its conditions is false.
+law if_clause_exact:
+  for resolved: Bool
+  for +cs: +List<K.Condition>
+  {K.clause_true(K.Clause{resolved, cs}) == Bool.and(resolved, Bool.not(some_false(cs))) : Bool}
+
+def all_false(+cs: +List<K.Clause>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      Bool.and(Bool.not(K.clause_true(h)), all_false(t))
+
+# An If header holds unless every one of its lists is false, so a header of no lists never holds.
+law if_header_exact:
+  for +cs: +List<K.Clause>
+  {K.header_true(cs) == Bool.not(all_false(cs)) : Bool}
+
+# What a header comes to: none, malformed, or whether one of its lists holds.
+law if_state_exact:
+  for present: Bool
+  for parsed: Bool
+  for +cs: +List<K.Clause>
+  {K.if_state(present, parsed, cs) == Bool.pick(K.IfState, Bool.not(present), K.NoHeader{}, Bool.pick(K.IfState, Bool.not(parsed), K.Malformed{}, Bool.pick(K.IfState, K.header_true(cs), K.SomeTrue{}, K.NoneTrue{}))) : K.IfState}
+
+def spec_gate(s: K.IfState, blocked: Bool) -> K.Gate:
+  match s:
+    case K.Malformed{}:
+      K.BadHeader{}
+    case K.NoneTrue{}:
+      K.Unmet{}
+    case K.NoHeader{}:
+      Bool.pick(K.Gate, blocked, K.Locked{}, K.Proceed{})
+    case K.SomeTrue{}:
+      Bool.pick(K.Gate, blocked, K.Locked{}, K.Proceed{})
+
+# A malformed If header answers 400 and a false one 412 before any lock is looked at (§10.4); a
+# change to a locked resource then answers 423 unless the header submits every blocking lock's
+# token (§7). No request goes ahead while a lock blocks it.
+law lock_gate_in_order:
+  for s: K.IfState
+  for blocked: Bool
+  {K.gate(s, blocked) == spec_gate(s, blocked) : K.Gate}
+
+# §9.11.1: UNLOCK releases only a lock that covers the request URI, and only for a credential that
+# may change it.
+law unlock_exact:
+  for found: Bool
+  for may_lock: Bool
+  {K.decide_unlock(found, may_lock) == Bool.pick(K.Unlock, Bool.not(found), K.NotHere{}, Bool.pick(K.Unlock, Bool.not(may_lock), K.NotYours{}, K.Release{})) : K.Unlock}

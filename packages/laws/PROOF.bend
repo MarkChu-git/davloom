@@ -7,6 +7,7 @@ import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
+import ./src/locks.bend as K
 
 # Lemmas the hand-written proofs share.
 
@@ -810,6 +811,43 @@ def Lemma.valid(+e: +List<I.Entry>, +k: +List<Nat>) -> {L.spec_valid(e, k) == I.
   Lemma.valid_go(e, k, True{})
 
 def Lemma.decide(b: Bool, +e: +List<I.Entry>) -> {I.decide(b, e) == Bool.pick(I.Plan, b, I.Apply{e}, I.Reject{}) : I.Plan}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.not_or_not(a: Bool, b: Bool) -> {Bool.not(Bool.or(Bool.not(a), b)) == Bool.and(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.not_and_not(a: Bool, b: Bool) -> {Bool.not(Bool.and(Bool.not(a), b)) == Bool.or(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.conditions(+cs: +List<K.Condition>) -> {Bool.not(L.some_false(cs)) == K.conditions_true(cs) : Bool}:
+  match cs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.conditions(t) : {Bool.not(L.some_false(Con{h, t})) == Bool.and(K.condition_true(h), _) : Bool}
+      Lemma.not_or_not(K.condition_true(h), L.some_false(t))
+
+def Lemma.clauses(+cs: +List<K.Clause>) -> {Bool.not(L.all_false(cs)) == K.header_true(cs) : Bool}:
+  match cs:
+    case Nil{}:
+      {==}
+    case Con{h, t}:
+      %Lemma.clauses(t) : {Bool.not(L.all_false(Con{h, t})) == Bool.or(K.clause_true(h), _) : Bool}
+      Lemma.not_and_not(K.clause_true(h), L.all_false(t))
+
+def Lemma.state_of(b: Bool) -> {K.state_of(b) == Bool.pick(K.IfState, b, K.SomeTrue{}, K.NoneTrue{}) : K.IfState}:
   match b:
     case False{}:
       {==}
@@ -6153,3 +6191,388 @@ def L.copy_action_exact(s, t, overwrite):
               {==}
             case True{}:
               {==}
+
+def L.lock_conflict_exact(held, requested):
+  match held:
+    case K.Exclusive{}:
+      match requested:
+        case K.Exclusive{}:
+          {==}
+        case K.Shared{}:
+          {==}
+    case K.Shared{}:
+      match requested:
+        case K.Exclusive{}:
+          {==}
+        case K.Shared{}:
+          {==}
+
+def L.lock_covers_exact(d, p, descendants):
+  match d:
+    case K.Shallow{}:
+      match p:
+        case K.Same{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Above{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Below{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Apart{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case K.Deep{}:
+      match p:
+        case K.Same{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Above{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Below{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Apart{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.lock_refuses_exact(hs, hd, p, s, d):
+  match hs:
+    case K.Exclusive{}:
+      match hd:
+        case K.Shallow{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+        case K.Deep{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+    case K.Shared{}:
+      match hd:
+        case K.Shallow{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+        case K.Deep{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+
+def L.if_condition_exact(negated, holds):
+  match negated:
+    case False{}:
+      match holds:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case True{}:
+      match holds:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.if_clause_exact(resolved, cs):
+  %Lemma.conditions(cs) : {Bool.and(resolved, _) == Bool.and(resolved, Bool.not(L.some_false(cs))) : Bool}
+  {==}
+
+def L.if_header_exact(cs):
+  %Lemma.clauses(cs) : {_ == Bool.not(L.all_false(cs)) : Bool}
+  {==}
+
+def L.if_state_exact(present, parsed, cs):
+  match present:
+    case False{}:
+      {==}
+    case True{}:
+      match parsed:
+        case False{}:
+          {==}
+        case True{}:
+          Lemma.state_of(K.header_true(cs))
+
+def L.lock_gate_in_order(s, blocked):
+  match s:
+    case K.NoHeader{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.Malformed{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.NoneTrue{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.SomeTrue{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.unlock_exact(found, may_lock):
+  match found:
+    case False{}:
+      match may_lock:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case True{}:
+      match may_lock:
+        case False{}:
+          {==}
+        case True{}:
+          {==}

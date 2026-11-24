@@ -21,3 +21,19 @@ export {
 export { isValidName, isValidPath } from "./names";
 export { planImport, type ImportEntry } from "./imports";
 export { decideMigration, type CopyAction, type CopySource, type CopyTarget } from "./copying";
+export {
+  decideUnlock,
+  ifState,
+  lockConflicts,
+  lockCovers,
+  lockGate,
+  lockRefuses,
+  type IfClause,
+  type IfConditionFact,
+  type IfState,
+  type LockDepth,
+  type LockGate,
+  type LockPlace,
+  type LockScope,
+  type UnlockDecision,
+} from "./locks";
