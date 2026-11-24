@@ -79,6 +79,8 @@ const FINITE: Record<string, string[]> = {
     "W.OpPatch{}",
     "W.OpQuota{}",
   ],
+  "H.StatusKind": ["H.KInformational{}", "H.KNoContent{}", "H.KNotModified{}", "H.KOther{}"],
+  "H.Form": ["H.FOrigin{}", "H.FAbsolute{}", "H.FAsterisk{}", "H.FInvalid{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
 };
 

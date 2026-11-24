@@ -11,6 +11,7 @@ import ./src/statuses.bend as S
 import ./src/properties.bend as F
 import ./src/objects.bend as O
 import ./src/mounts.bend as W
+import ./src/framing.bend as H
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1319,3 +1320,105 @@ law mount_transfer_reaches:
   for to: W.Where
   for move: Bool
   {implies(Bool.and(Bool.and(in_mount(from), in_mount(to)), Bool.and(Bool.not(a_mount_root(to)), Bool.not(Bool.and(move, a_mount_root(from))))), delegated(W.transfer(from, to, move, True{}))) == True{} : Bool}
+
+# --- HTTP framing at the servers' edges (RFC 9110 §6.4, §8.6, RFC 9112 §3.2) --------------------
+
+def bodiless(k: H.StatusKind) -> Bool:
+  match k:
+    case H.KInformational{}:
+      True{}
+    case H.KNoContent{}:
+      True{}
+    case H.KNotModified{}:
+      True{}
+    case H.KOther{}:
+      False{}
+
+# A measured Content-Length is sent only for a body that ended, of an answer that named none and
+# whose status may carry one: never for a 1xx, 204 or 304 (RFC 9110 §8.6).
+law measured_length_exact:
+  for given: Bool
+  for ended: Bool
+  for k: H.StatusKind
+  {H.measured_length(given, ended, k) == Bool.and(Bool.not(given), Bool.and(ended, Bool.not(bodiless(k)))) : Bool}
+
+# A body goes through a fixed-length stream only when it is a WebDAV body, uncompressed, with a
+# Content-Length that is a number: the length the stream enforces is then the body's.
+law fixed_length_exact:
+  for has_body: Bool
+  for has_header: Bool
+  for webdav: Bool
+  for encoded: Bool
+  for numeric: Bool
+  {implies(H.fixed_length(has_body, has_header, webdav, encoded, numeric), Bool.and(Bool.and(has_body, has_header), Bool.and(webdav, Bool.and(Bool.not(encoded), numeric)))) == True{} : Bool}
+
+def url_host(u: H.Url) -> H.HostFrom:
+  match u:
+    case H.Url{p, h}:
+      h
+
+def url_path(u: H.Url) -> H.PathFrom:
+  match u:
+    case H.Url{p, h}:
+      p
+
+def from_header(h: H.HostFrom) -> Bool:
+  match h:
+    case H.HHeader{}:
+      True{}
+    case H.HNone{}:
+      False{}
+
+def names_resource(f: H.Form) -> Bool:
+  match f:
+    case H.FOrigin{}:
+      True{}
+    case H.FAbsolute{}:
+      True{}
+    case H.FAsterisk{}:
+      False{}
+    case H.FInvalid{}:
+      False{}
+
+def keeps_target(f: H.Form) -> Bool:
+  match f:
+    case H.FOrigin{}:
+      True{}
+    case H.FAbsolute{}:
+      False{}
+    case H.FAsterisk{}:
+      False{}
+    case H.FInvalid{}:
+      False{}
+
+def at_slash(p: H.PathFrom) -> Bool:
+  match p:
+    case H.PTarget{}:
+      False{}
+    case H.PAbsolute{}:
+      False{}
+    case H.PSlash{}:
+      True{}
+
+def as_target(p: H.PathFrom) -> Bool:
+  match p:
+    case H.PTarget{}:
+      True{}
+    case H.PAbsolute{}:
+      False{}
+    case H.PSlash{}:
+      False{}
+
+# A request's host is the Host header's exactly when that header names a host and the target
+# names a resource; the request line never chooses it.
+law url_host_from_header:
+  for f: H.Form
+  for host_ok: Bool
+  {from_header(url_host(H.url_of(f, host_ok))) == Bool.and(host_ok, names_resource(f)) : Bool}
+
+# The path is the target's own only for an origin-form target, an absolute-form target's path
+# without its scheme and host, and the root for a target that names no resource.
+law url_path_exact:
+  for f: H.Form
+  for host_ok: Bool
+  {Bool.and(Bool.and(implies(as_target(url_path(H.url_of(f, host_ok))), keeps_target(f)), implies(keeps_target(f), as_target(url_path(H.url_of(f, host_ok))))), Bool.and(implies(at_slash(url_path(H.url_of(f, host_ok))), Bool.not(names_resource(f))), implies(Bool.not(names_resource(f)), at_slash(url_path(H.url_of(f, host_ok)))))) == True{} : Bool}

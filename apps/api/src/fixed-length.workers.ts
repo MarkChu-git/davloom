@@ -1,3 +1,5 @@
+import { fixesLength } from "@davloom/laws";
+
 // workerd sends a body stream of unknown length chunked, and drops the Content-Length the WebDAV
 // engine set, so a client downloading a file is never told its size. A FixedLengthStream tells
 // workerd the length, and it sends the header. Only WebDAV answers go through it: they are never
@@ -17,10 +19,15 @@ export const withFixedLength = (
   fixed: (length: number) => LengthStream = (length) => new FixedLengthStream(length),
 ): Response => {
   const header = response.headers.get("content-length");
-  if (response.body === null || header === null || !isWebDav(request.url)) return response;
-  if (response.headers.has("content-encoding") || !/^\d+$/.test(header)) return response;
-  const length = Number(header);
-  if (!Number.isSafeInteger(length)) return response;
+  const length = header !== null && /^\d+$/.test(header) ? Number(header) : NaN;
+  const fixes = fixesLength({
+    hasBody: response.body !== null,
+    hasHeader: header !== null,
+    webdav: isWebDav(request.url),
+    encoded: response.headers.has("content-encoding"),
+    numeric: Number.isSafeInteger(length),
+  });
+  if (!fixes || response.body === null) return response;
   const stream = fixed(length);
   // A body that ends early or runs long errors the stream, so the client sees a broken transfer
   // rather than a file of the wrong size.

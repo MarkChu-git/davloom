@@ -12,6 +12,7 @@ import ./src/statuses.bend as S
 import ./src/properties.bend as F
 import ./src/objects.bend as O
 import ./src/mounts.bend as W
+import ./src/framing.bend as H
 
 # Lemmas the hand-written proofs share.
 
@@ -8279,3 +8280,231 @@ def L.mount_transfer_reaches(from, to, move):
               {==}
             case True{}:
               {==}
+
+def L.measured_length_exact(given, ended, k):
+  match given:
+    case False{}:
+      match ended:
+        case False{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+        case True{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+    case True{}:
+      match ended:
+        case False{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+        case True{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+
+def L.fixed_length_exact(has_body, has_header, webdav, encoded, numeric):
+  match has_body:
+    case False{}:
+      match has_header:
+        case False{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+    case True{}:
+      match has_header:
+        case False{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+
+def L.url_host_from_header(f, host_ok):
+  match f:
+    case H.FOrigin{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAbsolute{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAsterisk{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FInvalid{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.url_path_exact(f, host_ok):
+  match f:
+    case H.FOrigin{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAbsolute{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAsterisk{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FInvalid{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
