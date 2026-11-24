@@ -262,6 +262,8 @@ jobs:
         working-directory: tests/integration/compat
         env:
           SHARD: ${{ matrix.shard }}
+          # Firefox refuses to start as root with a HOME another user owns, as /github/home is.
+          HOME: /root
         run: bunx --bun playwright test --shard="$SHARD/6"
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
