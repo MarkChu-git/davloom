@@ -1,16 +1,18 @@
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
+import { redactedError } from "@davloom/core";
+import type { Database } from "@davloom/database/repositories";
 import * as schema from "@davloom/database/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api";
 import { hashPassword } from "better-auth/crypto";
 import { haveIBeenPwned, twoFactor, username } from "better-auth/plugins";
-import { clearAttempts, takeAttempt } from "./attempts";
+import { createAttempts } from "./attempts";
 
 export interface AuthOptions {
   /** A Drizzle database on the SQLite dialect: D1 in the cloud, Bun SQLite when self-hosted. */
-  readonly database: Parameters<typeof drizzleAdapter>[0];
+  readonly database: Database;
   readonly secret: string;
   readonly baseURL: string;
   /**
@@ -95,6 +97,25 @@ const lockedOut = () =>
     code: "VERIFICATION_LOCKED",
   });
 
+/** A short sentence of Better Auth's own, which holds no value a client or the database gave. */
+const PLAIN_MESSAGE = /^[A-Za-z][A-Za-z .,'()-]{0,119}$/;
+
+/** The cause an APIError wraps, or the error itself. */
+const errorBehind = (error: unknown): unknown =>
+  isAPIError(error) && error.cause !== undefined ? error.cause : error;
+
+/** Better Auth's log, with every error named by its class and code alone (packages/core redact). */
+export const logRedacted = (
+  level: "info" | "warn" | "error" | "debug",
+  message: string,
+  ...args: unknown[]
+) => {
+  const text = PLAIN_MESSAGE.test(message) ? message : "(message withheld)";
+  const details = args.map((arg) => redactedError(errorBehind(arg)));
+  const write = level === "error" ? console.error : level === "warn" ? console.warn : console.log;
+  write(`[Better Auth] ${level}: ${text}`, ...details);
+};
+
 /** The identity configuration shared by every deployment. */
 export const createAuth = ({
   database,
@@ -106,7 +127,8 @@ export const createAuth = ({
   passkeyOrigin,
 }: AuthOptions) => {
   const passkeyUrl = passkeyOrigin === undefined ? undefined : new URL(passkeyOrigin);
-  return betterAuth({
+  const attempts = createAttempts(database);
+  const auth = betterAuth({
     database: drizzleAdapter(database, { provider: "sqlite", schema }),
     secret,
     baseURL,
@@ -123,6 +145,13 @@ export const createAuth = ({
         : [url.origin];
     },
     telemetry: { enabled: false },
+    // Better Auth and its router log an error they did not raise themselves as it is, and a
+    // database's error can name the values its query was bound to: session tokens, password
+    // hashes. Its own log keeps only the class and code of an error, and a message only when it
+    // is one of Better Auth's short sentences; any other error leaves the router unlogged, and
+    // `handler` below logs it the same way.
+    logger: { log: logRedacted },
+    onAPIError: { throw: true },
     // On in every environment, not only with NODE_ENV=production, and in the database, which
     // every Worker isolate and Bun process shares. Better Auth's own rules apply on top of these,
     // such as 3 sign-ins per 10 seconds.
@@ -167,7 +196,7 @@ export const createAuth = ({
         if (!SECOND_FACTOR.has(ctx.path) || !ctx.request) return;
         const found = await getSessionFromCtx(ctx);
         if (!found) return;
-        if (!(await takeAttempt(ctx.context.adapter, found.user.id))) throw lockedOut();
+        if (!(await attempts.take(found.user.id))) throw lockedOut();
       }),
       after: createAuthMiddleware(async (ctx) => {
         if (
@@ -176,7 +205,7 @@ export const createAuth = ({
           !(ctx.context.returned instanceof Error)
         ) {
           const found = ctx.context.newSession ?? (await getSessionFromCtx(ctx));
-          if (found) await clearAttempts(ctx.context.adapter, found.user.id);
+          if (found) await attempts.clear(found.user.id);
           return;
         }
         // A passkey proves presence by starting a new session. The browser's earlier session, of
@@ -219,6 +248,17 @@ export const createAuth = ({
       }),
     ],
   });
+  // Davloom's own count of failed proofs of presence, which identity.ts shares.
+  const betterAuthHandler = auth.handler;
+  const handler = async (request: Request): Promise<Response> => {
+    try {
+      return await betterAuthHandler(request);
+    } catch (error) {
+      console.error("[Better Auth] request failed:", redactedError(errorBehind(error)));
+      return Response.json({ error: { code: "internal_error" } }, { status: 500 });
+    }
+  };
+  return Object.assign(auth, { attempts, handler });
 };
 
 export type Auth = ReturnType<typeof createAuth>;

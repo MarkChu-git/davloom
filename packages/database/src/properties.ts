@@ -1,4 +1,11 @@
-import { fail, ok, pathKey, type DeadProperty, type PropertyStore } from "@davloom/core";
+import {
+  fail,
+  ok,
+  pathKey,
+  redactedError,
+  type DeadProperty,
+  type PropertyStore,
+} from "@davloom/core";
 import { and, asc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "./repositories";
 import * as schema from "./schema";
@@ -36,7 +43,8 @@ const attempt = async <T>(run: () => Promise<T>) => {
   try {
     return ok(await run());
   } catch (error) {
-    console.error("property store query failed", error);
+    // The query's values are paths and dead property values, which the log must not hold.
+    console.error("property store query failed:", redactedError(error));
     return fail<T>("unavailable");
   }
 };

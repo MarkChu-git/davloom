@@ -1,5 +1,4 @@
 import { isAPIError } from "better-auth/api";
-import { clearAttempts, takeAttempt } from "./attempts";
 import { publicEmail, placeholderEmail, type Auth } from "./auth";
 
 // The Identity Port of @davloom/core, implemented with Better Auth.
@@ -141,8 +140,7 @@ export const createIdentity = (auth: Auth) => {
       if (!found) return "no-session";
       // Every attempt counts before it is checked, and five wrong ones lock re-verification for
       // 15 minutes (attempts.ts); Better Auth limits neither for a call made on the server.
-      const { adapter } = await auth.$context;
-      if (!(await takeAttempt(adapter, found.user.id))) return "locked";
+      if (!(await auth.attempts.take(found.user.id))) return "locked";
       try {
         await auth.api.verifyPassword({ body: { password: input.password }, headers });
       } catch (error) {
@@ -159,7 +157,7 @@ export const createIdentity = (auth: Auth) => {
           throw error;
         }
       }
-      await clearAttempts(adapter, found.user.id);
+      await auth.attempts.clear(found.user.id);
       const context = await auth.$context;
       await context.internalAdapter.updateSession(found.session.token, { verifiedAt: new Date() });
       return "verified";

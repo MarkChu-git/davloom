@@ -237,4 +237,10 @@ export const SAMPLES: Readonly<Record<string, readonly Sample[]>> = {
       row: { id: "rate-2", key: "davloom:presence:user-1", count: 5, last_request: LATER },
     },
   ],
+  "0007_verification_attempts": [
+    {
+      table: "verification_attempts",
+      row: { user_id: "user-1", count: 3, last_attempt: LATER },
+    },
+  ],
 };

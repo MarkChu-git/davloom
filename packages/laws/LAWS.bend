@@ -13,6 +13,7 @@ import ./src/objects.bend as O
 import ./src/mounts.bend as W
 import ./src/framing.bend as H
 import ./src/verification.bend as U
+import ./src/forwarding.bend as X
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1538,3 +1539,54 @@ law reads_ask_nothing:
 # Signing this browser out asks for a confirmation and never for step-up.
 law end_self_confirms:
   {is_step_up(U.level(U.EffEndSelf{})) == False{} : Bool}
+
+# --- The client's address behind trusted proxies (PRD §12) ------------------------------------
+
+def takes(p: X.Pick) -> Bool:
+  match p:
+    case X.PThis{}:
+      True{}
+    case X.PNext{}:
+      False{}
+    case X.PPrevious{}:
+      False{}
+
+def passes(p: X.Pick) -> Bool:
+  match p:
+    case X.PThis{}:
+      False{}
+    case X.PNext{}:
+      True{}
+    case X.PPrevious{}:
+      False{}
+
+def is_trusted(h: X.Hop) -> Bool:
+  match h:
+    case X.HTrusted{}:
+      True{}
+    case X.HUntrusted{}:
+      False{}
+    case X.HInvalid{}:
+      False{}
+
+# The walk goes past a hop exactly when it is a trusted proxy with a hop before it: a client can
+# never send the walk past itself, whatever it writes into X-Forwarded-For.
+law forwarding_passes_only_trusted:
+  for h: X.Hop
+  for more: Bool
+  {passes(X.step(h, more)) == Bool.and(is_trusted(h), more) : Bool}
+
+# A hop that is no trusted proxy is the client, as soon as the walk reaches it.
+law forwarding_takes_untrusted:
+  for more: Bool
+  {takes(X.step(X.HUntrusted{}, more)) == True{} : Bool}
+
+# An address that is no address is never taken as the client.
+law forwarding_never_takes_invalid:
+  for more: Bool
+  {takes(X.step(X.HInvalid{}, more)) == False{} : Bool}
+
+# The walk always ends at the last hop: it never asks for a hop the chain does not name.
+law forwarding_ends:
+  for h: X.Hop
+  {passes(X.step(h, False{})) == False{} : Bool}

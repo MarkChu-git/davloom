@@ -20,6 +20,7 @@ export {
 } from "./policy";
 export { isValidName, isValidPath } from "./names";
 export { exportHasOwner, planImport, type ImportEntry } from "./imports";
+export { clientHop, type HopKind } from "./forwarding";
 export { decideMigration, type CopyAction, type CopySource, type CopyTarget } from "./copying";
 export {
   decideUnlock,

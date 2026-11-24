@@ -1,7 +1,9 @@
 import { resolve } from "node:path";
 import { configuredOrigin } from "@davloom/auth";
 import { createApp } from "./app";
+import { parseTrustedProxies } from "./client-address.bun";
 import { createDashboardHandler } from "./dashboard.bun";
+import { startupWarnings } from "./startup.bun";
 import { bunInstance, ensureDefaultBucket } from "./instance.bun";
 import { serveNode } from "./node-server.bun";
 
@@ -10,6 +12,15 @@ const DEFAULT_DASHBOARD_DIRECTORY = resolve(import.meta.dirname, "../../web/dist
 const serveDashboard = createDashboardHandler(
   process.env.DASHBOARD_DIRECTORY ?? DEFAULT_DASHBOARD_DIRECTORY,
 );
+
+const trusted = parseTrustedProxies(process.env.DAVLOOM_TRUSTED_PROXIES);
+if (!trusted.ok) {
+  console.error(
+    `DAVLOOM_TRUSTED_PROXIES holds entries that are no IP address or CIDR range: ${trusted.invalid.join(", ")}`,
+  );
+  process.exit(1);
+}
+for (const warning of startupWarnings(process.env)) console.warn(warning);
 
 await ensureDefaultBucket(process.env);
 
@@ -26,6 +37,7 @@ const app = createApp({
 const { url } = await serveNode((request) => app.handle(request), {
   hostname: process.env.HOST ?? "0.0.0.0",
   port: Number(process.env.PORT ?? 3000),
+  trustedProxies: trusted.proxies,
 });
 
 console.log(`listening on ${url}`);

@@ -5,7 +5,7 @@ import { createBunSqliteDatabase, migrateBunSqliteDatabase } from "@davloom/data
 import * as schema from "@davloom/database/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LOCK_MS, MAX_ATTEMPTS, takeAttempt } from "./attempts";
+import { LOCK_MS, MAX_ATTEMPTS } from "./attempts";
 import {
   configuredOrigin,
   createAdmin,
@@ -363,12 +363,59 @@ describe("locking re-verification", () => {
     expect((await identity.sessionUser(headers))?.twoFactorEnabled).toBe(false);
   });
 
+  it("keeps the lock when Better Auth prunes its rate limit", async () => {
+    db = createBunSqliteDatabase(new Database(":memory:"));
+    migrateBunSqliteDatabase(db);
+    auth = createAuth({
+      database: db,
+      secret: "a-test-secret-that-is-at-least-32-characters",
+      baseURL: "http://localhost",
+      checkLeakedPasswords: false,
+      clientIpHeaders: ["x-client-ip"],
+    });
+    identity = createIdentity(auth);
+    await register();
+    const headers = await sessionOf();
+    // Five wrong passwords two minutes ago: the lock holds for 13 minutes more.
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() - 120_000 });
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect(await identity.reverify(headers, WRONG)).toBe("wrong-password");
+    }
+    vi.useRealTimers();
+    // A bucket of Better Auth's that resets prunes every row older than its longest window.
+    const ok = () =>
+      auth.handler(
+        new Request("http://localhost/api/auth/ok", { headers: { "x-client-ip": "1.2.3.4" } }),
+      );
+    expect((await ok()).status).toBe(200);
+    await db
+      .update(schema.rateLimit)
+      .set({ lastRequest: Date.now() - 120_000 })
+      .where(eq(schema.rateLimit.key, "1.2.3.4|/ok"));
+    expect((await ok()).status).toBe(200);
+    await new Promise((done) => setTimeout(done, 50));
+    expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe("locked");
+  });
+
+  it("starts a lock at the attempt that reaches the limit, and attempts during it do not extend it", async () => {
+    const start = 1_800_000_000_000;
+    expect(await auth.attempts.take("u", start)).toBe(true);
+    for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect(await auth.attempts.take("u", start + attempt)).toBe(true);
+    }
+    const locked = start + MAX_ATTEMPTS - 1;
+    expect(await auth.attempts.take("u", locked)).toBe(false);
+    expect(await auth.attempts.take("u", locked + LOCK_MS - 1)).toBe(false);
+    expect(await auth.attempts.take("u", locked + LOCK_MS)).toBe(true);
+    await auth.attempts.clear("u");
+    expect(await auth.attempts.take("u", locked + LOCK_MS + 1)).toBe(true);
+  });
+
   it("counts by user, so another user's lock leaves the owner alone", async () => {
     await register();
     const headers = await sessionOf();
-    const { adapter } = await auth.$context;
     for (let attempt = 0; attempt < MAX_ATTEMPTS + 2; attempt += 1) {
-      await takeAttempt(adapter, "someone-else");
+      await auth.attempts.take("someone-else");
     }
     expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe(
       "verified",

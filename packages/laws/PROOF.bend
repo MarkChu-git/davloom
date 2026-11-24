@@ -14,6 +14,7 @@ import ./src/objects.bend as O
 import ./src/mounts.bend as W
 import ./src/framing.bend as H
 import ./src/verification.bend as U
+import ./src/forwarding.bend as X
 
 # Lemmas the hand-written proofs share.
 
@@ -8717,3 +8718,47 @@ def L.reads_ask_nothing(e):
 
 def L.end_self_confirms():
   {==}
+
+def L.forwarding_passes_only_trusted(h, more):
+  match h:
+    case X.HTrusted{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case X.HUntrusted{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case X.HInvalid{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.forwarding_takes_untrusted(more):
+  match more:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.forwarding_never_takes_invalid(more):
+  match more:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.forwarding_ends(h):
+  match h:
+    case X.HTrusted{}:
+      {==}
+    case X.HUntrusted{}:
+      {==}
+    case X.HInvalid{}:
+      {==}

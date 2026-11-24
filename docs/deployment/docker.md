@@ -47,6 +47,56 @@ itself" by the address the request names, so a proxy that serves plain HTTP to o
 and passes requests on to `localhost` defeats the check: a proxy in front of Davloom must serve
 HTTPS and send `X-Forwarded-Proto`.
 
+## Behind a reverse proxy
+
+Set `DAVLOOM_URL` to the address people open, such as `https://files.example.com`. Davloom takes
+changes to its API only from pages on that address, and passkeys are bound to it. Without it,
+Davloom takes changes from the address each request names in `Host`, and logs a warning when it
+starts; a proxy that rewrites `Host` then makes every change of the Dashboard, registration
+included, answer 403 `cross_site`. The proxy must pass the client's `Host` on, and say that the
+client used HTTPS.
+
+Sign-in is rate limited by the client's address. Behind a proxy every request comes from the
+proxy, so all clients would share one limit, and anyone could keep the owner from signing in. Name
+the proxies in `DAVLOOM_TRUSTED_PROXIES`, a list of addresses or CIDR ranges separated by commas
+or spaces. Only when a request comes from one of them does Davloom read `X-Forwarded-For`, from the
+right, and take the nearest address that is not a trusted proxy as the client's. Do not list a
+proxy that passes on an `X-Forwarded-For` it did not write itself, and do not list a range that
+clients can send from. Davloom refuses to start when an entry is not an address or a range.
+
+Caddy passes `Host` on and sets `X-Forwarded-For` and `X-Forwarded-Proto` by itself:
+
+```caddyfile
+files.example.com {
+	reverse_proxy davloom:3000
+}
+```
+
+nginx sends its own upstream name as `Host` unless told otherwise:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name files.example.com;
+    client_max_body_size 0;
+    location / {
+        proxy_pass http://davloom:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_request_buffering off;
+    }
+}
+```
+
+With either proxy on the Docker network, set:
+
+```bash
+DAVLOOM_URL=https://files.example.com
+# The proxy's address as Davloom sees it, such as the Docker network's range.
+DAVLOOM_TRUSTED_PROXIES=172.16.0.0/12
+```
+
 ## Settings
 
 | Variable                                                   | Meaning                                                                               |
@@ -55,6 +105,7 @@ HTTPS and send `X-Forwarded-Proto`.
 | `DAVLOOM_CHECK_LEAKED_PASSWORDS`                           | `off` skips the Have I Been Pwned check of new passwords (see below).                 |
 | `DAVLOOM_URL`                                              | The public address. Passkeys need it; once set, the API takes changes only from it.   |
 | `DAVLOOM_SETUP_TOKEN`                                      | Optional. Registration and import ask for it; without it the first visitor registers. |
+| `DAVLOOM_TRUSTED_PROXIES`                                  | Addresses or CIDR ranges of reverse proxies whose `X-Forwarded-For` names the client. |
 | `DAVLOOM_DATA_DIR`                                         | Where SQLite keeps `davloom.sqlite`; `/data` in the image, a volume.                  |
 | `DAVLOOM_S3_ENDPOINT`                                      | The S3-compatible endpoint of the default backend, such as `http://rustfs:9000`.      |
 | `DAVLOOM_S3_ACCESS_KEY_ID`, `DAVLOOM_S3_SECRET_ACCESS_KEY` | Its credentials.                                                                      |

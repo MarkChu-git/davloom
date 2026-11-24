@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { crossSiteRefusal } from "./same-origin";
+import { crossSiteMessage, crossSiteRefusal } from "./same-origin";
 
 const JSON_TYPE = { "content-type": "application/json" };
 
 const request = (url: string, method: string, headers: Record<string, string> = {}) =>
   new Request(url, { method, headers });
 
-const codeOf = async (response: Response | undefined) =>
-  response === undefined
-    ? "allowed"
-    : `${response.status} ${JSON.stringify(await response.json())}`;
+/** The status and code of a refusal, or "allowed". */
+const codeOf = async (response: Response | undefined) => {
+  if (response === undefined) return "allowed";
+  const body: unknown = await response.json();
+  const error: unknown =
+    typeof body === "object" && body !== null ? Reflect.get(body, "error") : null;
+  const code: unknown =
+    typeof error === "object" && error !== null ? Reflect.get(error, "code") : null;
+  return `${response.status} ${JSON.stringify({ error: { code } })}`;
+};
 
 const CROSS_SITE = `403 ${JSON.stringify({ error: { code: "cross_site" } })}`;
 const NOT_JSON = `415 ${JSON.stringify({ error: { code: "unsupported_media_type" } })}`;
@@ -271,5 +277,26 @@ describe("crossSiteRefusal", () => {
     expect(await codeOf(crossSiteRefusal(request(url, method, headers), configured))).toBe(
       expected,
     );
+  });
+});
+
+describe("the refusal of a request from another origin", () => {
+  it.each([
+    [undefined, /Set DAVLOOM_URL to the address you open Davloom at/],
+    ["https://files.example", /only from https:\/\/files\.example, its DAVLOOM_URL/],
+  ])("with DAVLOOM_URL %j says how to fix it", async (configured, message) => {
+    // A proxy that rewrites Host, as nginx does unless told `proxy_set_header Host $host`.
+    const refused = crossSiteRefusal(
+      request("http://127.0.0.1:3000/api/registration", "POST", {
+        origin: "https://files.example.org",
+        ...JSON_TYPE,
+      }),
+      configured,
+    );
+    expect(refused?.status).toBe(403);
+    expect(await refused?.json()).toEqual({
+      error: { code: "cross_site", message: crossSiteMessage(configured) },
+    });
+    expect(crossSiteMessage(configured)).toMatch(message);
   });
 });

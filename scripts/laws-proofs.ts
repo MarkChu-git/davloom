@@ -83,6 +83,7 @@ const FINITE: Record<string, string[]> = {
   "H.Form": ["H.FOrigin{}", "H.FAbsolute{}", "H.FAsterisk{}", "H.FInvalid{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
   "I.Count": ["I.CNone{}", "I.COne{}", "I.CMany{}"],
+  "X.Hop": ["X.HTrusted{}", "X.HUntrusted{}", "X.HInvalid{}"],
   "U.Effect": [
     "U.EffRead{}",
     "U.EffChange{}",

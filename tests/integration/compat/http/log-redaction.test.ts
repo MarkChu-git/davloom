@@ -4,7 +4,16 @@ import { join } from "node:path";
 import { openArchive, sealArchive, type ArchiveTables } from "@davloom/core";
 import { Effect, Redacted } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ADMIN, OFFLINE_VARS, SECRET, startDavloom, stringField, type Davloom } from "./davloom";
+import { Database } from "bun:sqlite";
+import {
+  ADMIN,
+  OFFLINE_VARS,
+  registerOwner,
+  SECRET,
+  startDavloom,
+  stringField,
+  type Davloom,
+} from "./davloom";
 import { hasDocker, SECRET_KEY, startSelfHostedServer } from "./selfhosted";
 import { startBunServer, startWorkerdServer, type Server } from "./servers";
 
@@ -367,5 +376,98 @@ describe.each(DEPLOYMENTS)("logs of %s", (name, start, skip) => {
         expect(refusedImport?.logs).not.toMatch(/params:/);
       },
     );
+  });
+});
+
+/** The start of the message of the trigger below, which goes on with a session's token. */
+const BOUND_CANARY = "bound-values-canary-4r5t6y";
+
+/** One text value from the database at `path`. */
+const readOne = (path: string, query: string): string => {
+  const sqlite = new Database(path);
+  try {
+    return sqlite.query<{ value: string }, []>(query).get()?.value ?? "";
+  } finally {
+    sqlite.close();
+  }
+};
+
+const execute = (path: string, statement: string) => {
+  const sqlite = new Database(path);
+  try {
+    sqlite.exec(statement);
+  } finally {
+    sqlite.close();
+  }
+};
+
+describe("logs of Bun with SQLite when the database fails under Better Auth", () => {
+  let server: Server;
+  let dataDir: string;
+  let logs = "";
+  let secrets: [string, string][] = [];
+  let answers: number[] = [];
+
+  beforeAll(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "davloom-dberror-"));
+    server = await startBunServer("apps/api/src/entry.bun.ts", {
+      DAVLOOM_SECRET: SECRET,
+      ...OFFLINE_VARS,
+      DAVLOOM_DATA_DIR: dataDir,
+    });
+    const cookie = await registerOwner(server);
+    // A database's refusal can name the values its query was bound to, as Drizzle's errors do on
+    // some drivers. A trigger refuses every new session with a message that holds its token, and
+    // then the table of sessions goes away, so reading the owner's session fails too.
+    const path = join(dataDir, "davloom.sqlite");
+    const hash = readOne(path, "SELECT password AS value FROM account");
+    const token = readOne(path, "SELECT token AS value FROM session");
+    execute(
+      path,
+      `CREATE TRIGGER refuse_sessions BEFORE INSERT ON session BEGIN SELECT RAISE(ABORT, '${BOUND_CANARY} ' || NEW.token || ' ' || NEW.user_id); END;`,
+    );
+    const signIn = await settle(
+      server.fetch("/api/auth/sign-in/username", {
+        method: "POST",
+        body: json({ username: ADMIN.username, password: ADMIN.password }),
+      }),
+    );
+    execute(path, "DROP TABLE session");
+    answers = [
+      signIn,
+      await settle(server.fetch("/api/auth/get-session", { headers: { cookie } })),
+      await settle(server.fetch("/api/me", { headers: { cookie } })),
+    ];
+    await new Promise((done) => setTimeout(done, 500));
+    logs = server.logs?.() ?? "";
+    secrets = [
+      ["the password hash", hash],
+      ["the session token", token],
+      ...cookieValues(cookie).map(
+        (value, index) => [`session cookie part ${index + 1}`, value] as [string, string],
+      ),
+    ];
+  }, 120_000);
+  afterAll(async () => {
+    await server?.stop();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  it("fails the requests and logs that they failed", () => {
+    expect(answers[0]).toBeGreaterThanOrEqual(500);
+    expect(answers[1]).toBeGreaterThanOrEqual(500);
+    expect(logs).toMatch(/\[Better Auth\]/);
+  });
+
+  it("logs no token, hash or bound value", () => {
+    expect(secrets.every(([, value]) => value.length >= 16)).toBe(true);
+    const found = secrets.flatMap(([what, value]) =>
+      formsOf(value)
+        .filter((form) => logs.includes(form))
+        .map((form) => `${what} as ${form}`),
+    );
+    expect(found).toEqual([]);
+    expect(logs).not.toContain(BOUND_CANARY);
+    expect(logs).not.toMatch(/params:|Failed query/);
   });
 });

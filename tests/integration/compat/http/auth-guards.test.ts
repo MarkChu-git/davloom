@@ -63,7 +63,7 @@ describe.each(DEPLOYMENTS)("the account's guards on %s", (_name, start) => {
         body: JSON.stringify(body),
       });
       expect(response.status, path).toBe(403);
-      expect(await response.json()).toEqual({ error: { code: "cross_site" } });
+      expect(await response.json()).toMatchObject({ error: { code: "cross_site" } });
     }
     const form = await server.fetch("/api/keys", {
       method: "POST",
@@ -102,5 +102,53 @@ describe.each(DEPLOYMENTS)("the account's guards on %s", (_name, start) => {
   it("still knows the owner's session after the limit", async () => {
     const me = await server.fetch("/api/me", { headers: { cookie } });
     expect(stringField(await me.json(), "username")).toBe(ADMIN.username);
+  });
+});
+
+describe("sign-in behind a trusted reverse proxy on Bun", () => {
+  let server: Server;
+  let dataDir: string;
+
+  beforeAll(async () => {
+    dataDir = mkdtempSync(join(tmpdir(), "davloom-proxy-"));
+    // The tests reach the server from 127.0.0.1, as a proxy on the same machine would.
+    server = await startBunServer("apps/api/src/entry.bun.ts", {
+      DAVLOOM_SECRET: SECRET,
+      ...OFFLINE,
+      DAVLOOM_DATA_DIR: dataDir,
+      DAVLOOM_TRUSTED_PROXIES: "127.0.0.1, ::1",
+    });
+    await registerOwner(server);
+  }, 120_000);
+  afterAll(async () => {
+    await server?.stop();
+    rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  const signIn = async (client: string, password: string) => {
+    const response = await server.fetch("/api/auth/sign-in/username", {
+      method: "POST",
+      headers: { "x-forwarded-for": client },
+      body: JSON.stringify({ username: ADMIN.username, password }),
+    });
+    await response.arrayBuffer();
+    return response.status;
+  };
+
+  it("limits the client that floods it, and lets the owner in from another address", async () => {
+    const flood: number[] = [];
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      flood.push(await signIn("198.51.100.66", `wrong password ${attempt}`));
+    }
+    expect(flood).toContain(429);
+    expect(await signIn("198.51.100.7", ADMIN.password)).toBe(200);
+  });
+
+  it("counts a client that forges X-Forwarded-For by the address the proxy saw", async () => {
+    const flood: number[] = [];
+    for (let attempt = 0; attempt < 14; attempt += 1) {
+      flood.push(await signIn(`10.9.9.${attempt}, 198.51.100.99`, `wrong password ${attempt}`));
+    }
+    expect(flood).toContain(429);
   });
 });

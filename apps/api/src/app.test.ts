@@ -885,7 +885,7 @@ describe("requests from another site", () => {
       body: JSON.stringify(input),
     });
     expect(response.status).toBe(403);
-    expect(await body(response)).toEqual({ error: { code: "cross_site" } });
+    expect(await body(response)).toMatchObject({ error: { code: "cross_site" } });
     expect(fields(await body(await w.api("/api/keys")), "name")).toEqual([]);
     expect((await w.api("/api/me")).status).toBe(200);
   });

@@ -119,13 +119,23 @@ export const passkey = sqliteTable(
 );
 
 // Better Auth's rate limiter, in the database so that every Worker isolate and Bun process counts
-// the same requests. Davloom counts a user's failed proofs of presence here too
-// (packages/auth/src/attempts.ts). `last_request` is milliseconds since the epoch.
+// the same requests. Better Auth prunes it as it likes, so Davloom's own counts live in
+// `verification_attempts` below. `last_request` is milliseconds since the epoch.
 export const rateLimit = sqliteTable("rate_limit", {
   id: text("id").primaryKey(),
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
   lastRequest: integer("last_request").notNull(),
+});
+
+// Each user's failed proofs of presence: wrong passwords and authenticator codes at step-up
+// verification and for a signed-in session (packages/database/src/attempts.ts). Davloom's own
+// table, so no pruning of Better Auth's rate limit can lift a lock early. `last_attempt` is
+// milliseconds since the epoch of the last attempt that counted.
+export const verificationAttempts = sqliteTable("verification_attempts", {
+  userId: text("user_id").primaryKey(),
+  count: integer("count").notNull(),
+  lastAttempt: integer("last_attempt").notNull(),
 });
 
 export const apikey = sqliteTable(

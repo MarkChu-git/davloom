@@ -10,7 +10,8 @@
     "./repositories": "./src/repositories.ts",
     "./properties": "./src/properties.ts",
     "./archive": "./src/archive.ts",
-    "./instance-data": "./src/instance-data.ts"
+    "./instance-data": "./src/instance-data.ts",
+    "./attempts": "./src/attempts.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

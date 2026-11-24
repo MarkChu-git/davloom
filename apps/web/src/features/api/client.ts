@@ -131,7 +131,10 @@ export const describeError = (error: unknown): string => {
     case "setup_token_invalid":
       return "That is not this instance's setup token.";
     case "cross_site":
-      return "This request did not come from this Davloom's own address. Open Davloom at its own address and try again.";
+      return (
+        error.detail ??
+        "This request did not come from this Davloom's own address. Open Davloom at its own address and try again."
+      );
     case "unsupported_media_type":
       return "The server refused the request's format.";
     case "archive_invalid":

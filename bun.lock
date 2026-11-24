@@ -90,6 +90,7 @@
       "dependencies": {
         "@better-auth/api-key": "1.7.28",
         "@better-auth/passkey": "1.7.28",
+        "@davloom/core": "workspace:*",
         "@davloom/database": "workspace:*",
         "better-auth": "1.7.28",
         "drizzle-orm": "0.45.4",

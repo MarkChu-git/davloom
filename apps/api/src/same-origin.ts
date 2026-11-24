@@ -9,7 +9,17 @@
 /** The methods that change nothing, which a cross-site page may send. */
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-const refusal = (status: number, code: string) => Response.json({ error: { code } }, { status });
+const refusal = (status: number, code: string, message?: string) =>
+  Response.json({ error: message === undefined ? { code } : { code, message } }, { status });
+
+/**
+ * Why a request from the Dashboard's own page can still be refused: a proxy in front of Davloom
+ * that rewrites Host, or a DAVLOOM_URL other than the address in the browser.
+ */
+export const crossSiteMessage = (publicOrigin: string | undefined): string =>
+  publicOrigin === undefined
+    ? "This request did not come from the address it was sent to. Set DAVLOOM_URL to the address you open Davloom at, or have your proxy pass the Host header on."
+    : `Davloom takes changes only from ${publicOrigin}, its DAVLOOM_URL. Open Davloom at that address, or set DAVLOOM_URL to the address you open it at.`;
 
 /**
  * The origins a request to this instance may come from: the configured public origin
@@ -33,7 +43,9 @@ const isJson = (contentType: string | null) =>
  */
 export const crossSiteRefusal = (request: Request, publicOrigin?: string): Response | undefined => {
   if (SAFE_METHODS.has(request.method.toUpperCase())) return undefined;
-  if (!URL.canParse(request.url)) return refusal(403, "cross_site");
+  if (!URL.canParse(request.url)) {
+    return refusal(403, "cross_site", crossSiteMessage(publicOrigin));
+  }
   const url = new URL(request.url);
   if (url.pathname !== "/api" && !url.pathname.startsWith("/api/")) return undefined;
   const origin = request.headers.get("origin");
@@ -41,7 +53,7 @@ export const crossSiteRefusal = (request: Request, publicOrigin?: string): Respo
     origin === null
       ? request.headers.get("sec-fetch-site")?.trim().toLowerCase() === "same-origin"
       : allowedOrigins(url, request, publicOrigin).includes(origin);
-  if (!sameOrigin) return refusal(403, "cross_site");
+  if (!sameOrigin) return refusal(403, "cross_site", crossSiteMessage(publicOrigin));
   if (!isJson(request.headers.get("content-type"))) return refusal(415, "unsupported_media_type");
   return undefined;
 };
