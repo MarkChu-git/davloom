@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixtures";
 import { boxOf, isNarrow, openList, shown, sidewaysOverflow } from "./helpers";
-import { ADMIN, WORKERS_ORIGIN } from "./instances";
+import { ADMIN, api, WORKERS_ORIGIN } from "./instances";
 
 // The Settings scenarios about the sections, the profile, the appearance, the WebDAV address and
 // the instance. Signing out has its tests in auth.spec.ts, since it ends a session; the ones about
@@ -55,7 +55,7 @@ test("Opening a section by its address: the WebDAV section shows and the section
   await expectCurrent(page, "WebDAV");
 });
 
-test("The sections on offer: only those the instance can fill, with no storage settings yet", async ({
+test("The sections on offer: every section the instance can fill, Storage among them", async ({
   page,
 }) => {
   await page.goto("/settings");
@@ -68,6 +68,7 @@ test("The sections on offer: only those the instance can fill, with no storage s
     "Sign-in and security",
     "Appearance",
     "WebDAV",
+    "Storage",
     "Data export",
     "About this instance",
   ]);
@@ -151,19 +152,110 @@ test("Connecting a client: the WebDAV section shows this instance's /dav/ addres
   );
 });
 
-test("About this instance: its address, its WebDAV address and the storage it runs on", async ({
+test("Sign-in and security: the password, two-step verification, passkeys and this browser's session", async ({
   page,
 }) => {
+  await page.goto("/settings?section=security");
+  await shown(page.getByRole("heading", { level: 2, name: "Sign-in and security" }));
+  const main = page.getByRole("main");
+  await shown(main.getByRole("button", { name: "Change password" }));
+  // The owner of the test instance has not set up two-step verification.
+  await shown(main.getByRole("button", { name: "Set up", exact: true }));
+  await expect(main.getByRole("button", { name: "Turn off" })).toHaveCount(0);
+  await shown(main.getByRole("heading", { level: 3, name: "Passkeys" }));
+  await shown(main.getByRole("button", { name: "Add passkey" }));
+  await shown(main.getByRole("heading", { level: 3, name: "Sessions" }));
+  await shown(main.getByRole("button", { name: "Sign out", exact: true }));
+
+  // Change password asks for the current password and a new one, and Cancel changes nothing.
+  await main.getByRole("button", { name: "Change password" }).click();
+  const dialog = page.getByRole("dialog", { name: "Change password" });
+  await shown(dialog.getByRole("textbox", { name: "Current password" }));
+  await shown(dialog.getByRole("textbox", { name: "New password" }));
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test("Storage: the default backend for new mounts is the saved one, and Save waits for a change", async ({
+  page,
+}) => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer
+  const settings = (await api(page.request, "GET", "/api/settings/storage")) as {
+    defaultBackendId: string | null;
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer
+  const backends = (await api(page.request, "GET", "/api/backends")) as {
+    id: string;
+    name: string;
+  }[];
+  const saved = backends.find((backend) => backend.id === settings.defaultBackendId);
+  const other = backends.find((backend) => backend.id !== settings.defaultBackendId);
+  await page.goto("/settings?section=storage");
+  await shown(page.getByRole("heading", { level: 2, name: "Storage" }));
+  const selector = page.getByRole("combobox", { name: "Default backend for new mounts" });
+  const save = page.getByRole("button", { name: "Save storage settings" });
+  if (saved !== undefined) await expect(selector).toContainText(saved.name);
+  await expect(save).toBeDisabled();
+  if (other === undefined) return;
+
+  // Saving would change where every other test's new mounts go, so the answer is the page's own.
+  let sent: unknown;
+  await page.route("**/api/settings/storage", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { defaultBackendId: other.id } });
+  });
+  await openList(page, "combobox", "Default backend for new mounts", page);
+  await page.getByRole("option", { name: new RegExp(`^${other.name}`) }).click();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await shown(page.getByText("Storage settings saved.").first());
+  expect(sent).toEqual({ defaultBackendId: other.id });
+});
+
+test("About this instance: its version, how it runs, its address, its WebDAV address and the storage it runs on", async ({
+  page,
+}) => {
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer
+  const info = (await api(page.request, "GET", "/api/instance")) as {
+    version: string;
+    commit: string | null;
+    runtime: string;
+    deployment: string;
+    region: string | null;
+    database: string;
+  };
   await page.goto("/settings?section=about");
   await shown(page.getByRole("heading", { level: 2, name: "About this instance" }));
   await expect
     .poll(async () => (await factsOf(page)).map(({ label }) => label))
-    .toEqual(["Address", "WebDAV address", "Storage", "Backends", "Mounts"]);
-  await expect
-    .poll(async () => (await factsOf(page)).slice(0, 3))
     .toEqual([
+      "Version",
+      "Commit",
+      "Deployment",
+      "Runtime",
+      "Database",
+      "Region",
+      "Address",
+      "WebDAV address",
+      "Storage",
+      "Backends",
+      "Mounts",
+    ]);
+  await expect
+    .poll(async () => (await factsOf(page)).slice(0, 8))
+    .toEqual([
+      { label: "Version", value: info.version },
+      { label: "Commit", value: info.commit?.slice(0, 12) ?? "Unknown" },
+      { label: "Deployment", value: info.deployment },
+      { label: "Runtime", value: info.runtime },
+      { label: "Database", value: info.database },
+      { label: "Region", value: info.region ?? "Unknown" },
       { label: "Address", value: WORKERS_ORIGIN },
       { label: "WebDAV address", value: `${WORKERS_ORIGIN}/dav/` },
-      { label: "Storage", value: "Cloudflare Durable Objects" },
     ]);
+  // Other tests add backends of other kinds, so the storage names Durable Objects among them.
+  await expect
+    .poll(async () => (await factsOf(page)).find(({ label }) => label === "Storage")?.value)
+    .toContain("Cloudflare Durable Objects");
 });

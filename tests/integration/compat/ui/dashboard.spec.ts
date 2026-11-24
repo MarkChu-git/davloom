@@ -42,6 +42,13 @@ const PAGES = [
   { path: "/settings", name: "Settings" },
 ] as const;
 
+/**
+ * Waits until the Overview has read its figures. Check connections is off until then, and turns on
+ * with a transition of its colors, which a scan must not catch halfway.
+ */
+const overviewRead = (page: Page) =>
+  expect(page.getByRole("button", { name: "Check connections" })).toBeEnabled();
+
 interface PageState {
   name: string;
   /** The page's address, or a function that prepares what the page shows and returns it. */
@@ -108,6 +115,7 @@ const STATES: readonly PageState[] = [
     name: "Overview with copying blocked",
     path: "/",
     show: async (page) => {
+      await overviewRead(page);
       await blockClipboard(page);
       await page.getByRole("button", { name: "Copy address" }).click();
       await shown(onScreen(page, /This browser blocked copying here/));
@@ -117,7 +125,7 @@ const STATES: readonly PageState[] = [
     name: "Overview with keyboard focus",
     path: "/",
     show: async (page) => {
-      await shown(page.getByRole("heading", { name: "Connections" }));
+      await overviewRead(page);
       await page.keyboard.press("Tab");
       await expect(page.locator(":focus-visible")).toHaveCount(1);
     },
@@ -1217,7 +1225,7 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   const main = page.getByRole("main");
   const figures = async () =>
     Promise.all(
-      ["Stored", "Mounts", "Backends"].map(async (label) => {
+      ["Stored", "Known capacity", "Mounts"].map(async (label) => {
         const box = await main
           .getByText(label, { exact: true })
           .and(page.locator('[data-type="label"]'))
@@ -1267,7 +1275,7 @@ const baselineOf = (element: Element): number => {
 test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line", async ({
   page,
 }) => {
-  const labels = ["Stored", "Mounts", "Backends"];
+  const labels = ["Stored", "Known capacity", "Mounts"];
   // The default width, and the narrowest that still sets the three side by side.
   for (const width of [1280, 900]) {
     await page.setViewportSize({ width, height: 900 });
@@ -1275,7 +1283,10 @@ test("Figures on one grid: side by side, the tiles' labels, figures and captions
     await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
     const lines = await Promise.all(
       labels.map(async (label) => {
-        const tile = cardWith(page, page.getByText(label, { exact: true }));
+        // The Mounts panel below the tiles has a heading where a tile has a label.
+        const tile = cardWith(page, page.getByText(label, { exact: true })).filter({
+          hasNot: page.getByRole("heading"),
+        });
         const [labelPart, figure, caption] = await tile.locator(":scope > *").all();
         if (labelPart === undefined || figure === undefined || caption === undefined) {
           throw new Error(`The ${label} tile lacks a part.`);
@@ -1884,7 +1895,11 @@ test.describe("on a touch screen", () => {
     await key(writer).tap();
     const writerDetails = await detailsOf(key(writer));
     await expect(writerDetails.getByText("Read and write", { exact: true })).toBeVisible();
-    await expect(writerDetails.getByText("Never", { exact: true })).toBeVisible();
+    // A new key reaches every mount, has not been used, and this one never expires.
+    await expect(writerDetails).toContainText(/Scope\s*All mounts/);
+    await expect(writerDetails).toContainText(/Last used\s*Never/);
+    await expect(writerDetails).toContainText(/Expires\s*Never/);
+    await expect(writerDetails.getByRole("button", { name: "Rename" })).toBeVisible();
     await expect(key(reader)).toHaveAttribute("aria-expanded", "true");
     await page.setViewportSize({ width: 320, height: 812 });
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);

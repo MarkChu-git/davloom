@@ -6,7 +6,7 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { test } from "./fixtures";
 import { boxOf, cardWith, filesAt, listed, onlyInChromium, onScreen, shown } from "./helpers";
 import { dav, davPath, README, SAMPLE_NAMES, scratchFolder } from "./instances";
@@ -116,69 +116,134 @@ test("Renaming a file: MOVE gives it the new name, and its details follow it", a
   expect(await stored(page, `${folder}/READ ME first.txt`)).toBe(README);
 });
 
-test("Moving into the folder itself: Move refuses Drafts into Drafts, and moves README.txt there", async ({
+/** The dialog that moves or copies, opened from an item's Actions menu. */
+const openTransfer = async (page: Page, name: string, verb: "Move" | "Copy") => {
+  await page.getByRole("button", { name: `Actions for ${name}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: verb, exact: true }).click();
+  const dialog = page
+    .getByRole("dialog")
+    .filter({ has: page.getByRole("heading", { name: `${verb} “${name}”`, exact: true }) });
+  await shown(dialog);
+  return dialog;
+};
+
+/** The folder the destination picker shows, read from its path. */
+const destinationOf = (dialog: Locator) => dialog.getByRole("navigation", { name: "Destination" });
+
+/** A folder the destination picker lists, which opens it. */
+const pickerFolder = (dialog: Locator, name: string) =>
+  dialog.getByRole("button", { name, exact: true });
+
+test("Moving into the folder itself: the picker starts where the items are, keeps Drafts from being opened when Drafts moves, and moves README.txt into Drafts", async ({
   page,
 }) => {
   const folder = await openScratch(page);
-  const dialog = page.getByRole("dialog");
-  await page.getByRole("button", { name: "Actions for Drafts" }).click();
-  await page.getByRole("menuitem", { name: "Move" }).click();
-  const destination = dialog.getByLabel("Destination folder");
-  // The form starts from the folder that is open.
-  await expect(destination).toHaveValue(folder);
-  await destination.fill(`${folder}/Drafts/Old`);
-  await dialog.getByRole("button", { name: "Move", exact: true }).click();
-  await shown(onScreen(page, "A folder cannot go inside itself."));
+  const scratch = folder.split("/").at(-1) ?? "";
+  let dialog = await openTransfer(page, "Drafts", "Move");
+  // The picker starts from the folder that is open, and lists the folders inside it.
+  await expect(destinationOf(dialog)).toContainText(scratch);
+  await shown(pickerFolder(dialog, "Contracts"));
+  // Drafts is what moves, so it cannot be opened as the destination.
+  await expect(pickerFolder(dialog, "Drafts")).toHaveAttribute("aria-disabled", "true");
+  await expect(pickerFolder(dialog, "Contracts")).not.toHaveAttribute("aria-disabled", "true");
+  // Where the items already are is no destination either.
+  await dialog.getByRole("button", { name: "Move here" }).click();
+  await shown(dialog.getByText("Choose another folder than the one they are in."));
   await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Actions for README.txt" }).click();
-  await page.getByRole("menuitem", { name: "Move" }).click();
-  await destination.fill(`${folder}/Drafts`);
-  await dialog.getByRole("button", { name: "Move", exact: true }).click();
+  dialog = await openTransfer(page, "README.txt", "Move");
+  await pickerFolder(dialog, "Drafts").click();
+  await expect(destinationOf(dialog)).toContainText("Drafts");
+  await dialog.getByRole("button", { name: "Move here" }).click();
   await shown(onScreen(page, `Moved “README.txt” to ${folder}/Drafts.`));
   await expect(page.getByRole("link", { name: "README.txt", exact: true })).toHaveCount(0);
   await page.getByRole("link", { name: "Drafts", exact: true }).click();
   await expect.poll(() => listed(page)).toEqual(["blog-post-self-hosting.md", "README.txt"]);
+  expect(await stored(page, `${folder}/Drafts/README.txt`)).toBe(README);
+});
+
+test("Browsing for a destination: the path leads back up to Files, which lists the mounts", async ({
+  page,
+}) => {
+  await openScratch(page);
+  const dialog = await openTransfer(page, "README.txt", "Copy");
+  await pickerFolder(dialog, "Drafts").click();
+  await shown(dialog.getByText("No folders inside"));
+  await destinationOf(dialog).getByText("Files", { exact: true }).click();
+  // The top of Files lists the mounts that can take the items.
+  await shown(pickerFolder(dialog, "files"));
+  await expect(dialog.getByRole("button", { name: "Copy here" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy here" }).click();
+  await shown(dialog.getByText("Choose a folder inside a mount, such as /files."));
+  await expect(dialog).toBeVisible();
 });
 
 test("A name already at the destination: copying README.txt into Drafts a second time is refused and copies nothing", async ({
   page,
 }) => {
   const folder = await openScratch(page);
-  const dialog = page.getByRole("dialog");
   const copyReadmeToDrafts = async () => {
-    await page.getByRole("button", { name: "Actions for README.txt" }).click();
-    await page.getByRole("menuitem", { name: "Copy" }).click();
-    await dialog.getByLabel("Destination folder").fill(`${folder}/Drafts`);
-    await dialog.getByRole("button", { name: "Copy", exact: true }).click();
+    const dialog = await openTransfer(page, "README.txt", "Copy");
+    await pickerFolder(dialog, "Drafts").click();
+    await expect(destinationOf(dialog)).toContainText("Drafts");
+    await dialog.getByRole("button", { name: "Copy here" }).click();
+    return dialog;
   };
 
-  await copyReadmeToDrafts();
+  let dialog = await copyReadmeToDrafts();
   await shown(onScreen(page, `Copied “README.txt” to ${folder}/Drafts.`));
   await expect(dialog).toHaveCount(0);
+  // A copy leaves the original where it was.
+  await shown(page.getByRole("link", { name: "README.txt", exact: true }));
 
-  await copyReadmeToDrafts();
-  const taken = `Something named “README.txt” is already in ${folder}/Drafts.`;
-  await shown(onScreen(page, taken));
+  dialog = await copyReadmeToDrafts();
+  // The dialog stays open and says it, at the destination it refused.
+  await shown(dialog.getByText(`Something named “README.txt” is already in ${folder}/Drafts.`));
   await expect(dialog).toBeVisible();
-  // The dialog says it, at the destination it refused.
-  await expect(dialog.getByLabel("Destination folder")).toHaveAccessibleDescription(
-    `A folder's path, starting with its mount, such as /files/Archive. ${taken}`,
-  );
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
   await page.getByRole("link", { name: "Drafts", exact: true }).click();
   await expect.poll(() => listed(page)).toEqual(["blog-post-self-hosting.md", "README.txt"]);
 });
 
-test("A destination that does not exist: the copy is refused and says so", async ({ page }) => {
+test("A destination that is gone: a folder removed while the picker is open says so when opened, and the copy is refused", async ({
+  page,
+}) => {
   const folder = await openScratch(page);
-  const dialog = page.getByRole("dialog");
-  await page.getByRole("button", { name: "Actions for README.txt" }).click();
-  await page.getByRole("menuitem", { name: "Copy" }).click();
-  await dialog.getByLabel("Destination folder").fill(`${folder}/Nowhere`);
-  await dialog.getByRole("button", { name: "Copy", exact: true }).click();
-  await shown(onScreen(page, "The destination folder does not exist."));
+  const dialog = await openTransfer(page, "README.txt", "Copy");
+  await shown(pickerFolder(dialog, "Scans"));
+  // Another client removes Scans after the picker listed it.
+  await dav(page.request, "DELETE", `${folder}/Scans`, { isFolder: true });
+  await pickerFolder(dialog, "Scans").click();
+  await shown(dialog.getByText(`${folder}/Scans is no longer there.`));
+  await dialog.getByRole("button", { name: "Copy here" }).click();
+  await shown(dialog.getByText("The destination folder does not exist."));
+  await expect(dialog).toBeVisible();
+});
+
+test("Locking a file: the row shows the lock, other clients cannot change the file, and Unlock frees it", async ({
+  page,
+}) => {
+  const folder = await openScratch(page);
+  await page.getByRole("button", { name: "Actions for README.txt", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Lock", exact: true }).click();
+  await shown(onScreen(page, "Locked “README.txt”."));
+  const row = page.getByRole("row").filter({
+    has: page.getByRole("link", { name: "README.txt", exact: true }),
+  });
+  await shown(row.getByRole("img", { name: /^Locked/ }));
+  // A client without the lock's token cannot replace the file.
+  await expect(
+    dav(page.request, "PUT", `${folder}/README.txt`, { body: "changed" }),
+  ).rejects.toThrow(/423/);
+
+  await page.getByRole("button", { name: "Actions for README.txt", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Unlock", exact: true }).click();
+  await shown(onScreen(page, "Unlocked “README.txt”."));
+  await expect(row.getByRole("img", { name: /^Locked/ })).toHaveCount(0);
+  await dav(page.request, "PUT", `${folder}/README.txt`, { body: "changed" });
+  expect(await stored(page, `${folder}/README.txt`)).toBe("changed");
 });
 
 test("Deleting two files: the confirmation names 2 items and says it cannot be undone, both files go, and a notification reports it", async ({
