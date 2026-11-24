@@ -53,6 +53,8 @@ const world = (
     mounts?: MountRecord[];
     storages?: Record<string, StorageBackend | null>;
     unique?: boolean;
+    broken?: boolean;
+    vanishing?: boolean;
     settings?: Record<string, unknown>;
   } = {},
 ) => {
@@ -64,7 +66,11 @@ const world = (
       list: () => Promise.resolve([...backends]),
       create: () => Promise.resolve(),
       update: (id: string, change: { name: string; config: unknown; secretKey: string | null }) => {
-        if (options.unique) return Promise.reject(new Error("UNIQUE constraint failed: name"));
+        if (options.unique)
+          return Promise.reject(
+            new Error("update failed", { cause: new Error("UNIQUE constraint failed: name") }),
+          );
+        if (options.broken) return Promise.reject(new Error("disk I/O error"));
         const index = backends.findIndex((b) => b.id === id);
         const current = backends[index];
         if (current === undefined) return Promise.resolve(false);
@@ -72,6 +78,7 @@ const world = (
         return Promise.resolve(true);
       },
       remove: (id: string) => {
+        if (options.vanishing) return Promise.resolve(false);
         const index = backends.findIndex((b) => b.id === id);
         if (index === -1) return Promise.resolve(false);
         backends.splice(index, 1);
@@ -224,6 +231,37 @@ const clock = () => {
   let time = 1_000;
   return () => (time += 25);
 };
+
+describe("listBackends, quota", () => {
+  it("knows no capacity for a backend without a quota, or whose quota fails", async () => {
+    const { run } = world({
+      backends: [record("a"), record("b")],
+      storages: {
+        a: { ...createMemoryStorage({ capacity: 10 }), quota: undefined },
+        b: {
+          ...createMemoryStorage({ capacity: 10 }),
+          quota: () => Promise.resolve(fail("unavailable")),
+        },
+      },
+    });
+    expect(valueOf(await run(listBackends)).map((backend) => backend.capacity)).toEqual([
+      null,
+      null,
+    ]);
+  });
+});
+
+describe("failures of the records", () => {
+  it("dies on an update that fails for another reason", async () => {
+    const { run } = world({ backends: [record("do")], broken: true });
+    expect(tagOf(await run(updateBackend("do", { name: "x" })))).toBe("defect");
+  });
+
+  it("names a backend gone before its record could be removed as not found", async () => {
+    const { run } = world({ backends: [record("do")], vanishing: true });
+    expect(tagOf(await run(removeBackend("do")))).toBe("NotFound");
+  });
+});
 
 describe("verifyBackend and checkBackends", () => {
   it("reports how long a backend took to answer", async () => {

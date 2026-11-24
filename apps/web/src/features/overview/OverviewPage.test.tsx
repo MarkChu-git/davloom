@@ -1,9 +1,12 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleCanceledAnimations } from "../../test/layout";
 import { json, renderPage } from "../../test/render";
 import type { Backend, Mount, Overview } from "../api/queries";
 import { OverviewPage } from "./OverviewPage";
+
+handleCanceledAnimations();
 
 afterEach(() => {
   cleanup();

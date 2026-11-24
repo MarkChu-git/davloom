@@ -1,12 +1,15 @@
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleCanceledAnimations } from "../../test/layout";
 import { json, renderPage, type Handler } from "../../test/render";
 import type { Backend, BackendCheck, OperationError, Operations, Overview } from "../api/queries";
 import { setErrorView } from "./errorView";
 import { OverviewPage } from "./OverviewPage";
 
 // The Overview's operations, recent errors and connection checks.
+
+handleCanceledAnimations();
 
 afterEach(() => {
   cleanup();

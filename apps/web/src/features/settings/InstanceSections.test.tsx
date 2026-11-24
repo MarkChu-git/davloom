@@ -74,6 +74,15 @@ describe("Settings, Storage", () => {
     expect(await screen.findAllByText("Check the values and try again.")).not.toHaveLength(0);
   });
 
+  it("offers nothing to save while there is no backend", async () => {
+    await show("storage", {
+      "GET /api/backends": () => json([]),
+      "GET /api/settings/storage": () => json({ defaultBackendId: null }),
+    });
+    const save = await screen.findByRole("button", { name: "Save storage settings" });
+    expect(save.getAttribute("aria-disabled")).toBe("true");
+  });
+
   it("says why the settings could not be read", async () => {
     await show("storage", {
       "GET /api/settings/storage": () => json({ error: { code: "x" } }, 500),

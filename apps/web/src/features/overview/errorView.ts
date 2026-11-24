@@ -22,6 +22,9 @@ const remembered = (): ErrorView => {
 
 const errorViewStore = new Store<ErrorView>(remembered());
 
+/** The view chosen now, outside React. */
+export const currentErrorView = (): ErrorView => errorViewStore.state;
+
 export const useErrorView = (): ErrorView => useStore(errorViewStore, (view) => view);
 
 export const setErrorView = (view: ErrorView): void => {
