@@ -373,6 +373,13 @@ describe("PROPFIND", () => {
     ["propname", "<D:propname/>", "0", 503],
     ["a dead property", '<D:prop><Z:tag xmlns:Z="urn:z"/></D:prop>', "1", 503],
     ["live properties only", "<D:prop><D:getetag/><D:resourcetype/></D:prop>", "1", 207],
+    [
+      "quota properties",
+      "<D:prop><D:quota-available-bytes/><D:quota-used-bytes/></D:prop>",
+      "1",
+      207,
+    ],
+    ["a DAV: property the server lacks", "<D:prop><D:getetag/><D:nonesuch/></D:prop>", "0", 207],
   ])(
     "answers %s with %i when the dead properties cannot be read",
     async (_, inner, depth, status) => {
