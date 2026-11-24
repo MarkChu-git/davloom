@@ -27,8 +27,8 @@ const SERVER: ReadonlySet<FailureName> = new Set([
 ]);
 
 describe("failure statuses", () => {
-  it.each(Object.entries(EXPECTED))("%s answers %i", (failure, status) => {
-    expect(failureStatus(failure as FailureName)).toBe(status);
+  it.each(FAILURE_NAMES)("%s answers its status", (failure) => {
+    expect(failureStatus(failure)).toBe(EXPECTED[failure]);
   });
 
   it.each(FAILURE_NAMES)("%s is an error, 5xx exactly when it is the server's", (failure) => {

@@ -17,7 +17,6 @@ import {
 
 const SCOPES: readonly LockScope[] = ["exclusive", "shared"];
 const DEPTHS: readonly LockDepth[] = ["0", "infinity"];
-const PLACES: readonly LockPlace[] = ["same", "above", "below", "apart"];
 const STATES: readonly IfState[] = ["no-header", "malformed", "none-true", "some-true"];
 
 // Oracles on real paths, written from RFC 4918 independently of the Bend module.
@@ -34,6 +33,17 @@ const placeOf = (root: string[], path: string[]): LockPlace =>
 const coversPath = (root: string[], depth: LockDepth, path: string[]) =>
   depth === "infinity" ? within(path, root) : root.join("/") === path.join("/");
 
+const holds = (clauses: IfClause[]) =>
+  clauses.some((c) => c.resolved && c.conditions.every((x) => x.holds !== x.negated));
+
+const gateOracle = (state: IfState, blocked: boolean): LockGate =>
+  state === "malformed"
+    ? "bad-header"
+    : state === "none-true"
+      ? "unmet"
+      : blocked
+        ? "locked"
+        : "proceed";
 describe("lock conflicts (RFC 4918 §6.1)", () => {
   it.each([
     ["exclusive", "exclusive", true],
@@ -115,9 +125,6 @@ describe("lock coverage", () => {
 });
 
 describe("If header (RFC 4918 §10.4)", () => {
-  const holds = (clauses: IfClause[]) =>
-    clauses.some((c) => c.resolved && c.conditions.every((x) => x.holds !== x.negated));
-
   it.each([
     ["no header", false, false, [], "no-header"],
     ["no header, even with lists", false, true, [{ resolved: true, conditions: [] }], "no-header"],
@@ -209,18 +216,10 @@ describe("If header (RFC 4918 §10.4)", () => {
 });
 
 describe("lock gate", () => {
-  const oracle = (state: IfState, blocked: boolean): LockGate =>
-    state === "malformed"
-      ? "bad-header"
-      : state === "none-true"
-        ? "unmet"
-        : blocked
-          ? "locked"
-          : "proceed";
   for (const state of STATES)
     for (const blocked of [false, true])
-      it(`${state}, blocked ${blocked}: ${oracle(state, blocked)}`, () => {
-        expect(lockGate(state, blocked)).toBe(oracle(state, blocked));
+      it(`${state}, blocked ${blocked}: ${gateOracle(state, blocked)}`, () => {
+        expect(lockGate(state, blocked)).toBe(gateOracle(state, blocked));
       });
 
   it("never lets a blocked request proceed", () => {

@@ -29,13 +29,14 @@ const facts = fc.record({
 });
 
 describe("PROPFIND reads of dead properties", () => {
-  it.each([
+  const rows: [boolean, PropfindQuery, boolean][] = [
     [true, "allprop", true],
     [true, "propname", true],
     [true, "prop-dav", false],
     [true, "prop-other", true],
-    ...QUERIES.map((q) => [false, q, false] as const),
-  ] as [boolean, PropfindQuery, boolean][])("readable %s, %s: %s", (readable, q, expected) => {
+  ];
+  for (const q of QUERIES) rows.push([false, q, false]);
+  it.each(rows)("readable %s, %s: %s", (readable, q, expected) => {
     expect(readsDeadProperties(readable, q)).toBe(expected);
   });
 });
