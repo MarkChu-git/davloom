@@ -28,6 +28,8 @@ export interface Usage {
   files: number;
   collections: number;
   bytes: number;
+  /** When an object store's counts were measured (ms since the epoch); absent when current. */
+  measuredAt?: number;
 }
 
 export interface Backend {

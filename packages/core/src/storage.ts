@@ -99,6 +99,12 @@ export interface Usage {
   readonly files: number;
   readonly collections: number;
   readonly bytes: number;
+  /**
+   * When the counts were measured, in milliseconds since the epoch, for a backend that answers
+   * from an earlier count rather than counting now (an object store lists its whole bucket to
+   * count); absent when the counts are current.
+   */
+  readonly measuredAt?: number;
 }
 
 export interface StorageBackend {

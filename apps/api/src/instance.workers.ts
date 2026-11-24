@@ -17,6 +17,7 @@ import { createSqlPropertyStore } from "@davloom/database/properties";
 import { createObjectStoreStorage } from "@davloom/storage/object-store";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
 import { createR2Driver } from "@davloom/storage/r2";
+import { withUsageCache } from "@davloom/storage/usage-cache";
 import { createArchive } from "@davloom/database/archive";
 import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
 import { createD1Database, d1Atomic } from "@davloom/database/d1";
@@ -86,12 +87,23 @@ export const workersInstance = (origin: string): Instance => {
           const checked = checkR2Config(backend.config);
           const bucket = checked.ok ? r2Bindings.get(checked.config.binding) : undefined;
           if (!checked.ok || !bucket) return null;
-          return createObjectStoreStorage({
-            driver: createR2Driver({ bucket }),
-            prefix: checked.config.prefix,
-            properties: createSqlPropertyStore(db, backend.id),
-            maxEntries: R2_MAX_ENTRIES,
-          });
+          // Counting the usage lists the whole bucket, so a recent count answers instead.
+          return withUsageCache(
+            createObjectStoreStorage({
+              driver: createR2Driver({ bucket }),
+              prefix: checked.config.prefix,
+              properties: createSqlPropertyStore(db, backend.id),
+              maxEntries: R2_MAX_ENTRIES,
+            }),
+            {
+              key: JSON.stringify([
+                "r2",
+                backend.id,
+                checked.config.binding,
+                checked.config.prefix,
+              ]),
+            },
+          );
         }
         if (backend.kind === "s3") {
           return openS3Backend(

@@ -10,6 +10,7 @@ import {
 import { Effect, Redacted } from "effect";
 import { createObjectStoreStorage } from "./object-store";
 import { createS3Client, createS3Driver, describeS3Error } from "./s3";
+import { withUsageCache } from "./usage-cache";
 
 /**
  * Opens an S3-compatible backend from its stored record. Its secret key is unsealed on the first
@@ -38,12 +39,16 @@ export const openS3Backend = (
       const client = createS3Client({ ...checked.config, secretAccessKey });
       const { bucket, prefix } = checked.config;
       return {
-        backend: createObjectStoreStorage({
-          driver: createS3Driver({ client, bucket }),
-          prefix,
-          properties,
-          ...(maxEntries === undefined ? {} : { maxEntries }),
-        }),
+        // Counting the usage lists the whole bucket, so a recent count answers instead.
+        backend: withUsageCache(
+          createObjectStoreStorage({
+            driver: createS3Driver({ client, bucket }),
+            prefix,
+            properties,
+            ...(maxEntries === undefined ? {} : { maxEntries }),
+          }),
+          { key: JSON.stringify(["s3", record.id, checked.config.endpoint, bucket, prefix]) },
+        ),
         check: async () => {
           try {
             await client.send(
