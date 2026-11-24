@@ -492,6 +492,12 @@ const statusColorsOnPage = (): string[] => {
   }
   probe.style.color = "var(--color-background-error-inverted)";
   colors.push(getComputedStyle(probe).color);
+  // The browser's own text and page colors, which a dialog or popover takes from its UA style
+  // sheet. Chromium's are gray; Firefox's dark CanvasText is a faintly blue rgb(251 251 254).
+  for (const system of ["CanvasText", "Canvas"]) {
+    probe.style.color = system;
+    colors.push(getComputedStyle(probe).color);
+  }
   probe.remove();
   return colors;
 };
@@ -2277,8 +2283,11 @@ test("Rendered pages: the scan reports a red spelling mark and a checkbox left t
   await page.goto("/");
   await expect(levelOne(page)).toHaveText("Overview");
 
-  const css = "h1::spelling-error { text-decoration-color: rgb(255 0 0); }";
-  expect(await scanWith(page, { css })).not.toEqual([]);
+  // Firefox has no ::spelling-error, so there the rule styles nothing.
+  if (engine() !== "firefox") {
+    const css = "h1::spelling-error { text-decoration-color: rgb(255 0 0); }";
+    expect(await scanWith(page, { css })).not.toEqual([]);
+  }
   const html = "<input type='checkbox' checked style='accent-color: auto'>";
   expect(await scanWith(page, { html })).not.toEqual([]);
 });
