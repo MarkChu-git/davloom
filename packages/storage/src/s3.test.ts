@@ -1,5 +1,7 @@
 import { S3ServiceException } from "@aws-sdk/client-s3";
+import { createMemoryPropertyStore } from "@davloom/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createObjectStoreStorage } from "./object-store";
 import {
   createS3Client,
   createS3Driver,
@@ -396,6 +398,36 @@ describe("S3 driver requests", () => {
     expect(console.error).toHaveBeenCalledTimes(3);
     expect(await driver().head("f")).toEqual({ ok: false, failure: "name-refused" });
     expect(console.error).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps an object whose HEAD answers a bare 400 from being overwritten", async () => {
+    // AWS S3 answers HEAD of an object stored with a customer's key (SSE-C) so.
+    answer = ({ method, url }) => {
+      if (method === "HEAD") {
+        return url.pathname === "/b/b"
+          ? new Response(null, { status: 400 })
+          : new Response(null, { headers: { "content-length": "1", etag: '"a"' } });
+      }
+      if (method === "GET") {
+        const listed = url.searchParams.get("prefix") === "b";
+        return listing(
+          listed ? "<Contents><Key>b</Key><Size>1</Size></Contents>" : "",
+          "<EncodingType>url</EncodingType>",
+        );
+      }
+      return xml('<CopyObjectResult><ETag>"c"</ETag></CopyObjectResult>');
+    };
+    const storage = createObjectStoreStorage({
+      driver: driver(),
+      prefix: "",
+      properties: createMemoryPropertyStore(),
+    });
+    expect(await storage.copy(["a"], ["b"], { overwrite: false, shallow: false })).toEqual({
+      ok: false,
+      failure: "unavailable",
+    });
+    expect(seen.some((request) => request.method === "PUT")).toBe(false);
+    expect(console.error).toHaveBeenCalledWith("the store refused to read an object it lists", "b");
   });
 
   it("deletes in batches and ignores keys that were already gone", async () => {

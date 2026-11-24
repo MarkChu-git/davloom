@@ -617,6 +617,69 @@ const refusedBelow = async () => {
   return made;
 };
 
+/**
+ * An adapter on a memory driver whose head and read of `dav/b` are refused although the object
+ * exists, as AWS S3 answers HEAD of an object stored with a customer's key (SSE-C).
+ */
+const refusingHeadOfB = () => {
+  const driver = createMemoryDriver();
+  const reads: ObjectStoreDriver = {
+    ...driver,
+    head: async (key) => (key === "dav/b" ? fail("name-refused") : await driver.head(key)),
+    get: async (key, range) =>
+      key === "dav/b" ? fail("name-refused") : await driver.get(key, range),
+  };
+  const properties = createMemoryPropertyStore();
+  const storage = createObjectStoreStorage({ driver: reads, prefix: "dav/", properties });
+  return { driver, properties, storage };
+};
+
+describe("an object whose head the store refuses", () => {
+  it("is not taken for absent while a listing shows it", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { driver, properties, storage } = refusingHeadOfB();
+    driver.seed("dav/a", "a");
+    driver.seed("dav/b", "b");
+    driver.seed("dav/bc", "bc");
+    await properties.patch(["b"], [property("p")], []);
+    const unavailable = failed("unavailable");
+    expect(await storage.stat(["b"])).toEqual(unavailable);
+    expect(await storage.read(["b"])).toEqual(unavailable);
+    expect(await storage.copy(["a"], ["b"], { overwrite: false, shallow: false })).toEqual(
+      unavailable,
+    );
+    expect(await storage.move(["a"], ["b"], { overwrite: false })).toEqual(unavailable);
+    expect(await storage.write(["b"], text("new"), {})).toEqual(unavailable);
+    expect(driver.objects.get("dav/b")?.bytes).toEqual(new TextEncoder().encode("b"));
+    expect(driver.keys()).toEqual(["dav/a", "dav/b", "dav/bc"]);
+    expect(await properties.get([["b"]])).toEqual({ ok: true, value: { b: [property("p")] } });
+    expect(errors).toHaveBeenCalledWith("the store refused to read an object it lists", "dav/b");
+  });
+
+  it("is absent when no listing shows it, though a longer key starts with it", async () => {
+    const { driver, storage } = refusingHeadOfB();
+    driver.seed("dav/a", "a");
+    driver.seed("dav/bc", "bc");
+    expect(await storage.stat(["b"])).toEqual(failed("not-found"));
+    expect(await storage.copy(["a"], ["b"], { overwrite: false, shallow: false })).toEqual({
+      ok: true,
+      value: { replaced: false },
+    });
+  });
+
+  it("is absent when the store refuses its key as a prefix too", async () => {
+    const { driver, storage } = refusingHeadOfB();
+    driver.refuseKeys((key) => key === "dav/b");
+    expect(await storage.stat(["b"])).toEqual(failed("not-found"));
+  });
+
+  it("passes on any other failure of the listing that would confirm it", async () => {
+    const { driver, storage } = refusingHeadOfB();
+    driver.failWhen((call, key) => (call === "list" && key === "dav/b" ? "unavailable" : null));
+    expect(await storage.stat(["b"])).toEqual(failed("unavailable"));
+  });
+});
+
 /** An adapter on a memory driver that refuses every page of a listing after the first. */
 const refusingLaterPages = () => {
   const driver = createMemoryDriver({ pageSize: 2 });
@@ -782,6 +845,22 @@ describe("failures part-way", () => {
     });
     const props = await storage.properties([["dst", "a"]]);
     expect(props.ok && props.value["dst/a"]).toEqual([property("p")]);
+  });
+
+  it("a resumed move takes back what it added when the store refuses a name", async () => {
+    const { storage, driver } = await tree();
+    driver.failWhen((call) => (call === "delete" ? "unavailable" : null));
+    await storage.move(["src"], ["dst"], { overwrite: false });
+    driver.failWhen(null);
+    // Something arrived in the source since, whose name the store refuses at the destination.
+    driver.seed("dav/src/new", "new");
+    driver.seed("dav/src/new2", "new2");
+    driver.refuseKeys((key) => key === "dav/dst/new2");
+    const before = driver.keys();
+    expect(await storage.move(["src"], ["dst"], { overwrite: true })).toEqual(
+      failed("name-refused"),
+    );
+    expect(driver.keys()).toEqual(before);
   });
 
   it("a move whose copies fail keeps the source whole", async () => {
