@@ -237,4 +237,116 @@ describe("migrate", () => {
     expect(error).toBeInstanceOf(MigrationError);
     expect(String(error)).toMatch(/answered 403/);
   });
+
+  it("leaves the dead properties of what it skips as the target has them", async () => {
+    const source = server("https://old.example");
+    const target = server("https://new.example");
+    for (const [side, value] of [
+      [source, "old"],
+      [target, "newer"],
+    ] as const) {
+      await side.dav("MKCOL", "/d");
+      await side.dav("PUT", "/d/f", { body: "same" });
+      await side.dav("PROPPATCH", "/d/f", { body: proppatch("note", value) });
+    }
+    const report = await migrate({ source: source.endpoint(), target: target.endpoint() });
+    expect(report).toMatchObject({ skipped: 2, properties: 0 });
+    expect(await deadProperty(target, "/d/f", "note")).toContain("newer");
+  });
+
+  it.each([
+    ["a target inside the source", "/", "/backup/"],
+    ["a source inside the target", "/docs/", "/"],
+    ["the same collection", "/docs", "/docs/"],
+    ["the same collection, encoded another way", "/a%2Bb/", "/a+b/"],
+  ])("refuses %s on one server", async (_, from, to) => {
+    const one = server("https://one.example");
+    await seed(one);
+    await one.dav("MKCOL", "/backup");
+    await expect(migrate({ source: one.endpoint(from), target: one.endpoint(to) })).rejects.toThrow(
+      "The source and the target overlap",
+    );
+    expect((await one.dav("PROPFIND", "/backup/", { headers: { depth: "1" } })).status).toBe(207);
+  });
+
+  it("copies between collections on one server that do not overlap", async () => {
+    const one = server("https://one.example");
+    await one.dav("MKCOL", "/from");
+    await one.dav("MKCOL", "/fromage");
+    await one.dav("PUT", "/from/x.txt", { body: "x" });
+    const report = await migrate({
+      source: one.endpoint("/from/"),
+      target: one.endpoint("/fromage/"),
+    });
+    expect(report).toMatchObject({ written: 1 });
+  });
+
+  it("reaches a collection whose name the server encodes otherwise", async () => {
+    const source = server("https://old.example");
+    const target = server("https://new.example");
+    await source.dav("MKCOL", "/a%2Bb%3Ac");
+    await source.dav("PUT", "/a%2Bb%3Ac/x.txt", { body: "x" });
+    const report = await migrate({ source: source.endpoint("/a+b:c/"), target: target.endpoint() });
+    expect(report).toMatchObject({ written: 1, conflicts: [] });
+  });
+
+  it.each([
+    ["created", undefined],
+    ["changed", "earlier"],
+  ])(
+    "stops when a file is %s on the target during the copy, and keeps that version",
+    async (_, before) => {
+      const source = server("https://old.example");
+      const target = server("https://new.example");
+      await source.dav("PUT", "/x.txt", { body: "from the source" });
+      if (before !== undefined) await target.dav("PUT", "/x.txt", { body: before });
+      const racing: Endpoint = {
+        ...target.endpoint(),
+        fetch: async (request) => {
+          if (request.method === "PUT") await target.dav("PUT", "/x.txt", { body: "a client's" });
+          return await target.fetch(request);
+        },
+      };
+      await expect(
+        migrate({ source: source.endpoint(), target: racing, overwrite: true }),
+      ).rejects.toThrow("/x.txt changed on the target during the copy");
+      expect(new TextDecoder().decode(await contentOf(target, "/x.txt"))).toBe("a client's");
+    },
+  );
+
+  it("ignores an href that is not valid percent-encoding", async () => {
+    const source = server("https://old.example");
+    const target = server("https://new.example");
+    await source.dav("PUT", "/x.txt", { body: "x" });
+    const odd: Endpoint = {
+      ...source.endpoint(),
+      fetch: async (request) => {
+        const response = await source.fetch(request);
+        if (request.method !== "PROPFIND" || request.headers.get("depth") !== "1") return response;
+        const xml = (await response.text()).replace("/dav/x.txt", "/dav/%E0%A4%A");
+        return new Response(xml, { status: 207 });
+      },
+    };
+    expect(await migrate({ source: odd, target: target.endpoint() })).toMatchObject({ written: 0 });
+  });
+
+  it("stops when the target keeps only some of the dead properties", async () => {
+    const source = server("https://old.example");
+    const target = server("https://new.example");
+    await source.dav("PUT", "/x.txt", { body: "x" });
+    await source.dav("PROPPATCH", "/x.txt", { body: proppatch("tag", "t") });
+    const partial: Endpoint = {
+      ...target.endpoint(),
+      fetch: async (request) =>
+        request.method === "PROPPATCH"
+          ? new Response(
+              '<?xml version="1.0"?><D:multistatus xmlns:D="DAV:"><D:response><D:href>/dav/x.txt</D:href><D:propstat><D:prop/><D:status>HTTP/1.1 403 Forbidden</D:status></D:propstat></D:response></D:multistatus>',
+              { status: 207 },
+            )
+          : await target.fetch(request),
+    };
+    await expect(migrate({ source: source.endpoint(), target: partial })).rejects.toThrow(
+      "PROPPATCH /x.txt did not set every property",
+    );
+  });
 });

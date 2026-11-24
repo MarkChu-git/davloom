@@ -52,6 +52,8 @@ interface Entry {
   readonly path: readonly string[];
   readonly kind: "file" | "folder";
   readonly size: number;
+  /** The entity tag, as the server sent it, quotes included; empty when it sent none. */
+  readonly etag: string;
   /** Dead properties: every property outside the DAV: namespace. */
   readonly properties: readonly XmlElement[];
 }
@@ -91,16 +93,34 @@ const fail = async (response: Response, method: string, path: readonly string[])
   return new MigrationError(`${method} /${path.join("/")} answered ${response.status}`);
 };
 
+/** The decoded names of a URL path. Servers and people encode the same name differently. */
+const namesOf = (pathname: string): string[] | null => {
+  try {
+    return pathname
+      .split("/")
+      .filter((name) => name !== "")
+      .map((name) => decodeURIComponent(name));
+  } catch {
+    return null;
+  }
+};
+
+const baseNames = (endpoint: Endpoint) => namesOf(new URL(withSlash(endpoint.url)).pathname) ?? [];
+
 /** The path of an href below the endpoint's collection, or null for one outside it. */
 const pathOf = (endpoint: Endpoint, href: string): string[] | null => {
-  const base = new URL(withSlash(endpoint.url)).pathname;
-  const pathname = new URL(href, withSlash(endpoint.url)).pathname;
-  if (!`${pathname}/`.startsWith(base)) return null;
-  return pathname
-    .slice(base.length)
-    .split("/")
-    .filter((name) => name !== "")
-    .map((name) => decodeURIComponent(name));
+  const base = baseNames(endpoint);
+  const names = namesOf(new URL(href, withSlash(endpoint.url)).pathname);
+  if (names === null || base.some((name, index) => names[index] !== name)) return null;
+  return names.slice(base.length);
+};
+
+/** Whether one collection holds the other, or they are the same: a copy would reach itself. */
+const overlap = (a: Endpoint, b: Endpoint) => {
+  if (new URL(a.url).origin !== new URL(b.url).origin) return false;
+  const [x, y] = [baseNames(a), baseNames(b)];
+  const [shorter, longer] = x.length <= y.length ? [x, y] : [y, x];
+  return shorter.every((name, index) => longer[index] === name);
 };
 
 const entriesOf = (endpoint: Endpoint, xml: string): Entry[] => {
@@ -119,7 +139,9 @@ const entriesOf = (endpoint: Endpoint, xml: string): Entry[] => {
       });
     const type = found.find((p) => p.ns === DAV && p.local === "resourcetype");
     const length = found.find((p) => p.ns === DAV && p.local === "getcontentlength");
+    const etag = found.find((p) => p.ns === DAV && p.local === "getetag");
     entries.push({
+      etag: etag ? textOf(etag).trim() : "",
       path,
       kind: type && findChild(type, DAV, "collection") ? "folder" : "file",
       size: length ? Number(textOf(length).trim()) : 0,
@@ -172,16 +194,29 @@ const read = async (endpoint: Endpoint, path: readonly string[]) => {
 const hashOf = async (endpoint: Endpoint, path: readonly string[]) =>
   await digest((await read(endpoint, path)).body);
 
-/** Copies one file's content, and returns the SHA-256 of what was read. */
-const copyFile = async (options: MigrateOptions, entry: Entry): Promise<string> => {
+/**
+ * Copies one file's content, and returns the SHA-256 of what was read. The write holds only while
+ * the target is as the decision saw it: still without the file, or still with the same version.
+ */
+const copyFile = async (options: MigrateOptions, entry: Entry, seen: Seen): Promise<string> => {
   const source = await read(options.source, entry.path);
   const [toTarget, toHash] = (source.body ?? new Blob([]).stream()).tee();
   const hashed = digest(toHash);
+  const condition: Record<string, string> =
+    seen.state === "absent"
+      ? { "if-none-match": "*" }
+      : seen.etag === ""
+        ? {}
+        : { "if-match": seen.etag };
   const put = await send(options.target, "PUT", entry.path, {
-    headers: { "content-length": String(entry.size) },
+    headers: { "content-length": String(entry.size), ...condition },
     body: toTarget,
   });
   const sourceHash = await hashed;
+  if (put.status === 412) {
+    await put.body?.cancel();
+    throw new MigrationError(`/${entry.path.join("/")} changed on the target during the copy`);
+  }
   if (put.status !== 201 && put.status !== 204) throw await fail(put, "PUT", entry.path);
   await put.body?.cancel();
   return sourceHash;
@@ -205,17 +240,24 @@ const setProperties = async (endpoint: Endpoint, entry: Entry) => {
   return entry.properties.length;
 };
 
+interface Seen {
+  readonly state: CopyTarget;
+  /** The target file's entity tag when it was looked at. */
+  readonly etag: string;
+}
+
 /** What the target holds where the source holds `entry`. */
-const targetState = async (options: MigrateOptions, entry: Entry): Promise<CopyTarget> => {
+const targetState = async (options: MigrateOptions, entry: Entry): Promise<Seen> => {
   const found = await stat(options.target, entry.path);
-  if (found === null) return "absent";
-  if (found.kind === "folder") return "folder";
-  if (entry.kind === "folder" || found.size !== entry.size) return "differs";
+  if (found === null) return { state: "absent", etag: "" };
+  if (found.kind === "folder") return { state: "folder", etag: "" };
+  if (entry.kind === "folder" || found.size !== entry.size)
+    return { state: "differs", etag: found.etag };
   const [a, b] = await Promise.all([
     hashOf(options.source, entry.path),
     hashOf(options.target, entry.path),
   ]);
-  return a === b ? "same" : "differs";
+  return { state: a === b ? "same" : "differs", etag: found.etag };
 };
 
 /** Copies every entry under the source collection to the target collection. */
@@ -228,6 +270,9 @@ export const migrate = async (options: MigrateOptions): Promise<MigrateReport> =
     properties: 0,
     conflicts: [],
   };
+  if (overlap(options.source, options.target)) {
+    throw new MigrationError("The source and the target overlap; choose collections apart.");
+  }
   const root = await stat(options.target, []);
   if (root?.kind !== "folder") {
     throw new MigrationError("The target is not a collection that this key can reach.");
@@ -238,11 +283,8 @@ export const migrate = async (options: MigrateOptions): Promise<MigrateReport> =
   const pending: (readonly string[])[] = [[]];
   for (let folder = pending.pop(); folder !== undefined; folder = pending.pop()) {
     for (const entry of await list(options.source, folder)) {
-      const action = decideMigration(
-        entry.kind,
-        await targetState(options, entry),
-        options.overwrite ?? false,
-      );
+      const seen = await targetState(options, entry);
+      const action = decideMigration(entry.kind, seen.state, options.overwrite ?? false);
       const path = `/${entry.path.join("/")}`;
       if (action === "conflict") {
         report.conflicts.push(path);
@@ -254,7 +296,7 @@ export const migrate = async (options: MigrateOptions): Promise<MigrateReport> =
         if (response.status !== 201) throw await fail(response, "MKCOL", entry.path);
         report.created += 1;
       } else if (action === "write") {
-        const sourceHash = await copyFile(options, entry);
+        const sourceHash = await copyFile(options, entry, seen);
         if ((await hashOf(options.target, entry.path)) !== sourceHash) {
           throw new MigrationError(`${path} reads back different from the source`);
         }
@@ -263,7 +305,8 @@ export const migrate = async (options: MigrateOptions): Promise<MigrateReport> =
       } else {
         report.skipped += 1;
       }
-      report.properties += await setProperties(options.target, entry);
+      // What a run creates or writes gets the source's dead properties; what it skips keeps its own.
+      if (action !== "skip") report.properties += await setProperties(options.target, entry);
       if (entry.kind === "folder") pending.push(entry.path);
       options.onEntry?.({ path, action });
     }
