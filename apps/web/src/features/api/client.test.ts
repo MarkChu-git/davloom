@@ -27,6 +27,7 @@ describe("error codes", () => {
     ["backend_in_use", 409, "A mount uses this backend"],
     ["backend_not_empty", 409, "still holds files"],
     ["backend_unavailable", 503, "did not answer"],
+    ["verification_locked", 429, "Wait 15 minutes"],
     ["http_501", 501, "does not run the management API"],
     ["http_500", 500, "(500)"],
   ])("%s says %s", (code, status, words) => {

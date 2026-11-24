@@ -152,6 +152,7 @@ const ERRORS = {
   WrongPassword: { status: 400, code: "wrong_password" },
   CodeRequired: { status: 400, code: "code_required" },
   WrongCode: { status: 400, code: "wrong_code" },
+  VerificationLocked: { status: 429, code: "verification_locked" },
   InvalidInput: { status: 400, code: "invalid_input" },
   NotFound: { status: 404, code: "not_found" },
   NameTaken: { status: 409, code: "name_taken" },

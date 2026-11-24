@@ -118,6 +118,16 @@ export const passkey = sqliteTable(
   ],
 );
 
+// Better Auth's rate limiter, in the database so that every Worker isolate and Bun process counts
+// the same requests. Davloom counts a user's failed proofs of presence here too
+// (packages/auth/src/attempts.ts). `last_request` is milliseconds since the epoch.
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
 export const apikey = sqliteTable(
   "apikey",
   {

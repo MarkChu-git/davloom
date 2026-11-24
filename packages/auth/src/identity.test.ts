@@ -5,7 +5,15 @@ import { createBunSqliteDatabase, migrateBunSqliteDatabase } from "@davloom/data
 import * as schema from "@davloom/database/schema";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAdmin, createAuth, PLACEHOLDER_EMAIL_DOMAIN, publicEmail } from "./auth";
+import { LOCK_MS, MAX_ATTEMPTS, takeAttempt } from "./attempts";
+import {
+  configuredOrigin,
+  createAdmin,
+  createAuth,
+  PLACEHOLDER_EMAIL_DOMAIN,
+  publicEmail,
+  rateLimitFrom,
+} from "./auth";
 import { createIdentity } from "./identity";
 import { cookieHeader, totpCode, totpSecretOf } from "./testing";
 
@@ -259,6 +267,199 @@ describe("reverify", () => {
       await identity.reverify(headers, { password: OWNER.password, code: await totpCode(secret) }),
     ).toBe("verified");
     expect((await identity.sessionUser(headers))?.twoFactorEnabled).toBe(true);
+  });
+});
+
+const WRONG = { password: "not the password at all", code: "" };
+
+/** A request to Better Auth's own routes over HTTP, as the Dashboard sends it. */
+const http = (path: string, body: unknown, headers = new Headers()) => {
+  const sent = new Headers(headers);
+  sent.set("content-type", "application/json");
+  sent.set("origin", "http://localhost");
+  return auth.handler(
+    new Request(`http://localhost/api/auth${path}`, {
+      method: "POST",
+      headers: sent,
+      body: JSON.stringify(body),
+    }),
+  );
+};
+
+describe("locking re-verification", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("locks after five wrong passwords, even for the right one, for 15 minutes", async () => {
+    await register();
+    const headers = await sessionOf();
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect(await identity.reverify(headers, WRONG)).toBe("wrong-password");
+    }
+    expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe("locked");
+
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + LOCK_MS - 1000 });
+    expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe("locked");
+    vi.setSystemTime(Date.now() + 2000);
+    expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe(
+      "verified",
+    );
+  });
+
+  it("forgets wrong attempts once one succeeds", async () => {
+    await register();
+    const headers = await sessionOf();
+    for (let round = 0; round < 3; round += 1) {
+      for (let attempt = 0; attempt < MAX_ATTEMPTS - 1; attempt += 1) {
+        expect(await identity.reverify(headers, WRONG)).toBe("wrong-password");
+      }
+      expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe(
+        "verified",
+      );
+    }
+  });
+
+  it("lets no more than five of many attempts sent at once through", async () => {
+    await register();
+    const headers = await sessionOf();
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => identity.reverify(headers, WRONG)),
+    );
+    expect(results.filter((result) => result === "wrong-password").length).toBeLessThanOrEqual(
+      MAX_ATTEMPTS,
+    );
+    expect(results).toContain("locked");
+  });
+
+  it("counts wrong authenticator codes too", async () => {
+    await register();
+    const { secret, headers } = await enableTwoFactor(await sessionOf());
+    const wrongCode = (await totpCode(secret)) === "000000" ? "111111" : "000000";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect(await identity.reverify(headers, { password: OWNER.password, code: wrongCode })).toBe(
+        "wrong-code",
+      );
+    }
+    expect(
+      await identity.reverify(headers, { password: OWNER.password, code: await totpCode(secret) }),
+    ).toBe("locked");
+  });
+
+  it("counts codes a signed-in session sends to Better Auth over HTTP", async () => {
+    await register();
+    const headers = await sessionOf();
+    const enabled = await auth.api.enableTwoFactor({ body: { password: OWNER.password }, headers });
+    if (enabled.method !== "totp") throw new Error("no TOTP");
+    const secret = totpSecretOf(enabled.totpURI);
+    const wrongCode = (await totpCode(secret)) === "000000" ? "111111" : "000000";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect((await http("/two-factor/verify-totp", { code: wrongCode }, headers)).status).toBe(
+        401,
+      );
+    }
+    const locked = await http("/two-factor/verify-totp", { code: await totpCode(secret) }, headers);
+    expect(locked.status).toBe(429);
+    expect((await identity.sessionUser(headers))?.twoFactorEnabled).toBe(false);
+  });
+
+  it("counts by user, so another user's lock leaves the owner alone", async () => {
+    await register();
+    const headers = await sessionOf();
+    const { adapter } = await auth.$context;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS + 2; attempt += 1) {
+      await takeAttempt(adapter, "someone-else");
+    }
+    expect(await identity.reverify(headers, { password: OWNER.password, code: "" })).toBe(
+      "verified",
+    );
+  });
+});
+
+describe("Better Auth's rate limit", () => {
+  it("limits sign-in over HTTP, outside production too", async () => {
+    await register();
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const response = await http("/sign-in/username", {
+        username: OWNER.username,
+        password: "not the password at all",
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses).toContain(429);
+    expect(statuses.filter((status) => status === 401).length).toBeLessThanOrEqual(10);
+    expect((await db.select().from(schema.rateLimit)).length).toBeGreaterThan(0);
+  });
+
+  it("is off when the deployment says so", async () => {
+    db = createBunSqliteDatabase(new Database(":memory:"));
+    migrateBunSqliteDatabase(db);
+    auth = createAuth({
+      database: db,
+      secret: "a-test-secret-that-is-at-least-32-characters",
+      baseURL: "http://localhost",
+      checkLeakedPasswords: false,
+      rateLimit: false,
+    });
+    identity = createIdentity(auth);
+    await register();
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const response = await http("/sign-in/username", {
+        username: OWNER.username,
+        password: "not the password at all",
+      });
+      expect(response.status).toBe(401);
+    }
+  });
+
+  it.each([
+    [undefined, true],
+    ["", true],
+    ["on", true],
+    ["off", false],
+    [" OFF ", false],
+    ["0", false],
+    ["false", false],
+    ["no", false],
+  ])("DAVLOOM_AUTH_RATE_LIMIT=%j leaves it on: %s", (value, on) => {
+    expect(rateLimitFrom(value)).toBe(on);
+  });
+});
+
+describe("passkeys", () => {
+  it("are off without a configured origin", async () => {
+    const response = await http("/passkey/generate-authenticate-options", {});
+    expect(response.status).toBe(404);
+  });
+
+  it("are bound to the configured origin, not to the request's", async () => {
+    db = createBunSqliteDatabase(new Database(":memory:"));
+    migrateBunSqliteDatabase(db);
+    auth = createAuth({
+      database: db,
+      secret: "a-test-secret-that-is-at-least-32-characters",
+      baseURL: "http://localhost",
+      checkLeakedPasswords: false,
+      passkeyOrigin: "https://files.example.com",
+    });
+    const response = await auth.handler(
+      new Request("https://evil.example/api/auth/passkey/generate-authenticate-options", {
+        headers: { origin: "https://evil.example", host: "evil.example" },
+      }),
+    );
+    expect(await response.json()).toMatchObject({ rpId: "files.example.com" });
+  });
+
+  it.each([
+    [undefined, undefined],
+    ["", undefined],
+    ["not a url", undefined],
+    ["ftp://files.example.com", undefined],
+    ["https://files.example.com/dav/", "https://files.example.com"],
+    [" http://127.0.0.1:3000 ", "http://127.0.0.1:3000"],
+  ])("DAVLOOM_URL=%j names the origin %j", (value, origin) => {
+    expect(configuredOrigin(value)).toBe(origin);
   });
 });
 

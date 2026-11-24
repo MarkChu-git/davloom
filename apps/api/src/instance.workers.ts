@@ -1,5 +1,11 @@
 import { env, waitUntil } from "cloudflare:workers";
-import { createAuth, createIdentity, leakedPasswordCheckFrom } from "@davloom/auth";
+import {
+  configuredOrigin,
+  createAuth,
+  createIdentity,
+  leakedPasswordCheckFrom,
+  rateLimitFrom,
+} from "@davloom/auth";
 import {
   Archive,
   checkR2Config,
@@ -36,6 +42,8 @@ declare global {
       readonly DAVLOOM_SECRET?: string;
       /** `off` turns off the check of new passwords against Have I Been Pwned. */
       readonly DAVLOOM_CHECK_LEAKED_PASSWORDS?: string;
+      /** `off` turns off Better Auth's rate limit, for test harnesses only. */
+      readonly DAVLOOM_AUTH_RATE_LIMIT?: string;
       /** The public URL, e.g. https://davloom.example.workers.dev; else the request's origin. */
       readonly DAVLOOM_URL?: string;
     }
@@ -77,6 +85,10 @@ export const workersInstance = (origin: string): Instance => {
     secret,
     baseURL: env.DAVLOOM_URL ?? origin,
     checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+    rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
+    // Cloudflare sets it to the client's address, replacing any value the client sent.
+    clientIpHeaders: ["cf-connecting-ip"],
+    passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
   });
   const operationLog = createOperationLog(db, d1Atomic(db));
   const layer = Layer.mergeAll(

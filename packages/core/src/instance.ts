@@ -138,7 +138,9 @@ export class Identity extends Context.Service<
     readonly reverify: (
       headers: Headers,
       input: { password: string; code: string },
-    ) => Promise<"verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code">;
+    ) => Promise<
+      "verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code" | "locked"
+    >;
     readonly createApiKey: (details: {
       userId: string;
       name: string;
@@ -189,6 +191,8 @@ export class WrongPassword extends Data.TaggedError("WrongPassword")<{}> {}
 /** Two-step verification is on, so a re-verification needs the authenticator's code too. */
 export class CodeRequired extends Data.TaggedError("CodeRequired")<{}> {}
 export class WrongCode extends Data.TaggedError("WrongCode")<{}> {}
+/** Too many wrong attempts at re-verification; the lock lifts after a quarter of an hour. */
+export class VerificationLocked extends Data.TaggedError("VerificationLocked")<{}> {}
 export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly field: string }> {}
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class NameTaken extends Data.TaggedError("NameTaken")<{}> {}
@@ -360,7 +364,9 @@ export const reverify = (headers: Headers, input: { password: string; code: stri
           ? new WrongPassword()
           : result === "code-required"
             ? new CodeRequired()
-            : new WrongCode(),
+            : result === "locked"
+              ? new VerificationLocked()
+              : new WrongCode(),
     );
   });
 

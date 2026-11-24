@@ -1,7 +1,14 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAuth, createIdentity, leakedPasswordCheckFrom } from "@davloom/auth";
+import {
+  CLIENT_IP_HEADER,
+  configuredOrigin,
+  createAuth,
+  createIdentity,
+  leakedPasswordCheckFrom,
+  rateLimitFrom,
+} from "@davloom/auth";
 import {
   Archive,
   credentialCipherLayer,
@@ -79,6 +86,10 @@ export const bunInstance =
       secret,
       baseURL: env.DAVLOOM_URL ?? origin,
       checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+      rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
+      // node-server.bun.ts sets it to the socket's address, replacing any value the client sent.
+      clientIpHeaders: [CLIENT_IP_HEADER],
+      passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
     });
     const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
     const unseal = async (backendId: string, sealed: string) =>

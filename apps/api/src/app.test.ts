@@ -342,6 +342,19 @@ describe("step-up verification", () => {
     expect((await w.api("/api/keys", "POST", { name: "k", access: "read-only" })).status).toBe(201);
   });
 
+  it("locks re-verification after five wrong passwords", async () => {
+    const w = world();
+    await w.setup();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect((await w.api("/api/verify", "POST", { password: "not the password" })).status).toBe(
+        400,
+      );
+    }
+    const locked = await w.api("/api/verify", "POST", { password: OWNER.password });
+    expect(locked.status).toBe(429);
+    expect(await body(locked)).toEqual({ error: { code: "verification_locked" } });
+  });
+
   it("needs a session to re-verify", async () => {
     const w = world();
     await w.api("/api/registration", "POST", OWNER);

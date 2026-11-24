@@ -6,7 +6,10 @@ import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 export const SECRET = "local-instance-secret-for-tests-only-0123456789";
 /** The test Workers run offline, so they leave out the leaked-password check (`../http/davloom.ts`). */
-export const OFFLINE_VARS = { DAVLOOM_CHECK_LEAKED_PASSWORDS: "off" } as const;
+export const OFFLINE_VARS = {
+  DAVLOOM_CHECK_LEAKED_PASSWORDS: "off",
+  DAVLOOM_AUTH_RATE_LIMIT: "off",
+} as const;
 export const ADMIN = {
   username: "admin",
   name: "Admin",

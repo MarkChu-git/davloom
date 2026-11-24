@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { planUrl, sendsMeasuredLength, type TargetForm } from "@davloom/laws";
+import { CLIENT_IP_HEADER } from "@davloom/auth";
 
 // The self-hosted HTTP server: node:http on Bun, in front of the app's fetch handler. Bun.serve
 // (Bun 1.4) drops the Content-Length of every answer whose body is a stream and sends it chunked,
@@ -84,6 +85,9 @@ export const toRequest = (incoming: IncomingMessage, signal: AbortSignal): Reque
       // node:http accepts header values that a Web Headers object refuses; they are dropped.
     }
   }
+  // The rate limit of sign-in counts by the client's address, which only the socket knows; a value
+  // a client sends in the header is replaced.
+  headers.set(CLIENT_IP_HEADER, incoming.socket.remoteAddress ?? "");
   const method = incoming.method ?? "GET";
   const body = BODILESS_METHODS.has(method) ? undefined : bodyOf(incoming);
   return new Request(urlOf(incoming.url ?? "/", incoming.headers.host), {

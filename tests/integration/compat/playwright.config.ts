@@ -80,11 +80,14 @@ const OTHER_BROWSERS: {
   },
 ];
 
-/** Starts the production Worker in local workerd, with the secrets a deployment sets. */
-const worker = (port: number) => ({
+/**
+ * Starts the production Worker in local workerd, with the secrets a deployment sets and the public
+ * origin that the browser reaches it on, which passkeys need.
+ */
+const worker = (port: number, origin: string) => ({
   command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${port}`,
   cwd: REPO_ROOT,
-  env: { DAVLOOM_SECRET: SECRET, ...OFFLINE_VARS },
+  env: { DAVLOOM_SECRET: SECRET, DAVLOOM_URL: origin, ...OFFLINE_VARS },
   url: `http://127.0.0.1:${port}/api/health`,
   // Longer than the 60 s that `servers.ts` gives bundling, so that a bundle step that hangs
   // fails with the harness's message rather than with Playwright's timeout.
@@ -159,8 +162,8 @@ export default defineConfig({
       env: { HOST: "127.0.0.1", PORT: String(BUN_PORT) },
       url: `${BUN_ORIGIN}/api/health`,
     },
-    worker(WORKERS_PORT),
-    worker(DEV_WORKER_PORT),
+    worker(WORKERS_PORT, WORKERS_ORIGIN),
+    worker(DEV_WORKER_PORT, DEV_WORKER_ORIGIN),
     {
       // `bun --bun` keeps Vite on Bun: `bun run` inside a package directory ignores `run.bun`.
       command: `bun --bun run dev --host 127.0.0.1 --port ${DEV_SERVER_PORT} --strictPort`,

@@ -135,6 +135,8 @@ export const describeError = (error: unknown): string => {
     case "password_refused":
     case "email_refused":
       return error.detail ?? "Check the values and try again.";
+    case "verification_locked":
+      return "Too many wrong attempts. Wait 15 minutes, then try again.";
     case "password_check_failed":
       return "Davloom could not check the password against known breaches. Try again later.";
     case "password_compromised":
