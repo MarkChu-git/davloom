@@ -89,6 +89,17 @@ describe("answers", () => {
     expect(await response.text()).toBe("<multistatus/>");
   });
 
+  it.each([204, 304])("measures no Content-Length onto a %i", async (status) => {
+    let sent = "";
+    handle = () => new Response("", { status });
+    const answer = await raw(
+      `GET /empty HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n`,
+    );
+    sent = answer.toLowerCase();
+    expect(sent).toMatch(new RegExp(`^http/1\\.1 ${status}`));
+    expect(sent).not.toContain("content-length");
+  });
+
   it("streams a long body without a Content-Length chunked", async () => {
     const chunks = [bytes(MEASURED_BODY_BYTES, 1), bytes(MEASURED_BODY_BYTES, 2), bytes(10, 3)];
     handle = () => new Response(streamOf(chunks));
@@ -251,7 +262,10 @@ describe("requests", () => {
     ["/a", "127.0.0.1@evil.com", "http://host.invalid/a"],
     ["/a", "bad host", "http://host.invalid/a"],
     ["/a", "[::1", "http://host.invalid/a"],
-    ["http://example.com/abs", "other", "http://example.com/abs"],
+    ["http://example.com/abs?q", "other", "http://other/abs?q"],
+    ["https://evil.example/dav/", "other", "http://other/dav/"],
+    ["http://localhost/dav/", "203.0.113.9", "http://203.0.113.9/dav/"],
+    ["https://evil.example/dav/", undefined, "http://host.invalid/dav/"],
     ["*", "example.com", "http://host.invalid/"],
   ])("takes the URL of %s with Host %s for %s", (target, host, url) => {
     expect(urlOf(target, host).href).toBe(url);

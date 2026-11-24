@@ -19,9 +19,18 @@ const NO_HOST = "http://host.invalid";
 
 /** The URL a node:http request names, as Bun.serve forms it from the request line and Host. */
 export const urlOf = (target: string, host: string | undefined): URL => {
-  const path = target.startsWith("/") ? target : "/";
+  let path = target.startsWith("/") ? target : "/";
   try {
-    if (!target.startsWith("/")) return new URL(target);
+    // An absolute-form target names a scheme and a host of its own. Bun.serve kept only its path
+    // and query, so a client cannot pass the HTTPS-only check or pick the origin by naming
+    // https:// or localhost in the request line; the scheme stays http: and the host the Host
+    // header's.
+    // An asterisk-form target (OPTIONS *) names no resource.
+    if (target === "*") return new URL("/", NO_HOST);
+    if (!target.startsWith("/")) {
+      const absolute = new URL(target);
+      path = `${absolute.pathname}${absolute.search}`;
+    }
     // A Host with a path, a query, credentials or spaces in it is not a host.
     if (host === undefined || host === "" || /[/?#@\\\s]/.test(host)) {
       return new URL(path, NO_HOST);
@@ -134,7 +143,10 @@ export const writeResponse = async (
         first.push(next.value);
         measured += next.value.byteLength;
       }
-      if (ended) headers["content-length"] = String(measured);
+      // RFC 9110 gives a 1xx, 204 or 304 answer no Content-Length of a body it does not have.
+      const lengthless =
+        response.status < 200 || response.status === 204 || response.status === 304;
+      if (ended && !lengthless) headers["content-length"] = String(measured);
     }
     outgoing.writeHead(response.status, headers);
     for (const chunk of first) outgoing.write(chunk);
