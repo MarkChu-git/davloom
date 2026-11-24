@@ -140,17 +140,19 @@ export interface ObjectStoreOptions {
   readonly maxEntries?: number;
 }
 
-// A move records where it moves a collection on the source path before it removes the source, and
-// drops the record once the source is gone. A move that stopped while removing leaves the record
-// beside a source that is partly gone and a destination that holds everything. A client's retry of
-// that move, with Overwrite: T as clients send by default, must not replace the destination, which
-// holds the files already removed from the source: it finds the record and resumes instead
-// (resumeMove, PRD §5 recovery of multi-object operations). The record is a property in a
-// namespace of Davloom's own, which no client sees or sets.
+// A move of a collection records its destination before it moves the source's properties and
+// removes the source, and drops the record once the source is gone. A move that stopped part-way
+// leaves the record beside a source that is partly gone and a destination that holds everything.
+// A client's retry of that move, with Overwrite: T as clients send by default, must not replace the
+// destination, which holds what was already removed from the source: it finds the record and
+// resumes instead (resumeMove, PRD §5 recovery of multi-object operations). The record lives in the
+// Property Store under a path that begins with `..`, which no entry's path does, so no client can
+// read or set it and no copy or move of the tree carries it along.
 
-/** The namespace of Davloom's own properties. */
-const INTERNAL = "urn:davloom:internal";
-const JOURNAL = `{${INTERNAL}}move-to`;
+const JOURNAL = "{urn:davloom:internal}move-to";
+
+/** Where the record of a move of the collection at `from` lives. */
+const journalPath = (from: Path): Path => ["..", "davloom-moves", ...from];
 
 const escapeXml = (text: string) =>
   text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -158,10 +160,8 @@ const escapeXml = (text: string) =>
 /** The record of a move of a collection to `to`. */
 const journalOf = (to: Path): DeadProperty => ({
   name: JOURNAL,
-  xml: `<move-to xmlns="${INTERNAL}">${escapeXml(pathKey(to))}</move-to>`,
+  xml: `<move-to xmlns="urn:davloom:internal">${escapeXml(pathKey(to))}</move-to>`,
 });
-
-const isInternal = (name: string) => name.startsWith(`{${INTERNAL}}`);
 
 // --- Keys --------------------------------------------------------------------------------------
 
@@ -545,25 +545,30 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
 
     // Everything that can fail on hidden objects or on the limit fails before anything changes.
     const sourceKeys = source.node === "collection" && shallow ? [] : await keysOf(from, source);
-    if (!fits(sourceKeys.length)) return fail("too-many");
 
     if (move && source.node === "collection") {
-      const recorded = must(await properties.get([from]))[pathKey(from)] ?? [];
+      const record = journalPath(from);
+      const recorded = must(await properties.get([record]))[pathKey(record)] ?? [];
       const journal = recorded.find((property) => property.name === JOURNAL);
       if (resumeMove(journal?.xml === journalOf(to).xml, destination.node)) {
-        // Whatever is left of the source goes over the destination, which keeps the rest.
+        if (!fits(sourceKeys.length)) return fail("too-many");
+        // Whatever is left of the source goes over the destination, which keeps the rest, and so
+        // do the properties of what is left.
         const sourceMarker = markerKey(prefix, from);
         const targetMarker = markerKey(prefix, to);
         await inParallel(sourceKeys, PARALLEL_COPIES, async (key) => {
           must(await driver.copy(key, `${targetMarker}${key.slice(sourceMarker.length)}`));
         });
         await keepCollection(parentOf(from), sourceParent);
+        must(await properties.moveTree(from, to));
         await removeKeys(sourceKeys);
-        must(await properties.removeTree(from));
+        must(await properties.removeTree(record));
         return ok({ replaced: true });
       }
     }
     const replacedKeys = outcome.replaces ? await keysOf(to, destination) : [];
+    // A replaced destination is listed and removed in the same request, so it counts as well.
+    if (!fits(sourceKeys.length + replacedKeys.length)) return fail("too-many");
 
     if (outcome.replaces) {
       await keepCollection(parentOf(to), destinationParent);
@@ -589,22 +594,19 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
     }
 
     if (move) {
-      must(await properties.moveTree(from, to));
+      // Recorded before the properties move: from here on, a retry resumes.
       if (source.node === "collection") {
-        // A record that an earlier, stopped move left on the source does not belong here.
-        must(await properties.patch(to, [], [JOURNAL]));
-        must(await properties.patch(from, [journalOf(to)], []));
+        must(await properties.patch(journalPath(from), [journalOf(to)], []));
       }
+      must(await properties.moveTree(from, to));
       await removeKeys(sourceKeys);
-      if (source.node === "collection") must(await properties.removeTree(from));
+      // Also drops records that stopped moves of collections inside the source left.
+      if (source.node === "collection") must(await properties.removeTree(journalPath(from)));
     } else if (shallow) {
-      const own = (must(await properties.get([from]))[pathKey(from)] ?? []).filter(
-        (property) => !isInternal(property.name),
-      );
+      const own = must(await properties.get([from]))[pathKey(from)] ?? [];
       if (own.length > 0) must(await properties.patch(to, own, []));
     } else {
       must(await properties.copyTree(from, to));
-      if (source.node === "collection") must(await properties.patch(to, [], [JOURNAL]));
     }
     return ok({ replaced: outcome.replaces });
   };
@@ -724,6 +726,8 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
         await keepCollection(parentOf(path), parent);
         await removeKeys(keys);
         must(await properties.removeTree(path));
+        // A record of a stopped move of what was removed belongs to nothing now.
+        if (path.length > 0) must(await properties.removeTree(journalPath(path)));
         return ok(null);
       }),
 
@@ -737,23 +741,14 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
         const existing = await existingOf(paths);
         const stored = must(await properties.get(existing));
         const result: Record<string, readonly DeadProperty[]> = {};
-        for (const path of existing) {
-          result[pathKey(path)] = (stored[pathKey(path)] ?? []).filter(
-            (property) => !isInternal(property.name),
-          );
-        }
+        for (const path of existing) result[pathKey(path)] = stored[pathKey(path)] ?? [];
         return ok(result);
       }),
 
     patchProperties: (path, set, remove) =>
       attempt(async () => {
         if ((await probe(path)).node === "absent") return fail("not-found");
-        // Davloom's own properties are not the client's to set or remove.
-        return properties.patch(
-          path,
-          set.filter((property) => !isInternal(property.name)),
-          remove.filter((name) => !isInternal(name)),
-        );
+        return properties.patch(path, set, remove);
       }),
 
     usage: () =>

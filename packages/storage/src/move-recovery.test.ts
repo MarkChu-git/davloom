@@ -134,6 +134,9 @@ describe("a move that stopped while removing its source", () => {
       const { driver, properties, storage } = make();
       await storage.createCollection(["src"]);
       seedFiles(driver, 3);
+      const tag = { name: "{urn:x}tag", xml: '<x:tag xmlns:x="urn:x"/>' };
+      await storage.patchProperties(["src"], [tag], []);
+      await storage.patchProperties(["src", "f0001"], [tag], []);
       properties.failWhen((call) => call === failing);
       const first = await storage.move(["src"], ["dst"], { overwrite: true });
       properties.failWhen(null);
@@ -146,6 +149,11 @@ describe("a move that stopped while removing its source", () => {
       const done = await snapshot(storage);
       expect(fileCount(done, "dst")).toBe(3);
       expect(Object.keys(done).some((key) => key.startsWith("src"))).toBe(false);
+      // The properties moved with their entries, whichever step failed first.
+      expect(await storage.properties([["dst"], ["dst", "f0001"]])).toEqual({
+        ok: true,
+        value: { dst: [tag], "dst/f0001": [tag] },
+      });
     },
   );
 });
@@ -177,23 +185,61 @@ describe("the record of a move", () => {
     });
   });
 
-  it("cannot be set or removed by a client", async () => {
+  it("is out of a client's reach: a property of the same name is an ordinary one", async () => {
     const { storage } = await stopped();
     const internal = "{urn:davloom:internal}move-to";
+    const planted = { name: internal, xml: '<move-to xmlns="urn:davloom:internal">dst</move-to>' };
+    // Removing the name from the source does not remove the record: the retry still resumes.
     expect(await storage.patchProperties(["src"], [], [internal])).toEqual({
       ok: true,
       value: null,
     });
-    expect(
-      await storage.patchProperties(
-        ["dst"],
-        [{ name: internal, xml: '<move-to xmlns="urn:davloom:internal">x</move-to>' }],
-        [],
-      ),
-    ).toEqual({ ok: true, value: null });
-    // The record survived the attempt to remove it: the retry still resumes.
+    // Setting it on another collection stores an ordinary property, which a client reads back.
+    await storage.createCollection(["other"]);
+    expect(await storage.patchProperties(["other"], [planted], [])).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(await storage.properties([["other"]])).toEqual({
+      ok: true,
+      value: { other: [planted] },
+    });
     await storage.move(["src"], ["dst"], { overwrite: true });
     expect(fileCount(await snapshot(storage), "dst")).toBe(1002);
+    // The planted property makes no resume: moving `other` over dst replaces it.
+    await storage.move(["other"], ["dst"], { overwrite: true });
+    expect(fileCount(await snapshot(storage), "dst")).toBe(0);
+  });
+
+  it("of a collection does not travel with a copy of an ancestor", async () => {
+    const { driver, storage } = make();
+    await storage.createCollection(["p"]);
+    await storage.createCollection(["p", "a"]);
+    for (let i = 0; i < 1002; i += 1)
+      driver.seed(`dav/p/a/f${String(i).padStart(4, "0")}`, `v${i}`);
+    driver.failWhen((call, key) =>
+      call === "delete" && key === "dav/p/a/f1001" ? "unavailable" : null,
+    );
+    await storage.move(["p", "a"], ["b"], { overwrite: true });
+    driver.failWhen(null);
+    await storage.copy(["p"], ["q"], { overwrite: false, shallow: false });
+    await storage.write(["b", "extra"], text("x"), {});
+    // The copy of p/a carries no record, so moving it over b replaces b, extra included.
+    await storage.move(["q", "a"], ["b"], { overwrite: true });
+    const tree = await snapshot(storage);
+    expect(tree["b/extra"]).toBeUndefined();
+    expect(fileCount(tree, "b")).toBe(3);
+  });
+
+  it("is dropped when the source is deleted, so a new collection there moves as usual", async () => {
+    const { storage } = await stopped();
+    await storage.remove(["src"]);
+    await storage.createCollection(["src"]);
+    await storage.write(["src", "new"], text("n"), {});
+    await storage.move(["src"], ["dst"], { overwrite: true });
+    const tree = await snapshot(storage);
+    expect(fileCount(tree, "dst")).toBe(0);
+    expect(tree["dst/new"]).toBe("n");
   });
 
   it("does not travel with a copy of the source", async () => {
@@ -235,6 +281,17 @@ describe("the synchronous limit", () => {
     const { storage } = make(5);
     await limitTree(storage, 4);
     expect((await run(storage)).ok).toBe(true);
+  });
+
+  it("counts a destination that the move replaces", async () => {
+    const { storage } = make(8);
+    await limitTree(storage, 3);
+    await storage.createCollection(["dst"]);
+    for (let i = 0; i < 4; i += 1) await storage.write(["dst", `old${i}`], text("o"), {});
+    const before = await snapshot(storage);
+    // Four source objects and five destination objects: nine, over eight.
+    expect(await storage.move(["src"], ["dst"], { overwrite: true })).toEqual(failed("too-many"));
+    expect(await snapshot(storage)).toEqual(before);
   });
 
   it("allows a shallow copy of any collection, and any single file", async () => {
