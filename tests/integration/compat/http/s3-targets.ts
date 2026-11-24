@@ -195,16 +195,6 @@ const mountS3 = async (davloom: Davloom, proxy: S3Proxy) => {
   if (mount.status !== 201) throw new Error(`mount failed: ${mount.status} ${await mount.text()}`);
 };
 
-/**
- * A product bug keeps an S3 backend from working on Workers at all: the Worker bundle takes the
- * browser build of the AWS SDK's XML parser (@aws-sdk/xml-builder's `xml-parser.browser`, chosen
- * by its package.json `browser` field), which calls `DOMParser`, and workerd has none. Every S3
- * answer with an XML body, every listing among them, fails with "DOMParser is not defined", so
- * every request to the Mount answers 503. s3-workers.test.ts shows it; until it is fixed, the
- * tables skip the Workers target unless DAVLOOM_TEST_WORKERS_S3=1, which runs it as after a fix.
- */
-export const RUN_WORKERS_S3 = process.env.DAVLOOM_TEST_WORKERS_S3 === "1";
-
 /** Starts the production Worker in local workerd with a Mount `s3` on the in-memory S3. */
 export const startWorkersWithS3 = async ({ pageSize }: { readonly pageSize?: number } = {}) => {
   const proxy = startS3Proxy({ pageSize });
@@ -231,7 +221,7 @@ export const startWorkersWithS3 = async ({ pageSize }: { readonly pageSize?: num
 export const S3_TARGETS: readonly S3Target[] = [
   {
     name: "Workers with an S3 backend (in-memory S3)",
-    skip: !RUN_WORKERS_S3,
+    skip: false,
     memory: true,
     start: startWorkersWithS3,
   },

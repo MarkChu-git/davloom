@@ -13,10 +13,9 @@ describe("an S3 backend on Workers", () => {
     await deployment?.stop();
   });
 
-  // Known product bug (s3-targets.ts, RUN_WORKERS_S3): the Worker bundle's AWS SDK parses XML with
-  // DOMParser, which workerd lacks, so every request to an S3 Mount answers 503. When this fails,
-  // the bug is fixed: make it a plain `it` and let the tables run the Workers target.
-  it.fails("writes, lists and reads files", async () => {
+  // The Worker bundle once took the AWS SDK's browser XML parser, which needs DOMParser, and
+  // workerd has none: every request to an S3 Mount answered 503 (apps/api/wrangler.jsonc, alias).
+  it("writes, lists and reads files", async () => {
     const { davloom, mount } = deployment;
     expect((await davloom.dav(`${mount}/a.txt`, { method: "PUT", body: "alpha" })).status).toBe(
       201,
