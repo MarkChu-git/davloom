@@ -1,4 +1,6 @@
 import { fileURLToPath } from "node:url";
+import stylex from "@stylexjs/unplugin/vite";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 // Coverage thresholds per package, starting at the coverage measured when the gate was added
@@ -36,10 +38,35 @@ export default defineConfig({
     },
   },
   test: {
-    include: [
-      "scripts/**/*.test.ts",
-      "packages/*/src/**/*.test.{ts,tsx}",
-      "apps/*/src/**/*.test.{ts,tsx}",
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "unit",
+          include: [
+            "scripts/**/*.test.ts",
+            "packages/*/src/**/*.test.ts",
+            "apps/*/src/**/*.test.ts",
+          ],
+        },
+      },
+      {
+        // React components in happy-dom, compiled as the Dashboard's build compiles them.
+        extends: true,
+        plugins: [
+          stylex({
+            useCSSLayers: true,
+            debug: false,
+            unstable_moduleResolution: { type: "commonJS" },
+          }),
+          react(),
+        ],
+        test: {
+          name: "components",
+          environment: "happy-dom",
+          include: ["apps/web/src/**/*.test.tsx", "packages/ui/src/**/*.test.tsx"],
+        },
+      },
     ],
     coverage: {
       provider: "istanbul",
