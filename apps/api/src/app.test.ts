@@ -237,6 +237,10 @@ const later = () => {
   vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + STEP_UP_WINDOW_MS + 1000 });
 };
 
+/** Adds GET /api/extra to an app, as an entry adds its own routes, and asks it. */
+const extra = (app: ReturnType<typeof createApp>) =>
+  app.get("/api/extra", () => "extra").handle(new Request("http://localhost/api/extra"));
+
 describe("step-up verification", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -245,10 +249,27 @@ describe("step-up verification", () => {
   it("classifies every route of the app", () => {
     const app = createApp();
     const unclassified = app.routes
-      .filter((route) => !["/api/auth/*", "/dav", "/dav/*"].includes(route.path))
+      .filter((route) => route.path.startsWith("/api/") && route.path !== "/api/auth/*")
       .map((route) => `${route.method} ${route.path}`)
       .filter((key) => !Object.hasOwn(API_ACTIONS, key));
     expect(unclassified).toEqual([]);
+  });
+
+  it("refuses a route added under /api/ unless the caller classifies it", async () => {
+    expect((await extra(createApp())).status).toBe(404);
+    const classified = createApp({
+      classify: (method, route) =>
+        `${method} ${route}` === "GET /api/extra" ? "public" : undefined,
+    });
+    expect(await (await extra(classified)).text()).toBe("extra");
+  });
+
+  it("leaves the Dashboard's pages outside /api/ to the route that serves them", async () => {
+    const app = createApp().all("/*", () => new Response("<html>"), { parse: "none" });
+    for (const path of ["/", "/settings", "/sign-in"]) {
+      const response = await app.handle(new Request(`http://localhost${path}`));
+      expect(response.status, path).toBe(200);
+    }
   });
 
   it("refuses a Better Auth path nobody classified", async () => {

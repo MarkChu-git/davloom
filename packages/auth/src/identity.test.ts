@@ -127,7 +127,8 @@ describe("registerOwner", () => {
     setUp(true);
     const sha1 = new Bun.CryptoHasher("sha1").update(OWNER.password).digest("hex").toUpperCase();
     const fetch = vi.fn(
-      async () => new Response(`${sha1.slice(5)}:42\r\n0000000000000000000000000000000000A:1`),
+      async (_url: URL) =>
+        new Response(`${sha1.slice(5)}:42\r\n0000000000000000000000000000000000A:1`),
     );
     vi.stubGlobal("fetch", fetch);
 
@@ -136,7 +137,7 @@ describe("registerOwner", () => {
     expect(result).toMatchObject({ ok: false, refusal: "field", field: "password" });
     expect(result.ok ? "" : "reason" in result ? result.reason : "").toMatch(/breach/);
     // Only the first five characters of the hash leave the instance.
-    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+    expect(fetch.mock.calls[0]?.[0].href).toBe(
       `https://api.pwnedpasswords.com/range/${sha1.slice(0, 5)}`,
     );
   });
@@ -201,6 +202,7 @@ describe("sessionUser", () => {
 /** Turns two-step verification on for the signed-in owner and returns its TOTP secret. */
 const enableTwoFactor = async (headers: Headers) => {
   const enabled = await auth.api.enableTwoFactor({ body: { password: OWNER.password }, headers });
+  if (enabled.method !== "totp") throw new Error("two-step verification did not start TOTP");
   const secret = totpSecretOf(enabled.totpURI);
   const verified = await auth.api.verifyTOTP({
     body: { code: await totpCode(secret) },

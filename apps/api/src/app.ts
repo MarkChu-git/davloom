@@ -38,7 +38,13 @@ import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloo
 import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
-import { apiEffect, authEffect, davEffect, updateUserEffect } from "./verification";
+import {
+  apiEffect,
+  authEffect,
+  davEffect,
+  updateUserEffect,
+  type RouteEffect,
+} from "./verification";
 
 /** The application's Ports, which every deployment provides. */
 type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher | Archive;
@@ -66,6 +72,12 @@ export interface AppOptions {
    * (DAVLOOM_ALLOW_HTTP=1). Without it, plain HTTP reaches them only on the machine itself.
    */
   readonly allowHttp?: boolean;
+  /**
+   * Classifies routes that a caller adds under /api/ after createApp, from the method and the
+   * route's pattern, as API_ACTIONS does (apps/api/src/verification.ts). A route that neither
+   * classifies answers 404.
+   */
+  readonly classify?: (method: string, route: string) => RouteEffect | undefined;
 }
 
 // PRD §12: WebDAV is exposed over HTTPS only. API Keys and session cookies travel with every
@@ -154,6 +166,7 @@ export const createApp = ({
   instance,
   webdavHandler,
   allowHttp = false,
+  classify = () => undefined,
 }: AppOptions = {}) => {
   let built:
     | {
@@ -348,9 +361,11 @@ export const createApp = ({
       // Every route below names its effect in verification.ts; one that does not is refused, and
       // a step-up action without a fresh verification answers 403 verification_required.
       .onBeforeHandle(async ({ request, route }) => {
-        if (route === "/api/auth/*" || route === "/dav" || route === "/dav/*") return undefined;
+        // WebDAV and Better Auth classify their own requests below; a route outside /api/, such
+        // as the Bun entry's Dashboard files, serves pages and changes nothing.
+        if (!route.startsWith("/api/") || route === "/api/auth/*") return undefined;
         const method = request.method === "HEAD" ? "GET" : request.method;
-        const effect = apiEffect(method, route);
+        const effect = apiEffect(method, route) ?? classify(method, route);
         if (effect === undefined) return UNCLASSIFIED();
         return effect === "public" ? undefined : await refuseUnverified(request, effect);
       })

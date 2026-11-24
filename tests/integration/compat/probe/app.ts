@@ -12,7 +12,12 @@ export interface ProbeOptions extends AppOptions {
 
 /** The production app plus the routes that only compatibility tests may reach. */
 export const createProbeApp = ({ getAuth, ...options }: ProbeOptions) =>
-  createApp({ ...options, webdavHandler: probeHandler })
+  createApp({
+    ...options,
+    webdavHandler: probeHandler,
+    // The probe's routes guard themselves (token-guard.ts) and take no session.
+    classify: (_method, route) => (route.startsWith("/api/__probe/") ? "public" : undefined),
+  })
     .use(effectRoutes)
     .use(streamRoutes)
     .use(identityRoutes(getAuth));

@@ -4,6 +4,7 @@ import * as schema from "@davloom/database/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
+import { hashPassword } from "better-auth/crypto";
 import { haveIBeenPwned, twoFactor, username } from "better-auth/plugins";
 
 export interface AuthOptions {
@@ -152,7 +153,9 @@ export const createAdmin = async (
     userId: user.id,
     providerId: "credential",
     accountId: user.id,
-    password: await context.password.hash(password),
+    // Better Auth's own hasher: context.password.hash runs the leaked-password check, which needs
+    // a request.
+    password: await hashPassword(password),
   });
   return user;
 };
