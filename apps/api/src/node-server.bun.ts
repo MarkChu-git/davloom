@@ -33,11 +33,11 @@ export const urlOf = (target: string, host: string | undefined): URL => {
     }
     // A Host with a path, a query, credentials or spaces in it is not a host.
     if (host === undefined || host === "" || /[/?#@\\\s]/.test(host)) {
-      return new URL(path, NO_HOST);
+      return new URL(`${NO_HOST}${path}`);
     }
     return new URL(`http://${host}${path}`);
   } catch {
-    return new URL(path, NO_HOST);
+    return new URL(`${NO_HOST}${path}`);
   }
 };
 

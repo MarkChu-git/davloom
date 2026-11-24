@@ -266,6 +266,8 @@ describe("requests", () => {
     ["https://evil.example/dav/", "other", "http://other/dav/"],
     ["http://localhost/dav/", "203.0.113.9", "http://203.0.113.9/dav/"],
     ["https://evil.example/dav/", undefined, "http://host.invalid/dav/"],
+    ["//localhost/dav/", undefined, "http://host.invalid//localhost/dav/"],
+    ["//localhost/dav/", "a b", "http://host.invalid//localhost/dav/"],
     ["*", "example.com", "http://host.invalid/"],
   ])("takes the URL of %s with Host %s for %s", (target, host, url) => {
     expect(urlOf(target, host).href).toBe(url);
