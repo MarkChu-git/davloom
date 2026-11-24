@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Coverage thresholds per package, starting at the coverage measured when the gate was added
@@ -11,7 +12,7 @@ import { defineConfig } from "vitest/config";
 // outside this report; its entry started at the coverage measured on 2026-11-23 with the first.
 // scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
 export const thresholds = {
-  "apps/api/src/**": { lines: 0, branches: 0 },
+  "apps/api/src/**": { lines: 94, branches: 87 },
   "apps/web/src/**": { lines: 18.04, branches: 14.55 },
   "packages/auth/src/**": { lines: 100, branches: 100 },
   "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
@@ -26,6 +27,14 @@ export const thresholds = {
 
 // Unit tests only. Runtime compatibility tests have their own configs in tests/integration/compat.
 export default defineConfig({
+  resolve: {
+    // Workers-only modules get a stand-in, so their wiring runs in the unit tests too.
+    alias: {
+      "cloudflare:workers": fileURLToPath(
+        new URL("scripts/test/cloudflare-workers.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     include: [
       "scripts/**/*.test.ts",
