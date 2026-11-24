@@ -15,7 +15,7 @@ import { defineConfig } from "vitest/config";
 // scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
 export const thresholds = {
   "apps/api/src/**": { lines: 94, branches: 87 },
-  "apps/web/src/**": { lines: 18.04, branches: 14.55 },
+  "apps/web/src/**": { lines: 98, branches: 93 },
   "packages/auth/src/**": { lines: 100, branches: 100 },
   "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
   "packages/database/src/**": { lines: 93, branches: 95 },
@@ -23,7 +23,7 @@ export const thresholds = {
   "packages/migrate/src/**": { lines: 100, branches: 89 },
   // r2.ts and durable-object.ts run only in workerd (test:storage), outside this report.
   "packages/storage/src/**": { lines: 58.5, branches: 61 },
-  "packages/ui/src/**": { lines: 34.37, branches: 100 },
+  "packages/ui/src/**": { lines: 100, branches: 100 },
   "packages/webdav/src/**": { lines: 97, branches: 88.9, functions: 96 },
 };
 
