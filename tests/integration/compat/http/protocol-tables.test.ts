@@ -243,15 +243,14 @@ describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) =>
         expect(response.headers.get("content-range")).toBe(
           `bytes ${outcome.first}-${outcome.last}/${content.length}`,
         );
-        // The handler sets Content-Length, but workerd sends a streamed body chunked and drops
-        // the field; when one arrives, it must count the range's bytes.
-        const length = response.headers.get("content-length");
-        if (length !== null) expect(length).toBe(String(part.length));
+        // The Workers entry streams the body through a FixedLengthStream, so workerd keeps it.
+        expect(response.headers.get("content-length")).toBe(String(part.length));
         expect(body).toBe(method === "HEAD" ? "" : part);
       } else if (outcome.status === 416) {
         expect(response.headers.get("content-range")).toBe(`bytes */${content.length}`);
       } else {
         expect(response.headers.get("content-range")).toBeNull();
+        expect(response.headers.get("content-length")).toBe(String(content.length));
         expect(body).toBe(method === "HEAD" ? "" : content);
       }
     };
@@ -613,10 +612,10 @@ describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) =>
       get = {
         etag: head.headers.get("etag"),
         lastModified: head.headers.get("last-modified"),
-        // workerd drops a streamed body's Content-Length (see Range), so the length is the body's.
-        length: String((await read.arrayBuffer()).byteLength),
+        length: read.headers.get("content-length"),
         type: head.headers.get("content-type"),
       };
+      await read.body?.cancel();
     });
 
     const propfind = async (path: string, body: string) => {
