@@ -174,18 +174,6 @@ export const FAULT_MODES: readonly FaultMode[] = [
   { name: "a slow store", fault: { kind: "slow", ms: 30 }, passes: true },
 ];
 
-/**
- * The fault modes that a product bug answers wrongly. The S3 driver (packages/storage/src/s3.ts,
- * failureOfError) takes every 400 that the AWS SDK names `Unknown`, which is a 400 with an empty
- * body or with an error document without a Code, for a key that the store refuses
- * (`name-refused`), and the object-store adapter (readingRefusedAsAbsent) then reads the key, and
- * any listing, as holding nothing. A store that answers so because it is broken therefore looks
- * empty instead of failing with 503: GET, HEAD, DELETE, COPY and MOVE answer 404, PUT, MKCOL and
- * LOCK 409, a PROPFIND of the Mount lists no members, and a listing whose later page fails ends
- * early, so a DELETE, COPY or MOVE of a large collection handles only its first pages.
- */
-export const BUG_MODES = new Set(["400 with an empty body", "400 with an error without a Code"]);
-
 export const modeNamed = (name: string): FaultMode => {
   const mode = FAULT_MODES.find((candidate) => candidate.name === name);
   if (!mode) throw new Error(`no fault mode ${name}`);

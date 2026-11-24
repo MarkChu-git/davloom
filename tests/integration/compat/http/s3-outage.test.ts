@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { S3_TARGETS, type S3Deployment } from "./s3-targets";
-import { BUG_MODES, CASES, FAULT_MODES, send, STORE_FAILED, WORLD, type Answer } from "./s3-world";
+import { CASES, FAULT_MODES, send, STORE_FAILED, WORLD, type Answer } from "./s3-world";
 
 // A store that fails every request, in each way an S3-compatible store or the network between can
 // fail, against one WebDAV request of each method: Davloom must answer that its store failed (503,
@@ -61,15 +61,5 @@ describe.each(S3_TARGETS)("a store outage on $name", (target) => {
     expect(after, "the store after the request").toEqual(WORLD);
   };
 
-  it.skipIf(skip).each(rows.filter((row) => !BUG_MODES.has(row[0])))(
-    "%s, %s",
-    { timeout: 60_000 },
-    run,
-  );
-  // Each fails until the bug that BUG_MODES names is fixed; then it belongs in the table above.
-  (skip ? it.skip : it.fails).each(rows.filter((row) => BUG_MODES.has(row[0])))(
-    "%s, %s (known bug)",
-    { timeout: 60_000 },
-    run,
-  );
+  it.skipIf(skip).each(rows)("%s, %s", { timeout: 60_000 }, run);
 });

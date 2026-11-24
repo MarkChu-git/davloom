@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FaultRule } from "./s3-proxy";
 import { S3_TARGETS, type S3Deployment, type S3Target } from "./s3-targets";
-import { BUG_MODES, modeNamed, STORE_FAILED, type FaultMode } from "./s3-world";
+import { modeNamed, STORE_FAILED, type FaultMode } from "./s3-world";
 
 // A collection with more keys than one listing page holds. PROPFIND with Depth 1 lists every
 // member, DELETE removes every key, and COPY and MOVE carry every key, or refuse with 403 and
@@ -77,7 +77,15 @@ const laterPages =
   (from: number) =>
   ({ fault }: FaultMode): FaultRule[] => [{ query: ["continuation-token"], from, fault }];
 
-const FAULTS = ["403 AccessDenied", "503 with an empty body", "a reset connection"].map(modeNamed);
+// A later page that fails with a 400 without a code must fail the request too, not end the
+// listing as if it were the last.
+const FAULTS = [
+  "400 with an empty body",
+  "400 with an error without a Code",
+  "403 AccessDenied",
+  "503 with an empty body",
+  "a reset connection",
+].map(modeNamed);
 
 describe.each(S3_TARGETS)("listings of many pages on $name", (target) => {
   let deployment: S3Deployment;
@@ -182,21 +190,6 @@ describe.each(S3_TARGETS)("listings of many pages on $name", (target) => {
     );
     it.skipIf(target.skip).each(rows)(
       "%s fails and changes nothing when %s fails with %s",
-      { timeout: 120_000 },
-      async (operation, _shape, _mode, rules) => {
-        await run(operation, rules);
-      },
-    );
-    // Known product bug (BUG_MODES, s3-world.ts): a later page that fails with a 400 the SDK names
-    // `Unknown` ends the listing as if it were the last, so PROPFIND lists only the first pages
-    // and DELETE, COPY and MOVE handle only their keys, answering success.
-    const bugRows = shapes.flatMap(([shape, rules]) =>
-      [...BUG_MODES].flatMap((name) =>
-        OPERATIONS.map((operation) => [operation, shape, name, rules(modeNamed(name))] as const),
-      ),
-    );
-    (target.skip ? it.skip : it.fails).each(bugRows)(
-      "%s fails and changes nothing when %s fails with %s (known bug)",
       { timeout: 120_000 },
       async (operation, _shape, _mode, rules) => {
         await run(operation, rules);

@@ -5,7 +5,7 @@ import { createS3Client, createS3Driver } from "@davloom/storage/s3";
 import { afterAll, describe, expect, it } from "vitest";
 import { startS3Proxy, type FaultRule } from "./s3-proxy";
 import { driverView } from "./s3-targets";
-import { BUG_MODES, FAULT_MODES } from "./s3-world";
+import { FAULT_MODES } from "./s3-world";
 
 // The proxy of s3-proxy.ts on its own: its in-memory S3 against the S3 driver of packages/storage
 // (the storage contract, with listings of a few keys per page, and the keys S3 allows), its rules,
@@ -222,6 +222,11 @@ describe("the proxy's rules", () => {
   });
 });
 
+// An answer to HEAD has no body, so the driver takes any 400 to HEAD for a refused key, as RustFS
+// refuses one; the object-store adapter then confirms it with a listing.
+const refusesHead = (call: string, mode: (typeof FAULT_MODES)[number]) =>
+  call === "head" && mode.fault.kind === "status" && mode.fault.status === 400;
+
 // What the S3 driver reports for each fault mode of the tables, on each of its calls: a store that
 // fails is unavailable, whatever the call; a slow store is no failure.
 describe("the S3 driver on a failing store", () => {
@@ -242,15 +247,11 @@ describe("the S3 driver on a failing store", () => {
     const result = await calls[call]();
     proxy.setRules([]);
     const failure = result.ok ? "ok" : result.failure;
-    expect(failure).toBe(mode.passes ? "ok" : "unavailable");
+    expect(failure).toBe(
+      mode.passes ? "ok" : refusesHead(call, mode) ? "name-refused" : "unavailable",
+    );
   };
-  // Known product bug (BUG_MODES, s3-world.ts): the driver reports these as `name-refused`. An
-  // answer to HEAD has no body, so every 400 to HEAD is one of them.
-  const isBug = ([name, call, mode]: (typeof rows)[number]) =>
-    BUG_MODES.has(name) ||
-    (call === "head" && mode.fault.kind === "status" && mode.fault.status === 400);
-  it.each(rows.filter((row) => !isBug(row)))("%s: %s", check);
-  it.fails.each(rows.filter((row) => isBug(row)))("%s: %s (known bug)", check);
+  it.each(rows)("%s: %s", check);
 });
 
 // The proxy in front of another store, as in front of RustFS: here the store is a second proxy
