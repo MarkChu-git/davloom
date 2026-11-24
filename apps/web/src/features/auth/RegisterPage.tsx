@@ -3,59 +3,48 @@ import { Button } from "@astryxdesign/core/Button";
 import { FileInput } from "@astryxdesign/core/FileInput";
 import { VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { importInstance, register, registrationQuery, signInWithPassword } from "../api/account";
 import { describeError, isApiError } from "../api/client";
-import { completeSetup, importInstance, keys, setupQuery, signIn } from "../api/queries";
+import { keys } from "../api/queries";
 import { AuthFrame, Waiting } from "./AuthFrame";
+import { registrationProblems, type RegistrationFields } from "./forms";
 import { GoTo } from "./GoTo";
-import { MIN_PASSWORD, setupProblems, type SetupFields } from "./forms";
+import { NewPasswordField } from "./PasswordField";
 
-const setupFailure = (error: unknown): string => {
-  if (!isApiError(error)) {
-    return describeError(error);
-  }
-  switch (error.code) {
-    case "setup_token_invalid":
-      return "The setup token is wrong. It is the DAVLOOM_SETUP_TOKEN of this deployment.";
-    case "setup_closed":
-      return "Setup is already complete. Sign in instead.";
-    case "invalid_input":
-      return "The server refused one of the values. Check them and try again.";
-    default:
-      return describeError(error);
-  }
+/** The field a refusal of the server names, so its reason shows under that field. */
+const FIELD_OF_CODE: Readonly<Record<string, keyof RegistrationFields>> = {
+  username_refused: "username",
+  password_refused: "password",
+  email_refused: "email",
 };
 
 /** The largest export file the Dashboard reads. */
 const MAX_EXPORT_BYTES = 50 * 1024 * 1024;
 
-/**
- * Setup from an export of another instance: its administrator, keys, backends and mounts. The
- * administrator then signs in with the password they had there.
- */
+/** An instance from an export of another: its owner, keys, backends and mounts. */
 const ImportForm = () => {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [key, setKey] = useState("");
-  const [token, setToken] = useState("");
-  const [problems, setProblems] = useState<{ file?: string; key?: string; token?: string }>({});
+  const [problems, setProblems] = useState<{ file?: string; key?: string }>({});
   const [failure, setFailure] = useState<string>();
   const [isImporting, setIsImporting] = useState(false);
 
   const submit = async () => {
     const next = {
       file: file === null ? "Choose the export file." : undefined,
-      key: key.trim() === "" ? "Enter the key shown with the export." : undefined,
-      token: token.trim() === "" ? "Enter the setup token." : undefined,
+      key: key.trim() === "" ? "Enter the export key." : undefined,
     };
     setProblems(next);
     setFailure(undefined);
-    if (file === null || Object.values(next).some((problem) => problem !== undefined)) return;
+    if (file === null || next.key !== undefined) {
+      return;
+    }
     setIsImporting(true);
     try {
       let parsed: unknown;
@@ -66,11 +55,11 @@ const ImportForm = () => {
         setIsImporting(false);
         return;
       }
-      await importInstance({ token: token.trim(), key: key.trim(), file: parsed });
-      await client.invalidateQueries({ queryKey: keys.setup });
+      await importInstance({ key: key.trim(), file: parsed });
+      await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
       await navigate({ to: "/sign-in", replace: true });
     } catch (error) {
-      setFailure(setupFailure(error));
+      setFailure(describeError(error));
       setIsImporting(false);
     }
   };
@@ -95,7 +84,6 @@ const ImportForm = () => {
         <TextInput
           label="Export key"
           type="password"
-          description="The key Davloom showed when it made the export."
           value={key}
           onChange={(value) => {
             setKey(value);
@@ -105,21 +93,6 @@ const ImportForm = () => {
           autoComplete="off"
           status={problems.key === undefined ? undefined : { type: "error", message: problems.key }}
         />
-        <TextInput
-          label="Setup token"
-          type="password"
-          description="The DAVLOOM_SETUP_TOKEN this instance was deployed with."
-          value={token}
-          onChange={(value) => {
-            setToken(value);
-            setProblems((current) => ({ ...current, token: undefined }));
-          }}
-          onEnter={() => void submit()}
-          autoComplete="off"
-          status={
-            problems.token === undefined ? undefined : { type: "error", message: problems.token }
-          }
-        />
       </VStack>
       <Button
         label="Import"
@@ -127,59 +100,47 @@ const ImportForm = () => {
         isLoading={isImporting}
         onClick={() => void submit()}
       />
-      <Text type="supporting" color="secondary">
-        The import adds everything or nothing. Then sign in with the password from the old instance.
-      </Text>
     </>
   );
 };
 
 /**
- * First-run setup: creates the administrator, the default Durable Objects backend and the
- * Mount "files", then signs in. It takes the setup token, so that only whoever deployed the
- * instance can claim it.
+ * Registration (PRD §6): while this Davloom has no account, its first visitor creates the owner's,
+ * which also gets a backend and the mount /files, and is signed in. Once an owner exists, this page
+ * sends every visitor to sign in.
  */
-export const SetupPage = () => {
+export const RegisterPage = () => {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const setup = useQuery(setupQuery);
-  const [fields, setFields] = useState<SetupFields>({
+  const registration = useQuery(registrationQuery);
+  const [fields, setFields] = useState<RegistrationFields>({
+    username: "",
     name: "",
     email: "",
     password: "",
-    token: "",
   });
-  const [problems, setProblems] = useState<Partial<Record<keyof SetupFields, string>>>({});
+  const [problems, setProblems] = useState<Partial<Record<keyof RegistrationFields, string>>>({});
   const [failure, setFailure] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState<"new" | "import">("new");
 
-  if (setup.isPending) {
+  if (registration.isPending) {
     return <Waiting label="Checking this instance" />;
   }
-  if (setup.data?.needed === false) {
+  if (registration.data?.open === false) {
     return <GoTo href="/sign-in" />;
   }
-  if (setup.isError || !(setup.data?.open ?? false)) {
+  if (registration.isError) {
     return (
-      <AuthFrame title="Set up Davloom">
-        <Banner
-          status="warning"
-          title={setup.isError ? describeError(setup.error) : "Setup is closed"}
-          description={
-            setup.isError
-              ? undefined
-              : "Set DAVLOOM_SETUP_TOKEN on this deployment, then reload this page."
-          }
-          container="card"
-        />
-        <Button label="Try again" variant="secondary" onClick={() => void setup.refetch()} />
+      <AuthFrame title="Create account">
+        <Banner status="error" title={describeError(registration.error)} container="card" />
+        <Button label="Try again" variant="secondary" onClick={() => void registration.refetch()} />
       </AuthFrame>
     );
   }
 
   const submit = async () => {
-    const next = setupProblems(fields);
+    const next = registrationProblems(fields);
     setProblems(next);
     setFailure(undefined);
     if (Object.keys(next).length > 0) {
@@ -187,23 +148,30 @@ export const SetupPage = () => {
     }
     setIsSaving(true);
     try {
-      await completeSetup({
+      await register({
+        username: fields.username.trim(),
         name: fields.name.trim(),
         email: fields.email.trim(),
         password: fields.password,
-        token: fields.token.trim(),
       });
-      await signIn(fields.email.trim(), fields.password);
-      await client.invalidateQueries({ queryKey: keys.setup });
+      await signInWithPassword(fields.username.trim(), fields.password);
+      await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
       await client.invalidateQueries({ queryKey: keys.me });
       await navigate({ to: "/", replace: true });
     } catch (error) {
-      setFailure(setupFailure(error));
+      const field = isApiError(error) ? FIELD_OF_CODE[error.code] : undefined;
+      if (field !== undefined) {
+        setProblems({ [field]: describeError(error) });
+      } else if (isApiError(error) && error.code === "registration_closed") {
+        await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
+      } else {
+        setFailure(describeError(error));
+      }
       setIsSaving(false);
     }
   };
 
-  const field = (name: keyof SetupFields) => ({
+  const field = (name: keyof RegistrationFields) => ({
     value: fields[name],
     onChange: (value: string) => {
       setFields((current) => ({ ...current, [name]: value }));
@@ -218,22 +186,19 @@ export const SetupPage = () => {
 
   const modes = (
     <SegmentedControl
-      label="How to set up"
+      label="Start from"
       value={mode}
       onChange={(next) => setMode(next === "import" ? "import" : "new")}
       layout="fill"
     >
-      <SegmentedControlItem value="new" label="New instance" />
+      <SegmentedControlItem value="new" label="New account" />
       <SegmentedControlItem value="import" label="From an export" />
     </SegmentedControl>
   );
 
   if (mode === "import") {
     return (
-      <AuthFrame
-        title="Set up Davloom"
-        description="Bring the administrator, keys, backends and mounts from an export of another instance."
-      >
+      <AuthFrame title="Create account">
         {modes}
         <ImportForm />
       </AuthFrame>
@@ -241,52 +206,49 @@ export const SetupPage = () => {
   }
 
   return (
-    <AuthFrame
-      title="Set up Davloom"
-      description="Create the administrator. Davloom also creates a Durable Objects backend and the mount /files."
-    >
+    <AuthFrame title="Create account">
       {modes}
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       <VStack gap={4}>
         <TextInput
-          label="Name"
-          {...field("name")}
-          autoComplete="name"
+          label="Username"
+          {...field("username")}
+          autoComplete="username"
+          autoCapitalize="none"
+          hasAutoCorrect={false}
           hasSpellCheck={false}
           hasAutoFocus
         />
         <TextInput
-          label="Email"
-          type="email"
-          {...field("email")}
-          autoComplete="username"
-          autoCapitalize="none"
+          label="Display name"
+          isOptional
+          {...field("name")}
+          autoComplete="name"
           hasSpellCheck={false}
         />
         <TextInput
-          label="Password"
-          type="password"
-          description={`At least ${MIN_PASSWORD} characters.`}
-          {...field("password")}
-          autoComplete="new-password"
+          label="Email"
+          type="email"
+          isOptional
+          {...field("email")}
+          autoComplete="email"
+          autoCapitalize="none"
+          hasSpellCheck={false}
         />
-        <TextInput
-          label="Setup token"
-          type="password"
-          description="The DAVLOOM_SETUP_TOKEN this instance was deployed with."
-          {...field("token")}
-          autoComplete="off"
+        <NewPasswordField
+          label="Password"
+          value={fields.password}
+          onChange={field("password").onChange}
+          onEnter={() => void submit()}
+          problem={problems.password}
         />
       </VStack>
       <Button
-        label="Create administrator"
+        label="Create account"
         variant="primary"
         isLoading={isSaving}
         onClick={() => void submit()}
       />
-      <Text type="supporting" color="secondary">
-        Setup runs once. After it, this page sends you to sign in.
-      </Text>
     </AuthFrame>
   );
 };

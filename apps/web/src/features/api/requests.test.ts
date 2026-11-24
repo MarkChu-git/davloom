@@ -10,7 +10,8 @@ import {
   uploadFile,
   webdavAddress,
 } from "./dav";
-import { completeSetup, createQueryClient, keys, signIn, signOut } from "./queries";
+import { register, signInWithPassword, signOut } from "./account";
+import { createQueryClient, keys } from "./queries";
 
 // The requests the Dashboard sends, read off a stand-in for fetch and XMLHttpRequest.
 
@@ -179,19 +180,21 @@ describe("uploads", () => {
 });
 
 describe("management requests", () => {
-  it("signs in, signs out and completes setup with JSON", async () => {
+  it("signs in, signs out and registers with JSON", async () => {
     answer = () => Response.json({ ok: true });
-    await signIn("a@example.com", "pw");
+    expect(await signInWithPassword("a@example.com", "pw")).toBe("signed-in");
+    expect(await signInWithPassword("owner", "pw")).toBe("signed-in");
     await signOut();
-    await completeSetup({ name: "A", email: "a@example.com", password: "p", token: "t" });
+    await register({ username: "owner", name: "", email: "", password: "p" });
     expect(
       calls.map(
         ([url, init]) => `${init.method} ${url} ${typeof init.body === "string" ? init.body : ""}`,
       ),
     ).toEqual([
       'POST /api/auth/sign-in/email {"email":"a@example.com","password":"pw"}',
+      'POST /api/auth/sign-in/username {"username":"owner","password":"pw"}',
       "POST /api/auth/sign-out {}",
-      'POST /api/setup {"name":"A","email":"a@example.com","password":"p","token":"t"}',
+      'POST /api/registration {"username":"owner","name":"","email":"","password":"p"}',
     ]);
   });
 

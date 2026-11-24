@@ -1,4 +1,5 @@
 import { joinPath } from "../files/paths";
+import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
 
 // The Dashboard's WebDAV client. It reaches /dav with the session cookie, which the server takes
 // only from a request that carries the Dashboard's header: a cross-site form cannot send one.
@@ -19,16 +20,35 @@ export interface Entry {
   contentType: string;
 }
 
-/** A WebDAV request the server refused, with its status. */
+/** A WebDAV request the server refused, with its status, and the API's code when it sent one. */
 export class DavError extends Error {
   readonly status: number;
+  readonly code: string | undefined;
 
-  constructor(status: number) {
+  constructor(status: number, code?: string) {
     super(`WebDAV answered ${status}`);
     this.name = "DavError";
     this.status = status;
+    this.code = code;
   }
 }
+
+/** The code of a JSON refusal such as `{"error":{"code":"verification_required"}}`. */
+const refusalCode = async (response: Response): Promise<string | undefined> => {
+  if (!(response.headers.get("content-type") ?? "").includes("json")) {
+    return undefined;
+  }
+  try {
+    const body: unknown = await response.json();
+    const error: unknown =
+      typeof body === "object" && body !== null ? Reflect.get(body, "error") : undefined;
+    const code: unknown =
+      typeof error === "object" && error !== null ? Reflect.get(error, "code") : undefined;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 export const isDavError = (error: unknown): error is DavError => error instanceof DavError;
 
@@ -159,23 +179,28 @@ const send = async (
     headers?: Record<string, string>;
     body?: string;
   } = {},
-): Promise<Response> => {
-  let response: Response;
-  try {
-    response = await fetch(davHref(parts, isFolder), {
-      method,
-      credentials: "same-origin",
-      headers: { ...DASHBOARD_HEADERS, ...headers },
-      body,
-    });
-  } catch {
-    throw new DavError(0);
-  }
-  if (!response.ok) {
-    throw new DavError(response.status);
-  }
-  return response;
-};
+): Promise<Response> =>
+  // Deleting, or replacing at a destination, asks for step-up verification (stepUp.ts).
+  withStepUp(async () => {
+    let response: Response;
+    try {
+      response = await fetch(davHref(parts, isFolder), {
+        method,
+        credentials: "same-origin",
+        headers: { ...DASHBOARD_HEADERS, ...headers },
+        body,
+      });
+    } catch {
+      throw new DavError(0);
+    }
+    if (!response.ok) {
+      throw new DavError(
+        response.status,
+        response.status === 403 ? await refusalCode(response) : undefined,
+      );
+    }
+    return response;
+  });
 
 /** The entries of the folder at `parts`, the first part naming its Mount. */
 export const listFolder = async (parts: readonly string[]): Promise<Entry[]> => {
@@ -283,7 +308,9 @@ export const davProblem = (error: unknown, path: string = joinPath([])): string 
     case 401:
       return "Your session has ended. Sign in again.";
     case 403:
-      return "This session may not change files here.";
+      return error.code === VERIFICATION_REQUIRED
+        ? "Verify it is you to do this."
+        : "This session may not change files here.";
     case 404:
       return `${path} is no longer there.`;
     case 405:

@@ -113,8 +113,8 @@ describe("the Dashboard's pages", () => {
     let isSignedIn = false;
     const { router } = await openApp("/settings?section=about", {
       "GET /api/me": () => (isSignedIn ? json(ME) : json({ error: { code: "unauthorized" } }, 401)),
-      "GET /api/setup": () => json({ needed: false, open: false }),
-      "POST /api/auth/sign-in/email": () => {
+      "GET /api/registration": () => json({ open: false }),
+      "POST /api/auth/sign-in/username": () => {
         isSignedIn = true;
         return json({ ok: true });
       },
@@ -123,7 +123,7 @@ describe("the Dashboard's pages", () => {
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
     expect(router.state.location.search).toEqual({ redirect: "/settings?section=about" });
-    await userEvent.type(await screen.findByLabelText("Email"), "admin@davloom.test");
+    await userEvent.type(await screen.findByLabelText("Username or email"), "owner");
     await userEvent.type(screen.getByLabelText("Password"), "correct horse");
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     await waitFor(() => expect(router.state.location.href).toBe("/settings?section=about"));
@@ -164,13 +164,13 @@ describe("the Dashboard's pages", () => {
     ["/storage", "Storage & Mounts | Davloom"],
     ["/settings", "Settings | Davloom"],
     ["/sign-in", "Sign in | Davloom"],
-    ["/setup", "Set up | Davloom"],
+    ["/register", "Create account | Davloom"],
   ])("names the tab of %s %j", async (href, title) => {
-    // Sign-in and setup show themselves only before there is a session or an administrator.
-    const isAuthPage = href === "/sign-in" || href === "/setup";
+    // Sign-in and registration show themselves only before there is a session or an owner.
+    const isAuthPage = href === "/sign-in" || href === "/register";
     await openApp(href, {
       "GET /api/me": () => (isAuthPage ? json({ error: { code: "unauthorized" } }, 401) : json(ME)),
-      "GET /api/setup": () => json({ needed: href === "/setup", open: true }),
+      "GET /api/registration": () => json({ open: href === "/register" }),
       "GET /api/backends": () => json([]),
       "GET /api/mounts": () => json([]),
       "GET /api/keys": () => json([]),
@@ -200,8 +200,16 @@ describe("the Dashboard's pages", () => {
     expect(new URL(listed?.url ?? ORIGIN).pathname).toBe("/dav/files/photos/");
   });
 
-  it("opens the setup page on its own", async () => {
-    await openApp("/setup", { "GET /api/setup": () => json({ needed: true, open: true }) });
-    expect(await screen.findByRole("button", { name: "Create administrator" })).toBeTruthy();
+  it("opens the registration page on its own", async () => {
+    await openApp("/register", { "GET /api/registration": () => json({ open: true }) });
+    expect(await screen.findByRole("button", { name: "Create account" })).toBeTruthy();
+  });
+
+  it("sends a visit to registration on an instance with an owner to sign in", async () => {
+    const { router } = await openApp("/register", {
+      "GET /api/registration": () => json({ open: false }),
+      "GET /api/me": () => json({ error: { code: "unauthorized" } }, 401),
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
   });
 });

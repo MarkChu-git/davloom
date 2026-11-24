@@ -1,4 +1,5 @@
 import { DavError } from "./dav";
+import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
 // The Dashboard's calls to the management API (apps/api/src/app.ts). Every call goes to the origin
 // that served the Dashboard and carries its session cookie.
 
@@ -52,14 +53,30 @@ const readBody = async (response: Response): Promise<unknown> => {
   }
 };
 
-/** The message in an error body such as `{"error":{"code":"archive_invalid","message":"…"}}`. */
-const detailOf = (body: unknown): string | undefined =>
-  isRecord(body) && isRecord(body.error) && typeof body.error.message === "string"
-    ? body.error.message
+/**
+ * The message in an error body such as `{"error":{"code":"archive_invalid","message":"…"}}`, or
+ * Better Auth's own `{ code, message }`.
+ */
+const detailOf = (body: unknown): string | undefined => {
+  if (isRecord(body) && isRecord(body.error) && typeof body.error.message === "string") {
+    return body.error.message;
+  }
+  return isRecord(body) && typeof body.message === "string" && body.message !== ""
+    ? body.message
     : undefined;
+};
 
-/** Calls the API and returns its JSON answer, or throws an ApiError. */
-export const apiFetch = async <T>(
+/**
+ * Calls the API and returns its JSON answer, or throws an ApiError. An action that needs step-up
+ * verification asks for it and runs again (stepUp.ts).
+ */
+export const apiFetch = <T>(
+  path: string,
+  options: { method?: string; body?: unknown } = {},
+): Promise<T> => withStepUp(() => apiFetchOnce<T>(path, options));
+
+/** Calls the API once, without asking for verification. */
+export const apiFetchOnce = async <T>(
   path: string,
   { method = "GET", body }: { method?: string; body?: unknown } = {},
 ): Promise<T> => {
@@ -104,7 +121,23 @@ export const describeError = (error: unknown): string => {
       return "Check the values and try again.";
     case "archive_invalid":
       return error.detail ?? "This export cannot be imported.";
+    case VERIFICATION_REQUIRED:
+      return "Verify it is you to do this.";
+    case "registration_closed":
+      return "This Davloom has its owner already. Sign in instead.";
+    case "username_refused":
+    case "password_refused":
+    case "email_refused":
+      return error.detail ?? "Check the values and try again.";
+    case "password_check_failed":
+      return "Davloom could not check the password against known breaches. Try again later.";
+    case "password_compromised":
+      return error.detail ?? "This password appears in known data breaches. Choose another.";
     default:
+      // Better Auth explains its refusals, such as a username that is taken.
+      if (error.detail !== undefined && error.status >= 400 && error.status < 500) {
+        return error.detail;
+      }
       return error.status === 501
         ? "This server does not run the management API yet."
         : `The server refused the request (${error.status}).`;

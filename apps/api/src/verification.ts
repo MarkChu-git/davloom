@@ -60,6 +60,7 @@ export const AUTH_ACTIONS: Readonly<Record<string, RouteEffect>> = {
   // A display name alone is a change; a username or an email is a credential (updateUserEffect).
   "/update-user": "change",
   "/change-password": "credential",
+  "/change-email": "credential",
   "/two-factor/enable": "credential",
   "/two-factor/disable": "credential",
   "/two-factor/get-totp-uri": "credential",

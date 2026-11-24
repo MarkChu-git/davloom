@@ -67,6 +67,10 @@ export const createAuth = ({
       minPasswordLength: MIN_PASSWORD_LENGTH,
       maxPasswordLength: MAX_PASSWORD_LENGTH,
     },
+    user: {
+      // Davloom sends no mail, so an owner's email changes at once (the owner verifies first).
+      changeEmail: { enabled: true, updateEmailWithoutVerification: true },
+    },
     session: {
       // Davloom asks for a fresh verification itself, for the actions that need one (PRD §6),
       // so Better Auth's own day-long freshness rule would only lock the sessions list.

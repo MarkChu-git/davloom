@@ -7,6 +7,7 @@ import { describeError, isUnauthorized } from "../../features/api/client";
 import { useMe } from "../../features/api/queries";
 import { Waiting } from "../../features/auth/AuthFrame";
 import { GoTo, signInHref } from "../../features/auth/GoTo";
+import { StepUpDialog } from "../../features/auth/StepUpDialog";
 import { DashboardShell } from "../../features/shell/DashboardShell";
 
 /** The Dashboard's pages need a session: without one, the browser goes to sign in and back. */
@@ -45,6 +46,7 @@ const DashboardLayout = () => {
   return (
     <DashboardShell>
       <Outlet />
+      <StepUpDialog />
     </DashboardShell>
   );
 };

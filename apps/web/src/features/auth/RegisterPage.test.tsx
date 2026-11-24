@@ -1,0 +1,194 @@
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { json, renderPage, type Handler } from "../../test/render";
+import { RegisterPage } from "./RegisterPage";
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+const OPEN: Handler = () => json({ open: true });
+
+const showForm = async (api: Record<string, Handler> = {}) => {
+  const page = await renderPage(<RegisterPage />, {
+    path: "/register",
+    api: { "GET /api/registration": OPEN, ...api },
+  });
+  await screen.findByRole("heading", { name: "Create account" });
+  return page;
+};
+
+/** The password field, whose group also names its Generate and Copy buttons. */
+const passwordInput = (): HTMLInputElement => {
+  const input = document.querySelector<HTMLInputElement>('input[autocomplete="new-password"]');
+  if (input === null) throw new Error("no password field");
+  return input;
+};
+
+const sentBody = async (calls: Request[], path: string): Promise<unknown> =>
+  await calls.find((call) => call.method === "POST" && call.url.endsWith(path))?.json();
+
+describe("RegisterPage", () => {
+  it("waits while it asks whether the instance has an owner", async () => {
+    await renderPage(<RegisterPage />, {
+      api: { "GET /api/registration": () => new Promise<Response>(() => undefined) },
+    });
+    expect(screen.getByText("Checking this instance")).toBeTruthy();
+  });
+
+  it("sends every visitor to sign in once an owner exists", async () => {
+    const { router } = await renderPage(<RegisterPage />, {
+      path: "/register",
+      api: { "GET /api/registration": () => json({ open: false }) },
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+  });
+
+  it("says when the instance cannot be read, and asks again", async () => {
+    let answer = json({ error: { code: "x" } }, 503);
+    await renderPage(<RegisterPage />, {
+      api: { "GET /api/registration": () => answer.clone() },
+    });
+    expect(await screen.findByText("The server refused the request (503).")).toBeTruthy();
+    answer = json({ open: true });
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByLabelText("Username")).toBeTruthy();
+  });
+
+  it("creates the account with a username and password alone, and signs in", async () => {
+    let signedIn = false;
+    const { router, calls } = await showForm({
+      "POST /api/registration": () => json({ userId: "u" }, 201),
+      "POST /api/auth/sign-in/username": () => {
+        signedIn = true;
+        return json({ token: "t" });
+      },
+      "GET /api/me": () =>
+        signedIn ? json({ id: "u" }) : json({ error: { code: "unauthorized" } }, 401),
+    });
+    await userEvent.type(screen.getByLabelText("Username"), " owner ");
+    await userEvent.type(passwordInput(), "a long password here");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(await sentBody(calls, "/api/registration")).toEqual({
+      username: "owner",
+      name: "",
+      email: "",
+      password: "a long password here",
+    });
+    expect(await sentBody(calls, "/api/auth/sign-in/username")).toEqual({
+      username: "owner",
+      password: "a long password here",
+    });
+  });
+
+  it("generates a password, shows it, and offers to copy it", async () => {
+    const { calls } = await showForm({
+      "POST /api/registration": () => json({ userId: "u" }, 201),
+      "POST /api/auth/sign-in/username": () => json({ token: "t" }),
+    });
+    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
+    const first = passwordInput().value;
+    expect(first).toMatch(/^[A-Za-z0-9_-]{24}$/);
+    expect(passwordInput().type).toBe("text");
+    expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect(passwordInput().value).not.toBe(first);
+    // Typing over a generated password hides it again, and Copy goes with it.
+    await userEvent.type(passwordInput(), "x");
+    expect(passwordInput().type).toBe("password");
+    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await userEvent.type(screen.getByLabelText("Username"), "owner");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+    expect(await sentBody(calls, "/api/registration")).toMatchObject({
+      password: passwordInput().value,
+    });
+  });
+
+  it("refuses fields that cannot be sent", async () => {
+    const { calls } = await showForm();
+    await userEvent.type(screen.getByRole("textbox", { name: /^Email/ }), "nope");
+    await userEvent.type(passwordInput(), "short");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect((await screen.findAllByText("Enter a username.")).length).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText("Enter an email address, such as you@example.com.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText("Use at least 12 characters.").length).toBeGreaterThan(0);
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+
+  it.each([
+    [
+      json(
+        {
+          error: {
+            code: "password_refused",
+            message: "This password appears in known data breaches. Choose another.",
+          },
+        },
+        400,
+      ),
+      "This password appears in known data breaches. Choose another.",
+    ],
+    [
+      json({ error: { code: "username_refused", message: "Username is already taken." } }, 400),
+      "Username is already taken.",
+    ],
+    [
+      json({ error: { code: "password_check_failed", message: "Failed" } }, 503),
+      "Davloom could not check the password against known breaches. Try again later.",
+    ],
+  ])("shows the server's reason (%#)", async (answer, message) => {
+    await showForm({ "POST /api/registration": () => answer.clone() });
+    await userEvent.type(screen.getByLabelText("Username"), "owner");
+    await userEvent.type(passwordInput(), "password1234");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect((await screen.findAllByText(message)).length).toBeGreaterThan(0);
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Create account" }).disabled).toBe(
+      false,
+    );
+  });
+
+  it("sends a visitor who lost the race to sign in", async () => {
+    let open = true;
+    const { router } = await showForm({
+      "GET /api/registration": () => json({ open }),
+      "POST /api/registration": () => {
+        open = false;
+        return json({ error: { code: "registration_closed" } }, 409);
+      },
+    });
+    await userEvent.type(screen.getByLabelText("Username"), "owner");
+    await userEvent.type(passwordInput(), "a long password here");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+  });
+
+  it("imports an export instead, with its key", async () => {
+    const { router, calls } = await showForm({
+      "POST /api/registration/import": () => json({ user: 1 }, 201),
+    });
+    await userEvent.click(screen.getByRole("radio", { name: "From an export" }));
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect((await screen.findAllByText("Choose the export file.")).length).toBeGreaterThan(0);
+    const file = new File([JSON.stringify({ format: "davloom-export" })], "export.json", {
+      type: "application/json",
+    });
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (input === null) throw new Error("no file input");
+    await userEvent.upload(input, file);
+    await userEvent.type(screen.getByLabelText("Export key"), "the-key");
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+    expect(await sentBody(calls, "/api/registration/import")).toEqual({
+      key: "the-key",
+      file: { format: "davloom-export" },
+    });
+  });
+});

@@ -1,22 +1,13 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
-import {
-  HStack,
-  Layout,
-  LayoutContent,
-  LayoutPanel,
-  StackItem,
-  VStack,
-} from "@astryxdesign/core/Layout";
+import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
 import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Contrast,
@@ -30,14 +21,15 @@ import {
 import { useState, type ReactNode } from "react";
 import { webdavAddress } from "../api/dav";
 import { describeError } from "../api/client";
-import { exportInstance, kindLabel, signOut, useBackends, useMe, useMounts } from "../api/queries";
+import { exportInstance, kindLabel, useBackends, useMounts } from "../api/queries";
 import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
 import { CopyField } from "../shell/CopyField";
 import { formatCount } from "../shell/format";
 import { TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
-import { LoadingRows, QueryState } from "../shell/QueryState";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
+import { ProfileContent } from "./ProfileSection";
+import { SecurityContent } from "./SecuritySection";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
 
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
@@ -60,22 +52,6 @@ const SectionFrame = ({ title, children }: { title: string; children: ReactNode 
   </VStack>
 );
 
-const Row = ({ label, value, action }: { label: string; value: string; action?: ReactNode }) => (
-  <VStack gap={0}>
-    <HStack hAlign="between" vAlign="center" gap={4} paddingBlock={4}>
-      <VStack gap={0.5}>
-        <Text weight="semibold">{label}</Text>
-        <Text type="supporting" color="secondary">
-          {value}
-        </Text>
-      </VStack>
-      {/* The words beside the button wrap on a narrow screen, so the button keeps its label. */}
-      {action === undefined ? null : <StackItem>{action}</StackItem>}
-    </HStack>
-    <Divider />
-  </VStack>
-);
-
 /** The narrowest section, in rem, whose values have room beside their labels. */
 const WIDE_DETAILS = 30;
 
@@ -89,59 +65,17 @@ const Details = ({ children }: { children: ReactNode }) => {
   );
 };
 
-const ProfileSection = () => {
-  const me = useMe();
-  return (
-    <SectionFrame title="Profile">
-      <QueryState query={me} title="Cannot read the profile" loading={<LoadingRows rows={2} />}>
-        {(user) => (
-          <Details>
-            <MetadataListItem label="Name">{user.name}</MetadataListItem>
-            <MetadataListItem label="Email">{user.email}</MetadataListItem>
-            <MetadataListItem label="Role">Administrator</MetadataListItem>
-          </Details>
-        )}
-      </QueryState>
-    </SectionFrame>
-  );
-};
+const ProfileSection = () => (
+  <SectionFrame title="Profile">
+    <ProfileContent />
+  </SectionFrame>
+);
 
-const SecuritySection = () => {
-  const client = useQueryClient();
-  const navigate = useNavigate();
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const signOutHere = async () => {
-    setIsSigningOut(true);
-    try {
-      await signOut();
-    } catch {
-      // A session the server no longer knows is signed out already.
-    }
-    client.clear();
-    await navigate({ to: "/sign-in" });
-  };
-  return (
-    <SectionFrame title="Sign-in and security">
-      <VStack gap={0}>
-        <Divider />
-        <Row label="Password" value="Signs you in to this Dashboard. WebDAV clients use keys." />
-        <Row
-          label="This browser"
-          value="Signed in"
-          action={
-            <Button
-              label="Sign out"
-              variant="secondary"
-              size="sm"
-              isLoading={isSigningOut}
-              onClick={() => void signOutHere()}
-            />
-          }
-        />
-      </VStack>
-    </SectionFrame>
-  );
-};
+const SecuritySection = () => (
+  <SectionFrame title="Sign-in and security">
+    <SecurityContent />
+  </SectionFrame>
+);
 
 const AppearanceSection = () => (
   <SectionFrame title="Appearance">

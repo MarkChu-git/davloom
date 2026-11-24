@@ -13,15 +13,15 @@ import { apiFetch, isApiError, isUnauthorized } from "./client";
 
 export interface User {
   id: string;
+  /** The display name. */
   name: string;
-  email: string;
-}
-
-export interface SetupStatus {
-  /** No administrator exists yet. */
-  needed: boolean;
-  /** Setup is needed and the deployment set a setup token, so the form can complete it. */
-  open: boolean;
+  /** The username the owner signs in with; null for an owner from an export without one. */
+  username: string | null;
+  /** The owner's email, or null when they gave none. */
+  email: string | null;
+  twoFactorEnabled: boolean;
+  /** When this session last proved presence, in milliseconds since the epoch. */
+  verifiedAt: number;
 }
 
 export interface Usage {
@@ -80,7 +80,6 @@ export const kindLabel = (kind: string): string => BACKEND_KINDS[kind] ?? kind;
 
 export const keys = {
   me: ["me"] as const,
-  setup: ["setup"] as const,
   overview: ["overview"] as const,
   apiKeys: ["keys"] as const,
   backends: ["backends"] as const,
@@ -120,12 +119,6 @@ export const meQuery = queryOptions({
   queryFn: () => apiFetch<User>("/api/me"),
   retry: (count, error) => count < 2 && !isApiError(error),
   staleTime: 60_000,
-});
-
-export const setupQuery = queryOptions({
-  queryKey: keys.setup,
-  queryFn: () => apiFetch<SetupStatus>("/api/setup"),
-  retry: false,
 });
 
 export const useMe = () => useQuery(meQuery);
@@ -228,23 +221,6 @@ export const useRemoveMount = () => {
   });
 };
 
-/** Signs in with Better Auth's email and password route, which sets the session cookie. */
-export const signIn = (email: string, password: string) =>
-  apiFetch<unknown>("/api/auth/sign-in/email", { method: "POST", body: { email, password } });
-
-export const signOut = () => apiFetch<unknown>("/api/auth/sign-out", { method: "POST", body: {} });
-
-export const completeSetup = (input: {
-  name: string;
-  email: string;
-  password: string;
-  token: string;
-}) => apiFetch<{ userId: string }>("/api/setup", { method: "POST", body: input });
-
 /** An export of this instance: the encrypted file and the key that opens it, shown once. */
 export const exportInstance = () =>
   apiFetch<{ key: string; file: unknown }>("/api/export", { method: "POST" });
-
-/** Imports an export into this instance in place of the first-run setup. */
-export const importInstance = (input: { token: string; key: string; file: unknown }) =>
-  apiFetch<Record<string, number>>("/api/setup/import", { method: "POST", body: input });
