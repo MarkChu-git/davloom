@@ -161,15 +161,13 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ steps.playwright.outputs.key }}
-      # The runner image has what Chromium needs, but not the libraries of Firefox and WebKit,
-      # and playwright:install stops when a browser it installed cannot start.
-      - name: Install the system libraries of Firefox and WebKit
+          # Chromium alone, so its own key: the ui job caches all three browsers.
+          key: ${{ steps.playwright.outputs.key }}-chromium
+      # The brand check needs only Chromium, whose libraries the runner image has.
+      - name: Install Chromium
         if: matrix.suite == 'brand'
         working-directory: tests/integration/compat
-        run: bunx --bun playwright install-deps firefox webkit
-      - if: matrix.suite == 'brand'
-        run: bun run --filter @davloom/compat-tests playwright:install
+        run: bunx --bun playwright install chromium
       # The real WebDAV clients that http/clients.test.ts drives against the Worker.
       - name: Install litmus and rclone
         if: startsWith(matrix.suite, 'http-')
@@ -262,10 +260,26 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ steps.playwright.outputs.key }}
       # The runner image has what Chromium needs, but not the libraries of Firefox and WebKit,
-      # and playwright:install stops when a browser it installed cannot start.
+      # and playwright:install stops when a browser it installed cannot start. Ubuntu's mirror
+      # can serve the 180-odd packages at a crawl, so the packages are cached, and a download
+      # that stalls is stopped and tried again rather than left to run into the job's limit.
+      - name: Cache the packages of the Firefox and WebKit libraries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: apt-${{ steps.playwright.outputs.key }}
       - name: Install the system libraries of Firefox and WebKit
         working-directory: tests/integration/compat
-        run: bunx --bun playwright install-deps firefox webkit
+        timeout-minutes: 15
+        run: |
+          mkdir -p ~/apt-archives
+          sudo cp ~/apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          for attempt in 1 2 3; do
+            if timeout 300 bunx --bun playwright install-deps firefox webkit; then break; fi
+            if [ "$attempt" = 3 ]; then exit 1; fi
+            echo "::warning::installing the libraries failed or stalled, attempt $attempt"
+          done
+          cp /var/cache/apt/archives/*.deb ~/apt-archives/ 2>/dev/null || true
       - run: bun run --filter @davloom/compat-tests playwright:install
       - name: Build the Dashboard
         run: bun run --filter @davloom/compat-tests build:web
