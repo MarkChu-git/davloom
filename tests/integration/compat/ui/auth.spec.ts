@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { levelOne, onScreen, shown, sideNavigation } from "./helpers";
+import { levelOne, navigationLinks, onScreen, shown } from "./helpers";
 import { ADMIN } from "./instances";
 
 // Signing in, signing out and first-run setup. These tests start without the shared session, and
@@ -66,6 +66,7 @@ test("A return address on another site: signing in opens the Overview instead", 
   await expect(page).toHaveURL(/^http:\/\/127\.0\.0\.1:\d+\/$/);
 });
 
+// On a phone the side navigation's Sign out is in the dropdown of the Menu button.
 test("Signing out: the side navigation's Sign out ends the session, and the Dashboard asks to sign in again", async ({
   page,
 }) => {
@@ -73,7 +74,7 @@ test("Signing out: the side navigation's Sign out ends the session, and the Dash
   await signIn(page);
   await expect(levelOne(page)).toHaveText("Overview");
 
-  await sideNavigation(page).getByRole("button", { name: "Sign out" }).click();
+  await (await navigationLinks(page)).getByRole("button", { name: "Sign out" }).click();
   await expect(levelOne(page)).toHaveText("Sign in");
   const me = await page.request.get("/api/me");
   expect(me.status()).toBe(401);

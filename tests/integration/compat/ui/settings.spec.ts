@@ -1,10 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
-import { boxOf, openList, shown, sidewaysOverflow } from "./helpers";
+import { boxOf, isNarrow, openList, shown, sidewaysOverflow } from "./helpers";
 import { ADMIN, WORKERS_ORIGIN } from "./instances";
 
 // The Settings scenarios about the sections, the profile, the appearance, the WebDAV address and
 // the instance. Signing out has its tests in auth.spec.ts, since it ends a session; the ones about
-// a wider side navigation and the name of the address field are in dashboard.spec.ts.
+// a wider side navigation and the name of the address field are in dashboard.spec.ts. A narrow
+// page, as on a tablet or a phone, offers the sections in a selector instead of the section list.
 
 const sectionList = (page: Page) => page.getByRole("navigation", { name: "Settings sections" });
 
@@ -15,6 +16,18 @@ const expectSelectorAbove = async (page: Page, section: string) => {
   const selector = await boxOf(sectionSelector(page));
   const heading = await boxOf(page.getByRole("heading", { level: 2, name: section }));
   expect(selector.y + selector.height).toBeLessThanOrEqual(heading.y);
+};
+
+/** Checks the section the page marks as open: in the section list, or in the selector. */
+const expectCurrent = async (page: Page, section: string) => {
+  if (isNarrow(page)) {
+    await expect(sectionSelector(page)).toHaveText(section);
+    await expect(sectionList(page)).toHaveCount(0);
+    return;
+  }
+  const current = sectionList(page).locator('li[aria-current="true"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveText(section);
 };
 
 /** Opens the selector of sections and chooses one. */
@@ -38,17 +51,18 @@ test("Opening a section by its address: the WebDAV section shows and the section
   await page.goto("/settings?section=webdav");
   await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
   await expect(page.getByRole("heading", { level: 2, name: "Profile" })).toHaveCount(0);
-
-  const current = sectionList(page).locator('li[aria-current="true"]');
-  await expect(current).toHaveCount(1);
-  await expect(current).toHaveText("WebDAV");
+  await expectCurrent(page, "WebDAV");
 });
 
 test("The sections on offer: only those the instance can fill, with no storage settings yet", async ({
   page,
 }) => {
   await page.goto("/settings");
-  await expect(sectionList(page).getByRole("link")).toHaveText([
+  if (isNarrow(page)) {
+    await openList(page, "combobox", "Section", page);
+  }
+  const sections = isNarrow(page) ? page.getByRole("option") : sectionList(page).getByRole("link");
+  await expect(sections).toHaveText([
     "Profile",
     "Sign-in and security",
     "Appearance",
@@ -70,41 +84,43 @@ test("An unknown section: billing opens the Profile section, which names the adm
       { label: "Email", value: ADMIN.email },
       { label: "Role", value: "Administrator" },
     ]);
-
-  const current = sectionList(page).locator('li[aria-current="true"]');
-  await expect(current).toHaveCount(1);
-  await expect(current).toHaveText("Profile");
+  await expectCurrent(page, "Profile");
 });
 
-test("A phone-sized window: the selector shows WebDAV, choosing Appearance shows the Appearance section, and nothing scrolls sideways", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 375, height: 800 });
-  await page.goto("/settings?section=webdav");
-  const selector = sectionSelector(page);
-  await expect(selector).toHaveText("WebDAV");
-  await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
-  await expect(sectionList(page)).toHaveCount(0);
-  await expectSelectorAbove(page, "WebDAV");
+// It and the next test set a window of their own, so the tablet and phone projects skip them.
+test(
+  "A phone-sized window: the selector shows WebDAV, choosing Appearance shows the Appearance section, and nothing scrolls sideways",
+  { tag: "@desktop" },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.goto("/settings?section=webdav");
+    const selector = sectionSelector(page);
+    await expect(selector).toHaveText("WebDAV");
+    await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
+    await expect(sectionList(page)).toHaveCount(0);
+    await expectSelectorAbove(page, "WebDAV");
 
-  await chooseSection(page, "Appearance");
-  await shown(page.getByRole("heading", { level: 2, name: "Appearance" }));
-  await expect(selector).toHaveText("Appearance");
-  await expect(sectionList(page)).toHaveCount(0);
-  expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
-});
+    await chooseSection(page, "Appearance");
+    await shown(page.getByRole("heading", { level: 2, name: "Appearance" }));
+    await expect(selector).toHaveText("Appearance");
+    await expect(sectionList(page)).toHaveCount(0);
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  },
+);
 
-test("A tablet-sized window: a selector above the section shows WebDAV in place of the section list, and nothing scrolls sideways", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 900, height: 800 });
-  await page.goto("/settings?section=webdav");
-  await expect(sectionSelector(page)).toHaveText("WebDAV");
-  await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
-  await expect(sectionList(page)).toHaveCount(0);
-  await expectSelectorAbove(page, "WebDAV");
-  expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
-});
+test(
+  "A tablet-sized window: a selector above the section shows WebDAV in place of the section list, and nothing scrolls sideways",
+  { tag: "@desktop" },
+  async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 800 });
+    await page.goto("/settings?section=webdav");
+    await expect(sectionSelector(page)).toHaveText("WebDAV");
+    await shown(page.getByRole("heading", { level: 2, name: "WebDAV" }));
+    await expect(sectionList(page)).toHaveCount(0);
+    await expectSelectorAbove(page, "WebDAV");
+    expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
+  },
+);
 
 test("The modes on offer: Appearance offers Light, Dark and System, with System selected", async ({
   page,
