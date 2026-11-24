@@ -231,6 +231,54 @@ describe("the record of a move", () => {
     expect(fileCount(tree, "b")).toBe(3);
   });
 
+  it.each([
+    [
+      "a copy replaces the source",
+      (s: StorageBackend) => s.copy(["x"], ["src"], { overwrite: true, shallow: false }),
+    ],
+    [
+      "a move replaces the source",
+      (s: StorageBackend) => s.move(["x"], ["src"], { overwrite: true }),
+    ],
+  ] as const)("is dropped when %s, so the new content moves as usual", async (_, replace) => {
+    const { storage } = await stopped();
+    await storage.createCollection(["x"]);
+    await storage.write(["x", "new"], text("n"), {});
+    await replace(storage);
+    await storage.write(["dst", "other"], text("o"), {});
+    await storage.move(["src"], ["dst"], { overwrite: true });
+    const tree = await snapshot(storage);
+    expect(
+      Object.keys(tree)
+        .filter((key) => key.startsWith("dst/"))
+        .toSorted(),
+    ).toEqual(["dst/", "dst/new"]);
+  });
+
+  it("of a collection inside a replaced ancestor is dropped too", async () => {
+    const { driver, storage } = make();
+    await storage.createCollection(["p"]);
+    await storage.createCollection(["p", "a"]);
+    for (let i = 0; i < 1002; i += 1)
+      driver.seed(`dav/p/a/f${String(i).padStart(4, "0")}`, `v${i}`);
+    driver.failWhen((call, key) =>
+      call === "delete" && key === "dav/p/a/f1001" ? "unavailable" : null,
+    );
+    await storage.move(["p", "a"], ["b"], { overwrite: true });
+    driver.failWhen(null);
+    await storage.createCollection(["y"]);
+    await storage.createCollection(["y", "a"]);
+    await storage.write(["y", "a", "new"], text("n"), {});
+    await storage.copy(["y"], ["p"], { overwrite: true, shallow: false });
+    await storage.move(["p", "a"], ["b"], { overwrite: true });
+    const tree = await snapshot(storage);
+    expect(
+      Object.keys(tree)
+        .filter((key) => key.startsWith("b/"))
+        .toSorted(),
+    ).toEqual(["b/", "b/new"]);
+  });
+
   it("is dropped when the source is deleted, so a new collection there moves as usual", async () => {
     const { storage } = await stopped();
     await storage.remove(["src"]);

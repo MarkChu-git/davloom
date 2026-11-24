@@ -576,6 +576,9 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
     }
     if (move) await keepCollection(parentOf(from), sourceParent);
     must(await properties.removeTree(to));
+    // What arrives at the destination is not what a stopped move of that path, or of a path in it,
+    // recorded: such a record would make a later move of the new content resume.
+    must(await properties.removeTree(journalPath(to)));
 
     if (source.node === "file") {
       if (!must(await driver.copy(fileKey(prefix, from), fileKey(prefix, to)))) {
