@@ -243,4 +243,42 @@ export const SAMPLES: Readonly<Record<string, readonly Sample[]>> = {
       row: { user_id: "user-1", count: 3, last_attempt: LATER },
     },
   ],
+  "0008_audit_events": [
+    {
+      table: "audit_events",
+      row: {
+        id: "audit-1",
+        at: UPDATED,
+        action: "key.create",
+        outcome: "success",
+        address: "2001:db8::7",
+        target: "Laptop – 管理者 😀",
+        count: 1,
+      },
+    },
+    {
+      table: "audit_events",
+      row: {
+        id: `webdav.auth:${LATER}:203.0.113.7:dav_abcdef`,
+        at: LATER,
+        action: "webdav.auth",
+        outcome: "failure",
+        address: "203.0.113.7",
+        target: "dav_abcdef",
+        count: 42,
+      },
+    },
+    {
+      table: "audit_events",
+      row: {
+        id: "audit-3",
+        at: CREATED,
+        action: "sign-out",
+        outcome: "success",
+        address: null,
+        target: null,
+        count: 1,
+      },
+    },
+  ],
 };

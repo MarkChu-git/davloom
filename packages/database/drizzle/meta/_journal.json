@@ -57,6 +57,13 @@
       "when": 1795557283417,
       "tag": "0007_verification_attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795560720684,
+      "tag": "0008_audit_events",
+      "breakpoints": true
     }
   ]
 }

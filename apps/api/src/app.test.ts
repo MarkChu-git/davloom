@@ -2,6 +2,8 @@ import { Database } from "bun:sqlite";
 import { createAuth, createIdentity } from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
+  createAuditCounter,
   createMemoryStorage,
   credentialCipherLayer,
   Identity,
@@ -13,7 +15,11 @@ import {
   type StorageBackend,
 } from "@davloom/core";
 import { createArchive } from "@davloom/database/archive";
-import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import {
   bunSqliteAtomic,
   createBunSqliteDatabase,
@@ -27,6 +33,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createApp, DASHBOARD_HEADER, type Instance } from "./app";
 import { createSqlLockStore } from "./locks";
 import { API_ACTIONS, AUTH_ACTIONS } from "./verification";
+import { openApiDocument, openApiPath, ROUTES, type RouteContract } from "@davloom/schema";
+import { buildInfo } from "./build-info";
 
 // The management API and the WebDAV entry of the real app, in this process: Better Auth and the
 // records on an in-memory Bun SQLite database, and memory storage behind every backend.
@@ -40,10 +48,20 @@ interface WorldOptions {
   readonly publicOrigin?: string;
 }
 
+/** Writes the refused WebDAV credentials an app's instance counted, as its timer would. */
+let flushRefused: () => Promise<void> = async () => undefined;
+
 const memoryInstance = (options: WorldOptions = {}): Instance => {
   const db = createBunSqliteDatabase(new Database(":memory:"));
   migrateBunSqliteDatabase(db);
   const repositories = createRepositories(db);
+  const auditLog = createAuditLog(db, bunSqliteAtomic(db));
+  const counter = createAuditCounter({
+    write: auditLog.add,
+    schedule: () => undefined,
+    wait: () => new Promise<void>(() => undefined),
+  });
+  flushRefused = counter.flush;
   const auth = createAuth({
     database: db,
     secret: SECRET,
@@ -74,9 +92,12 @@ const memoryInstance = (options: WorldOptions = {}): Instance => {
       credentialCipherLayer(Redacted.make(SECRET)),
       Layer.succeed(OperationLog, createOperationLog(db, bunSqliteAtomic(db))),
       Layer.succeed(InstanceSettings, createSettingsStore(db)),
+      Layer.succeed(AuditLog, auditLog),
     ),
     authHandler: (request) => auth.handler(request),
     locks: createSqlLockStore(repositories.locks),
+    refusedCredentials: counter,
+    clientAddress: (request) => request.headers.get("x-test-client"),
   };
 };
 
@@ -137,7 +158,18 @@ const world = (options: WorldOptions = {}) => {
     headers.set("cookie", cookie);
     return fetch(`/dav${path}`, { ...init, headers });
   };
-  return { app, fetch, api, setup, signIn, useCookie, key, dav, dashboardDav };
+  return {
+    app,
+    fetch,
+    api,
+    setup,
+    signIn,
+    useCookie,
+    cookie: () => cookie,
+    key,
+    dav,
+    dashboardDav,
+  };
 };
 
 const body = async (response: Response): Promise<unknown> => await response.json();
@@ -250,7 +282,7 @@ describe("registration", () => {
     });
   });
 
-  it("reads a body that is not JSON as empty", async () => {
+  it("refuses a body that is not JSON, and reads an empty one as empty", async () => {
     const w = world();
     const response = await w.fetch("/api/registration", {
       method: "POST",
@@ -258,6 +290,13 @@ describe("registration", () => {
       body: "not json",
     });
     expect(response.status).toBe(400);
+    expect(await body(response)).toEqual({ error: { code: "invalid_json" } });
+    const empty = await w.fetch("/api/registration", {
+      method: "POST",
+      headers: { ...json, origin: ORIGIN },
+      body: "",
+    });
+    expect(await body(empty)).toEqual({ error: { code: "invalid_input" } });
   });
 
   it("signs in with the email too, when the owner gave one", async () => {
@@ -964,5 +1003,425 @@ describe("the setup token", () => {
     const response = await w.api("/api/registration/import", "POST", { key: "k", file: {} });
     expect(response.status).toBe(403);
     expect(await body(response)).toEqual({ error: { code: "setup_token_invalid" } });
+  });
+});
+
+/** The app's routes under /api, outside Better Auth's, as `METHOD pattern`. */
+const apiRoutes = () =>
+  createApp()
+    .routes.filter((route) => route.path.startsWith("/api/") && route.path !== "/api/auth/*")
+    .map((route) => `${route.method} ${route.path}`);
+
+const contracts = Object.entries(ROUTES) as [string, RouteContract][];
+
+/** The JSON Schema properties of a route's body, from the OpenAPI document. */
+const bodyProperties = (name: string): [string, Record<string, unknown>][] => {
+  const document = openApiDocument("test");
+  const [method = "", pattern = ""] = name.split(" ");
+  const operation: unknown = Reflect.get(
+    Object(Reflect.get(Object(document.paths), openApiPath(pattern).path)),
+    method.toLowerCase(),
+  );
+  const ref = String(
+    Reflect.get(
+      Object(
+        Reflect.get(Object(Reflect.get(Object(operation), "requestBody")), "content")?.[
+          "application/json"
+        ],
+      ),
+      "schema",
+    )?.$ref ?? "",
+  );
+  const schemas = Object(Reflect.get(Object(document.components), "schemas"));
+  const target = Object(Reflect.get(schemas, ref.split("/").at(-1) ?? ""));
+  return Object.entries(Object(Reflect.get(target, "properties")));
+};
+
+const BODY_ROUTES = contracts.filter(([, contract]) => contract.body !== undefined);
+
+/** A concrete path for a route's pattern. */
+const pathOf = (pattern: string) => pattern.replace(/:[A-Za-z]+/g, "missing");
+
+describe("the contracts of the management API (packages/schema)", () => {
+  it("has a contract for every /api route of the app, and only for those", () => {
+    const routes = apiRoutes();
+    expect(routes.filter((route) => !Object.hasOwn(ROUTES, route))).toEqual([]);
+    expect(Object.keys(ROUTES).filter((route) => !routes.includes(route))).toEqual([]);
+  });
+
+  it("lists every /api route of the app in the OpenAPI document", () => {
+    const document = openApiDocument("test");
+    const missing = apiRoutes().filter((route) => {
+      const [method = "", pattern = ""] = route.split(" ");
+      const item: unknown = Reflect.get(Object(document.paths), openApiPath(pattern).path);
+      return Reflect.get(Object(item), method.toLowerCase()) === undefined;
+    });
+    expect(missing).toEqual([]);
+  });
+
+  it("resolves every reference of the OpenAPI document", () => {
+    const document = openApiDocument("test");
+    const text = JSON.stringify(document);
+    const refs = [...text.matchAll(/"\$ref":"#\/components\/schemas\/([^"]+)"/g)].map(
+      (match) => match[1] ?? "",
+    );
+    const schemas = Object(Reflect.get(Object(document.components), "schemas"));
+    expect(refs.length).toBeGreaterThan(20);
+    expect(refs.filter((name) => !Object.hasOwn(schemas, name))).toEqual([]);
+    expect(text).not.toContain("#/$defs/");
+  });
+
+  it("serves the document to a session, and to nobody else", async () => {
+    const w = world();
+    await w.api("/api/registration", "POST", OWNER);
+    expect((await w.fetch("/api/openapi.json")).status).toBe(401);
+    await w.signIn();
+    const served = await w.api("/api/openapi.json");
+    expect(served.status).toBe(200);
+    const document = await body(served);
+    expect(document).toEqual(JSON.parse(JSON.stringify(openApiDocument(buildInfo().version))));
+    expect(document).toMatchObject({ openapi: "3.1.0" });
+  });
+
+  it.each(BODY_ROUTES.map(([name]) => [name] as const))(
+    "%s refuses a body that is not JSON with invalid_json",
+    async (name) => {
+      const w = world();
+      await w.setup();
+      const [method = "", pattern = ""] = name.split(" ");
+      const response = await w.fetch(pathOf(pattern), {
+        method,
+        headers: { ...json, origin: ORIGIN, cookie: w.cookie() },
+        body: "{not json",
+      });
+      expect(response.status).toBe(400);
+      expect(await body(response)).toEqual({ error: { code: "invalid_json" } });
+    },
+  );
+
+  it.each(BODY_ROUTES.map(([name]) => [name] as const))(
+    "%s refuses a body that is no object with invalid_body",
+    async (name) => {
+      const w = world();
+      await w.setup();
+      const [method = "", pattern = ""] = name.split(" ");
+      for (const value of [[], 7, "text", null, true]) {
+        const response = await w.api(pathOf(pattern), method, value);
+        expect(response.status, JSON.stringify(value)).toBe(422);
+        expect(await body(response)).toMatchObject({
+          error: { code: "invalid_body", issues: [{ path: [] }] },
+        });
+      }
+    },
+  );
+
+  // Every string field of every body, sent as a number, an object and a list.
+  const STRING_FIELDS = BODY_ROUTES.flatMap(([name]) =>
+    bodyProperties(name)
+      .filter(([, schema]) => schema["type"] === "string")
+      .flatMap(([property]) =>
+        [12, { a: 1 }, ["x"]].map((value) => [name, property, value] as const),
+      ),
+  );
+
+  it("finds the string fields of the bodies", () => {
+    expect(STRING_FIELDS.length).toBeGreaterThan(60);
+  });
+
+  it.each(STRING_FIELDS)(
+    "%s refuses %s as %j with the field's path",
+    async (name, property, value) => {
+      const w = world();
+      await w.setup();
+      const [method = "", pattern = ""] = name.split(" ");
+      const response = await w.api(pathOf(pattern), method, { [property]: value });
+      expect(response.status).toBe(422);
+      const answer = await body(response);
+      expect(answer).toMatchObject({
+        error: { code: "invalid_body", issues: [{ path: [property] }] },
+      });
+      expect(JSON.stringify(answer)).toContain(property);
+    },
+  );
+
+  it.each([
+    ["POST /api/keys", { name: "k", access: "read-only", expiresInDays: "30" }, ["expiresInDays"]],
+    ["POST /api/keys", { name: "k", access: "read-only", paths: "/files" }, ["paths"]],
+    ["POST /api/keys", { name: "k", access: "read-only", paths: [1] }, ["paths", 0]],
+    ["PUT /api/settings/storage", { defaultBackendId: 1 }, ["defaultBackendId"]],
+  ] as const)("%s refuses %j at %j", async (name, value, path) => {
+    const w = world();
+    await w.setup();
+    const [method = "", pattern = ""] = name.split(" ");
+    const response = await w.api(pathOf(pattern), method, value);
+    expect(response.status).toBe(422);
+    expect(await body(response)).toMatchObject({
+      error: { code: "invalid_body", issues: [{ path }] },
+    });
+  });
+
+  it("asks for the session before it reads the body", async () => {
+    const w = world();
+    await w.api("/api/registration", "POST", OWNER);
+    const response = await w.fetch("/api/keys", {
+      method: "POST",
+      headers: { ...json, origin: ORIGIN },
+      body: "{not json",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it.each([
+    ["?limit=0", 422],
+    ["?limit=abc", 422],
+    ["?limit=1000", 422],
+    ["?limit=5", 200],
+    ["?before=nothing", 200],
+    ["", 200],
+  ] as const)("GET /api/audit%s answers %i", async (query, status) => {
+    const w = world();
+    await w.setup();
+    expect((await w.api(`/api/audit${query}`)).status).toBe(status);
+  });
+});
+
+interface AuditView {
+  id: string;
+  at: string;
+  action: string;
+  outcome: string;
+  address: string | null;
+  target: string | null;
+  count: number;
+}
+
+/** Every event of the trail, reading it page by page. */
+const trail = async (w: ReturnType<typeof world>, limit = 100): Promise<AuditView[]> => {
+  const events: AuditView[] = [];
+  let before: string | null = null;
+  for (let page = 0; page < 50; page += 1) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (before !== null) query.set("before", before);
+    const answer = await w.api(`/api/audit?${query.toString()}`);
+    expect(answer.status).toBe(200);
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's AuditPage
+    const read = (await answer.json()) as { events: AuditView[]; next: string | null };
+    events.push(...read.events);
+    if (read.next === null) return events;
+    before = read.next;
+  }
+  throw new Error("the trail did not end");
+};
+
+const actions = (events: readonly AuditView[]) =>
+  events.map(
+    (event) => `${event.action} ${event.outcome}${event.target ? ` ${event.target}` : ""}`,
+  );
+
+describe("the audit trail (PRD §7)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("records registration, sign-ins, step-up, and every change of the management API", async () => {
+    const w = world();
+    await w.setup();
+    // A refused sign-in, from an address the deployment knows.
+    const refused = await w.fetch("/api/auth/sign-in/username", {
+      method: "POST",
+      headers: { ...json, origin: ORIGIN, "x-test-client": "198.51.100.9" },
+      body: JSON.stringify({ username: OWNER.username, password: "not the password" }),
+    });
+    expect(refused.status).toBe(401);
+    expect((await w.api("/api/verify", "POST", { password: "wrong" })).status).toBe(400);
+    expect((await w.api("/api/verify", "POST", { password: OWNER.password })).status).toBe(200);
+    const { id: keyId } = await w.key("read-only");
+    expect((await w.api(`/api/keys/${keyId}`, "PATCH", { name: "laptop" })).status).toBe(200);
+    expect((await w.api(`/api/keys/${keyId}`, "DELETE")).status).toBe(200);
+    const backend = await w.api("/api/backends", "POST", { name: "Second", kind: "memory" });
+    const backendId = field(await body(backend), "id");
+    expect((await w.api(`/api/backends/${backendId}`, "PATCH", { name: "Other" })).status).toBe(
+      200,
+    );
+    const mount = await w.api("/api/mounts", "POST", { name: "photos", backendId, root: "" });
+    const mountId = field(await body(mount), "id");
+    expect((await w.api(`/api/mounts/${mountId}`, "PATCH", { name: "pictures" })).status).toBe(200);
+    expect((await w.api(`/api/mounts/${mountId}`, "DELETE")).status).toBe(200);
+    expect(
+      (await w.api("/api/settings/storage", "PUT", { defaultBackendId: backendId })).status,
+    ).toBe(200);
+    const exported = await body(await w.api("/api/export", "POST"));
+    // A refused change is not an event: nothing changed.
+    expect((await w.api("/api/keys", "POST", { name: "", access: "read-only" })).status).toBe(400);
+    expect((await w.api("/api/keys/missing", "DELETE")).status).toBe(404);
+    expect(
+      (
+        await w.api("/api/auth/change-password", "POST", {
+          currentPassword: OWNER.password,
+          newPassword: "another password long enough",
+        })
+      ).status,
+    ).toBe(200);
+    expect((await w.api("/api/auth/sign-out", "POST", {})).status).toBe(200);
+    await w
+      .api("/api/auth/sign-in/username", "POST", {
+        username: OWNER.username,
+        password: "another password long enough",
+      })
+      .then((response) => w.useCookie(cookiesOf(response)));
+
+    const events = await trail(w);
+    expect(actions(events).toSorted()).toEqual(
+      [
+        "registration success Owner",
+        "sign-in success password",
+        "sign-in failure password",
+        "step-up failure",
+        "step-up success",
+        "key.create success read-only",
+        "key.rename success laptop",
+        `key.revoke success ${keyId}`,
+        "backend.create success Second",
+        "backend.edit success Other",
+        "mount.create success photos",
+        "mount.edit success pictures",
+        `mount.remove success ${mountId}`,
+        "settings success default backend",
+        "export success",
+        "password success changed",
+        "sign-out success",
+        "sign-in success password",
+      ].toSorted(),
+    );
+    expect(
+      events.find((event) => event.outcome === "failure" && event.action === "sign-in"),
+    ).toMatchObject({ address: "198.51.100.9", count: 1 });
+    // Newest first.
+    const times = events.map((event) => Date.parse(event.at));
+    expect(times).toEqual(times.toSorted((a, b) => b - a));
+    // No secret reaches the trail.
+    const text = JSON.stringify(events);
+    for (const secret of [
+      OWNER.password,
+      "not the password",
+      "another password long enough",
+      field(exported, "key"),
+    ]) {
+      expect(text).not.toContain(secret);
+    }
+  });
+
+  it("records a locked step-up", async () => {
+    const w = world();
+    await w.setup();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await w.api("/api/verify", "POST", { password: "not the password" });
+    }
+    expect((await w.api("/api/verify", "POST", { password: OWNER.password })).status).toBe(429);
+    const outcomes = (await trail(w))
+      .filter((event) => event.action === "step-up")
+      .map((event) => event.outcome);
+    expect(outcomes.toSorted()).toEqual([...Array<string>(5).fill("failure"), "locked"]);
+  });
+
+  it("records a refused registration and import, and an import", async () => {
+    const w = world();
+    await w.setup();
+    const { key: davKey } = await w.key("read-write");
+    const exported = await body(await w.api("/api/export", "POST"));
+    expect((await w.api("/api/registration", "POST", OWNER)).status).toBe(409);
+    const target = world();
+    expect(
+      (await target.api("/api/registration/import", "POST", { key: "k", file: {} })).status,
+    ).toBe(422);
+    expect(
+      (
+        await target.api("/api/registration/import", "POST", {
+          key: field(exported, "key"),
+          file: Reflect.get(Object(exported), "file"),
+        })
+      ).status,
+    ).toBe(201);
+    expect(actions(await trail(w))).toContain("registration failure");
+    await target.signIn();
+    const imported = actions(await trail(target));
+    expect(imported).toEqual(expect.arrayContaining(["import failure", "import success"]));
+    expect(davKey).not.toBe("");
+  });
+
+  it("pages through the trail without losing or repeating an event", async () => {
+    const w = world();
+    await w.setup();
+    for (let index = 0; index < 7; index += 1) {
+      await w.api("/api/keys", "POST", { name: `k${index}`, access: "read-only" });
+    }
+    const all = await trail(w, 100);
+    for (const limit of [1, 2, 3, 5]) {
+      const paged = await trail(w, limit);
+      expect(paged.map((event) => event.id)).toEqual(all.map((event) => event.id));
+    }
+    expect(new Set(all.map((event) => event.id)).size).toBe(all.length);
+  });
+
+  it("counts refused WebDAV credentials per address, key and minute", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.UTC(2026, 10, 24, 8, 0, 10) });
+    const w = world();
+    await w.setup();
+    const wrong = "dav_wrongwrongwrongwrongwrong";
+    const fromAddress = (address: string, password: string) =>
+      w.fetch("/dav/files/", {
+        method: "PROPFIND",
+        headers: {
+          authorization: `Basic ${btoa(`x:${password}`)}`,
+          "x-test-client": address,
+        },
+      });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect((await fromAddress("203.0.113.5", wrong)).status).toBe(401);
+    }
+    await fromAddress("203.0.113.6", wrong);
+    // A password that is no key, such as the account's own, is not kept, not even its start.
+    await fromAddress("203.0.113.5", OWNER.password);
+    const { key } = await w.key("read-only");
+    expect(
+      (await w.dav("/files/", key, { method: "PROPFIND", headers: { depth: "0" } })).status,
+    ).toBe(207);
+    await flushRefused();
+    // The next minute's refusals are an event of their own; the first minute's add to theirs.
+    vi.setSystemTime(Date.UTC(2026, 10, 24, 8, 1, 5));
+    await fromAddress("203.0.113.5", wrong);
+    await flushRefused();
+    vi.setSystemTime(Date.UTC(2026, 10, 24, 8, 0, 50));
+    await fromAddress("203.0.113.5", wrong);
+    await flushRefused();
+
+    const counted = (await trail(w))
+      .filter((event) => event.action === "webdav.auth")
+      .map(({ at, address, target, count, outcome }) => ({ at, address, target, count, outcome }));
+    expect(
+      counted.toSorted((a, b) =>
+        `${a.at}${a.address}${a.target}`.localeCompare(`${b.at}${b.address}${b.target}`),
+      ),
+    ).toEqual(
+      [
+        { at: "2026-11-24T08:00:00.000Z", address: "203.0.113.5", target: null, count: 1 },
+        { at: "2026-11-24T08:00:00.000Z", address: "203.0.113.5", target: "dav_wrongw", count: 4 },
+        { at: "2026-11-24T08:00:00.000Z", address: "203.0.113.6", target: "dav_wrongw", count: 1 },
+        { at: "2026-11-24T08:01:00.000Z", address: "203.0.113.5", target: "dav_wrongw", count: 1 },
+      ]
+        .map((event) => ({ ...event, outcome: "failure" }))
+        .toSorted((a, b) =>
+          `${a.at}${a.address}${a.target}`.localeCompare(`${b.at}${b.address}${b.target}`),
+        ),
+    );
+    const text = JSON.stringify(await trail(w));
+    expect(text).not.toContain(wrong);
+    expect(text).not.toContain(OWNER.password);
+  });
+
+  it("needs a session", async () => {
+    const w = world();
+    await w.api("/api/registration", "POST", OWNER);
+    expect((await w.fetch("/api/audit")).status).toBe(401);
   });
 });

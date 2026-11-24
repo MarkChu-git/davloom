@@ -10,6 +10,7 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  Activity,
   Contrast,
   FileDown,
   HardDrive,
@@ -28,6 +29,7 @@ import { CopyField } from "../shell/CopyField";
 import { TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
+import { ActivityContent } from "./ActivitySection";
 import { AboutContent, StorageSettingsContent } from "./InstanceSections";
 import { ProfileContent } from "./ProfileSection";
 import { SecurityContent } from "./SecuritySection";
@@ -36,6 +38,7 @@ import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
 const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   profile: User,
   security: Lock,
+  activity: Activity,
   appearance: Contrast,
   webdav: LinkIcon,
   storage: HardDrive,
@@ -76,6 +79,12 @@ const ProfileSection = () => (
 const SecuritySection = () => (
   <SectionFrame title="Sign-in and security">
     <SecurityContent />
+  </SectionFrame>
+);
+
+const ActivitySection = () => (
+  <SectionFrame title="Activity">
+    <ActivityContent />
   </SectionFrame>
 );
 
@@ -178,6 +187,7 @@ const AboutSection = () => (
 const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
   profile: ProfileSection,
   security: SecuritySection,
+  activity: ActivitySection,
   appearance: AppearanceSection,
   webdav: WebDavSection,
   storage: StorageSection,

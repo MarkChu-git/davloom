@@ -11,6 +11,8 @@ import {
 } from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
+  createAuditCounter,
   credentialCipherLayer,
   Identity,
   createOperationRecorder,
@@ -22,7 +24,11 @@ import {
   setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
-import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import { createArchive } from "@davloom/database/archive";
 import {
   bunSqliteAtomic,
@@ -96,6 +102,7 @@ export const bunInstance =
     const unseal = async (backendId: string, sealed: string) =>
       await unsealWith(await cipher)(backendId, sealed);
     const operationLog = createOperationLog(db, bunSqliteAtomic(db));
+    const auditLog = createAuditLog(db, bunSqliteAtomic(db));
     const sqliteVersion =
       sqlite.query<{ version: string }, []>("SELECT sqlite_version() AS version").get()?.version ??
       "";
@@ -103,6 +110,7 @@ export const bunInstance =
       Layer.succeed(Records, repositories),
       Layer.succeed(Archive, createArchive(db, bunSqliteAtomic(db))),
       Layer.succeed(OperationLog, operationLog),
+      Layer.succeed(AuditLog, auditLog),
       Layer.succeed(InstanceSettings, createSettingsStore(db)),
       Layer.succeed(Identity, createIdentity(auth)),
       Layer.succeed(StorageOpener, {
@@ -128,6 +136,13 @@ export const bunInstance =
         schedule: (task) => void task,
         delayMs: 10_000,
       }),
+      refusedCredentials: createAuditCounter({
+        write: auditLog.add,
+        schedule: (task) => void task,
+        delayMs: 10_000,
+      }),
+      // node-server.bun.ts sets it to the client's address, replacing any value the client sent.
+      clientAddress: (request) => request.headers.get(CLIENT_IP_HEADER),
       about: () => ({
         runtime: `Bun ${Bun.version}`,
         deployment: "Self-hosted",

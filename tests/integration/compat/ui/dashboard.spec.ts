@@ -412,6 +412,11 @@ const STATES: readonly PageState[] = [
       shown(page.getByRole("main").getByRole("button", { name: "Sign out", exact: true })),
   },
   {
+    name: "Activity settings",
+    path: "/settings?section=activity",
+    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+  },
+  {
     name: "the Change password dialog with a field error",
     path: "/settings?section=security",
     show: async (page) => {

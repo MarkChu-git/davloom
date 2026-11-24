@@ -457,7 +457,9 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("combobox", { name: "Section" }));
     expect(await screen.findByRole("option", { name: "Data export" })).toBeTruthy();
     // In happy-dom a click on an option closes the listbox without choosing it, so the keys do.
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.keyboard(
+      "{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}",
+    );
     await waitFor(() => expect(router.state.location.href).toBe("/settings?section=export"));
   });
 
@@ -472,6 +474,7 @@ describe("SettingsPage", () => {
     expect(links.map((link) => link.textContent)).toEqual([
       "Profile",
       "Sign-in and security",
+      "Activity",
       "Appearance",
       "WebDAV",
       "Storage",

@@ -24,12 +24,29 @@ export interface ResponseOptions<E extends TaggedError> {
 
 const INTERNAL_ERROR: ErrorResponse = { status: 500, code: "internal_error" };
 
-const errorResponse = ({ status, code }: ErrorResponse, message?: string): Response =>
-  Response.json({ error: message === undefined ? { code } : { code, message } }, { status });
+const errorResponse = (
+  { status, code }: ErrorResponse,
+  message?: string,
+  issues?: readonly unknown[],
+): Response =>
+  Response.json(
+    {
+      error: {
+        code,
+        ...(message === undefined ? {} : { message }),
+        ...(issues === undefined ? {} : { issues }),
+      },
+    },
+    { status },
+  );
 
 /** The `reason` of an error that explains itself to the client, such as a rejected import. */
 const reasonOf = (error: TaggedError): string | undefined =>
   "reason" in error && typeof error.reason === "string" ? error.reason : undefined;
+
+/** Where a refused body went wrong, for an error that says so, such as a body of the wrong shape. */
+const issuesOf = (error: TaggedError): readonly unknown[] | undefined =>
+  "issues" in error && Array.isArray(error.issues) ? error.issues : undefined;
 
 /** Turns the result of a business program into the response the API sends. */
 export const responseFromExit = <A, E extends TaggedError>(
@@ -47,7 +64,7 @@ export const responseFromExit = <A, E extends TaggedError>(
     ? (errors as Record<string, ErrorResponse | undefined>)[failure.value._tag]
     : undefined;
   if (declared && Option.isSome(failure)) {
-    return errorResponse(declared, reasonOf(failure.value));
+    return errorResponse(declared, reasonOf(failure.value), issuesOf(failure.value));
   }
 
   onDefect?.(exit.cause);

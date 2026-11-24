@@ -19,6 +19,7 @@
     "@davloom/core": "workspace:*",
     "@davloom/database": "workspace:*",
     "@davloom/laws": "workspace:*",
+    "@davloom/schema": "workspace:*",
     "@davloom/storage": "workspace:*",
     "@davloom/webdav": "workspace:*",
     "@sinclair/typebox": "0.34.52",

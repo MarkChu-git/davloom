@@ -390,8 +390,9 @@ const ROWS: readonly Row[] = [
         body: JSON.stringify({ name: "quota", access: "read-only" }),
       }),
     status: 201,
-    // Two of the queries read the session and its user for the step-up check (verification.ts).
-    budget: budget({ d1Queries: 5, d1Calls: 5, d1RowsRead: 5, d1RowsWritten: 5 }),
+    // Two of the queries read the session and its user for the step-up check (verification.ts);
+    // one batch of two writes the audit event and removes the events past their retention.
+    budget: budget({ d1Queries: 7, d1Calls: 6, d1RowsRead: 6, d1RowsWritten: 8 }),
   },
   {
     name: "DELETE /api/keys/:id",
@@ -405,8 +406,16 @@ const ROWS: readonly Row[] = [
     request: ({ davloom, state }) =>
       davloom.api(`/api/keys/${state.id ?? ""}`, { method: "DELETE" }),
     status: 200,
-    // Two of the queries read the session and its user for the step-up check (verification.ts).
-    budget: budget({ d1Queries: 5, d1Calls: 5, d1RowsRead: 6, d1RowsWritten: 1 }),
+    // Two of the queries read the session and its user for the step-up check (verification.ts);
+    // one batch of two writes the audit event and removes the events past their retention.
+    budget: budget({ d1Queries: 7, d1Calls: 6, d1RowsRead: 7, d1RowsWritten: 4 }),
+  },
+  {
+    name: "GET /api/audit",
+    request: ({ davloom }) => davloom.api("/api/audit"),
+    status: 200,
+    // A full page of 50 events reads 51 rows of the trail, with the session and its user.
+    budget: budget({ d1Queries: 3, d1Calls: 3, d1RowsRead: 60 }),
   },
   {
     name: "GET /api/mounts",
@@ -654,6 +663,7 @@ const MODEL_DAY: readonly (readonly [string, number])[] = [
   ["GET /api/keys", 5],
   ["POST /api/keys", 1],
   ["DELETE /api/keys/:id", 1],
+  ["GET /api/audit", 5],
   ["GET /api/mounts", 5],
   ["GET /api/backends", 5],
 ];

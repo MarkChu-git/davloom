@@ -8,7 +8,9 @@ import {
 } from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
   checkR2Config,
+  createAuditCounter,
   createOperationRecorder,
   credentialCipherLayer,
   Identity,
@@ -26,7 +28,11 @@ import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
 import { createR2Driver } from "@davloom/storage/r2";
 import { withUsageCache } from "@davloom/storage/usage-cache";
 import { createArchive } from "@davloom/database/archive";
-import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import { createD1Database, d1Atomic } from "@davloom/database/d1";
 import { createRepositories } from "@davloom/database/repositories";
 import { durableObjectStorage, type StorageObject } from "@davloom/storage/durable-object";
@@ -94,10 +100,12 @@ export const workersInstance = (origin: string): Instance => {
     passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
   });
   const operationLog = createOperationLog(db, d1Atomic(db));
+  const auditLog = createAuditLog(db, d1Atomic(db));
   const layer = Layer.mergeAll(
     Layer.succeed(Records, repositories),
     Layer.succeed(Archive, createArchive(db, d1Atomic(db))),
     Layer.succeed(OperationLog, operationLog),
+    Layer.succeed(AuditLog, auditLog),
     Layer.succeed(InstanceSettings, createSettingsStore(db)),
     Layer.succeed(Identity, createIdentity(auth)),
     Layer.succeed(StorageOpener, {
@@ -157,6 +165,14 @@ export const workersInstance = (origin: string): Instance => {
       schedule: (task) => waitUntil(task),
       delayMs: 20_000,
     }),
+    // Refused WebDAV credentials gather the same way, one row per address, key and minute.
+    refusedCredentials: createAuditCounter({
+      write: auditLog.add,
+      schedule: (task) => waitUntil(task),
+      delayMs: 20_000,
+    }),
+    // Cloudflare sets it to the client's address, replacing any value the client sent.
+    clientAddress: (request) => request.headers.get("cf-connecting-ip"),
     about: (request) => ({
       runtime: "Cloudflare Workers",
       deployment: "Cloudflare",
