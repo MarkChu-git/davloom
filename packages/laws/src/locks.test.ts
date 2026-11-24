@@ -206,12 +206,18 @@ describe("If header (RFC 4918 §10.4)", () => {
     );
   });
 
-  it("decides long headers without running out of stack", () => {
-    const many = Array.from({ length: 2000 }, () => ({
+  // workerd's stack overflowed at about 12,000 frames when each list or condition took one.
+  it("decides 200,000 lists without running out of stack", () => {
+    const many = Array.from({ length: 200_000 }, () => ({
       resolved: true,
       conditions: [{ negated: false, holds: false }],
     }));
     expect(ifState(true, true, many)).toBe("none-true");
+  });
+
+  it("decides a list of 200,000 conditions without running out of stack", () => {
+    const conditions = Array.from({ length: 200_000 }, () => ({ negated: false, holds: true }));
+    expect(ifState(true, true, [{ resolved: true, conditions }])).toBe("some-true");
   });
 });
 

@@ -227,14 +227,26 @@ function $condition_true(_c_0) {
   }
 }
 
-function $conditions_true(_cs_0) {
-  if (_cs_0.$ === "Nil") {
-    return true;
-  } else {
-    const _h_0 = _cs_0["head"];
-    const _t_0 = _cs_0["tail"];
-    return $Bool_and($$condition_true(_h_0), $$conditions_true(_t_0));
+function $conditions_go($0, $1) {
+  for (;;) {
+    {
+      const _cs_0 = $0;
+      const _acc_0 = $1;
+      if (_cs_0.$ === "Nil") {
+        return _acc_0;
+      } else {
+        const _h_0 = _cs_0["head"];
+        const _t_0 = _cs_0["tail"];
+        $0 = _t_0;
+        $1 = $$Bool_and(_acc_0, $$condition_true(_h_0));
+        continue;
+      }
+    }
   }
+}
+
+function $conditions_true(_cs_0) {
+  return $conditions_go(_cs_0, true);
 }
 
 function $clause_true(_c_0) {
@@ -243,16 +255,27 @@ function $clause_true(_c_0) {
   return $Bool_and(_resolved_0, $$conditions_true(_conditions_0));
 }
 
-function $header_true(_cs_0) {
-  if (_cs_0.$ === "Nil") {
-    return false;
-  } else {
-    const _h_0 = _cs_0["head"];
-    const _t_0 = _cs_0["tail"];
-    const _x_0 = $$clause_true(_h_0);
-    const _x_1 = $$header_true(_t_0);
-    return (_x_0 || _x_1);
+function $header_go($0, $1) {
+  for (;;) {
+    {
+      const _cs_0 = $0;
+      const _acc_0 = $1;
+      if (_cs_0.$ === "Nil") {
+        return _acc_0;
+      } else {
+        const _h_0 = _cs_0["head"];
+        const _t_0 = _cs_0["tail"];
+        const _x_0 = $$clause_true(_h_0);
+        $0 = _t_0;
+        $1 = (_acc_0 || _x_0);
+        continue;
+      }
+    }
   }
+}
+
+function $header_true(_cs_0) {
+  return $header_go(_cs_0, false);
 }
 
 function $state_of(_holds_0) {
@@ -327,6 +350,7 @@ const $$reaches_down = $reaches_down;
 const $$covers = $covers;
 const $$conflicts = $conflicts;
 const $$condition_true = $condition_true;
+const $$Bool_and = $Bool_and;
 const $$conditions_true = $conditions_true;
 const $$clause_true = $clause_true;
 const $$header_true = $header_true;export default {
@@ -335,8 +359,10 @@ const $$header_true = $header_true;export default {
   "covers": run_lib((a0,a1,a2) => run_loop($covers(a0,a1,a2)), 3),
   "refuses": run_lib((a0,a1,a2,a3,a4) => run_loop($refuses(a0,a1,a2,a3,a4)), 5),
   "condition_true": run_lib((a0) => run_loop($condition_true(a0)), 1),
+  "conditions_go": run_lib((a0,a1) => run_loop($conditions_go(a0,a1)), 2),
   "conditions_true": run_lib((a0) => run_loop($conditions_true(a0)), 1),
   "clause_true": run_lib((a0) => run_loop($clause_true(a0)), 1),
+  "header_go": run_lib((a0,a1) => run_loop($header_go(a0,a1)), 2),
   "header_true": run_lib((a0) => run_loop($header_true(a0)), 1),
   "state_of": run_lib((a0) => run_loop($state_of(a0)), 1),
   "if_state": run_lib((a0,a1,a2) => run_loop($if_state(a0,a1,a2)), 3),

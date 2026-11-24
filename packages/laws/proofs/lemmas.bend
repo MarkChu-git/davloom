@@ -820,21 +820,49 @@ def Lemma.not_and_not(a: Bool, b: Bool) -> {Bool.not(Bool.and(Bool.not(a), b)) =
     case True{}:
       {==}
 
-def Lemma.conditions(+cs: +List<K.Condition>) -> {Bool.not(L.some_false(cs)) == K.conditions_true(cs) : Bool}:
+def Lemma.and_not_or(a: Bool, c: Bool, s: Bool) -> {Bool.and(a, Bool.not(Bool.or(Bool.not(c), s))) == Bool.and(Bool.and(a, c), Bool.not(s)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      match c:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.or_not_and(a: Bool, c: Bool, f: Bool) -> {Bool.or(a, Bool.not(Bool.and(Bool.not(c), f))) == Bool.or(Bool.or(a, c), Bool.not(f)) : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      match c:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.conditions_go(+cs: +List<K.Condition>, +acc: Bool) -> {Bool.and(acc, Bool.not(L.some_false(cs))) == K.conditions_go(cs, acc) : Bool}:
   match cs:
     case Nil{}:
-      {==}
+      Lemma.and_true(acc)
     case Con{h, t}:
-      %Lemma.conditions(t) : {Bool.not(L.some_false(Con{h, t})) == Bool.and(K.condition_true(h), _) : Bool}
-      Lemma.not_or_not(K.condition_true(h), L.some_false(t))
+      %Lemma.conditions_go(t, Bool.and(acc, K.condition_true(h))) : {Bool.and(acc, Bool.not(L.some_false(Con{h, t}))) == _ : Bool}
+      Lemma.and_not_or(acc, K.condition_true(h), L.some_false(t))
+
+def Lemma.conditions(+cs: +List<K.Condition>) -> {Bool.not(L.some_false(cs)) == K.conditions_true(cs) : Bool}:
+  Lemma.conditions_go(cs, True{})
+
+def Lemma.header_go(+cs: +List<K.Clause>, +acc: Bool) -> {Bool.or(acc, Bool.not(L.all_false(cs))) == K.header_go(cs, acc) : Bool}:
+  match cs:
+    case Nil{}:
+      Lemma.or_false(acc)
+    case Con{h, t}:
+      %Lemma.header_go(t, Bool.or(acc, K.clause_true(h))) : {Bool.or(acc, Bool.not(L.all_false(Con{h, t}))) == _ : Bool}
+      Lemma.or_not_and(acc, K.clause_true(h), L.all_false(t))
 
 def Lemma.clauses(+cs: +List<K.Clause>) -> {Bool.not(L.all_false(cs)) == K.header_true(cs) : Bool}:
-  match cs:
-    case Nil{}:
-      {==}
-    case Con{h, t}:
-      %Lemma.clauses(t) : {Bool.not(L.all_false(Con{h, t})) == Bool.or(K.clause_true(h), _) : Bool}
-      Lemma.not_and_not(K.clause_true(h), L.all_false(t))
+  Lemma.header_go(cs, False{})
 
 def Lemma.state_of(b: Bool) -> {K.state_of(b) == Bool.pick(K.IfState, b, K.SomeTrue{}, K.NoneTrue{}) : K.IfState}:
   match b:

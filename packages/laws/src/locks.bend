@@ -78,25 +78,33 @@ def condition_true(c: Condition) -> Bool:
         case True{}:
           Bool.not(holds)
 
-def conditions_true(cs: +List<Condition>) -> Bool:
+# A tail call per condition, so a long list runs as a loop rather than one stack frame each.
+def conditions_go(cs: +List<Condition>, acc: Bool) -> Bool:
   match cs:
     case Nil{}:
-      True{}
+      acc
     case Con{h, t}:
-      Bool.and(condition_true(h), conditions_true(t))
+      conditions_go(t, Bool.and(acc, condition_true(h)))
+
+def conditions_true(cs: +List<Condition>) -> Bool:
+  conditions_go(cs, True{})
 
 def clause_true(c: Clause) -> Bool:
   match c:
     case Clause{resolved, +conditions}:
       Bool.and(resolved, conditions_true(conditions))
 
-# An If header holds when one of its lists does (§10.4.2).
-def header_true(cs: +List<Clause>) -> Bool:
+# A tail call per list, as for conditions.
+def header_go(cs: +List<Clause>, acc: Bool) -> Bool:
   match cs:
     case Nil{}:
-      False{}
+      acc
     case Con{h, t}:
-      Bool.or(clause_true(h), header_true(t))
+      header_go(t, Bool.or(acc, clause_true(h)))
+
+# An If header holds when one of its lists does (§10.4.2).
+def header_true(cs: +List<Clause>) -> Bool:
+  header_go(cs, False{})
 
 # What the If header of a request comes to.
 type IfState is Data:
