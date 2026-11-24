@@ -55,6 +55,7 @@ const world = (
     unique?: boolean;
     broken?: boolean;
     vanishing?: boolean;
+    mountedMeanwhile?: boolean;
     settings?: Record<string, unknown>;
   } = {},
 ) => {
@@ -79,6 +80,8 @@ const world = (
       },
       remove: (id: string) => {
         if (options.vanishing) return Promise.resolve(false);
+        if (options.mountedMeanwhile)
+          return Promise.reject(new Error("FOREIGN KEY constraint failed"));
         const index = backends.findIndex((b) => b.id === id);
         if (index === -1) return Promise.resolve(false);
         backends.splice(index, 1);
@@ -342,6 +345,39 @@ describe("removeBackend", () => {
     const { run } = world({ backends: [record("do")], storages: { do: storage } });
     valueOf(await run(removeBackend("do")));
     expect(released).toBe(1);
+  });
+
+  it("keeps an S3 backend whole when a Mount takes it before the delete", async () => {
+    let released = 0;
+    const storage: StorageBackend = {
+      ...createMemoryStorage(),
+      release: () => {
+        released += 1;
+        return Promise.resolve(ok(null));
+      },
+    };
+    const { run, backends } = world({
+      backends: [record("s", "s3")],
+      storages: { s: storage },
+      mountedMeanwhile: true,
+    });
+    expect(tagOf(await run(removeBackend("s")))).toBe("BackendInUse");
+    expect(backends).toHaveLength(1);
+    expect(released).toBe(0);
+  });
+
+  it("releases an S3 backend only once its record is gone", async () => {
+    const order: string[] = [];
+    const storage: StorageBackend = {
+      ...createMemoryStorage(),
+      release: () => {
+        order.push(backends.length === 0 ? "after" : "before");
+        return Promise.resolve(ok(null));
+      },
+    };
+    const { run, backends } = world({ backends: [record("s", "s3")], storages: { s: storage } });
+    expect(valueOf(await run(removeBackend("s")))).toEqual({ id: "s", filesKept: true });
+    expect(order).toEqual(["after"]);
   });
 
   it.each([

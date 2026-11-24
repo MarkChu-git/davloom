@@ -94,14 +94,25 @@ export const removeBackend = (id: string) =>
       return yield* Effect.fail(new BackendInUse());
     const storage = opener.open(backend);
     const release = storage?.release?.bind(storage);
-    const released = release ? yield* Effect.promise(() => release()) : null;
-    if (released && !released.ok) {
-      return yield* Effect.fail(
-        released.failure === "exists" ? new BackendNotEmpty() : new BackendUnavailable(),
-      );
+    // A Durable Objects backend must be empty before its record goes, so it is released first. An
+    // S3 backend keeps its objects, and its dead properties go only once the record is gone, so a
+    // removal that fails leaves it whole.
+    const emptiesFirst = backend.kind === "durable-object";
+    if (emptiesFirst && release) {
+      const released = yield* Effect.promise(() => release());
+      if (!released.ok) {
+        return yield* Effect.fail(
+          released.failure === "exists" ? new BackendNotEmpty() : new BackendUnavailable(),
+        );
+      }
     }
-    if (!(yield* Effect.promise(() => records.backends.remove(id))))
-      return yield* Effect.fail(new NotFound());
+    // A Mount created since the check above makes the delete fail on its foreign key.
+    const removed = yield* Effect.tryPromise({
+      try: () => records.backends.remove(id),
+      catch: () => new BackendInUse(),
+    });
+    if (!removed) return yield* Effect.fail(new NotFound());
+    if (!emptiesFirst && release) yield* Effect.promise(() => release().catch(() => null));
     return { id, filesKept: backend.kind !== "durable-object" };
   });
 
