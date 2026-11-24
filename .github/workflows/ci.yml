@@ -111,9 +111,30 @@ jobs:
         if: ${{ !cancelled() }}
         run: bun run scan:zizmor
 
-  compat:
+  # The compatibility tests, each suite or shard a job of its own so that they run side by side.
+  # `bun run test:compat` runs the same suites one after the other.
+  compat-suite:
+    name: compat (${{ matrix.suite }})
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          [
+            http-1,
+            http-2,
+            http-3,
+            http-4,
+            http-5,
+            d1,
+            workerd,
+            storage,
+            s3,
+            bun-sqlite,
+            brand,
+            cloud,
+          ]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -124,6 +145,7 @@ jobs:
       # version and the arguments of playwright:install, not the rest of bun.lock. actions/cache
       # saves nothing after a hit, so a key that missed a change would download on every run.
       - name: Compute the Playwright browser cache key
+        if: matrix.suite == 'brand'
         id: playwright
         working-directory: tests/integration/compat
         run: |
@@ -135,22 +157,34 @@ jobs:
             console.log(`key=browsers-${process.env.ImageOS}-${process.arch}-${version}-${install}`);
           ' >> "$GITHUB_OUTPUT"
       - name: Cache the Playwright browsers
+        if: matrix.suite == 'brand'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: ${{ steps.playwright.outputs.key }}
-      - run: bun run --filter @davloom/compat-tests playwright:install
+      - if: matrix.suite == 'brand'
+        run: bun run --filter @davloom/compat-tests playwright:install
       # The real WebDAV clients that http/clients.test.ts drives against the Worker.
       - name: Install litmus and rclone
+        if: startsWith(matrix.suite, 'http-')
         run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone
-      # The Playwright specs run in the ui job, in shards.
-      - run: bun run --filter @davloom/compat-tests test:without-ui
+      - name: Run the ${{ matrix.suite }} suite
+        working-directory: tests/integration/compat
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          case "$SUITE" in
+            http-*) bun run build:web && bunx --bun vitest run --config vitest.http.config.ts --shard="${SUITE#http-}/5" ;;
+            brand) bun run test:ui:brand ;;
+            cloud) bun run test:cloud:local && bun run test:cloud ;;
+            *) bun run "test:$SUITE" ;;
+          esac
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
       # test source) is the one file a failed test writes, and the log shows only its path. Every
       # file prints, in a collapsed group, because each failed test can have its own cause.
       - name: Print the Playwright failure context
-        if: failure()
+        if: failure() && matrix.suite == 'brand'
         run: |
           dir=tests/integration/compat/test-results
           total=0
@@ -164,14 +198,32 @@ jobs:
           echo "Found $total error-context.md under $dir"
 
   # The Playwright specs against the production build, in Chromium, Firefox and WebKit, split in
-  # four shards that run side by side; together they are what `bun run test:compat` runs last.
+  # six shards that run side by side; together they are what `bun run test:compat` runs last.
+
+  # The one check the main Ruleset requires of the compatibility tests: it passes when every suite
+  # and every shard of compat-suite and ui passed.
+  compat:
+    if: ${{ always() }}
+    needs: [compat-suite, ui]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check that every suite and shard passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then exit 1; fi
+          done
+
   ui:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -205,11 +257,11 @@ jobs:
       - name: Build the Dashboard
         working-directory: tests/integration/compat
         run: bun run build:web
-      - name: Run shard ${{ matrix.shard }} of 4 of the Playwright specs
+      - name: Run shard ${{ matrix.shard }} of 6 of the Playwright specs
         working-directory: tests/integration/compat
         env:
           SHARD: ${{ matrix.shard }}
-        run: bunx --bun playwright test --shard="$SHARD/4"
+        run: bunx --bun playwright test --shard="$SHARD/6"
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
       # test source) is the one file a failed test writes, and the log shows only its path. Every
