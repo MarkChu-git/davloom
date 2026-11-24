@@ -82,6 +82,14 @@ const FINITE: Record<string, string[]> = {
   "H.StatusKind": ["H.KInformational{}", "H.KNoContent{}", "H.KNotModified{}", "H.KOther{}"],
   "H.Form": ["H.FOrigin{}", "H.FAbsolute{}", "H.FAsterisk{}", "H.FInvalid{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
+  "U.Effect": [
+    "U.EffRead{}",
+    "U.EffChange{}",
+    "U.EffEndSelf{}",
+    "U.EffDestroy{}",
+    "U.EffCredential{}",
+    "U.EffDisclose{}",
+  ],
 };
 
 const laws = await Bun.file(join(lawsDir, "LAWS.bend")).text();

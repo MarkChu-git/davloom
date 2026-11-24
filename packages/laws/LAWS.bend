@@ -12,6 +12,7 @@ import ./src/properties.bend as F
 import ./src/objects.bend as O
 import ./src/mounts.bend as W
 import ./src/framing.bend as H
+import ./src/verification.bend as U
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1422,3 +1423,86 @@ law url_path_exact:
   for f: H.Form
   for host_ok: Bool
   {Bool.and(Bool.and(implies(as_target(url_path(H.url_of(f, host_ok))), keeps_target(f)), implies(keeps_target(f), as_target(url_path(H.url_of(f, host_ok))))), Bool.and(implies(at_slash(url_path(H.url_of(f, host_ok))), Bool.not(names_resource(f))), implies(Bool.not(names_resource(f)), at_slash(url_path(H.url_of(f, host_ok)))))) == True{} : Bool}
+
+# --- Step-up verification of management actions (PRD §6) -------------------------------------
+
+# Whether an action deletes, overwrites or discloses data, or touches a credential.
+def sensitive(e: U.Effect) -> Bool:
+  match e:
+    case U.EffRead{}:
+      False{}
+    case U.EffChange{}:
+      False{}
+    case U.EffEndSelf{}:
+      False{}
+    case U.EffDestroy{}:
+      True{}
+    case U.EffCredential{}:
+      True{}
+    case U.EffDisclose{}:
+      True{}
+
+def is_step_up(l: U.Level) -> Bool:
+  match l:
+    case U.LNone{}:
+      False{}
+    case U.LConfirm{}:
+      False{}
+    case U.LStepUp{}:
+      True{}
+
+def is_none(l: U.Level) -> Bool:
+  match l:
+    case U.LNone{}:
+      True{}
+    case U.LConfirm{}:
+      False{}
+    case U.LStepUp{}:
+      False{}
+
+def reads_only(e: U.Effect) -> Bool:
+  match e:
+    case U.EffRead{}:
+      True{}
+    case U.EffChange{}:
+      False{}
+    case U.EffEndSelf{}:
+      False{}
+    case U.EffDestroy{}:
+      False{}
+    case U.EffCredential{}:
+      False{}
+    case U.EffDisclose{}:
+      False{}
+
+# Destructive, credential-changing and disclosing actions always ask for step-up verification,
+# and exactly those do.
+law step_up_exactly_sensitive:
+  for e: U.Effect
+  {is_step_up(U.level(e)) == sensitive(e) : Bool}
+
+# No step-up action runs without a fresh verification.
+law step_up_needs_fresh:
+  for e: U.Effect
+  for fresh: Bool
+  {implies(Bool.and(is_step_up(U.level(e)), Bool.not(fresh)), Bool.not(U.permits(e, fresh))) == True{} : Bool}
+
+# A fresh verification permits every action, so verifying again always unblocks the person.
+law fresh_permits:
+  for e: U.Effect
+  {U.permits(e, True{}) == True{} : Bool}
+
+# Only step-up actions are ever refused: freshness never matters to the others.
+law only_step_up_refused:
+  for e: U.Effect
+  for fresh: Bool
+  {implies(Bool.not(is_step_up(U.level(e))), U.permits(e, fresh)) == True{} : Bool}
+
+# Reading asks for nothing.
+law reads_ask_nothing:
+  for e: U.Effect
+  {implies(reads_only(e), is_none(U.level(e))) == True{} : Bool}
+
+# Signing this browser out asks for a confirmation and never for step-up.
+law end_self_confirms:
+  {is_step_up(U.level(U.EffEndSelf{})) == False{} : Bool}
