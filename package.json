@@ -24,6 +24,7 @@
     "laws:setup": "bun scripts/laws-setup.ts",
     "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
     "test:compat": "bun run --filter @davloom/compat-tests test",
+    "lighthouse": "bun tests/integration/compat/scripts/lighthouse.ts",
     "laws:build": "bun scripts/laws-build.ts",
     "laws:check": "bun scripts/laws-build.ts --check",
     "laws:proofs": "bun scripts/laws-proofs.ts",

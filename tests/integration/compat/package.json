@@ -43,7 +43,9 @@
     "@cloudflare/workers-types": "5.20261116.1",
     "@playwright/test": "1.65.1",
     "better-auth": "1.7.28",
+    "chrome-launcher": "1.2.3",
     "drizzle-orm": "0.45.4",
+    "lighthouse": "13.6.0",
     "miniflare": "5.20261116.0-beta",
     "vitest": "5.1.0",
     "wrangler": "4.163.0"

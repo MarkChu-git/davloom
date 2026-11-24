@@ -66,6 +66,10 @@
           {
             "context": "quota",
             "integration_id": 15368
+          },
+          {
+            "context": "lighthouse",
+            "integration_id": 15368
           }
         ]
       }
