@@ -4,6 +4,7 @@ import ./src/policy.bend as P
 import ./src/preconditions.bend as C
 import ./src/ranges.bend as R
 import ./src/names.bend as N
+import ./src/imports.bend as I
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -560,3 +561,60 @@ def spec_name_ok(+xs: +List<Nat>) -> Bool:
 law name_accepted:
   for +xs: +List<Nat>
   {N.name_ok(xs) == spec_name_ok(xs) : Bool}
+
+# --- Imports (PRD §4, Phase 6) ---------------------------------------------------------------
+
+# Every key of `xs` is one the target or an earlier entry defines.
+def keys_known(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      Bool.and(contains(known, h), keys_known(t, known))
+
+# The keys defined so far, once an entry adds its own.
+def extend(xs: +List<Nat>, +known: +List<Nat>) -> +List<Nat>:
+  match xs:
+    case Nil{}:
+      known
+    case Con{h, t}:
+      Con{h, extend(t, known)}
+
+# No key of `xs` is defined already, by the target, an earlier entry or `xs` itself.
+def keys_fresh(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{+h, t}:
+      Bool.and(Bool.not(contains(known, h)), keys_fresh(t, Con{h, known}))
+
+# Each entry needs only keys that the target or an earlier entry defines.
+def needs_met(+entries: +List<I.Entry>, +known: +List<Nat>) -> Bool:
+  match entries:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      match h:
+        case I.Entry{+defines, +needs}:
+          Bool.and(keys_known(needs, known), needs_met(t, extend(defines, known)))
+
+# Each entry defines only keys that nothing defined before it.
+def defines_fresh(+entries: +List<I.Entry>, +known: +List<Nat>) -> Bool:
+  match entries:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      match h:
+        case I.Entry{+defines, +needs}:
+          Bool.and(keys_fresh(defines, known), defines_fresh(t, extend(defines, known)))
+
+def spec_valid(+entries: +List<I.Entry>, +known: +List<Nat>) -> Bool:
+  Bool.and(needs_met(entries, known), defines_fresh(entries, known))
+
+# An import applies every exported entry exactly once, in the export's order, when each one's
+# references resolve and none of its keys exists already; otherwise it applies nothing, so a failed
+# validation leaves the target unchanged.
+law import_all_or_nothing:
+  for +entries: +List<I.Entry>
+  for +known: +List<Nat>
+  {I.plan(entries, known) == Bool.pick(I.Plan, spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}

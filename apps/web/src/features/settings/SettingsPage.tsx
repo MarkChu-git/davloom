@@ -1,3 +1,4 @@
+import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Divider } from "@astryxdesign/core/Divider";
 import { Heading } from "@astryxdesign/core/Heading";
@@ -17,10 +18,19 @@ import { Selector } from "@astryxdesign/core/Selector";
 import { Text } from "@astryxdesign/core/Text";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Contrast, Info, Link as LinkIcon, Lock, User, type LucideIcon } from "lucide-react";
+import {
+  Contrast,
+  FileDown,
+  Info,
+  Link as LinkIcon,
+  Lock,
+  User,
+  type LucideIcon,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { webdavAddress } from "../api/dav";
-import { kindLabel, signOut, useBackends, useMe, useMounts } from "../api/queries";
+import { describeError } from "../api/client";
+import { exportInstance, kindLabel, signOut, useBackends, useMe, useMounts } from "../api/queries";
 import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
 import { CopyField } from "../shell/CopyField";
 import { formatCount } from "../shell/format";
@@ -35,6 +45,7 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   security: Lock,
   appearance: Contrast,
   webdav: LinkIcon,
+  export: FileDown,
   about: Info,
 };
 
@@ -158,6 +169,64 @@ const WebDavSection = () => (
   </SectionFrame>
 );
 
+/** Saves a value as a JSON file in the browser's downloads. */
+const download = (name: string, value: unknown) => {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(value)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  URL.revokeObjectURL(url);
+};
+
+const ExportSection = () => {
+  const [key, setKey] = useState<string>();
+  const [failure, setFailure] = useState<string>();
+  const [isExporting, setIsExporting] = useState(false);
+  const run = async () => {
+    setIsExporting(true);
+    setFailure(undefined);
+    try {
+      const result = await exportInstance();
+      download(`davloom-export-${new Date().toISOString().slice(0, 10)}.json`, result.file);
+      setKey(result.key);
+    } catch (error) {
+      setFailure(describeError(error));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+  return (
+    <SectionFrame title="Data export">
+      <Text>
+        An export saves the administrator, the keys, the backends, the mounts and their properties
+        in one encrypted file. Set up a new Davloom from it to move this instance. The files stay in
+        their backends.
+      </Text>
+      {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
+      {key === undefined ? null : (
+        <VStack gap={4}>
+          <Banner
+            status="success"
+            title="The export is in your downloads"
+            description="Keep this key with the file. It opens the file, and Davloom shows it only now."
+            container="card"
+          />
+          <CopyField label="Export key" value={key} copyLabel="Copy key" />
+        </VStack>
+      )}
+      <HStack>
+        <Button
+          label={key === undefined ? "Export" : "Export again"}
+          variant={key === undefined ? "primary" : "secondary"}
+          isLoading={isExporting}
+          onClick={() => void run()}
+        />
+      </HStack>
+    </SectionFrame>
+  );
+};
+
 const AboutSection = () => {
   const backends = useBackends();
   const mounts = useMounts();
@@ -186,6 +255,7 @@ const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
   security: SecuritySection,
   appearance: AppearanceSection,
   webdav: WebDavSection,
+  export: ExportSection,
   about: AboutSection,
 };
 

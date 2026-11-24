@@ -30,3 +30,4 @@ export {
   scopeStorage,
   type Scope,
 } from "./scope";
+export * from "./archive";

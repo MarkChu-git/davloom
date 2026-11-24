@@ -1,0 +1,68 @@
+import Base
+
+# The plan of an import (PRD §4, Phase 6). An export lists its entries in the order they are
+# imported. Each entry defines keys, such as its id and its name, and needs keys that other entries
+# define, such as the backend a Mount publishes. The caller turns every key into a Nat, with a
+# different number for each kind of key. An import applies every entry or none: it is valid when
+# each entry needs only keys that the target or an earlier entry defines, and defines only keys
+# that neither the target nor an earlier entry, nor itself, defined before.
+
+type Entry is Data:
+  Entry{defines: +List<Nat>, needs: +List<Nat>}
+
+type Plan is Data:
+  Apply{entries: +List<Entry>}
+  Reject{}
+
+def member(xs: +List<Nat>, +n: Nat) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case Con{h, t}:
+      Bool.or(Nat.is_eq(h, n), member(t, n))
+
+# Every key of `xs` is one of `known`.
+def all_known(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      Bool.and(member(known, h), all_known(t, known))
+
+def prepend(xs: +List<Nat>, +known: +List<Nat>) -> +List<Nat>:
+  match xs:
+    case Nil{}:
+      known
+    case Con{h, t}:
+      Con{h, prepend(t, known)}
+
+# Every key of `xs` is new: not one of `known`, and not repeated in `xs`.
+def all_new(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{+h, t}:
+      Bool.and(Bool.not(member(known, h)), all_new(t, Con{h, known}))
+
+# Whether the entries can be imported, in order, into a target that holds the keys `known`.
+def valid(+entries: +List<Entry>, +known: +List<Nat>) -> Bool:
+  match entries:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      match h:
+        case Entry{+defines, +needs}:
+          Bool.and(
+            Bool.and(all_known(needs, known), all_new(defines, known)),
+            valid(t, prepend(defines, known)))
+
+def decide(ok: Bool, entries: +List<Entry>) -> Plan:
+  match ok:
+    case True{}:
+      Apply{entries}
+    case False{}:
+      Reject{}
+
+# The plan of an import: every entry, in order, or nothing.
+def plan(+entries: +List<Entry>, +known: +List<Nat>) -> Plan:
+  decide(valid(entries, known), entries)

@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { createAuth, createIdentity } from "@davloom/auth";
 import {
+  Archive,
   credentialCipherLayer,
   Identity,
   InstanceConfig,
@@ -10,7 +11,12 @@ import {
   Records,
   StorageOpener,
 } from "@davloom/core";
-import { createBunSqliteDatabase, migrateBunSqliteDatabase } from "@davloom/database/bun-sqlite";
+import { createArchive } from "@davloom/database/archive";
+import {
+  bunSqliteAtomic,
+  createBunSqliteDatabase,
+  migrateBunSqliteDatabase,
+} from "@davloom/database/bun-sqlite";
 import { createSqlPropertyStore } from "@davloom/database/properties";
 import { createRepositories } from "@davloom/database/repositories";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
@@ -64,6 +70,7 @@ export const bunInstance =
       await unsealWith(await cipher)(backendId, sealed);
     const layer = Layer.mergeAll(
       Layer.succeed(Records, repositories),
+      Layer.succeed(Archive, createArchive(db, bunSqliteAtomic(db))),
       Layer.succeed(Identity, createIdentity(auth)),
       Layer.succeed(StorageOpener, {
         open: (backend) =>

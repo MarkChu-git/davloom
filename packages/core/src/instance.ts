@@ -149,7 +149,8 @@ const insert = (run: () => Promise<void>) =>
     Effect.catch((error) => (isUnique(error) ? Effect.fail(new NameTaken()) : Effect.die(error))),
   );
 
-const constantTimeEqual = (a: string, b: string) => {
+/** Compares two secrets in time that does not depend on where they differ. */
+export const constantTimeEqual = (a: string, b: string) => {
   const left = new TextEncoder().encode(a);
   const right = new TextEncoder().encode(b);
   let difference = left.length ^ right.length;

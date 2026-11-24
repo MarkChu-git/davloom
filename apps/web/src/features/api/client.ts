@@ -6,12 +6,15 @@ import { DavError } from "./dav";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /** The API's own explanation, such as why an import was refused, when it sent one. */
+  readonly detail: string | undefined;
 
-  constructor(status: number, code: string) {
+  constructor(status: number, code: string, detail?: string) {
     super(`${status} ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -49,6 +52,12 @@ const readBody = async (response: Response): Promise<unknown> => {
   }
 };
 
+/** The message in an error body such as `{"error":{"code":"archive_invalid","message":"…"}}`. */
+const detailOf = (body: unknown): string | undefined =>
+  isRecord(body) && isRecord(body.error) && typeof body.error.message === "string"
+    ? body.error.message
+    : undefined;
+
 /** Calls the API and returns its JSON answer, or throws an ApiError. */
 export const apiFetch = async <T>(
   path: string,
@@ -67,7 +76,7 @@ export const apiFetch = async <T>(
   }
   const parsed = await readBody(response);
   if (!response.ok) {
-    throw new ApiError(response.status, errorCodeOf(response.status, parsed));
+    throw new ApiError(response.status, errorCodeOf(response.status, parsed), detailOf(parsed));
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer for this path
   return parsed as T;
@@ -93,6 +102,8 @@ export const describeError = (error: unknown): string => {
       return "It is no longer there.";
     case "invalid_input":
       return "Check the values and try again.";
+    case "archive_invalid":
+      return error.detail ?? "This export cannot be imported.";
     default:
       return error.status === 501
         ? "This server does not run the management API yet."

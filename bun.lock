@@ -96,6 +96,7 @@
       },
       "devDependencies": {
         "drizzle-kit": "0.31.11",
+        "effect": "4.1.4",
       },
     },
     "packages/laws": {

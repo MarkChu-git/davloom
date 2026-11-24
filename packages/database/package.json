@@ -8,7 +8,8 @@
     "./d1": "./src/d1.ts",
     "./bun-sqlite": "./src/bun-sqlite.ts",
     "./repositories": "./src/repositories.ts",
-    "./properties": "./src/properties.ts"
+    "./properties": "./src/properties.ts",
+    "./archive": "./src/archive.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
@@ -19,6 +20,7 @@
     "drizzle-orm": "0.45.4"
   },
   "devDependencies": {
-    "drizzle-kit": "0.31.11"
+    "drizzle-kit": "0.31.11",
+    "effect": "4.1.4"
   }
 }
