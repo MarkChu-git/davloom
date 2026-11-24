@@ -111,6 +111,21 @@ jobs:
         if: ${{ !cancelled() }}
         run: bun run scan:zizmor
 
+  # The Cloud Free quota check (PRD §11): the production Worker in local workerd with its D1,
+  # Durable Object and fetch bindings metered, and each WebDAV and API request held to the Free
+  # plan's limits per invocation, to the budget measured for it and, in a modeled day, to the
+  # plan's daily quotas. It needs no Cloudflare account.
+  quota:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      - run: bun run --filter @davloom/compat-tests test:quota
+
   # The compatibility tests, each suite or shard a job of its own so that they run side by side.
   # `bun run test:compat` runs the same suites one after the other.
   # Rebuilds every Bend module with the pinned Bend and fails when a committed .mjs differs, and

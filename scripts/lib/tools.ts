@@ -156,6 +156,29 @@ export const TOOLS: Readonly<Record<string, Tool>> = {
   },
 };
 
+export interface Image {
+  /** The image's repository on Docker Hub. */
+  readonly repository: string;
+  readonly version: string;
+  /** The SHA-256 digest of the image index, which covers every platform's image. */
+  readonly digest: string;
+}
+
+// Tools that run as their project's official container image, pinned by the digest of the
+// release's multi-platform index: Docker checks every layer it pulls against it.
+export const IMAGES: Readonly<Record<string, Image>> = {
+  // Grafana's image of the k6 release, for the scheduled load test (tests/integration/compat/load).
+  k6: {
+    repository: "grafana/k6",
+    version: "2.4.0",
+    digest: "sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276",
+  },
+};
+
+/** The reference `docker run` takes for a pinned image: its tag, checked against its digest. */
+export const imageReference = ({ repository, version, digest }: Image): string =>
+  `docker.io/${repository}:${version}@${digest}`;
+
 const isPlatform = (value: string): value is Platform =>
   PLATFORMS.some((platform) => platform === value);
 
