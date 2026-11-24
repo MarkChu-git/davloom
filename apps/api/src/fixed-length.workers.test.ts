@@ -62,6 +62,25 @@ describe("withFixedLength", () => {
     expect(lengths).toEqual([]);
   });
 
+  it("uses workerd's FixedLengthStream unless given another", async () => {
+    const made: number[] = [];
+    class Stand extends TransformStream<Uint8Array, Uint8Array> {
+      constructor(length: number) {
+        super();
+        made.push(length);
+      }
+    }
+    const global: Record<string, unknown> = Object(globalThis);
+    global.FixedLengthStream = Stand;
+    try {
+      const response = withFixedLength(dav(), answer({ "content-length": "5" }));
+      expect(made).toEqual([5]);
+      expect(await response.text()).toBe("hello");
+    } finally {
+      delete global.FixedLengthStream;
+    }
+  });
+
   it("does not throw when the body fails part way", async () => {
     const { fixed } = recording();
     const body = new ReadableStream<Uint8Array>({
