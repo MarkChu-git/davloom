@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
+import { planUrl, sendsMeasuredLength, type TargetForm } from "@davloom/laws";
 
 // The self-hosted HTTP server: node:http on Bun, in front of the app's fetch handler. Bun.serve
 // (Bun 1.4) drops the Content-Length of every answer whose body is a stream and sends it chunked,
@@ -17,28 +18,39 @@ const BODILESS_METHODS = new Set(["GET", "HEAD"]);
 /** Where a request goes when it names no usable host; never a loopback name. */
 const NO_HOST = "http://host.invalid";
 
-/** The URL a node:http request names, as Bun.serve forms it from the request line and Host. */
+/** The path and query of an absolute-form target, or null when it is not one. */
+const absolutePath = (target: string): string | null => {
+  if (!URL.canParse(target)) return null;
+  const absolute = new URL(target);
+  return `${absolute.pathname}${absolute.search}`;
+};
+
+/**
+ * The URL a node:http request names, as Bun.serve forms it from the request line and Host. An
+ * absolute-form target names a scheme and a host of its own; Bun.serve kept only its path and
+ * query, so a client cannot pass the HTTPS-only check or pick the origin by naming https:// or
+ * localhost in the request line. The proven plan (laws url_host_from_header, url_path_exact) says
+ * where the path and host come from.
+ */
 export const urlOf = (target: string, host: string | undefined): URL => {
-  let path = target.startsWith("/") ? target : "/";
-  try {
-    // An absolute-form target names a scheme and a host of its own. Bun.serve kept only its path
-    // and query, so a client cannot pass the HTTPS-only check or pick the origin by naming
-    // https:// or localhost in the request line; the scheme stays http: and the host the Host
-    // header's.
-    // An asterisk-form target (OPTIONS *) names no resource.
-    if (target === "*") return new URL("/", NO_HOST);
-    if (!target.startsWith("/")) {
-      const absolute = new URL(target);
-      path = `${absolute.pathname}${absolute.search}`;
-    }
-    // A Host with a path, a query, credentials or spaces in it is not a host.
-    if (host === undefined || host === "" || /[/?#@\\\s]/.test(host)) {
-      return new URL(`${NO_HOST}${path}`);
-    }
-    return new URL(`http://${host}${path}`);
-  } catch {
-    return new URL(`${NO_HOST}${path}`);
-  }
+  const absolute = target.startsWith("/") || target === "*" ? null : absolutePath(target);
+  const form: TargetForm = target.startsWith("/")
+    ? "origin"
+    : target === "*"
+      ? "asterisk"
+      : absolute === null
+        ? "invalid"
+        : "absolute";
+  const candidate = form === "origin" ? target : (absolute ?? "/");
+  // A Host with a path, a query, credentials or spaces in it is not a host.
+  const hostOk =
+    host !== undefined &&
+    host !== "" &&
+    !/[/?#@\\\s]/.test(host) &&
+    URL.canParse(`http://${host}${candidate}`);
+  const plan = planUrl(form, hostOk);
+  const path = plan.path === "target" ? target : plan.path === "absolute" ? candidate : "/";
+  return new URL(plan.host === "header" ? `http://${host ?? ""}${path}` : `${NO_HOST}${path}`);
 };
 
 /** A request's body as a Web stream, read from the socket only as the handler asks. */
@@ -144,9 +156,9 @@ export const writeResponse = async (
         measured += next.value.byteLength;
       }
       // RFC 9110 gives a 1xx, 204 or 304 answer no Content-Length of a body it does not have.
-      const lengthless =
-        response.status < 200 || response.status === 204 || response.status === 304;
-      if (ended && !lengthless) headers["content-length"] = String(measured);
+      if (sendsMeasuredLength(false, ended, response.status)) {
+        headers["content-length"] = String(measured);
+      }
     }
     outgoing.writeHead(response.status, headers);
     for (const chunk of first) outgoing.write(chunk);

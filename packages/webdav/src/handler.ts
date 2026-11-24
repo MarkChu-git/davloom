@@ -10,7 +10,19 @@ import {
   type StorageFailure,
   type StorageResult,
 } from "@davloom/core";
-import { evaluatePreconditions, resolveRange, type Check } from "@davloom/laws";
+import {
+  decideUnlock,
+  evaluatePreconditions,
+  failureStatus,
+  ifState,
+  lockGate,
+  propertySource,
+  readsDeadProperties,
+  resolveRange,
+  type Check,
+  type IfClause,
+  type IfState,
+} from "@davloom/laws";
 import {
   parseDepth,
   parseEntityTags,
@@ -84,29 +96,6 @@ const xmlResponse = (status: number, body: string, headers?: Record<string, stri
 /** An RFC 4918 §16 precondition error body. */
 const davError = (status: number, condition: string) =>
   xmlResponse(status, `<D:error xmlns:D="DAV:">${condition}</D:error>`);
-
-const FAILURE_STATUS: Record<StorageFailure, number> = {
-  "not-found": 404,
-  "no-parent": 409,
-  exists: 405,
-  "is-collection": 405,
-  "not-collection": 409,
-  "into-itself": 403,
-  root: 403,
-  "insufficient-storage": 507,
-  "too-large": 413,
-  "size-mismatch": 400,
-  unavailable: 503,
-  // A name the store refuses for good is the client's to change, not a fault to retry later, so
-  // it is not 503. The request is well formed and the name is valid in the namespace, so it is not
-  // 400 either: 403 says the server understood it and will not carry it out (RFC 9110 §15.5.4),
-  // as RFC 4918 also answers a PUT or MKCOL that the server will not perform at that URL.
-  "name-refused": 403,
-  "name-refused-replaced": 403,
-  "hidden-objects": 409,
-  "cross-backend": 502,
-  "too-many": 403,
-};
 
 const statusLine = (status: number) => `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? ""}`.trim();
 
@@ -255,6 +244,12 @@ const parsePropfind = (body: ParsedBody): PropfindRequest | null => {
   return null;
 };
 
+/** What a request's If header came to, and the lock tokens it submits. */
+interface IfResult {
+  readonly tokens: Set<string>;
+  readonly state: IfState;
+}
+
 const parseTimeout = (header: string | null, max: number): number => {
   if (header === null) return max;
   for (const part of header.split(",")) {
@@ -323,9 +318,9 @@ const EXPLAINED: Partial<Record<StorageFailure, string>> = {
 const failure = (reason: StorageFailure) => {
   const text = EXPLAINED[reason];
   return text === undefined
-    ? empty(FAILURE_STATUS[reason])
+    ? empty(failureStatus(reason))
     : new Response(text, {
-        status: FAILURE_STATUS[reason],
+        status: failureStatus(reason),
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
 };
@@ -363,19 +358,20 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     return held.map((lock) => activeLockXml(lock, basePath, time, mayLock(lock.root))).join("");
   };
 
-  /** Evaluates the If header; returns the tokens it submits, or a failure response. */
+  /**
+   * Evaluates the If header; returns what it comes to and the tokens it submits, or a failure
+   * response. The decision is the proven one (laws if_state_exact and lock_gate_in_order).
+   */
   const evaluateIf = async (
     request: Request,
     url: URL,
     target: Path,
-  ): Promise<{ tokens: Set<string> } | { response: Response }> => {
+  ): Promise<IfResult | { response: Response }> => {
     const header = request.headers.get("if");
-    if (header === null) return { tokens: new Set() };
-    const lists = parseIfHeader(header);
-    if (!lists) return { response: empty(400) };
+    const lists = header === null ? null : parseIfHeader(header);
     const tokens = new Set<string>();
-    let anyTrue = false;
-    for (const list of lists) {
+    const clauses: IfClause[] = [];
+    for (const list of lists ?? []) {
       let path: Path | null = target;
       if (list.resource !== null) {
         const destination = parseDestination(list.resource, url, basePath);
@@ -383,34 +379,37 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       }
       // A tagged resource the credential may not read is never looked at: its list is false.
       if (path !== null && !mayRead(path)) path = null;
-      let listTrue = path !== null;
       const entry = path ? await stat(path) : null;
       const held =
         path && locks ? await locks.covering(path, { descendants: false, now: now() }) : [];
-      for (const condition of list.conditions) {
+      const conditions = list.conditions.map((condition) => {
         // A token anywhere in the header is submitted, under Not too (RFC 4918 §10.4.1).
         if (condition.kind === "token") tokens.add(condition.value);
         const holds =
           condition.kind === "token"
             ? held.some((lock) => lock.token === condition.value)
             : entry !== null && condition.value.replace(/^W\//, "") === quoteTag(entry.etag);
-        if (holds === condition.not) listTrue = false;
-      }
-      if (listTrue) anyTrue = true;
+        return { negated: condition.not, holds };
+      });
+      clauses.push({ resolved: path !== null, conditions });
     }
-    return anyTrue ? { tokens } : { response: empty(412) };
+    const state = ifState(header !== null, lists !== null, clauses);
+    const gate = lockGate(state, false);
+    if (gate === "bad-header") return { response: empty(400) };
+    if (gate === "unmet") return { response: empty(412) };
+    return { tokens, state };
   };
 
   /** 423 unless every lock on the given paths is one whose token the request submitted. */
   const checkLocks = async (
     checks: readonly { path: Path; descendants: boolean }[],
-    tokens: Set<string>,
+    { tokens, state }: IfResult,
   ): Promise<Response | null> => {
     if (!locks) return null;
     for (const { path, descendants } of checks) {
       const held = await locks.covering(path, { descendants, now: now() });
       const blocking = held.find((lock) => !tokens.has(lock.token));
-      if (blocking) {
+      if (lockGate(state, blocking !== undefined) === "locked" && blocking) {
         return davError(
           423,
           `<D:lock-token-submitted><D:href>${escapeText(hrefOf(basePath, blocking.root, false))}</D:href></D:lock-token-submitted>`,
@@ -494,7 +493,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         { path, descendants: false },
         ...(entry ? [] : [{ path: parentOf(path), descendants: false }]),
       ],
-      ifResult.tokens,
+      ifResult,
     );
     if (blocked) return blocked;
     if (entry?.kind === "collection") return empty(405, { allow: methods });
@@ -521,7 +520,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         { path, descendants: false },
         { path: parentOf(path), descendants: false },
       ],
-      ifResult.tokens,
+      ifResult,
     );
     if (blocked) return blocked;
     const created = await storage.createCollection(path);
@@ -545,7 +544,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
           { path, descendants: true },
           { path: parentOf(path), descendants: false },
         ],
-        ifResult.tokens,
+        ifResult,
       );
       if (blocked) return blocked;
     }
@@ -583,7 +582,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     if (move)
       checks.unshift({ path, descendants: true }, { path: parentOf(path), descendants: false });
     if (pathKey(path) !== pathKey(to) && !isWithin(to, path)) {
-      const blocked = await checkLocks(to.length === 0 ? [] : checks, ifResult.tokens);
+      const blocked = await checkLocks(to.length === 0 ? [] : checks, ifResult);
       if (blocked) return blocked;
     }
     const result = move
@@ -623,11 +622,15 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     // only DAV: properties, quota and unknown ones included, needs no read of dead properties. Nor
     // does an entry whose properties this key may not see.
     const deadPaths = entries.map((e) => e.path).filter((p) => mayRead(p));
-    const deadResult =
-      (query.kind === "prop" && query.props.every((prop) => prop.ns === DAV)) ||
-      deadPaths.length === 0
-        ? null
-        : await storage.properties(deadPaths);
+    const queryKind =
+      query.kind !== "prop"
+        ? query.kind
+        : query.props.every((prop) => prop.ns === DAV)
+          ? "prop-dav"
+          : "prop-other";
+    const deadResult = readsDeadProperties(deadPaths.length > 0, queryKind)
+      ? await storage.properties(deadPaths)
+      : null;
     // Dead properties that cannot be read fail the request: a 207 without them would tell the
     // client the entries have none, and allprop or propname cannot name what is missing to give it
     // a status of its own in a propstat.
@@ -673,27 +676,33 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         }
       } else {
         for (const prop of query.props) {
-          if (prop.ns === DAV && QUOTA_NAMES.has(prop.local) && item.kind === "collection") {
+          const dav = prop.ns === DAV;
+          const quotaName = QUOTA_NAMES.has(prop.local);
+          const collection = item.kind === "collection";
+          let quota: string | null = null;
+          if (dav && quotaName && collection) {
             // One answer per top-level collection: each Mount has its own backend.
             const scope = item.path[0] ?? "";
             if (!quotas.has(scope))
               quotas.set(scope, storage.quota ? await storage.quota(item.path) : null);
-            const quota = quotas.get(scope);
-            const value = quota?.ok ? quotaValue(prop.local, quota.value) : null;
-            if (value !== null) {
-              found.push(liveElement(prop.local, value));
-              continue;
-            }
+            const known = quotas.get(scope);
+            quota = known?.ok ? quotaValue(prop.local, known.value) : null;
           }
-          const live =
-            prop.ns === DAV && Object.hasOwn(LIVE, prop.local) ? LIVE[prop.local] : undefined;
-          const value = live ? live(item, context) : null;
-          if (value !== null) {
-            found.push(liveElement(prop.local, value));
-            continue;
-          }
+          const live = Object.hasOwn(LIVE, prop.local) ? LIVE[prop.local] : undefined;
+          const liveValue = dav && live ? live(item, context) : null;
           const property = deadProps.find((p) => p.name === clark(prop.ns, prop.local));
-          if (property) found.push(property.xml);
+          const source = propertySource({
+            dav,
+            quotaName,
+            collection,
+            quotaValue: quota !== null,
+            liveValue: liveValue !== null,
+            deadPresent: property !== undefined,
+          });
+          if (source === "quota" && quota !== null) found.push(liveElement(prop.local, quota));
+          else if (source === "live" && liveValue !== null)
+            found.push(liveElement(prop.local, liveValue));
+          else if (source === "dead" && property) found.push(property.xml);
           else missing.push(emptyElement(prop.ns, prop.local));
         }
       }
@@ -714,7 +723,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     if (!entry) return empty(404);
     const ifResult = await evaluateIf(request, url, path);
     if ("response" in ifResult) return ifResult.response;
-    const blocked = await checkLocks([{ path, descendants: false }], ifResult.tokens);
+    const blocked = await checkLocks([{ path, descendants: false }], ifResult);
     if (blocked) return blocked;
 
     // Instructions apply in document order; the last one for a name wins.
@@ -825,7 +834,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       if (path.length === 0) return empty(409);
       const parentBlocked = await checkLocks(
         [{ path: parentOf(path), descendants: false }],
-        ifResult.tokens,
+        ifResult,
       );
       if (parentBlocked) return parentBlocked;
       const created = await storage.write(path, null, {
@@ -860,8 +869,9 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     if (!token) return empty(400);
     const held = await store.covering(path, { descendants: false, now: now() });
     const named = held.find((l) => l.token === token);
-    if (!named) return davError(409, "<D:lock-token-matches-request-uri/>");
-    if (!mayLock(named.root)) return empty(403);
+    const decision = decideUnlock(named !== undefined, named !== undefined && mayLock(named.root));
+    if (decision === "not-here") return davError(409, "<D:lock-token-matches-request-uri/>");
+    if (decision === "not-yours") return empty(403);
     await store.remove(token);
     return empty(204);
   };

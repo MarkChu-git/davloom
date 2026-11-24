@@ -58,6 +58,10 @@
           {
             "context": "dependencies",
             "integration_id": 15368
+          },
+          {
+            "context": "laws",
+            "integration_id": 15368
           }
         ]
       }

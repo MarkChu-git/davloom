@@ -6,6 +6,12 @@ import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
+import ./src/locks.bend as K
+import ./src/statuses.bend as S
+import ./src/properties.bend as F
+import ./src/objects.bend as O
+import ./src/mounts.bend as W
+import ./src/framing.bend as H
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -757,3 +763,662 @@ law copy_action_exact:
   for t: M.Target
   for overwrite: Bool
   {M.decide(s, t, overwrite) == spec_copy_action(s, t, overwrite) : M.Action}
+
+# --- Write locks (RFC 4918 §6, §9.10, §9.11, §10.4) -------------------------------------------
+
+def shared(s: K.Scope) -> Bool:
+  match s:
+    case K.Exclusive{}:
+      False{}
+    case K.Shared{}:
+      True{}
+
+def deep(d: K.Depth) -> Bool:
+  match d:
+    case K.Shallow{}:
+      False{}
+    case K.Deep{}:
+      True{}
+
+def at(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      True{}
+    case K.Above{}:
+      False{}
+    case K.Below{}:
+      False{}
+    case K.Apart{}:
+      False{}
+
+def above(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      False{}
+    case K.Above{}:
+      True{}
+    case K.Below{}:
+      False{}
+    case K.Apart{}:
+      False{}
+
+def below(p: K.Place) -> Bool:
+  match p:
+    case K.Same{}:
+      False{}
+    case K.Above{}:
+      False{}
+    case K.Below{}:
+      True{}
+    case K.Apart{}:
+      False{}
+
+# §6.1: a shared lock is compatible only with other shared locks.
+law lock_conflict_exact:
+  for held: K.Scope
+  for requested: K.Scope
+  {K.conflicts(held, requested) == Bool.not(Bool.and(shared(held), shared(requested))) : Bool}
+
+# A lock covers its root, and with Depth infinity every member under it; a request on a whole tree
+# also meets the locks rooted inside the tree.
+def spec_covers(+d: K.Depth, +p: K.Place, +descendants: Bool) -> Bool:
+  Bool.or(at(p), Bool.or(Bool.and(above(p), deep(d)), Bool.and(below(p), descendants)))
+
+law lock_covers_exact:
+  for d: K.Depth
+  for p: K.Place
+  for descendants: Bool
+  {K.covers(d, p, descendants) == spec_covers(d, p, descendants) : Bool}
+
+# §9.10.6: a new lock is refused exactly when a conflicting lock covers its root, or, for a new
+# Depth infinity lock, lies under its root.
+law lock_refuses_exact:
+  for hs: K.Scope
+  for hd: K.Depth
+  for p: K.Place
+  for s: K.Scope
+  for d: K.Depth
+  {K.refuses(hs, hd, p, s, d) == Bool.and(spec_covers(hd, p, deep(d)), Bool.not(Bool.and(shared(hs), shared(s)))) : Bool}
+
+# §10.4.2: a condition is true when its token or tag matches, or, under Not, when it does not.
+law if_condition_exact:
+  for negated: Bool
+  for holds: Bool
+  {K.condition_true(K.Condition{negated, holds}) == Bool.or(Bool.and(holds, Bool.not(negated)), Bool.and(Bool.not(holds), negated)) : Bool}
+
+def some_false(+cs: +List<K.Condition>) -> Bool:
+  match cs:
+    case Nil{}:
+      False{}
+    case Con{h, t}:
+      Bool.or(Bool.not(K.condition_true(h)), some_false(t))
+
+# A list is true when its resource is one the request may see and none of its conditions is false.
+law if_clause_exact:
+  for resolved: Bool
+  for +cs: +List<K.Condition>
+  {K.clause_true(K.Clause{resolved, cs}) == Bool.and(resolved, Bool.not(some_false(cs))) : Bool}
+
+def all_false(+cs: +List<K.Clause>) -> Bool:
+  match cs:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      Bool.and(Bool.not(K.clause_true(h)), all_false(t))
+
+# An If header holds unless every one of its lists is false, so a header of no lists never holds.
+law if_header_exact:
+  for +cs: +List<K.Clause>
+  {K.header_true(cs) == Bool.not(all_false(cs)) : Bool}
+
+# What a header comes to: none, malformed, or whether one of its lists holds.
+law if_state_exact:
+  for present: Bool
+  for parsed: Bool
+  for +cs: +List<K.Clause>
+  {K.if_state(present, parsed, cs) == Bool.pick(K.IfState, Bool.not(present), K.NoHeader{}, Bool.pick(K.IfState, Bool.not(parsed), K.Malformed{}, Bool.pick(K.IfState, K.header_true(cs), K.SomeTrue{}, K.NoneTrue{}))) : K.IfState}
+
+def spec_gate(s: K.IfState, blocked: Bool) -> K.Gate:
+  match s:
+    case K.Malformed{}:
+      K.BadHeader{}
+    case K.NoneTrue{}:
+      K.Unmet{}
+    case K.NoHeader{}:
+      Bool.pick(K.Gate, blocked, K.Locked{}, K.Proceed{})
+    case K.SomeTrue{}:
+      Bool.pick(K.Gate, blocked, K.Locked{}, K.Proceed{})
+
+# A malformed If header answers 400 and a false one 412 before any lock is looked at (§10.4); a
+# change to a locked resource then answers 423 unless the header submits every blocking lock's
+# token (§7). No request goes ahead while a lock blocks it.
+law lock_gate_in_order:
+  for s: K.IfState
+  for blocked: Bool
+  {K.gate(s, blocked) == spec_gate(s, blocked) : K.Gate}
+
+# §9.11.1: UNLOCK releases only a lock that covers the request URI, and only for a credential that
+# may change it.
+law unlock_exact:
+  for found: Bool
+  for may_lock: Bool
+  {K.decide_unlock(found, may_lock) == Bool.pick(K.Unlock, Bool.not(found), K.NotHere{}, Bool.pick(K.Unlock, Bool.not(may_lock), K.NotYours{}, K.Release{})) : K.Unlock}
+
+# --- The status of a failed operation (RFC 9110 §15, RFC 4918 §9) -----------------------------
+
+# The failures that are the server's, not the request's: retrying later or elsewhere may succeed.
+def server_fault(f: S.Failure) -> Bool:
+  match f:
+    case S.FInsufficientStorage{}:
+      True{}
+    case S.FUnavailable{}:
+      True{}
+    case S.FCrossBackend{}:
+      True{}
+    case S.FNotFound{}:
+      False{}
+    case S.FNoParent{}:
+      False{}
+    case S.FExists{}:
+      False{}
+    case S.FIsCollection{}:
+      False{}
+    case S.FNotCollection{}:
+      False{}
+    case S.FIntoItself{}:
+      False{}
+    case S.FRoot{}:
+      False{}
+    case S.FTooLarge{}:
+      False{}
+    case S.FSizeMismatch{}:
+      False{}
+    case S.FNameRefused{}:
+      False{}
+    case S.FNameRefusedReplaced{}:
+      False{}
+    case S.FHiddenObjects{}:
+      False{}
+    case S.FTooMany{}:
+      False{}
+
+# Every failure answers an error status: never a success or a redirect, which a client would take
+# as done (RFC 9110 §15).
+law failure_is_error:
+  for f: S.Failure
+  {Bool.and(Nat.is_le(400n, S.status(f)), Nat.is_lt(S.status(f), 600n)) == True{} : Bool}
+
+# A failure answers 5xx exactly when it is the server's, so a client retries only those and
+# changes the request for the others (RFC 9110 §15.5, §15.6).
+law failure_class_exact:
+  for f: S.Failure
+  {Nat.is_le(500n, S.status(f)) == server_fault(f) : Bool}
+
+# Each failure's status, with the section that sets it.
+def spec_status(f: S.Failure) -> Nat:
+  match f:
+    # RFC 9110 §15.5.5
+    case S.FNotFound{}:
+      404n
+    # RFC 4918 §9.3.1, §9.7.1, §9.8.5: a missing parent collection is 409.
+    case S.FNoParent{}:
+      409n
+    # RFC 4918 §9.3.1: MKCOL on a mapped URL is 405; so is PUT on a collection.
+    case S.FExists{}:
+      405n
+    case S.FIsCollection{}:
+      405n
+    case S.FNotCollection{}:
+      409n
+    # RFC 4918 §9.8.5: the source and destination are the same or nested.
+    case S.FIntoItself{}:
+      403n
+    case S.FRoot{}:
+      403n
+    # RFC 4918 §11.5
+    case S.FInsufficientStorage{}:
+      507n
+    # RFC 9110 §15.5.14
+    case S.FTooLarge{}:
+      413n
+    # RFC 9110 §8.6: a body that differs from its Content-Length is a malformed request.
+    case S.FSizeMismatch{}:
+      400n
+    # RFC 9110 §15.6.4
+    case S.FUnavailable{}:
+      503n
+    # RFC 9110 §15.5.4: understood, and refused for good.
+    case S.FNameRefused{}:
+      403n
+    case S.FNameRefusedReplaced{}:
+      403n
+    # RFC 9110 §15.5.10: the collection's state conflicts with the request.
+    case S.FHiddenObjects{}:
+      409n
+    # RFC 9110 §15.6.3, as RFC 4918 §9.8.5 answers a destination on another server.
+    case S.FCrossBackend{}:
+      502n
+    # PRD §5: refused in one request; nothing changed.
+    case S.FTooMany{}:
+      403n
+
+law failure_status_exact:
+  for f: S.Failure
+  {S.status(f) == spec_status(f) : Nat}
+
+# --- PROPFIND (RFC 4918 §9.1, RFC 4331) -------------------------------------------------------
+
+# A prop query that names only DAV: properties.
+def dav_only(q: F.Query) -> Bool:
+  match q:
+    case F.QAllProp{}:
+      False{}
+    case F.QPropName{}:
+      False{}
+    case F.QPropDav{}:
+      True{}
+    case F.QPropOther{}:
+      False{}
+
+# Dead properties are read exactly when the credential may see an entry and the body is not a
+# prop query naming DAV: properties only.
+law propfind_reads_dead_exact:
+  for readable: Bool
+  for q: F.Query
+  {F.reads_dead(readable, q) == Bool.and(readable, Bool.not(dav_only(q))) : Bool}
+
+# A requested property's value: the quota for a quota name on a collection whose quota is known,
+# else a live property's value, else a dead property's, and live properties, the quota and no dead
+# property are in DAV: (RFC 4918 §9.1, RFC 4331 §3).
+def spec_source(+dav: Bool, +quota_name: Bool, +collection: Bool, +quota_value: Bool, +live_value: Bool, +dead_present: Bool) -> F.Source:
+  Bool.pick(F.Source, Bool.and(dav, Bool.and(quota_name, Bool.and(collection, quota_value))), F.FromQuota{},
+    Bool.pick(F.Source, Bool.and(dav, live_value), F.FromLive{},
+      Bool.pick(F.Source, Bool.and(Bool.not(dav), dead_present), F.FromDead{}, F.NotFound{})))
+
+law property_source_exact:
+  for dav: Bool
+  for quota_name: Bool
+  for collection: Bool
+  for quota_value: Bool
+  for live_value: Bool
+  for dead_present: Bool
+  {F.source(dav, quota_name, collection, quota_value, live_value, dead_present) == spec_source(dav, quota_name, collection, quota_value, live_value, dead_present) : F.Source}
+
+# Whatever the store holds, a DAV: property's answer is the same, so a request that names only
+# DAV: properties loses nothing by not reading dead properties.
+law propfind_dav_skip_sound:
+  for quota_name: Bool
+  for collection: Bool
+  for quota_value: Bool
+  for live_value: Bool
+  {F.source(True{}, quota_name, collection, quota_value, live_value, True{}) == F.source(True{}, quota_name, collection, quota_value, live_value, False{}) : F.Source}
+
+# --- Object stores: errors and refused keys ---------------------------------------------------
+
+def code_index(c: O.Code) -> Nat:
+  match c:
+    case O.CNotStore{}:
+      0n
+    case O.CNoSuchKey{}:
+      1n
+    case O.CTooLarge{}:
+      2n
+    case O.CRefusedKey{}:
+      3n
+    case O.CNoCode{}:
+      4n
+    case O.CUnwritable{}:
+      5n
+    case O.CPrecondition{}:
+      6n
+    case O.CFull{}:
+      7n
+    case O.COther{}:
+      8n
+
+def status_index(s: O.Status) -> Nat:
+  match s:
+    case O.S400{}:
+      400n
+    case O.S412{}:
+      412n
+    case O.S507{}:
+      507n
+    case O.SOther{}:
+      0n
+
+def refused(f: O.Failure) -> Bool:
+  match f:
+    case O.ONameRefused{}:
+      True{}
+    case O.ONotFound{}:
+      False{}
+    case O.OTooLarge{}:
+      False{}
+    case O.OExists{}:
+      False{}
+    case O.OFull{}:
+      False{}
+    case O.OUnavailable{}:
+      False{}
+
+# The store's answer is about the key: a 400 with a key-refusal code, a codeless 400 to HEAD, or
+# RustFS's unwritable refusal.
+def about_key(+c: O.Code, +s: O.Status, +head: Bool) -> Bool:
+  Bool.or(Nat.is_eq(code_index(c), 5n), Bool.and(Nat.is_eq(status_index(s), 400n), Bool.or(Nat.is_eq(code_index(c), 3n), Bool.and(Nat.is_eq(code_index(c), 4n), head))))
+
+def spec_classify(+c: O.Code, +s: O.Status, +head: Bool) -> O.Failure:
+  Bool.pick(O.Failure, Nat.is_eq(code_index(c), 0n), O.OUnavailable{},
+    Bool.pick(O.Failure, Nat.is_eq(code_index(c), 1n), O.ONotFound{},
+      Bool.pick(O.Failure, Nat.is_eq(code_index(c), 2n), O.OTooLarge{},
+        Bool.pick(O.Failure, about_key(c, s, head), O.ONameRefused{},
+          Bool.pick(O.Failure, Bool.or(Nat.is_eq(code_index(c), 6n), Nat.is_eq(status_index(s), 412n)), O.OExists{},
+            Bool.pick(O.Failure, Bool.or(Nat.is_eq(code_index(c), 7n), Nat.is_eq(status_index(s), 507n)), O.OFull{}, O.OUnavailable{}))))))
+
+# Each error of the store means what the specification says, checked in its order.
+law object_error_exact:
+  for c: O.Code
+  for s: O.Status
+  for head: Bool
+  {O.classify(c, s, head) == spec_classify(c, s, head) : O.Failure}
+
+# A key counts as refused only on the store's own word about the key, so no other failure can make
+# the store look empty or let a write go ahead.
+law object_refusal_about_key:
+  for c: O.Code
+  for s: O.Status
+  for head: Bool
+  {implies(refused(O.classify(c, s, head)), about_key(c, s, head)) == True{} : Bool}
+
+# A codeless answer to anything but HEAD is never a refusal.
+law object_codeless_not_refused:
+  for s: O.Status
+  {refused(O.classify(O.CNoCode{}, s, False{})) == False{} : Bool}
+
+def spec_confirm(l: O.Listing) -> O.Confirm:
+  match l:
+    case O.LShowsKey{}:
+      O.Fault{}
+    case O.LNotKey{}:
+      O.Absent{}
+    case O.LRefused{}:
+      O.Absent{}
+    case O.LFailed{}:
+      O.ListingFailure{}
+
+# A refused read is absent only when a listing of the key as a prefix does not show the key, or
+# refuses the prefix too; a listing that shows it is a fault, and one that fails passes its failure.
+law refused_read_absent_exact:
+  for l: O.Listing
+  {O.confirm_absent(l) == spec_confirm(l) : O.Confirm}
+
+# A refused later page of a listing is a fault, never the end of the listing.
+law refused_page_exact:
+  for later: Bool
+  {O.refused_page(later) == Bool.pick(O.Page, later, O.PageFault{}, O.EmptyPage{}) : O.Page}
+
+# A copy or move refused part-way says that the destination it replaced is gone, and only then.
+law copy_refused_exact:
+  for replaces: Bool
+  {O.copy_refused(replaces) == Bool.pick(O.Refusal, replaces, O.RReplacedGone{}, O.RNothingChanged{}) : O.Refusal}
+
+# --- The namespace of Mounts (PRD §5) ---------------------------------------------------------
+
+def in_mount(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      False{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      True{}
+    case W.WInside{}:
+      True{}
+
+def a_mount_root(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      False{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      True{}
+    case W.WInside{}:
+      False{}
+
+def at_virtual_root(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      True{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      False{}
+    case W.WInside{}:
+      False{}
+
+def delegated(r: W.Route) -> Bool:
+  match r:
+    case W.Delegate{}:
+      True{}
+    case W.Virtual{}:
+      False{}
+    case W.MNotFound{}:
+      False{}
+    case W.MNoParent{}:
+      False{}
+    case W.MExists{}:
+      False{}
+    case W.MIsCollection{}:
+      False{}
+    case W.MNotCollection{}:
+      False{}
+    case W.MIntoItself{}:
+      False{}
+    case W.MRoot{}:
+      False{}
+    case W.MCrossBackend{}:
+      False{}
+
+def virtual(r: W.Route) -> Bool:
+  match r:
+    case W.Delegate{}:
+      False{}
+    case W.Virtual{}:
+      True{}
+    case W.MNotFound{}:
+      False{}
+    case W.MNoParent{}:
+      False{}
+    case W.MExists{}:
+      False{}
+    case W.MIsCollection{}:
+      False{}
+    case W.MNotCollection{}:
+      False{}
+    case W.MIntoItself{}:
+      False{}
+    case W.MRoot{}:
+      False{}
+    case W.MCrossBackend{}:
+      False{}
+
+# Whether the operation creates, replaces or removes the entry at its path.
+def replaces_entry(op: W.Op) -> Bool:
+  match op:
+    case W.OpStat{}:
+      False{}
+    case W.OpList{}:
+      False{}
+    case W.OpRead{}:
+      False{}
+    case W.OpWrite{}:
+      True{}
+    case W.OpMkcol{}:
+      True{}
+    case W.OpRemove{}:
+      True{}
+    case W.OpPatch{}:
+      False{}
+    case W.OpQuota{}:
+      False{}
+
+def lists_or_stats(op: W.Op) -> Bool:
+  match op:
+    case W.OpStat{}:
+      True{}
+    case W.OpList{}:
+      True{}
+    case W.OpRead{}:
+      False{}
+    case W.OpWrite{}:
+      False{}
+    case W.OpMkcol{}:
+      False{}
+    case W.OpRemove{}:
+      False{}
+    case W.OpPatch{}:
+      False{}
+    case W.OpQuota{}:
+      False{}
+
+# Only a path inside a Mount reaches a backend.
+law mount_route_inside:
+  for op: W.Op
+  for w: W.Where
+  {implies(delegated(W.route(op, w)), in_mount(w)) == True{} : Bool}
+
+# A Mount's root is never written over, created or removed, as a backend's root is not.
+law mount_root_kept:
+  for op: W.Op
+  {implies(replaces_entry(op), Bool.not(delegated(W.route(op, W.WMountRoot{})))) == True{} : Bool}
+
+# The namespace answers by itself only a stat or listing of its root.
+law mount_virtual_only_root:
+  for op: W.Op
+  for w: W.Where
+  {implies(virtual(W.route(op, w)), Bool.and(at_virtual_root(w), lists_or_stats(op))) == True{} : Bool}
+
+# A copy or move reaches a backend only between two paths inside Mounts of that one backend,
+# never onto a Mount's root, and never moving one.
+law mount_transfer_safe:
+  for from: W.Where
+  for to: W.Where
+  for move: Bool
+  for same: Bool
+  {implies(delegated(W.transfer(from, to, move, same)), Bool.and(Bool.and(in_mount(from), in_mount(to)), Bool.and(same, Bool.and(Bool.not(a_mount_root(to)), Bool.not(Bool.and(move, a_mount_root(from))))))) == True{} : Bool}
+
+# Between two Mounts of one backend, and off every root, a copy or move always reaches it.
+law mount_transfer_reaches:
+  for from: W.Where
+  for to: W.Where
+  for move: Bool
+  {implies(Bool.and(Bool.and(in_mount(from), in_mount(to)), Bool.and(Bool.not(a_mount_root(to)), Bool.not(Bool.and(move, a_mount_root(from))))), delegated(W.transfer(from, to, move, True{}))) == True{} : Bool}
+
+# --- HTTP framing at the servers' edges (RFC 9110 §6.4, §8.6, RFC 9112 §3.2) --------------------
+
+def bodiless(k: H.StatusKind) -> Bool:
+  match k:
+    case H.KInformational{}:
+      True{}
+    case H.KNoContent{}:
+      True{}
+    case H.KNotModified{}:
+      True{}
+    case H.KOther{}:
+      False{}
+
+# A measured Content-Length is sent only for a body that ended, of an answer that named none and
+# whose status may carry one: never for a 1xx, 204 or 304 (RFC 9110 §8.6).
+law measured_length_exact:
+  for given: Bool
+  for ended: Bool
+  for k: H.StatusKind
+  {H.measured_length(given, ended, k) == Bool.and(Bool.not(given), Bool.and(ended, Bool.not(bodiless(k)))) : Bool}
+
+# A body goes through a fixed-length stream only when it is a WebDAV body, uncompressed, with a
+# Content-Length that is a number: the length the stream enforces is then the body's.
+law fixed_length_exact:
+  for has_body: Bool
+  for has_header: Bool
+  for webdav: Bool
+  for encoded: Bool
+  for numeric: Bool
+  {implies(H.fixed_length(has_body, has_header, webdav, encoded, numeric), Bool.and(Bool.and(has_body, has_header), Bool.and(webdav, Bool.and(Bool.not(encoded), numeric)))) == True{} : Bool}
+
+def url_host(u: H.Url) -> H.HostFrom:
+  match u:
+    case H.Url{p, h}:
+      h
+
+def url_path(u: H.Url) -> H.PathFrom:
+  match u:
+    case H.Url{p, h}:
+      p
+
+def from_header(h: H.HostFrom) -> Bool:
+  match h:
+    case H.HHeader{}:
+      True{}
+    case H.HNone{}:
+      False{}
+
+def names_resource(f: H.Form) -> Bool:
+  match f:
+    case H.FOrigin{}:
+      True{}
+    case H.FAbsolute{}:
+      True{}
+    case H.FAsterisk{}:
+      False{}
+    case H.FInvalid{}:
+      False{}
+
+def keeps_target(f: H.Form) -> Bool:
+  match f:
+    case H.FOrigin{}:
+      True{}
+    case H.FAbsolute{}:
+      False{}
+    case H.FAsterisk{}:
+      False{}
+    case H.FInvalid{}:
+      False{}
+
+def at_slash(p: H.PathFrom) -> Bool:
+  match p:
+    case H.PTarget{}:
+      False{}
+    case H.PAbsolute{}:
+      False{}
+    case H.PSlash{}:
+      True{}
+
+def as_target(p: H.PathFrom) -> Bool:
+  match p:
+    case H.PTarget{}:
+      True{}
+    case H.PAbsolute{}:
+      False{}
+    case H.PSlash{}:
+      False{}
+
+# A request's host is the Host header's exactly when that header names a host and the target
+# names a resource; the request line never chooses it.
+law url_host_from_header:
+  for f: H.Form
+  for host_ok: Bool
+  {from_header(url_host(H.url_of(f, host_ok))) == Bool.and(host_ok, names_resource(f)) : Bool}
+
+# The path is the target's own only for an origin-form target, an absolute-form target's path
+# without its scheme and host, and the root for a target that names no resource.
+law url_path_exact:
+  for f: H.Form
+  for host_ok: Bool
+  {Bool.and(Bool.and(implies(as_target(url_path(H.url_of(f, host_ok))), keeps_target(f)), implies(keeps_target(f), as_target(url_path(H.url_of(f, host_ok))))), Bool.and(implies(at_slash(url_path(H.url_of(f, host_ok))), Bool.not(names_resource(f))), implies(Bool.not(names_resource(f)), at_slash(url_path(H.url_of(f, host_ok)))))) == True{} : Bool}

@@ -7,6 +7,12 @@ import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
+import ./src/locks.bend as K
+import ./src/statuses.bend as S
+import ./src/properties.bend as F
+import ./src/objects.bend as O
+import ./src/mounts.bend as W
+import ./src/framing.bend as H
 
 # Lemmas the hand-written proofs share.
 
@@ -810,6 +816,71 @@ def Lemma.valid(+e: +List<I.Entry>, +k: +List<Nat>) -> {L.spec_valid(e, k) == I.
   Lemma.valid_go(e, k, True{})
 
 def Lemma.decide(b: Bool, +e: +List<I.Entry>) -> {I.decide(b, e) == Bool.pick(I.Plan, b, I.Apply{e}, I.Reject{}) : I.Plan}:
+  match b:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.not_or_not(a: Bool, b: Bool) -> {Bool.not(Bool.or(Bool.not(a), b)) == Bool.and(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.not_and_not(a: Bool, b: Bool) -> {Bool.not(Bool.and(Bool.not(a), b)) == Bool.or(a, Bool.not(b)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def Lemma.and_not_or(a: Bool, c: Bool, s: Bool) -> {Bool.and(a, Bool.not(Bool.or(Bool.not(c), s))) == Bool.and(Bool.and(a, c), Bool.not(s)) : Bool}:
+  match a:
+    case False{}:
+      {==}
+    case True{}:
+      match c:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.or_not_and(a: Bool, c: Bool, f: Bool) -> {Bool.or(a, Bool.not(Bool.and(Bool.not(c), f))) == Bool.or(Bool.or(a, c), Bool.not(f)) : Bool}:
+  match a:
+    case True{}:
+      {==}
+    case False{}:
+      match c:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def Lemma.conditions_go(+cs: +List<K.Condition>, +acc: Bool) -> {Bool.and(acc, Bool.not(L.some_false(cs))) == K.conditions_go(cs, acc) : Bool}:
+  match cs:
+    case Nil{}:
+      Lemma.and_true(acc)
+    case Con{h, t}:
+      %Lemma.conditions_go(t, Bool.and(acc, K.condition_true(h))) : {Bool.and(acc, Bool.not(L.some_false(Con{h, t}))) == _ : Bool}
+      Lemma.and_not_or(acc, K.condition_true(h), L.some_false(t))
+
+def Lemma.conditions(+cs: +List<K.Condition>) -> {Bool.not(L.some_false(cs)) == K.conditions_true(cs) : Bool}:
+  Lemma.conditions_go(cs, True{})
+
+def Lemma.header_go(+cs: +List<K.Clause>, +acc: Bool) -> {Bool.or(acc, Bool.not(L.all_false(cs))) == K.header_go(cs, acc) : Bool}:
+  match cs:
+    case Nil{}:
+      Lemma.or_false(acc)
+    case Con{h, t}:
+      %Lemma.header_go(t, Bool.or(acc, K.clause_true(h))) : {Bool.or(acc, Bool.not(L.all_false(Con{h, t}))) == _ : Bool}
+      Lemma.or_not_and(acc, K.clause_true(h), L.all_false(t))
+
+def Lemma.clauses(+cs: +List<K.Clause>) -> {Bool.not(L.all_false(cs)) == K.header_true(cs) : Bool}:
+  Lemma.header_go(cs, False{})
+
+def Lemma.state_of(b: Bool) -> {K.state_of(b) == Bool.pick(K.IfState, b, K.SomeTrue{}, K.NoneTrue{}) : K.IfState}:
   match b:
     case False{}:
       {==}
@@ -6153,3 +6224,2315 @@ def L.copy_action_exact(s, t, overwrite):
               {==}
             case True{}:
               {==}
+
+def L.lock_conflict_exact(held, requested):
+  match held:
+    case K.Exclusive{}:
+      match requested:
+        case K.Exclusive{}:
+          {==}
+        case K.Shared{}:
+          {==}
+    case K.Shared{}:
+      match requested:
+        case K.Exclusive{}:
+          {==}
+        case K.Shared{}:
+          {==}
+
+def L.lock_covers_exact(d, p, descendants):
+  match d:
+    case K.Shallow{}:
+      match p:
+        case K.Same{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Above{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Below{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Apart{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case K.Deep{}:
+      match p:
+        case K.Same{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Above{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Below{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case K.Apart{}:
+          match descendants:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.lock_refuses_exact(hs, hd, p, s, d):
+  match hs:
+    case K.Exclusive{}:
+      match hd:
+        case K.Shallow{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+        case K.Deep{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+    case K.Shared{}:
+      match hd:
+        case K.Shallow{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+        case K.Deep{}:
+          match p:
+            case K.Same{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Above{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Below{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+            case K.Apart{}:
+              match s:
+                case K.Exclusive{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+                case K.Shared{}:
+                  match d:
+                    case K.Shallow{}:
+                      {==}
+                    case K.Deep{}:
+                      {==}
+
+def L.if_condition_exact(negated, holds):
+  match negated:
+    case False{}:
+      match holds:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case True{}:
+      match holds:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.if_clause_exact(resolved, cs):
+  %Lemma.conditions(cs) : {Bool.and(resolved, _) == Bool.and(resolved, Bool.not(L.some_false(cs))) : Bool}
+  {==}
+
+def L.if_header_exact(cs):
+  %Lemma.clauses(cs) : {_ == Bool.not(L.all_false(cs)) : Bool}
+  {==}
+
+def L.if_state_exact(present, parsed, cs):
+  match present:
+    case False{}:
+      {==}
+    case True{}:
+      match parsed:
+        case False{}:
+          {==}
+        case True{}:
+          Lemma.state_of(K.header_true(cs))
+
+def L.lock_gate_in_order(s, blocked):
+  match s:
+    case K.NoHeader{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.Malformed{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.NoneTrue{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case K.SomeTrue{}:
+      match blocked:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.unlock_exact(found, may_lock):
+  match found:
+    case False{}:
+      match may_lock:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case True{}:
+      match may_lock:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.failure_is_error(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}
+
+def L.failure_class_exact(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}
+
+def L.failure_status_exact(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}
+
+def L.propfind_reads_dead_exact(readable, q):
+  match readable:
+    case False{}:
+      match q:
+        case F.QAllProp{}:
+          {==}
+        case F.QPropName{}:
+          {==}
+        case F.QPropDav{}:
+          {==}
+        case F.QPropOther{}:
+          {==}
+    case True{}:
+      match q:
+        case F.QAllProp{}:
+          {==}
+        case F.QPropName{}:
+          {==}
+        case F.QPropDav{}:
+          {==}
+        case F.QPropOther{}:
+          {==}
+
+def L.property_source_exact(dav, quota_name, collection, quota_value, live_value, dead_present):
+  match dav:
+    case False{}:
+      match quota_name:
+        case False{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+        case True{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+    case True{}:
+      match quota_name:
+        case False{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+        case True{}:
+          match collection:
+            case False{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+            case True{}:
+              match quota_value:
+                case False{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                case True{}:
+                  match live_value:
+                    case False{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+                    case True{}:
+                      match dead_present:
+                        case False{}:
+                          {==}
+                        case True{}:
+                          {==}
+
+def L.propfind_dav_skip_sound(quota_name, collection, quota_value, live_value):
+  match quota_name:
+    case False{}:
+      match collection:
+        case False{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case True{}:
+      match collection:
+        case False{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case True{}:
+          match quota_value:
+            case False{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match live_value:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+
+def L.object_error_exact(c, s, head):
+  match c:
+    case O.CNotStore{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoSuchKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CTooLarge{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CRefusedKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoCode{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CUnwritable{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CPrecondition{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CFull{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.COther{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.object_refusal_about_key(c, s, head):
+  match c:
+    case O.CNotStore{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoSuchKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CTooLarge{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CRefusedKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoCode{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CUnwritable{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CPrecondition{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CFull{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.COther{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.object_codeless_not_refused(s):
+  match s:
+    case O.S400{}:
+      {==}
+    case O.S412{}:
+      {==}
+    case O.S507{}:
+      {==}
+    case O.SOther{}:
+      {==}
+
+def L.refused_read_absent_exact(l):
+  match l:
+    case O.LShowsKey{}:
+      {==}
+    case O.LNotKey{}:
+      {==}
+    case O.LRefused{}:
+      {==}
+    case O.LFailed{}:
+      {==}
+
+def L.refused_page_exact(later):
+  match later:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.copy_refused_exact(replaces):
+  match replaces:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.mount_route_inside(op, w):
+  match op:
+    case W.OpStat{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpList{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRead{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpWrite{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpMkcol{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRemove{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpPatch{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpQuota{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+
+def L.mount_root_kept(op):
+  match op:
+    case W.OpStat{}:
+      {==}
+    case W.OpList{}:
+      {==}
+    case W.OpRead{}:
+      {==}
+    case W.OpWrite{}:
+      {==}
+    case W.OpMkcol{}:
+      {==}
+    case W.OpRemove{}:
+      {==}
+    case W.OpPatch{}:
+      {==}
+    case W.OpQuota{}:
+      {==}
+
+def L.mount_virtual_only_root(op, w):
+  match op:
+    case W.OpStat{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpList{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRead{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpWrite{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpMkcol{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRemove{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpPatch{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpQuota{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+
+def L.mount_transfer_safe(from, to, move, same):
+  match from:
+    case W.WRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WUnknownTop{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WUnknownDeep{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WMountRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WInside{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+
+def L.mount_transfer_reaches(from, to, move):
+  match from:
+    case W.WRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WUnknownTop{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WUnknownDeep{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WMountRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WInside{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.measured_length_exact(given, ended, k):
+  match given:
+    case False{}:
+      match ended:
+        case False{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+        case True{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+    case True{}:
+      match ended:
+        case False{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+        case True{}:
+          match k:
+            case H.KInformational{}:
+              {==}
+            case H.KNoContent{}:
+              {==}
+            case H.KNotModified{}:
+              {==}
+            case H.KOther{}:
+              {==}
+
+def L.fixed_length_exact(has_body, has_header, webdav, encoded, numeric):
+  match has_body:
+    case False{}:
+      match has_header:
+        case False{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+    case True{}:
+      match has_header:
+        case False{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+        case True{}:
+          match webdav:
+            case False{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+            case True{}:
+              match encoded:
+                case False{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+                case True{}:
+                  match numeric:
+                    case False{}:
+                      {==}
+                    case True{}:
+                      {==}
+
+def L.url_host_from_header(f, host_ok):
+  match f:
+    case H.FOrigin{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAbsolute{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAsterisk{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FInvalid{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.url_path_exact(f, host_ok):
+  match f:
+    case H.FOrigin{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAbsolute{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FAsterisk{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case H.FInvalid{}:
+      match host_ok:
+        case False{}:
+          {==}
+        case True{}:
+          {==}

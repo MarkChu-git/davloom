@@ -113,6 +113,27 @@ jobs:
 
   # The compatibility tests, each suite or shard a job of its own so that they run side by side.
   # `bun run test:compat` runs the same suites one after the other.
+  # Rebuilds every Bend module with the pinned Bend and fails when a committed .mjs differs, and
+  # runs both proof checkers once packages/laws/PROOF.bend exists.
+  laws:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - name: Cache the Bend and Lean toolchain
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/davloom/tools
+          key: laws-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/laws/toolchain.json') }}
+      - run: bun run laws:setup
+      - run: bun run laws:check
+
   compat-suite:
     name: compat (${{ matrix.suite }})
     runs-on: ubuntu-24.04

@@ -17,14 +17,18 @@ import {
 import {
   decideCopy,
   decideMkcol,
+  confirmRefusedRead,
+  copyRefusal,
   decideMove,
   decideRemove,
   decideWrite,
   isValidName,
   isValidPath,
+  refusedPage,
   resumeMove,
   withinLimit,
   type Node,
+  type RefusedListing,
 } from "@davloom/laws";
 
 // One adapter for object stores such as S3-compatible storage and R2 (Decision 6 of
@@ -436,10 +440,6 @@ interface Probe {
 const ROOT_PROBE: Probe = { node: "collection", file: null, marker: true };
 const ABSENT_PROBE: Probe = { node: "absent", file: null, marker: false };
 
-/** A refused key holds no object, and no key starts with a refused prefix. */
-const absentIfRefused = <T>(result: StorageResult<T>, absent: T): StorageResult<T> =>
-  !result.ok && result.failure === "name-refused" ? ok(absent) : result;
-
 const EMPTY_PAGE: ListPage = { objects: [], prefixes: [], cursor: null };
 
 /**
@@ -460,12 +460,18 @@ export const readingRefusedAsAbsent = (driver: ObjectStoreDriver): ObjectStoreDr
   const confirmAbsent = async <T>(key: string, refused: StorageResult<T>) => {
     if (refused.ok || refused.failure !== "name-refused") return refused;
     const page = await driver.list(key, { recursive: true, limit: 1 });
-    if (!page.ok) return page.failure === "name-refused" ? ok(null) : fail(page.failure);
-    if (page.value.objects.some((object) => object.key === key)) {
-      console.error("the store refused to read an object it lists", key);
-      return fail("unavailable");
-    }
-    return ok(null);
+    const listing: RefusedListing = !page.ok
+      ? page.failure === "name-refused"
+        ? "refused"
+        : "failed"
+      : page.value.objects.some((object) => object.key === key)
+        ? "shows-key"
+        : "not-key";
+    const read = confirmRefusedRead(listing);
+    if (read === "absent") return ok(null);
+    if (!page.ok) return fail(page.failure);
+    console.error("the store refused to read an object it lists", key);
+    return fail("unavailable");
   };
   return {
     ...driver,
@@ -476,11 +482,12 @@ export const readingRefusedAsAbsent = (driver: ObjectStoreDriver): ObjectStoreDr
       // Only the first page names the prefix alone. A later page that the store refuses was refused
       // for its cursor, not its prefix: taking it as the end would cut the listing short, and a
       // remove, copy or move would then act on part of a collection and report success.
-      if (!page.ok && page.failure === "name-refused" && listOptions.cursor) {
+      if (!page.ok && page.failure === "name-refused") {
+        if (refusedPage(Boolean(listOptions.cursor)) === "empty") return ok(EMPTY_PAGE);
         console.error("the store refused a later page of a listing", key);
         return fail("unavailable");
       }
-      return absentIfRefused(page, EMPTY_PAGE);
+      return page;
     },
   };
 };
@@ -635,7 +642,7 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
           if (!(error instanceof Stop) || error.failure !== "name-refused") throw error;
           // The keys it held got the same source's objects again; the source is whole.
           await removeKeys(added);
-          return fail("name-refused");
+          return fail(copyRefusal(false));
         }
         await keepCollection(parentOf(from), sourceParent);
         must(await properties.moveTree(from, to));
@@ -695,7 +702,7 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
       // the destination goes back to holding nothing, so the answer can say what changed: nothing,
       // or, when the request was to replace an entry, that entry, which was already removed.
       await removeKeys(written);
-      return fail(outcome.replaces ? "name-refused-replaced" : "name-refused");
+      return fail(copyRefusal(outcome.replaces));
     }
 
     if (move) {

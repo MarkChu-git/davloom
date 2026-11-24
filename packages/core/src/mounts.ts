@@ -1,4 +1,11 @@
 import {
+  mountRoute,
+  mountTransfer,
+  type MountOp,
+  type MountRoute,
+  type MountWhere,
+} from "@davloom/laws";
+import {
   fail,
   ok,
   pathKey,
@@ -6,6 +13,7 @@ import {
   type Entry,
   type Path,
   type StorageBackend,
+  type StorageFailure,
   type StorageResult,
 } from "./storage";
 
@@ -28,12 +36,23 @@ interface Located {
   readonly isMountRoot: boolean;
 }
 
+const whereOf = (path: Path, located: Located | null): MountWhere =>
+  located
+    ? located.isMountRoot
+      ? "mount-root"
+      : "inside"
+    : path.length === 0
+      ? "root"
+      : path.length === 1
+        ? "unknown-top"
+        : "unknown-deep";
+
 /**
- * The failure for creating at a path outside every Mount: at the root's level a new member would be
- * a new Mount, which WebDAV cannot make; deeper, its parent collection does not exist (RFC 4918
- * §9.3.1, §9.7.1).
+ * The failure a route answers. A route to a backend or the namespace's own answer never gets
+ * here: the laws give those only to a path inside a Mount, or to a stat or listing of the root.
  */
-const outside = <T>(path: Path): StorageResult<T> => fail(path.length <= 1 ? "root" : "no-parent");
+const failureOfRoute = (route: MountRoute): StorageFailure =>
+  route === "delegate" || route === "virtual" ? "unavailable" : route;
 
 export const createMountedStorage = (mounts: readonly Mount[], created = 0): StorageBackend => {
   const byName = new Map(mounts.map((mount) => [mount.name, mount]));
@@ -41,6 +60,15 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
     const [name, ...rest] = path;
     const mount = name === undefined ? undefined : byName.get(name);
     return mount ? { mount, path: [...mount.root, ...rest], isMountRoot: rest.length === 0 } : null;
+  };
+  /**
+   * Where a path lies, and the proven route of `op` on it: the Mount to ask, the namespace's own
+   * answer, or a failure.
+   */
+  const routeOf = (op: MountOp, path: Path) => {
+    const located = locate(path);
+    const route = mountRoute(op, whereOf(path, located));
+    return { located, route };
   };
   const toDav = (mount: Mount, entry: Entry): Entry => ({
     ...entry,
@@ -67,24 +95,28 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
     move: boolean,
   ): Promise<StorageResult<{ readonly replaced: boolean }>> => {
     const source = locate(from);
-    if (!source) return from.length === 0 ? fail(move ? "root" : "into-itself") : fail("not-found");
     const target = locate(to);
-    if (!target) return fail("root");
-    if ((move && source.isMountRoot) || target.isMountRoot) return fail("root");
-    if (source.mount.backendId !== target.mount.backendId) return fail("cross-backend");
+    const route = mountTransfer(
+      whereOf(from, source),
+      whereOf(to, target),
+      move,
+      source !== null && target !== null && source.mount.backendId === target.mount.backendId,
+    );
+    if (route !== "delegate" || !source || !target) return fail(failureOfRoute(route));
     return await run(source.mount.backend, source.path, target.path);
   };
 
   return {
     stat: async (path) => {
-      if (path.length === 0) return ok(rootEntry);
-      const located = locate(path);
-      if (!located) return fail("not-found");
+      const { located, route } = routeOf("stat", path);
+      if (route === "virtual") return ok(rootEntry);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       const result = await located.mount.backend.stat(located.path);
       return result.ok ? ok(toDav(located.mount, result.value)) : result;
     },
     list: async (path) => {
-      if (path.length === 0) {
+      const { located, route } = routeOf("list", path);
+      if (route === "virtual") {
         const entries: Entry[] = [];
         for (const mount of mounts) {
           const result = await mount.backend.stat(mount.root);
@@ -92,24 +124,23 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
         }
         return ok(entries);
       }
-      const located = locate(path);
-      if (!located) return fail("not-found");
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       const result = await located.mount.backend.list(located.path);
       return result.ok ? ok(result.value.map((entry) => toDav(located.mount, entry))) : result;
     },
     read: async (path, range) => {
-      const located = locate(path);
-      if (!located) return fail(path.length === 0 ? "is-collection" : "not-found");
+      const { located, route } = routeOf("read", path);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       const result = await located.mount.backend.read(located.path, range);
       return result.ok
         ? ok({ ...result.value, entry: toDav(located.mount, result.value.entry) })
         : result;
     },
     write: async (path, body, options) => {
-      const located = locate(path);
-      if (!located || located.isMountRoot) {
+      const { located, route } = routeOf("write", path);
+      if (route !== "delegate" || !located) {
         await body?.cancel();
-        return located ? fail("is-collection") : outside(path);
+        return fail(failureOfRoute(route));
       }
       const result = await located.mount.backend.write(located.path, body, options);
       return result.ok
@@ -117,16 +148,14 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
         : result;
     },
     createCollection: async (path) => {
-      const located = locate(path);
-      if (!located) return path.length === 0 ? fail("exists") : outside(path);
-      if (located.isMountRoot) return fail("exists");
+      const { located, route } = routeOf("mkcol", path);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       const result = await located.mount.backend.createCollection(located.path);
       return result.ok ? ok(toDav(located.mount, result.value)) : result;
     },
     remove: async (path) => {
-      const located = locate(path);
-      if (!located) return fail(path.length <= 1 ? "root" : "not-found");
-      if (located.isMountRoot) return fail("root");
+      const { located, route } = routeOf("remove", path);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       return await located.mount.backend.remove(located.path);
     },
     copy: (from, to, options) =>
@@ -154,13 +183,13 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
       return ok(result);
     },
     patchProperties: async (path, set, remove) => {
-      const located = locate(path);
-      if (!located) return path.length === 0 ? fail("root") : fail("not-found");
+      const { located, route } = routeOf("patch", path);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       return await located.mount.backend.patchProperties(located.path, set, remove);
     },
     quota: async (path) => {
-      const located = locate(path);
-      if (!located) return fail(path.length === 0 ? "not-collection" : "not-found");
+      const { located, route } = routeOf("quota", path);
+      if (route !== "delegate" || !located) return fail(failureOfRoute(route));
       const backend = located.mount.backend;
       if (backend.quota) return await backend.quota(located.path);
       const usage = await backend.usage();
