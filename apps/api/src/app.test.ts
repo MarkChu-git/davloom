@@ -366,6 +366,7 @@ describe("HTTPS only (PRD §12)", () => {
     ["plain http to the API", "http://davloom.test/api/setup", {}, 403],
     ["plain http to the auth routes", "http://davloom.test/api/auth/get-session", {}, 403],
     ["the health check over plain http", "http://davloom.test/api/health", {}, 200],
+    ["the health check with a slash over plain http", "http://davloom.test/api/health/", {}, 200],
     ["plain http on localhost", "http://localhost:3000/dav/", {}, 207],
     ["plain http on 127.0.0.1", "http://127.0.0.1:3000/dav/", {}, 207],
     ["plain http on ::1", "http://[::1]:3000/dav/", {}, 207],

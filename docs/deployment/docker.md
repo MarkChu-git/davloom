@@ -38,7 +38,10 @@ such as Caddy) before you expose it: WebDAV clients send the API Key with every 
 Davloom serves WebDAV and its API over plain HTTP only on the machine itself (`localhost`,
 `127.0.0.1`, `::1`). From any other address it answers 403, unless a proxy in front of it sends
 `X-Forwarded-Proto: https`, as Caddy and nginx can, or `DAVLOOM_ALLOW_HTTP=1` allows plain HTTP for
-a trusted network. The health check `/api/health` answers either way.
+a trusted network. The health check `/api/health` answers either way. Davloom judges "the machine
+itself" by the address the request names, so a proxy that serves plain HTTP to other machines
+and passes requests on to `localhost` defeats the check: a proxy in front of Davloom must serve
+HTTPS and send `X-Forwarded-Proto`.
 
 ## Settings
 

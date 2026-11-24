@@ -73,7 +73,13 @@ const LOOPBACK = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])$/i;
 
 /** Whether a request reached Davloom over plain HTTP from another machine. */
 export const isInsecure = (request: Request): boolean => {
-  const url = new URL(request.url);
+  let url: URL;
+  try {
+    url = new URL(request.url);
+  } catch {
+    // A request without a usable Host, as HTTP/1.0 may send, names no machine.
+    return true;
+  }
   if (url.protocol !== "http:" || LOOPBACK.test(url.hostname)) return false;
   return request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() !== "https";
 };
@@ -270,9 +276,9 @@ export const createApp = ({
     new Elysia(adapter ? { adapter } : {})
       .onRequest(({ request }) => {
         if (allowHttp || !isInsecure(request)) return undefined;
-        const { pathname } = new URL(request.url);
+        const pathname = URL.canParse(request.url) ? new URL(request.url).pathname : "/api";
         // The health check carries no credential, and load balancers often probe it over HTTP.
-        if (pathname === "/api/health") return undefined;
+        if (pathname === "/api/health" || pathname === "/api/health/") return undefined;
         return /^\/(api|dav)(\/|$)/.test(pathname) ? HTTPS_ONLY() : undefined;
       })
       .get("/api/health", () => ({ status: "ok" }))
