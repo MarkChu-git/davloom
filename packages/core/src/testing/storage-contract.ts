@@ -185,9 +185,9 @@ export const storageContract = (adapter: string, { make, runs = 60 }: ContractOp
         }
         const tree = await snapshot(storage);
         expect(Object.values(tree)).not.toContain("<unreadable>");
-        for (const [path, text] of Object.entries(tree)) {
-          if (!path.endsWith("/"))
-            expect(path.split("/").at(-1) === text || text === "old").toBe(true);
+        for (const [key, text] of Object.entries(tree)) {
+          if (!key.endsWith("/"))
+            expect(key.split("/").at(-1) === text || text === "old").toBe(true);
         }
       });
     });
