@@ -140,6 +140,14 @@ export const createRepositories = (db: Database) => ({
           .where(eq(schema.mounts.id, id))
           .returning({ id: schema.mounts.id })
       ).length > 0,
+    retarget: async (id: string, backendId: string, root: string) =>
+      (
+        await db
+          .update(schema.mounts)
+          .set({ backendId, root, updatedAt: new Date() })
+          .where(eq(schema.mounts.id, id))
+          .returning({ id: schema.mounts.id })
+      ).length > 0,
     remove: async (id: string) =>
       (
         await db

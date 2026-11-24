@@ -180,3 +180,53 @@ test("Removing a mount keeps its files: the confirmation says the files stay in 
   await shown(page.getByRole("row").getByRole("link", { name: "files", exact: true }));
   expect(await listed(page)).not.toContain(name);
 });
+
+test("Moving a mount: the dialog offers the other backends and a folder, says to copy the files first, and the mount keeps its name", async ({
+  page,
+}) => {
+  const name = unique("moving");
+  await createMount(page.request, name);
+  // A second backend for this page only, so the shared instance keeps one.
+  await page.route("**/api/backends", async (route) => {
+    const response = await route.fetch();
+    const backends: unknown = await response.json();
+    await route.fulfill({
+      json: [
+        ...(Array.isArray(backends) ? backends : []),
+        {
+          id: "b-second",
+          name: "Second",
+          kind: "s3",
+          createdAt: "2026-11-24T00:00:00.000Z",
+          available: true,
+          usage: null,
+        },
+      ],
+    });
+  });
+  const sent: unknown[] = [];
+  let answer: { status: number; json: unknown } = {
+    status: 400,
+    json: { error: { code: "invalid_input" } },
+  };
+  await page.route("**/api/mounts/*", (route) => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    sent.push(route.request().postDataJSON());
+    return route.fulfill(answer);
+  });
+  await page.goto("/storage");
+  await page.getByRole("button", { name: `Actions for mount /${name}` }).click();
+  await page.getByRole("menuitem", { name: "Move to another backend" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText(`Move /${name}`);
+  await expect(dialog).toContainText("Copy the files first");
+  await dialog.getByLabel("Folder in the backend").fill("archive/2026");
+  await dialog.getByRole("button", { name: "Move mount" }).click();
+  await shown(onScreen(page, "No folder of this name is in the backend."));
+  expect(sent).toEqual([{ backendId: "b-second", root: "archive/2026" }]);
+
+  answer = { status: 200, json: { id: "x" } };
+  await dialog.getByRole("button", { name: "Move mount" }).click();
+  await shown(onScreen(page, `/${name} now shows Second.`));
+  await expect(dialog).toHaveCount(0);
+});

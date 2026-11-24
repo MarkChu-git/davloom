@@ -64,6 +64,8 @@ export class Records extends Context.Service<
         root: string;
       }) => Promise<void>;
       readonly rename: (id: string, name: string) => Promise<boolean>;
+      /** Points a Mount at another backend or path; false when no Mount has the id. */
+      readonly retarget: (id: string, backendId: string, root: string) => Promise<boolean>;
       readonly remove: (id: string) => Promise<boolean>;
     };
     readonly apiKeys: {
@@ -448,12 +450,11 @@ export const listMounts = Effect.gen(function* () {
   }));
 });
 
-export const createMount = (input: { name: string; backendId: string; root: string }) =>
+/** The backend and root a Mount may publish: the backend exists and the root is a collection. */
+const checkTarget = (input: { backendId: string; root: string }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const opener = yield* StorageOpener;
-    if (!isValidName(input.name) || input.name.length > 64)
-      return yield* Effect.fail(new InvalidInput({ field: "name" }));
     const root = parseRoot(input.root);
     if (root === null) return yield* Effect.fail(new InvalidInput({ field: "root" }));
     const backend = (yield* promise(() => records.backends.list())).find(
@@ -467,10 +468,30 @@ export const createMount = (input: { name: string; backendId: string; root: stri
       if (!entry?.ok || entry.value.kind !== "collection")
         return yield* Effect.fail(new InvalidInput({ field: "root" }));
     }
+    return { backendId: backend.id, root: root.join("/") };
+  });
+
+/**
+ * Points a Mount at another backend or path, as the last step of moving its files there. The
+ * Mount keeps its name, so the API Keys limited to it keep reaching it.
+ */
+export const retargetMount = (id: string, input: { backendId: string; root: string }) =>
+  Effect.gen(function* () {
+    const records = yield* Records;
+    const target = yield* checkTarget(input);
+    if (!(yield* promise(() => records.mounts.retarget(id, target.backendId, target.root))))
+      return yield* Effect.fail(new NotFound());
+    return { id };
+  });
+
+export const createMount = (input: { name: string; backendId: string; root: string }) =>
+  Effect.gen(function* () {
+    const records = yield* Records;
+    if (!isValidName(input.name) || input.name.length > 64)
+      return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    const target = yield* checkTarget(input);
     const id = crypto.randomUUID();
-    yield* insert(() =>
-      records.mounts.create({ id, name: input.name, backendId: backend.id, root: root.join("/") }),
-    );
+    yield* insert(() => records.mounts.create({ id, name: input.name, ...target }));
     return { id };
   });
 

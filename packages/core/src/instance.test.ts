@@ -18,6 +18,7 @@ import {
   Records,
   removeMount,
   renameMount,
+  retargetMount,
   requireUser,
   revokeKey,
   setupStatus,
@@ -71,6 +72,7 @@ const makeWorld = (options: WorldOptions = {}) => {
     backendCreates: [] as Parameters<RecordsShape["backends"]["create"]>[0][],
     mountCreates: [] as Parameters<RecordsShape["mounts"]["create"]>[0][],
     renames: [] as [string, string][],
+    retargets: [] as [string, string, string][],
     keyRemoves: [] as string[],
     hashLookups: [] as string[],
     admins: [] as Parameters<IdentityShape["createAdmin"]>[0][],
@@ -103,6 +105,10 @@ const makeWorld = (options: WorldOptions = {}) => {
       },
       rename: (id, name) => {
         calls.renames.push([id, name]);
+        return Promise.resolve(mounts.some((mount) => mount.id === id));
+      },
+      retarget: (id, backendId, root) => {
+        calls.retargets.push([id, backendId, root]);
         return Promise.resolve(mounts.some((mount) => mount.id === id));
       },
       remove: (id) => Promise.resolve(mounts.some((mount) => mount.id === id)),
@@ -676,6 +682,49 @@ describe("createMount", () => {
     const exit = await run(createMount({ name: "photos", backendId: "b-1", root: "" }));
 
     expect(errorOf(exit)?._tag).toBe("NameTaken");
+  });
+});
+
+describe("retargetMount", () => {
+  it.each([
+    ["root", { root: "a/../b" }],
+    ["root", { root: "missing" }],
+    ["root", { root: "docs/a.txt" }],
+    ["backendId", { backendId: "b-9" }],
+  ])("rejects an invalid %s (%j) and changes nothing", async (field, change) => {
+    const { run, calls } = await withBackend();
+    const error = errorOf(
+      await run(retargetMount("m-1", { backendId: "b-1", root: "", ...change })),
+    );
+    expect(error).toMatchObject({ _tag: "InvalidInput", field });
+    expect(calls.retargets).toEqual([]);
+  });
+
+  it.each([
+    ["", ""],
+    ["/docs/", "docs"],
+  ])("points the Mount at root %j, stored as %j", async (root, stored) => {
+    const { run, calls } = await withBackend({ mounts: [mount("m-1", "files", "b-1")] });
+    expect(valueOf(await run(retargetMount("m-1", { backendId: "b-1", root })))).toEqual({
+      id: "m-1",
+    });
+    expect(calls.retargets).toEqual([["m-1", "b-1", stored]]);
+  });
+
+  it("answers NotFound for an unknown Mount", async () => {
+    const { run } = await withBackend();
+    expect(errorOf(await run(retargetMount("m-9", { backendId: "b-1", root: "" })))?._tag).toBe(
+      "NotFound",
+    );
+  });
+
+  it("keeps working while an API Key is limited to the Mount, which keeps its name", async () => {
+    const { run, calls } = await withBackend({
+      mounts: [mount("m-1", "files", "b-1")],
+      keys: [apiKey({ metadata: { access: "read-only", paths: ["/files"] } })],
+    });
+    valueOf(await run(retargetMount("m-1", { backendId: "b-1", root: "" })));
+    expect(calls.retargets).toHaveLength(1);
   });
 });
 

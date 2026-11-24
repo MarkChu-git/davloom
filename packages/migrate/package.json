@@ -1,0 +1,22 @@
+{
+  "name": "@davloom/migrate",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "davloom-migrate": "./src/cli.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/migrate.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@davloom/laws": "workspace:*",
+    "@davloom/webdav": "workspace:*"
+  },
+  "devDependencies": {
+    "@davloom/core": "workspace:*"
+  }
+}

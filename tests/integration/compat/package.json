@@ -27,6 +27,7 @@
     "@davloom/core": "workspace:*",
     "@davloom/database": "workspace:*",
     "@davloom/laws": "workspace:*",
+    "@davloom/migrate": "workspace:*",
     "@davloom/storage": "workspace:*",
     "@davloom/ui": "workspace:*",
     "@davloom/webdav": "workspace:*",

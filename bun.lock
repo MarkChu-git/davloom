@@ -103,6 +103,20 @@
       "name": "@davloom/laws",
       "version": "0.0.0",
     },
+    "packages/migrate": {
+      "name": "@davloom/migrate",
+      "version": "0.0.0",
+      "bin": {
+        "davloom-migrate": "./src/cli.ts",
+      },
+      "dependencies": {
+        "@davloom/laws": "workspace:*",
+        "@davloom/webdav": "workspace:*",
+      },
+      "devDependencies": {
+        "@davloom/core": "workspace:*",
+      },
+    },
     "packages/storage": {
       "name": "@davloom/storage",
       "version": "0.0.0",
@@ -152,6 +166,7 @@
         "@davloom/core": "workspace:*",
         "@davloom/database": "workspace:*",
         "@davloom/laws": "workspace:*",
+        "@davloom/migrate": "workspace:*",
         "@davloom/storage": "workspace:*",
         "@davloom/ui": "workspace:*",
         "@davloom/webdav": "workspace:*",
@@ -344,6 +359,8 @@
     "@davloom/database": ["@davloom/database@workspace:packages/database"],
 
     "@davloom/laws": ["@davloom/laws@workspace:packages/laws"],
+
+    "@davloom/migrate": ["@davloom/migrate@workspace:packages/migrate"],
 
     "@davloom/storage": ["@davloom/storage@workspace:packages/storage"],
 

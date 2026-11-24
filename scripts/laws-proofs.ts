@@ -31,6 +31,8 @@ const FINITE: Record<string, string[]> = {
   ],
   "C.Check": ["C.Unset{}", "C.Holds{}", "C.Fails{}"],
   "P.Relation": ["P.Inside{}", "P.Above{}", "P.Outside{}"],
+  "M.Source": ["M.SFile{}", "M.SFolder{}"],
+  "M.Target": ["M.TAbsent{}", "M.TSame{}", "M.TDiffers{}", "M.TFolder{}"],
 };
 
 const laws = await Bun.file(join(lawsDir, "LAWS.bend")).text();

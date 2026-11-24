@@ -40,6 +40,25 @@ example, works from Workers and from Docker alike. A Durable Objects backend run
 When an export holds no backend the new deployment can open, and the deployment names a default
 backend, as the Docker image does with `DAVLOOM_S3_*`, the import adds that backend as well.
 
+To move a Mount's files to another backend, on the same instance or across two:
+
+1. Add a Mount of the new backend, for example `/incoming`, on the instance that will serve it.
+2. Copy the files from a checkout of this repository, with an API Key of each side in the
+   environment so they stay out of the shell's history:
+
+   ```bash
+   DAVLOOM_SOURCE_KEY=dav_… DAVLOOM_TARGET_KEY=dav_… bun run migrate -- https://old.example/dav/files/ https://new.example/dav/incoming/
+   ```
+
+   It copies every folder, file and dead property, reads each written file back and checks its
+   SHA-256, and stops at the first error. Running it again copies only what is missing. Where
+   the target holds something else, it leaves it and names it at the end; `--overwrite` replaces
+   target files that differ. Modification times are not carried over.
+
+3. In Storage & Mounts, open the menu of the old Mount, choose Move to another backend, and pick
+   the new backend and its folder. The Mount keeps its name, so clients and API Keys limited to
+   it keep working. Then remove the helper Mount.
+
 On Workers Free, D1 runs at most 50 statements in one request, and an import writes up to 100
 values per statement, so an export with more than about a thousand dead properties can be too
 large to import there; the import then changes nothing.

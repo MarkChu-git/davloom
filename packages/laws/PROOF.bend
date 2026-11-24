@@ -6,6 +6,7 @@ import ./src/preconditions.bend as C
 import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
+import ./src/copying.bend as M
 
 # Lemmas the hand-written proofs share.
 
@@ -5938,3 +5939,168 @@ def L.name_accepted(xs):
 def L.import_all_or_nothing(entries, known):
   %Lemma.valid(entries, known) : {I.decide(_, entries) == Bool.pick(I.Plan, L.spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
   Lemma.decide(L.spec_valid(entries, known), entries)
+
+def L.copy_writes_safely(s, t, overwrite):
+  match s:
+    case M.SFile{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case M.SFolder{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.copy_skips_what_is_there(s, t, overwrite):
+  match s:
+    case M.SFile{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case M.SFolder{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.copy_action_exact(s, t, overwrite):
+  match s:
+    case M.SFile{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case M.SFolder{}:
+      match t:
+        case M.TAbsent{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TSame{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TDiffers{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case M.TFolder{}:
+          match overwrite:
+            case False{}:
+              {==}
+            case True{}:
+              {==}

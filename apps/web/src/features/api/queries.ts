@@ -206,6 +206,19 @@ export const useRenameMount = () => {
   });
 };
 
+/** Points a mount at another backend and folder, once its files are copied there. */
+export const useMoveMount = () => {
+  const invalidate = useInvalidateStorage();
+  return useMutation({
+    mutationFn: ({ id, backendId, root }: { id: string; backendId: string; root: string }) =>
+      apiFetch<{ id: string }>(`/api/mounts/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: { backendId, root },
+      }),
+    onSuccess: invalidate,
+  });
+};
+
 export const useRemoveMount = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
