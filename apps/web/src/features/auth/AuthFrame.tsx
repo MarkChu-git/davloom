@@ -32,7 +32,9 @@ export const AuthFrame = ({
   description?: string;
   children: ReactNode;
 }) => (
-  <Center axis="both" padding={4} xstyle={styles.page}>
+  // The page's main landmark, as the Dashboard's shell gives its pages one, so that every part of
+  // the page sits in a landmark.
+  <Center role="main" axis="both" padding={4} xstyle={styles.page}>
     <VStack gap={6} hAlign="center" xstyle={styles.column}>
       <HStack gap={2} vAlign="center">
         <LoomMark />
@@ -59,7 +61,7 @@ export const AuthFrame = ({
 
 /** What a page shows while it asks the server where the person stands. */
 export const Waiting = ({ label }: { label: string }) => (
-  <Center axis="both" padding={4} xstyle={styles.page}>
+  <Center role="main" axis="both" padding={4} xstyle={styles.page}>
     <Spinner label={label} />
   </Center>
 );

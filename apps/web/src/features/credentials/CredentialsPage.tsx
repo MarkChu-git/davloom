@@ -531,6 +531,11 @@ export const CredentialsPage = () => {
             // The new key must be read and copied, so Escape and a click outside leave the dialog
             // open then. Done and the header's close button both close it.
             purpose={keyDialog?.step === "secret" ? "required" : "form"}
+            // Astryx names a dialog after its DialogHeader only when the dialog opens, so the
+            // second step's dialog would keep no name: it is named here for both steps.
+            aria-label={
+              keyDialog?.step === "secret" ? `Key “${keyDialog.name}” is ready` : "Create a key"
+            }
             width={520}
           >
             {keyDialog?.step === "form" ? (

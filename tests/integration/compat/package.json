@@ -38,10 +38,12 @@
     "elysia": "1.4.32"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.1",
     "@cloudflare/vitest-plugin": "1.8.3",
     "@cloudflare/workers-types": "5.20261116.1",
     "@playwright/test": "1.65.1",
     "better-auth": "1.7.25",
+    "drizzle-orm": "0.45.4",
     "miniflare": "5.20261116.0-beta",
     "vitest": "5.1.0",
     "wrangler": "4.163.0"

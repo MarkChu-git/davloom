@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { constants, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { convertV4MiniflareOptions, Miniflare, type Json } from "miniflare";
+import { convertV4MiniflareOptions, Log, LogLevel, Miniflare, type Json } from "miniflare";
 import {
   unstable_getMiniflareWorkerOptions,
   unstable_readConfig,
@@ -19,6 +19,11 @@ const READY_LINE = /listening on (http:\/\/\S+)/;
 export interface Server extends Target {
   readonly url: string;
   stop(): Promise<void>;
+  /**
+   * Everything the server has logged so far: a Bun server's standard output and error, and for
+   * local workerd what the Worker logged, when its options asked to keep it.
+   */
+  readonly logs?: () => string;
 }
 
 interface ServerCommand {
@@ -57,11 +62,18 @@ const startServer = ({ command, args, cwd = REPO_ROOT, env }: ServerCommand): Pr
       child.stderr.off("data", onData);
       // Keep draining so that a chatty server cannot block on a full pipe. What the server
       // reports as an error shows in the test log, so that a 503 in CI names its cause.
-      child.stdout.resume();
-      child.stderr.on("data", (data: Buffer) => process.stderr.write(data));
+      // The output stays in `output` as well, for tests that read what the server logged.
+      child.stdout.on("data", (data: Buffer) => {
+        output += data.toString();
+      });
+      child.stderr.on("data", (data: Buffer) => {
+        output += data.toString();
+        process.stderr.write(data);
+      });
       done({
         url,
         fetch: (path, init) => fetch(`${url}${path}`, init),
+        logs: () => output,
         stop: () =>
           new Promise((stopped) => {
             child.once("exit", () => stopped());
@@ -256,6 +268,21 @@ export interface WorkerdOptions {
    * gets to start.
    */
   readonly bundleTimeoutMs?: number;
+  /**
+   * Keeps what the Worker logs, and what Miniflare logs about it, for `Server.logs`, instead of
+   * printing it.
+   */
+  readonly keepLogs?: boolean;
+}
+
+/** Miniflare's log, kept in memory. */
+class KeptLog extends Log {
+  constructor(private readonly keep: (line: string) => void) {
+    super(LogLevel.VERBOSE);
+  }
+  protected override log(message: string): void {
+    this.keep(message);
+  }
 }
 
 /**
@@ -268,9 +295,18 @@ export interface WorkerdOptions {
  */
 export const startWorkerdServer = async (
   configPath: string,
-  { vars = {}, port = 0, bundleTimeoutMs = STARTUP_TIMEOUT_MS }: WorkerdOptions = {},
+  {
+    vars = {},
+    port = 0,
+    bundleTimeoutMs = STARTUP_TIMEOUT_MS,
+    keepLogs = false,
+  }: WorkerdOptions = {},
 ): Promise<Server> => {
   const configFile = resolve(REPO_ROOT, configPath);
+  const kept: string[] = [];
+  const keep = (line: string) => {
+    kept.push(line);
+  };
   const outdir = createBundleDirectory();
   let miniflare: Miniflare | undefined;
   const stop = async () => {
@@ -306,11 +342,24 @@ export const startWorkerdServer = async (
         scriptPath,
         host: "127.0.0.1",
         port,
+        ...(keepLogs
+          ? {
+              log: new KeptLog(keep),
+              logRequests: true,
+              handleStructuredLogs: ({ level, message }) => keep(`${level}: ${message}`),
+              handleUncaughtError: (error) => keep(`uncaught: ${error.stack ?? String(error)}`),
+            }
+          : {}),
       }),
     );
     const url = (await miniflare.ready).href.replace(/\/$/, "");
     await applyD1Migrations(miniflare, config, dirname(configFile));
-    return { url, fetch: (path, init) => fetch(`${url}${path}`, init), stop };
+    return {
+      url,
+      fetch: (path, init) => fetch(`${url}${path}`, init),
+      stop,
+      ...(keepLogs ? { logs: () => kept.join("\n") } : {}),
+    };
   } catch (error) {
     // Reports why the start failed, not why the cleanup after it did.
     await stop().catch(() => undefined);

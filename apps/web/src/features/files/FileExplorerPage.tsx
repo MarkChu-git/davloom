@@ -714,6 +714,7 @@ export const FileExplorerPage = ({
     if (isMissing) {
       return (
         <EmptyState
+          headingLevel={2}
           title="This folder does not exist"
           actions={<Button label="Go to Files" variant="secondary" href="/files" />}
         />
@@ -746,6 +747,7 @@ export const FileExplorerPage = ({
     if (rows.length === 0 && query.trim() !== "") {
       return (
         <EmptyState
+          headingLevel={2}
           title={`Nothing here matches “${query.trim()}”`}
           actions={
             <Button
@@ -763,6 +765,7 @@ export const FileExplorerPage = ({
     if (rows.length === 0) {
       return (
         <EmptyState
+          headingLevel={2}
           title={isRoot ? "No mounts yet" : "This folder is empty"}
           actions={
             isRoot ? (
