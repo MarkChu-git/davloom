@@ -2,16 +2,28 @@ import { Card } from "@astryxdesign/core/Card";
 import { Grid } from "@astryxdesign/core/Grid";
 import { Heading } from "@astryxdesign/core/Heading";
 import { Icon } from "@astryxdesign/core/Icon";
-import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
-import { Folder, HardDrive } from "lucide-react";
+import { Folder, HardDrive, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { describeError } from "../api/client";
 import { webdavAddress } from "../api/dav";
-import { kindLabel, useOverview, type Overview } from "../api/queries";
+import {
+  kindLabel,
+  useCheckBackends,
+  useOperations,
+  useOverview,
+  useStorageSettings,
+  type Backend,
+  type Overview,
+} from "../api/queries";
+import { filesHref } from "../files/paths";
 import { backendStatus } from "../storage/backendStatus";
 import { CopyField } from "../shell/CopyField";
 import { formatBytes, formatCount } from "../shell/format";
@@ -20,10 +32,12 @@ import { usePageGutter } from "../shell/pageWidth";
 import { LoadError } from "../shell/QueryState";
 import { StatusLabel } from "../shell/StatusLabel";
 import { TitleAction, TitleRow } from "../shell/TitleRow";
-import { filesHref } from "../files/paths";
-import { StorageChart } from "./charts";
+import { OperationsChart, StorageChart } from "./charts";
+import { ErrorViewSwitch, RecentErrors } from "./RecentErrors";
 
 const TILE_GAP = spacingVars["--spacing-4"];
+
+const share = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
 
 const styles = stylex.create({
   // The three tiles sit side by side, or one above another, and never two above one. Once the row
@@ -32,9 +46,10 @@ const styles = stylex.create({
   tiles: {
     gridTemplateColumns: `repeat(auto-fit, minmax(clamp((100% - 2 * ${TILE_GAP}) / 3, (3 * 11rem + 2 * ${TILE_GAP} - 100%) * 999, 100%), 1fr))`,
   },
-  // A tile spans three rows of the tiles' grid: its label, its number, and what the number is
-  // measured in. The tile takes the grid's rows as its own (subgrid), so the tiles' lines line up,
-  // and its own gap keeps its parts 4 px apart rather than the 16 px between tiles.
+  // A tile spans three rows of the tiles' grid: its label, its number with any meter under it, and
+  // what the number is measured in. The tile takes the grid's rows as its own (subgrid), so the
+  // last lines of the tiles share a line where one tile has a meter, and its own gap keeps its
+  // parts 4 px apart rather than the 16 px between tiles.
   tile: {
     display: "grid",
     gridRow: "span 3",
@@ -42,29 +57,38 @@ const styles = stylex.create({
     rowGap: spacingVars["--spacing-1"],
     alignItems: "start",
   },
+  // Words beside a headline number, such as a status, sit on the number's baseline.
+  onBaseline: {
+    alignItems: "baseline",
+  },
 });
 
-/** A headline number with what it is measured in. */
+/** A headline number with what it is measured in, and a meter under the number where it has one. */
 const Tile = ({
   label,
   value,
+  meter,
   children,
 }: {
   label: string;
   value: ReactNode;
+  meter?: ReactNode;
   children: ReactNode;
 }) => (
   <Card elevation="low" xstyle={styles.tile}>
     <Text type="label" color="secondary">
       {label}
     </Text>
-    {typeof value === "string" ? (
-      <Text type="display-3" weight="semibold">
-        {value}
-      </Text>
-    ) : (
-      value
-    )}
+    <VStack gap={1}>
+      {typeof value === "string" ? (
+        <Text type="display-3" weight="semibold">
+          {value}
+        </Text>
+      ) : (
+        value
+      )}
+      {meter}
+    </VStack>
     {children}
   </Card>
 );
@@ -89,11 +113,28 @@ const Panel = ({
 const plural = (count: number, one: string, many: string): string =>
   `${formatCount(count)} ${count === 1 ? one : many}`;
 
+/** The bytes stored on the backends that know their limit, and that limit in all. */
+export const knownCapacity = (
+  backends: readonly Backend[],
+): { used: number; capacity: number } | null => {
+  const known = backends.filter(
+    (backend): backend is Backend & { capacity: number } =>
+      typeof backend.capacity === "number" && backend.capacity > 0,
+  );
+  if (known.length === 0) return null;
+  return {
+    used: known.reduce((sum, backend) => sum + (backend.usage?.bytes ?? 0), 0),
+    capacity: known.reduce((sum, backend) => sum + backend.capacity, 0),
+  };
+};
+
+const TILE_LABELS = ["Stored", "Known capacity", "Mounts"];
+
 const Tiles = ({ overview }: { overview: Overview | undefined }) => {
   if (overview === undefined) {
     return (
       <Grid xstyle={styles.tiles} gap={4}>
-        {["Stored", "Mounts", "Backends"].map((label, index) => (
+        {TILE_LABELS.map((label, index) => (
           <Tile key={label} label={label} value={<Skeleton width={96} height={32} index={index} />}>
             <Skeleton width={140} height={14} index={index + 3} />
           </Tile>
@@ -102,7 +143,7 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
     );
   }
   const { usage, mounts, backends } = overview;
-  const unavailable = backends.filter((backend) => !backend.available).length;
+  const known = knownCapacity(backends);
   return (
     <Grid xstyle={styles.tiles} gap={4}>
       <Tile label="Stored" value={formatBytes(usage.bytes)}>
@@ -110,29 +151,127 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
           {`${plural(usage.files, "file", "files")} in ${plural(usage.collections, "folder", "folders")}`}
         </Text>
       </Tile>
+      {known === null ? (
+        <Tile label="Known capacity" value="No fixed limit">
+          <Text type="supporting" color="secondary">
+            {`${formatBytes(usage.bytes)} stored`}
+          </Text>
+        </Tile>
+      ) : (
+        <Tile
+          label="Known capacity"
+          value={share.format(known.used / known.capacity)}
+          meter={
+            <ProgressBar
+              label="Known capacity used"
+              isLabelHidden
+              value={known.used}
+              max={known.capacity}
+            />
+          }
+        >
+          <Text type="supporting" color="secondary">
+            {`${formatBytes(known.used)} of ${formatBytes(known.capacity)}`}
+          </Text>
+        </Tile>
+      )}
       <Tile label="Mounts" value={formatCount(mounts.length)}>
         <Text type="supporting" color="secondary">
           {`On ${new Set(mounts.map((mount) => mount.backendId)).size} of ${plural(backends.length, "backend", "backends")}`}
         </Text>
       </Tile>
-      <Tile label="Backends" value={formatCount(backends.length)}>
-        {unavailable === 0 ? (
-          <Text type="supporting" color="secondary">
-            {backends.length === 1 ? "Available" : "All available"}
-          </Text>
-        ) : (
-          <StatusLabel tone="error" label={`${formatCount(unavailable)} unavailable`} />
-        )}
-      </Tile>
     </Grid>
   );
 };
 
-/** Overview (PRD §8.1): what is stored and where, and whether each backend answers. */
+const OperationsPanel = () => {
+  const operations = useOperations();
+  const data = operations.data;
+  const total = data?.hours.reduce((sum, hour) => sum + hour.operations, 0) ?? 0;
+  const failed = data?.hours.reduce((sum, hour) => sum + hour.failed, 0) ?? 0;
+  return (
+    <Panel
+      title="Operations"
+      action={
+        <Text type="supporting" color="secondary">
+          Last 24 hours
+        </Text>
+      }
+    >
+      {operations.isError && data === undefined ? (
+        <LoadError
+          title="Cannot read the operations"
+          error={operations.error}
+          isRetrying={operations.isFetching}
+          onRetry={() => void operations.refetch()}
+        />
+      ) : data === undefined ? (
+        <Skeleton width="100%" height={200} />
+      ) : (
+        <>
+          <HStack gap={3} wrap="wrap" xstyle={styles.onBaseline}>
+            <Text type="display-3" weight="semibold">
+              {formatCount(total)}
+            </Text>
+            {failed === 0 ? null : (
+              <StatusLabel tone="error" label={`${formatCount(failed)} failed`} />
+            )}
+          </HStack>
+          <OperationsChart hours={data.hours} />
+        </>
+      )}
+    </Panel>
+  );
+};
+
+const RecentErrorsPanel = () => {
+  const operations = useOperations();
+  const errors = operations.data?.errors;
+  return (
+    <Panel title="Recent operation errors" action={<ErrorViewSwitch />}>
+      {errors === undefined ? (
+        operations.isError ? (
+          <Text color="secondary">{describeError(operations.error)}</Text>
+        ) : (
+          <Skeleton width="100%" height={44} />
+        )
+      ) : (
+        <RecentErrors errors={errors} readAt={operations.dataUpdatedAt} />
+      )}
+    </Panel>
+  );
+};
+
+/** Overview (PRD §8.1): what is stored and where, whether it answers, and what failed lately. */
 export const OverviewPage = () => {
   const overview = useOverview();
+  const settings = useStorageSettings();
+  const check = useCheckBackends();
+  const toast = useToast();
   const gutter = usePageGutter();
   const data = overview.data;
+  const defaultBackendId = settings.data?.defaultBackendId ?? null;
+
+  const checkConnections = () =>
+    check.mutate(undefined, {
+      onSuccess: (results) => {
+        const checked = `Checked ${plural(results.length, "backend", "backends")}.`;
+        const down = results.filter((result) => !result.available);
+        // A backend that still does not answer is a failure, which error toasts announce assertively.
+        toast(
+          down.length === 0
+            ? { body: `${checked} Every one answered.`, uniqueID: "check" }
+            : {
+                type: "error",
+                body: `${checked} ${down
+                  .map((result) => `${result.name}: ${result.reason ?? "no answer"}`)
+                  .join("; ")}.`,
+                uniqueID: "check",
+              },
+        );
+      },
+      onError: (error) => toast({ type: "error", body: describeError(error), uniqueID: "check" }),
+    });
 
   return (
     <Layout
@@ -163,6 +302,7 @@ export const OverviewPage = () => {
             ) : (
               <>
                 <Tiles overview={data} />
+                <OperationsPanel />
                 <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
                   <Panel
                     title="Storage by backend"
@@ -188,7 +328,20 @@ export const OverviewPage = () => {
                       />
                     )}
                   </Panel>
-                  <Panel title="Connections">
+                  <Panel
+                    title="Connections"
+                    action={
+                      <TitleAction
+                        label="Check connections"
+                        variant="secondary"
+                        size="sm"
+                        icon={<Icon icon={RefreshCw} size="sm" />}
+                        isLoading={check.isPending}
+                        isDisabled={data === undefined}
+                        onClick={checkConnections}
+                      />
+                    }
+                  >
                     {data === undefined ? (
                       <Skeleton width="100%" height={44} />
                     ) : (
@@ -197,11 +350,18 @@ export const OverviewPage = () => {
                           const paths = data.mounts
                             .filter((mount) => mount.backendId === backend.id)
                             .map((mount) => `/${mount.name}`);
+                          // The default backend's mark leads the line of its mounts, so a narrow
+                          // window cuts the paths short rather than the mark.
+                          const details = [
+                            ...(backend.id === defaultBackendId ? ["Default"] : []),
+                            kindLabel(backend.kind),
+                            ...paths,
+                          ];
                           return (
                             <ListItem
                               key={backend.id}
                               label={backend.name}
-                              description={[kindLabel(backend.kind), ...paths].join(" · ")}
+                              description={details.join(" · ")}
                               endContent={<StatusLabel {...backendStatus(backend)} />}
                             />
                           );
@@ -243,6 +403,7 @@ export const OverviewPage = () => {
                     </List>
                   )}
                 </Panel>
+                <RecentErrorsPanel />
               </>
             )}
           </VStack>
