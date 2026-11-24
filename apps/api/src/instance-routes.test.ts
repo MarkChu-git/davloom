@@ -154,7 +154,10 @@ describe("auth", () => {
     ["PUT", "/api/settings/storage"],
     ["GET", "/api/instance"],
   ])("refuses %s %s without a session", async (method, path) => {
-    const response = await w.fetch(path, { method, headers: { origin: ORIGIN } });
+    const response = await w.fetch(path, {
+      method,
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+    });
     expect(response.status).toBe(401);
   });
 });

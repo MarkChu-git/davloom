@@ -35,7 +35,12 @@ const ORIGIN = "https://davloom.test";
 const SECRET = "app-test-instance-secret-0123456789abcdef";
 const OWNER = { username: "Owner", name: "Owner", email: "", password: "a password long enough" };
 
-const memoryInstance = (): Instance => {
+interface WorldOptions {
+  readonly setupToken?: string;
+  readonly publicOrigin?: string;
+}
+
+const memoryInstance = (options: WorldOptions = {}): Instance => {
   const db = createBunSqliteDatabase(new Database(":memory:"));
   migrateBunSqliteDatabase(db);
   const repositories = createRepositories(db);
@@ -62,7 +67,10 @@ const memoryInstance = (): Instance => {
           return storage;
         },
       }),
-      Layer.succeed(InstanceConfig, { storageKinds: ["memory"] }),
+      Layer.succeed(InstanceConfig, {
+        storageKinds: ["memory"],
+        setupToken: options.setupToken === undefined ? null : Redacted.make(options.setupToken),
+      }),
       credentialCipherLayer(Redacted.make(SECRET)),
       Layer.succeed(OperationLog, createOperationLog(db, bunSqliteAtomic(db))),
       Layer.succeed(InstanceSettings, createSettingsStore(db)),
@@ -80,8 +88,11 @@ const cookiesOf = (response: Response) =>
     .map((c) => c.split(";")[0])
     .join("; ");
 
-const world = () => {
-  const app = createApp({ instance: () => memoryInstance() });
+const world = (options: WorldOptions = {}) => {
+  const app = createApp({
+    instance: () => memoryInstance(options),
+    publicOrigin: options.publicOrigin,
+  });
   let cookie = "";
   const fetch = (path: string, init: RequestInit = {}) =>
     app.handle(new Request(`${ORIGIN}${path}`, init));
@@ -177,7 +188,11 @@ describe("the app without an instance", () => {
 describe("registration", () => {
   it("is open until the first account, refuses bad input, and then closes", async () => {
     const w = world();
-    expect(await body(await w.api("/api/registration"))).toEqual({ open: true });
+    expect(await body(await w.api("/api/registration"))).toEqual({
+      open: true,
+      tokenRequired: false,
+      passkeys: false,
+    });
     const cases: [Record<string, unknown>, number, string][] = [
       [{ ...OWNER, username: " " }, 400, "invalid_input"],
       [{ ...OWNER, username: "a" }, 400, "username_refused"],
@@ -193,7 +208,11 @@ describe("registration", () => {
       expect(await body(response)).toMatchObject({ error: { code } });
     }
     await w.setup();
-    expect(await body(await w.api("/api/registration"))).toEqual({ open: false });
+    expect(await body(await w.api("/api/registration"))).toEqual({
+      open: false,
+      tokenRequired: false,
+      passkeys: false,
+    });
     const again = await w.api("/api/registration", "POST", { ...OWNER, username: "mallory" });
     expect(again.status).toBe(409);
     expect(await body(again)).toEqual({ error: { code: "registration_closed" } });
@@ -224,12 +243,20 @@ describe("registration", () => {
       password: OWNER.password,
     });
     expect(response.status).toBe(404);
-    expect(await body(await w.api("/api/registration"))).toEqual({ open: true });
+    expect(await body(await w.api("/api/registration"))).toEqual({
+      open: true,
+      tokenRequired: false,
+      passkeys: false,
+    });
   });
 
   it("reads a body that is not JSON as empty", async () => {
     const w = world();
-    const response = await w.fetch("/api/registration", { method: "POST", body: "not json" });
+    const response = await w.fetch("/api/registration", {
+      method: "POST",
+      headers: { ...json, origin: ORIGIN },
+      body: "not json",
+    });
     expect(response.status).toBe(400);
   });
 
@@ -358,7 +385,15 @@ describe("step-up verification", () => {
   it("needs a session to re-verify", async () => {
     const w = world();
     await w.api("/api/registration", "POST", OWNER);
-    expect((await w.fetch("/api/verify", { method: "POST", body: "{}" })).status).toBe(401);
+    expect(
+      (
+        await w.fetch("/api/verify", {
+          method: "POST",
+          headers: { ...json, origin: ORIGIN },
+          body: "{}",
+        })
+      ).status,
+    ).toBe(401);
   });
 
   it("asks for the authenticator code when two-step verification is on", async () => {
@@ -395,16 +430,22 @@ describe("step-up verification", () => {
         headers: { [DASHBOARD_HEADER]: "1", cookie, ...headers },
         body: method === "PUT" ? "x" : undefined,
       });
-    expect((await dashboard("/files/a.txt", "PUT")).status).toBe(201);
+    const create = { "if-none-match": "*" };
+    expect((await dashboard("/files/a.txt", "PUT", create)).status).toBe(201);
     later();
     expect((await dashboard("/files/a.txt", "GET")).status).toBe(200);
-    expect((await dashboard("/files/b.txt", "PUT")).status).toBe(201);
+    expect((await dashboard("/files/b.txt", "PUT", create)).status).toBe(201);
+    // A create-only PUT to a file that exists changes nothing.
+    expect((await dashboard("/files/a.txt", "PUT", create)).status).toBe(412);
     expect(
       (await dashboard("/files/a.txt", "COPY", { destination: "/dav/files/c.txt", overwrite: "F" }))
         .status,
     ).toBe(201);
     for (const [method, headers] of [
       ["DELETE", {}],
+      ["PUT", {}],
+      ["PUT", { "if-none-match": '"some-etag"' }],
+      ["PUT", { "if-match": "*" }],
       ["MOVE", { destination: "/dav/files/b.txt" }],
       ["COPY", { destination: "/dav/files/b.txt", overwrite: "T" }],
     ] as const) {
@@ -669,7 +710,7 @@ describe("renaming a key", () => {
     const created = await w.key("read-write");
     const anonymous = await w.fetch(`/api/keys/${created.id}`, {
       method: "PATCH",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", origin: ORIGIN },
       body: JSON.stringify({ name: "X" }),
     });
     expect(anonymous.status).toBe(401);
@@ -816,5 +857,112 @@ describe("locks from the Dashboard", () => {
         })
       ).status,
     ).toBe(204);
+  });
+});
+
+describe("requests from another site", () => {
+  const EVIL = "https://evil.example";
+
+  it.each([
+    ["POST", "/api/keys", { name: "stolen", access: "read-write" }],
+    ["POST", "/api/export", {}],
+    ["POST", "/api/verify", { password: OWNER.password }],
+    ["POST", "/api/auth/sign-out", {}],
+    ["POST", "/api/auth/two-factor/enable", { password: OWNER.password }],
+    [
+      "POST",
+      "/api/auth/change-password",
+      { currentPassword: OWNER.password, newPassword: "x".repeat(20) },
+    ],
+    ["PUT", "/api/settings/storage", { defaultBackendId: null }],
+  ])("are refused for %s %s, with the owner's session", async (method, path, input) => {
+    const w = world();
+    await w.setup();
+    const { cookie } = { cookie: cookiesOf(await w.signIn()) };
+    const response = await w.fetch(path, {
+      method,
+      headers: { ...json, origin: EVIL, cookie },
+      body: JSON.stringify(input),
+    });
+    expect(response.status).toBe(403);
+    expect(await body(response)).toEqual({ error: { code: "cross_site" } });
+    expect(fields(await body(await w.api("/api/keys")), "name")).toEqual([]);
+    expect((await w.api("/api/me")).status).toBe(200);
+  });
+
+  it("are refused as a form post, which a page on any site can send", async () => {
+    const w = world();
+    await w.setup();
+    const cookie = cookiesOf(await w.signIn());
+    for (const origin of [EVIL, ORIGIN]) {
+      const response = await w.fetch("/api/keys", {
+        method: "POST",
+        headers: { origin, cookie, "content-type": "application/x-www-form-urlencoded" },
+        body: "name=stolen&access=read-write",
+      });
+      expect(response.status, origin).toBe(origin === EVIL ? 403 : 415);
+    }
+    expect(fields(await body(await w.api("/api/keys")), "name")).toEqual([]);
+  });
+
+  it("are refused for registration, so another site cannot register the owner", async () => {
+    const w = world();
+    const response = await w.fetch("/api/registration", {
+      method: "POST",
+      headers: { ...json, origin: EVIL },
+      body: JSON.stringify(OWNER),
+    });
+    expect(response.status).toBe(403);
+    expect(await body(await w.api("/api/registration"))).toMatchObject({ open: true });
+  });
+
+  it("come only from the configured origin when there is one", async () => {
+    const w = world({ publicOrigin: "https://files.example" });
+    const own = await w.fetch("/api/registration", {
+      method: "POST",
+      headers: { ...json, origin: ORIGIN },
+      body: JSON.stringify(OWNER),
+    });
+    expect(own.status).toBe(403);
+    const configured = await w.fetch("/api/registration", {
+      method: "POST",
+      headers: { ...json, origin: "https://files.example" },
+      body: JSON.stringify(OWNER),
+    });
+    expect(configured.status).toBe(201);
+  });
+
+  it("leave reads alone", async () => {
+    const w = world();
+    expect((await w.fetch("/api/registration", { headers: { origin: EVIL } })).status).toBe(200);
+  });
+});
+
+describe("the setup token", () => {
+  it.each([
+    [undefined, 403, "setup_token_invalid"],
+    ["", 403, "setup_token_invalid"],
+    ["wrong-token", 403, "setup_token_invalid"],
+    ["a-setup-token", 201, undefined],
+  ])("with %j answers registration %i", async (setupToken, status, code) => {
+    const w = world({ setupToken: "a-setup-token" });
+    expect(await body(await w.api("/api/registration"))).toEqual({
+      open: true,
+      tokenRequired: true,
+      passkeys: false,
+    });
+    const response = await w.api("/api/registration", "POST", { ...OWNER, setupToken });
+    expect(response.status).toBe(status);
+    if (code !== undefined) {
+      expect(await body(response)).toEqual({ error: { code } });
+      expect(await body(await w.api("/api/registration"))).toMatchObject({ open: true });
+    }
+  });
+
+  it("is needed for an import too", async () => {
+    const w = world({ setupToken: "a-setup-token" });
+    const response = await w.api("/api/registration/import", "POST", { key: "k", file: {} });
+    expect(response.status).toBe(403);
+    expect(await body(response)).toEqual({ error: { code: "setup_token_invalid" } });
   });
 });

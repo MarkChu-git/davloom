@@ -2,7 +2,8 @@ import { exportHasOwner, planImport, type ImportEntry } from "@davloom/laws";
 import { Context, Data, Effect, Redacted } from "effect";
 import { checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
-import { InstanceConfig, Records, RegistrationClosed } from "./instance";
+import { InstanceConfig, Records, RegistrationClosed, requireSetupToken } from "./instance";
+import { redactedError } from "./redact";
 import { parseScope } from "./scope";
 
 // Data export and import (PRD §8.5 Data Export, Data Migration). An export holds the records of an
@@ -317,7 +318,7 @@ const withDefaultBackend = (
  * Imports an export into an instance that has no user yet, in place of registering its owner. Every
  * record is written, or, when the file, the key or a record is invalid, none.
  */
-export const importInstance = (input: { key: string; file: unknown }) =>
+export const importInstance = (input: { key: string; file: unknown; setupToken?: string }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const config = yield* InstanceConfig;
@@ -326,6 +327,7 @@ export const importInstance = (input: { key: string; file: unknown }) =>
     if ((yield* Effect.promise(() => records.users.count())) > 0) {
       return yield* Effect.fail(new RegistrationClosed());
     }
+    yield* requireSetupToken(input.setupToken ?? "");
     const tables = withDefaultBackend(yield* openArchive(input.file, input.key), config);
     const problem = archive.check(tables);
     if (problem !== null) return yield* invalid(problem);
@@ -367,7 +369,8 @@ export const importInstance = (input: { key: string; file: unknown }) =>
     }).pipe(
       Effect.as(true),
       Effect.catch((error) => {
-        console.error("Import failed to write:", String(error));
+        // The database's message holds the rows' values, password hashes and sealed secrets too.
+        console.error("Import failed to write:", redactedError(error));
         return Effect.succeed(false);
       }),
     );

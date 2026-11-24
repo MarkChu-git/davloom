@@ -229,4 +229,14 @@ describe("SignInPage", () => {
       expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
     });
   });
+
+  it.each([
+    ["off", { open: false }, false],
+    ["off on the server", { open: false, passkeys: false }, false],
+    ["on", { open: false, passkeys: true }, true],
+  ])("offers a passkey sign-in only when passkeys are %s", async (_case, status, shown) => {
+    vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
+    await showForm({ "GET /api/registration": () => json(status) });
+    expect(screen.queryByRole("button", { name: "Sign in with a passkey" }) !== null).toBe(shown);
+  });
 });

@@ -9,6 +9,8 @@ import {
   type ActionEffect,
 } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
+import { redactedError } from "./redact";
+import { setupTokenMatches } from "./setup-token";
 import { formatRoot, parseScope, type Scope } from "./scope";
 import type { Path, StorageBackend, StorageFailure, StorageResult, Usage } from "./storage";
 
@@ -168,11 +170,20 @@ export class InstanceConfig extends Context.Service<
       readonly config: unknown;
       readonly secretKey: Redacted.Redacted | null;
     } | null;
+    /**
+     * The token that registering the owner, or importing in its place, has to name
+     * (DAVLOOM_SETUP_TOKEN). Without one the first visitor may register.
+     */
+    readonly setupToken?: Redacted.Redacted | null;
+    /** Whether passkeys are on, which needs the instance's configured public URL. */
+    readonly passkeys?: boolean;
   }
 >()("@davloom/core/InstanceConfig") {}
 
 /** The instance has its owner, so registration and imports are closed. */
 export class RegistrationClosed extends Data.TaggedError("RegistrationClosed")<{}> {}
+/** The deployment sets a setup token, and the registration or import did not name it. */
+export class SetupTokenInvalid extends Data.TaggedError("SetupTokenInvalid")<{}> {}
 /** The identity provider refused a field of a registration, for the reason it gives. */
 export class UsernameRefused extends Data.TaggedError("UsernameRefused")<{
   readonly reason: string;
@@ -225,11 +236,27 @@ export const DEFAULT_MOUNT = "files";
 
 // --- Registration --------------------------------------------------------------------------
 
-/** Registration is open while the instance has no user: the first account becomes its owner. */
+/**
+ * Registration is open while the instance has no user: the first account becomes its owner. It
+ * also says whether registering needs the deployment's setup token, and whether passkeys are on.
+ */
 export const registrationStatus = Effect.gen(function* () {
   const records = yield* Records;
-  return { open: (yield* promise(() => records.users.count())) === 0 };
+  const config = yield* InstanceConfig;
+  return {
+    open: (yield* promise(() => records.users.count())) === 0,
+    tokenRequired: config.setupToken !== undefined && config.setupToken !== null,
+    passkeys: config.passkeys === true,
+  };
 });
+
+/** Fails with SetupTokenInvalid unless `given` is the deployment's setup token, when it sets one. */
+export const requireSetupToken = (given: string) =>
+  Effect.gen(function* () {
+    const config = yield* InstanceConfig;
+    const matches = yield* setupTokenMatches(config.setupToken, given);
+    return matches ? undefined : yield* Effect.fail(new SetupTokenInvalid());
+  });
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
@@ -242,6 +269,7 @@ export const registerOwner = (input: {
   name: string;
   email: string;
   password: string;
+  setupToken?: string;
 }) =>
   Effect.gen(function* () {
     const records = yield* Records;
@@ -250,6 +278,7 @@ export const registerOwner = (input: {
     if ((yield* promise(() => records.users.count())) > 0) {
       return yield* Effect.fail(new RegistrationClosed());
     }
+    yield* requireSetupToken(input.setupToken ?? "");
     const username = input.username.trim();
     if (username === "") return yield* Effect.fail(new InvalidInput({ field: "username" }));
     const name = input.name.trim() === "" ? username : input.name.trim();
@@ -805,7 +834,7 @@ export const verifyApiKey = (key: string, now: number) =>
       // The sign-in stands whether or not the record is written.
       yield* promise(() =>
         records.apiKeys.recordUse(record.id, new Date(now)).catch((error: unknown) => {
-          console.error("Could not record the use of an API Key:", error);
+          console.error("Could not record the use of an API Key:", redactedError(error));
         }),
       );
     }

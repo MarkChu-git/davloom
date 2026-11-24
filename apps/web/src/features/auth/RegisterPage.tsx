@@ -25,13 +25,49 @@ const FIELD_OF_CODE: Readonly<Record<string, keyof RegistrationFields>> = {
 /** The largest export file the Dashboard reads. */
 const MAX_EXPORT_BYTES = 50 * 1024 * 1024;
 
+const SETUP_TOKEN_MISSING = "Enter the setup token.";
+const SETUP_TOKEN_CODE = "setup_token_invalid";
+
+/** The deployment's setup token (DAVLOOM_SETUP_TOKEN), when registering needs it. */
+interface SetupToken {
+  readonly required: boolean;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+}
+
+const SetupTokenField = ({
+  token,
+  problem,
+  onChange,
+  onEnter,
+}: {
+  token: SetupToken;
+  problem: string | undefined;
+  onChange: () => void;
+  onEnter: () => void;
+}) =>
+  token.required ? (
+    <TextInput
+      label="Setup token"
+      type="password"
+      value={token.value}
+      onChange={(value) => {
+        token.onChange(value);
+        onChange();
+      }}
+      onEnter={onEnter}
+      autoComplete="off"
+      status={problem === undefined ? undefined : { type: "error", message: problem }}
+    />
+  ) : null;
+
 /** An instance from an export of another: its owner, keys, backends and mounts. */
-const ImportForm = () => {
+const ImportForm = ({ token }: { token: SetupToken }) => {
   const client = useQueryClient();
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [key, setKey] = useState("");
-  const [problems, setProblems] = useState<{ file?: string; key?: string }>({});
+  const [problems, setProblems] = useState<{ file?: string; key?: string; token?: string }>({});
   const [failure, setFailure] = useState<string>();
   const [isImporting, setIsImporting] = useState(false);
 
@@ -39,10 +75,11 @@ const ImportForm = () => {
     const next = {
       file: file === null ? "Choose the export file." : undefined,
       key: key.trim() === "" ? "Enter the export key." : undefined,
+      token: token.required && token.value.trim() === "" ? SETUP_TOKEN_MISSING : undefined,
     };
     setProblems(next);
     setFailure(undefined);
-    if (file === null || next.key !== undefined) {
+    if (file === null || next.key !== undefined || next.token !== undefined) {
       return;
     }
     setIsImporting(true);
@@ -55,11 +92,19 @@ const ImportForm = () => {
         setIsImporting(false);
         return;
       }
-      await importInstance({ key: key.trim(), file: parsed });
+      await importInstance({
+        key: key.trim(),
+        file: parsed,
+        ...(token.required ? { setupToken: token.value.trim() } : {}),
+      });
       await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
       await navigate({ to: "/sign-in", replace: true });
     } catch (error) {
-      setFailure(describeError(error));
+      if (isApiError(error) && error.code === SETUP_TOKEN_CODE) {
+        setProblems({ token: describeError(error) });
+      } else {
+        setFailure(describeError(error));
+      }
       setIsImporting(false);
     }
   };
@@ -93,6 +138,12 @@ const ImportForm = () => {
           autoComplete="off"
           status={problems.key === undefined ? undefined : { type: "error", message: problems.key }}
         />
+        <SetupTokenField
+          token={token}
+          problem={problems.token}
+          onChange={() => setProblems((current) => ({ ...current, token: undefined }))}
+          onEnter={() => void submit()}
+        />
       </VStack>
       <Button
         label="Import"
@@ -123,6 +174,13 @@ export const RegisterPage = () => {
   const [failure, setFailure] = useState<string>();
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState<"new" | "import">("new");
+  const [setupToken, setSetupToken] = useState("");
+  const [tokenProblem, setTokenProblem] = useState<string>();
+  const token: SetupToken = {
+    required: registration.data?.tokenRequired === true,
+    value: setupToken,
+    onChange: setSetupToken,
+  };
 
   if (registration.isPending) {
     return <Waiting label="Checking this instance" />;
@@ -141,9 +199,11 @@ export const RegisterPage = () => {
 
   const submit = async () => {
     const next = registrationProblems(fields);
+    const missingToken = token.required && setupToken.trim() === "";
     setProblems(next);
+    setTokenProblem(missingToken ? SETUP_TOKEN_MISSING : undefined);
     setFailure(undefined);
-    if (Object.keys(next).length > 0) {
+    if (Object.keys(next).length > 0 || missingToken) {
       return;
     }
     setIsSaving(true);
@@ -153,6 +213,7 @@ export const RegisterPage = () => {
         name: fields.name.trim(),
         email: fields.email.trim(),
         password: fields.password,
+        ...(token.required ? { setupToken: setupToken.trim() } : {}),
       });
       await signInWithPassword(fields.username.trim(), fields.password);
       await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
@@ -162,6 +223,8 @@ export const RegisterPage = () => {
       const field = isApiError(error) ? FIELD_OF_CODE[error.code] : undefined;
       if (field !== undefined) {
         setProblems({ [field]: describeError(error) });
+      } else if (isApiError(error) && error.code === SETUP_TOKEN_CODE) {
+        setTokenProblem(describeError(error));
       } else if (isApiError(error) && error.code === "registration_closed") {
         await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
       } else {
@@ -200,7 +263,7 @@ export const RegisterPage = () => {
     return (
       <AuthFrame title="Create account">
         {modes}
-        <ImportForm />
+        <ImportForm token={token} />
       </AuthFrame>
     );
   }
@@ -241,6 +304,12 @@ export const RegisterPage = () => {
           onChange={field("password").onChange}
           onEnter={() => void submit()}
           problem={problems.password}
+        />
+        <SetupTokenField
+          token={token}
+          problem={tokenProblem}
+          onChange={() => setTokenProblem(undefined)}
+          onEnter={() => void submit()}
         />
       </VStack>
       <Button

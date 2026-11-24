@@ -33,6 +33,24 @@ interface ServerCommand {
   readonly env?: Record<string, string>;
 }
 
+/**
+ * Fetches from the server as the Dashboard does: an /api request that changes something carries
+ * the server's own Origin and JSON unless the test sets them, as Davloom refuses one from another
+ * site or of another type (apps/api/src/same-origin.ts). A test of that refusal sets its own.
+ */
+export const dashboardFetch =
+  (url: string) =>
+  (path: string, init: RequestInit = {}): Promise<Response> => {
+    const method = (init.method ?? "GET").toUpperCase();
+    if (!path.startsWith("/api/") || method === "GET" || method === "HEAD") {
+      return fetch(`${url}${path}`, init);
+    }
+    const headers = new Headers(init.headers);
+    if (!headers.has("origin")) headers.set("origin", url);
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    return fetch(`${url}${path}`, { ...init, headers, body: init.body ?? "{}" });
+  };
+
 /** Starts a server process and waits for the line that announces its address. */
 const startServer = ({ command, args, cwd = REPO_ROOT, env }: ServerCommand): Promise<Server> =>
   new Promise((done, fail) => {
@@ -72,7 +90,7 @@ const startServer = ({ command, args, cwd = REPO_ROOT, env }: ServerCommand): Pr
       });
       done({
         url,
-        fetch: (path, init) => fetch(`${url}${path}`, init),
+        fetch: dashboardFetch(url),
         logs: () => output,
         stop: () =>
           new Promise((stopped) => {
@@ -356,7 +374,7 @@ export const startWorkerdServer = async (
     await applyD1Migrations(miniflare, config, dirname(configFile));
     return {
       url,
-      fetch: (path, init) => fetch(`${url}${path}`, init),
+      fetch: dashboardFetch(url),
       stop,
       ...(keepLogs ? { logs: () => kept.join("\n") } : {}),
     };

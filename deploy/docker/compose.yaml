@@ -11,6 +11,8 @@ services:
       # off skips the Have I Been Pwned check of new passwords, for a network without internet.
       DAVLOOM_CHECK_LEAKED_PASSWORDS: ${DAVLOOM_CHECK_LEAKED_PASSWORDS:-}
       DAVLOOM_URL: ${DAVLOOM_URL:-http://localhost:3000}
+      # When set, registration and import ask for it; otherwise the first visitor registers.
+      DAVLOOM_SETUP_TOKEN: ${DAVLOOM_SETUP_TOKEN:-}
       # Plain HTTP reaches WebDAV only from this machine; set 1 for a trusted LAN without TLS.
       DAVLOOM_ALLOW_HTTP: ${DAVLOOM_ALLOW_HTTP:-}
     volumes: ["davloom-data:/data"]

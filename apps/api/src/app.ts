@@ -45,8 +45,13 @@ import {
   type OperationLog,
   type OperationSample,
 } from "@davloom/core";
-import { InstanceConfig as InstanceConfigService } from "@davloom/core";
+import {
+  InstanceConfig as InstanceConfigService,
+  redactedError,
+  redactedStack,
+} from "@davloom/core";
 import { buildInfo } from "./build-info";
+import { crossSiteRefusal } from "./same-origin";
 import { authorizeScoped, verificationLevel, type ActionEffect } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
 import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
@@ -107,6 +112,11 @@ export interface AppOptions {
    */
   readonly allowHttp?: boolean;
   /**
+   * The instance's public origin from its configuration (DAVLOOM_URL). An /api request that
+   * changes something must come from it; without one, from the origin the request was sent to.
+   */
+  readonly publicOrigin?: string | undefined;
+  /**
    * Classifies routes that a caller adds under /api/ after createApp, from the method and the
    * route's pattern, as API_ACTIONS does (apps/api/src/verification.ts). A route that neither
    * classifies answers 404.
@@ -144,6 +154,7 @@ const notImplemented: WebDavHandler = () => new Response(null, { status: 501 });
 
 const ERRORS = {
   RegistrationClosed: { status: 409, code: "registration_closed" },
+  SetupTokenInvalid: { status: 403, code: "setup_token_invalid" },
   UsernameRefused: { status: 400, code: "username_refused" },
   PasswordRefused: { status: 400, code: "password_refused" },
   EmailRefused: { status: 400, code: "email_refused" },
@@ -204,6 +215,7 @@ export const createApp = ({
   instance,
   webdavHandler,
   allowHttp = false,
+  publicOrigin,
   classify = () => undefined,
 }: AppOptions = {}) => {
   let built:
@@ -246,7 +258,12 @@ export const createApp = ({
       return await current.run(program(request), {
         errors,
         successStatus: status,
-        onDefect: (cause) => console.error(Cause.pretty(cause)),
+        // A defect's message can hold the values a query was bound to, so only its class, code
+        // and stack frames go to the log.
+        onDefect: (cause) => {
+          const error = Cause.squash(cause);
+          console.error("Request failed:", redactedError(error), `\n${redactedStack(error)}`);
+        },
       });
     };
   const authed = <A>(
@@ -283,7 +300,11 @@ export const createApp = ({
       return credential;
     }
     if (request.headers.get(DASHBOARD_HEADER) === "1") {
-      const effect = davEffect(request.method, request.headers.get("overwrite"));
+      const effect = davEffect(
+        request.method,
+        request.headers.get("overwrite"),
+        request.headers.get("if-none-match"),
+      );
       const exit = await Effect.runPromiseExit(
         Effect.provide(
           requireVerified(request.headers, effect, Date.now()),
@@ -412,11 +433,13 @@ export const createApp = ({
   return (
     new Elysia(adapter ? { adapter } : {})
       .onRequest(({ request }) => {
-        if (allowHttp || !isInsecure(request)) return undefined;
+        if (allowHttp || !isInsecure(request)) return crossSiteRefusal(request, publicOrigin);
         const pathname = URL.canParse(request.url) ? new URL(request.url).pathname : "/api";
         // The health check carries no credential, and load balancers often probe it over HTTP.
         if (pathname === "/api/health" || pathname === "/api/health/") return undefined;
-        return /^\/(api|dav)(\/|$)/.test(pathname) ? HTTPS_ONLY() : undefined;
+        return /^\/(api|dav)(\/|$)/.test(pathname)
+          ? HTTPS_ONLY()
+          : crossSiteRefusal(request, publicOrigin);
       })
       // Every route below names its effect in verification.ts; one that does not is refused, and
       // a step-up action without a fresh verification answers 403 verification_required.
@@ -449,6 +472,7 @@ export const createApp = ({
                     name: text(body.name),
                     email: text(body.email),
                     password: text(body.password),
+                    setupToken: text(body.setupToken),
                   }),
                   () => Effect.sync(invalidate),
                 ),
@@ -464,8 +488,13 @@ export const createApp = ({
             Effect.flatMap(
               Effect.promise(() => readJson(request)),
               (body) =>
-                Effect.tap(importInstance({ key: text(body.key), file: body.file }), () =>
-                  Effect.sync(invalidate),
+                Effect.tap(
+                  importInstance({
+                    key: text(body.key),
+                    file: body.file,
+                    setupToken: text(body.setupToken),
+                  }),
+                  () => Effect.sync(invalidate),
                 ),
             ),
           201,

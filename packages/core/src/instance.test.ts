@@ -78,6 +78,8 @@ interface WorldOptions {
   readonly keysByHash?: Record<string, ApiKeyRecord>;
   readonly storages?: Record<string, StorageBackend | null>;
   readonly sessionUser?: SessionUser | null;
+  readonly setupToken?: string;
+  readonly passkeys?: boolean;
   readonly records?: Partial<{
     backends: Partial<RecordsShape["backends"]>;
     mounts: Partial<RecordsShape["mounts"]>;
@@ -209,6 +211,8 @@ const makeWorld = (options: WorldOptions = {}) => {
     Layer.succeed(InstanceConfig, {
       storageKinds: options.storageKinds ?? ["durable-object", "s3"],
       defaultBackend: options.defaultBackend ?? null,
+      setupToken: options.setupToken === undefined ? null : Redacted.make(options.setupToken),
+      passkeys: options.passkeys ?? false,
     }),
   );
   const run = <A, E>(program: Effect.Effect<A, E, Services>) =>
@@ -281,7 +285,49 @@ describe("registrationStatus", () => {
   ])("with %i users is %j", async (users, expected) => {
     const { run } = makeWorld({ users });
 
-    expect(valueOf(await run(registrationStatus))).toEqual(expected);
+    expect(valueOf(await run(registrationStatus))).toMatchObject(expected);
+  });
+
+  it.each([
+    [{}, { tokenRequired: false, passkeys: false }],
+    [{ setupToken: "s3cret-token" }, { tokenRequired: true, passkeys: false }],
+    [{ passkeys: true }, { tokenRequired: false, passkeys: true }],
+  ])("with %j says %j", async (options, expected) => {
+    const { run } = makeWorld(options);
+
+    expect(valueOf(await run(registrationStatus))).toEqual({ open: true, ...expected });
+  });
+});
+
+describe("the setup token", () => {
+  it.each([
+    ["no token", undefined, undefined, true],
+    ["no token, whatever is sent", undefined, "anything", true],
+    ["the token", "s3cret-token", "s3cret-token", true],
+    ["no answer", "s3cret-token", undefined, false],
+    ["an empty answer", "s3cret-token", "", false],
+    ["a prefix", "s3cret-token", "s3cret", false],
+    ["a longer one", "s3cret-token", "s3cret-token!", false],
+    ["another case", "s3cret-token", "S3CRET-TOKEN", false],
+  ])("with %s lets registration through: %s", async (_case, token, sent, passes) => {
+    const { run, calls } = makeWorld(token === undefined ? {} : { setupToken: token });
+    const exit = await run(
+      registerOwner({ ...OWNER, ...(sent === undefined ? {} : { setupToken: sent }) }),
+    );
+
+    if (passes) {
+      expect(valueOf(exit)).toEqual({ userId: "user-1" });
+    } else {
+      expect(errorOf(exit)?._tag).toBe("SetupTokenInvalid");
+      expect(calls.owners).toEqual([]);
+      expect(calls.backendCreates).toEqual([]);
+    }
+  });
+
+  it("is not asked for once the owner exists", async () => {
+    const { run } = makeWorld({ users: 1, setupToken: "s3cret-token" });
+
+    expect(errorOf(await run(registerOwner(OWNER)))?._tag).toBe("RegistrationClosed");
   });
 });
 

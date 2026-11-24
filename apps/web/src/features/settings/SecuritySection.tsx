@@ -16,6 +16,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useToast } from "@astryxdesign/core/Toast";
 import * as stylex from "@stylexjs/stylex";
+import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { renderSVG } from "uqr";
 import {
@@ -25,6 +26,7 @@ import {
   disableTwoFactor,
   enableTwoFactor,
   newBackupCodes,
+  registrationQuery,
   removePasskey,
   revokeSession,
   setupKeyOf,
@@ -306,7 +308,30 @@ const DIALOG_TITLES: Readonly<Record<SecurityDialog["step"], string>> = {
 
 const label = (name: string | null) => name ?? "Passkey";
 
+/** The status of passkeys on an instance that has no configured public URL. */
+export const PASSKEYS_OFF = "Off: DAVLOOM_URL is not set";
+
+/**
+ * Passkeys are bound to the instance's configured public URL, so without DAVLOOM_URL the server
+ * has them off, and the part says so instead of listing them.
+ */
 const PasskeysPart = () => {
+  const registration = useQuery(registrationQuery);
+  if (registration.isPending) {
+    return <LoadingRows rows={1} />;
+  }
+  if (registration.data?.passkeys !== true) {
+    return (
+      <VStack gap={2}>
+        <Heading level={3}>Passkeys</Heading>
+        <Text color="secondary">{PASSKEYS_OFF}</Text>
+      </VStack>
+    );
+  }
+  return <PasskeysList />;
+};
+
+const PasskeysList = () => {
   const toast = useToast();
   const passkeys = usePasskeys();
   const add = useAccountMutation(addPasskey);

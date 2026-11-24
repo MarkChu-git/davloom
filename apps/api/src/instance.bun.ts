@@ -19,6 +19,7 @@ import {
   makeCredentialCipher,
   OperationLog,
   Records,
+  setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
 import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
@@ -84,7 +85,7 @@ export const bunInstance =
     const auth = createAuth({
       database: db,
       secret,
-      baseURL: env.DAVLOOM_URL ?? origin,
+      baseURL: configuredOrigin(env.DAVLOOM_URL) ?? origin,
       checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
       rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
       // node-server.bun.ts sets it to the socket's address, replacing any value the client sent.
@@ -113,6 +114,8 @@ export const bunInstance =
       Layer.succeed(InstanceConfig, {
         storageKinds: ["s3"],
         defaultBackend: defaultS3Backend(env),
+        setupToken: setupTokenFrom(env.DAVLOOM_SETUP_TOKEN),
+        passkeys: configuredOrigin(env.DAVLOOM_URL) !== undefined,
       }),
       credentialCipherLayer(Redacted.make(secret)),
     );

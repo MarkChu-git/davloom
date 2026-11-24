@@ -81,12 +81,15 @@ export const apiFetchOnce = async <T>(
   { method = "GET", body }: { method?: string; body?: unknown } = {},
 ): Promise<T> => {
   let response: Response;
+  // The API takes a request that changes something only as JSON from this origin, which no
+  // cross-site form can send (apps/api same-origin.ts), so every such request carries JSON.
+  const changes = method !== "GET" && method !== "HEAD";
   try {
     response = await fetch(path, {
       method,
       credentials: "same-origin",
-      headers: body === undefined ? {} : { "content-type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: changes || body !== undefined ? { "content-type": "application/json" } : {},
+      body: body === undefined ? (changes ? "{}" : undefined) : JSON.stringify(body),
     });
   } catch {
     throw new ApiError(0, "network_error");
@@ -125,6 +128,12 @@ export const describeError = (error: unknown): string => {
       return "This backend still holds files. Delete them first.";
     case "backend_unavailable":
       return "The backend did not answer. Try again.";
+    case "setup_token_invalid":
+      return "That is not this instance's setup token.";
+    case "cross_site":
+      return "This request did not come from this Davloom's own address. Open Davloom at its own address and try again.";
+    case "unsupported_media_type":
+      return "The server refused the request's format.";
     case "archive_invalid":
       return error.detail ?? "This export cannot be imported.";
     case VERIFICATION_REQUIRED:

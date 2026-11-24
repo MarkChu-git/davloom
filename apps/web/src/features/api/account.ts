@@ -43,6 +43,10 @@ const throwIfError = (error: ClientError | null | undefined): void => {
 export interface RegistrationStatus {
   /** The instance has no owner yet, so its first visitor may register. */
   open: boolean;
+  /** Registering, or importing in its place, needs the deployment's setup token. */
+  tokenRequired?: boolean;
+  /** Passkeys are on, which needs the instance's configured public URL (DAVLOOM_URL). */
+  passkeys?: boolean;
 }
 
 export const registrationQuery = {
@@ -56,10 +60,11 @@ export const register = (input: {
   name: string;
   email: string;
   password: string;
+  setupToken?: string;
 }) => apiFetch<{ userId: string }>("/api/registration", { method: "POST", body: input });
 
 /** Imports an export into this instance in place of registering its owner. */
-export const importInstance = (input: { key: string; file: unknown }) =>
+export const importInstance = (input: { key: string; file: unknown; setupToken?: string }) =>
   apiFetch<Record<string, number>>("/api/registration/import", { method: "POST", body: input });
 
 // --- Signing in ----------------------------------------------------------------------------

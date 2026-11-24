@@ -102,7 +102,11 @@ export const updateUserEffect = (body: unknown): ActionEffect =>
  * The effect of a WebDAV request the Dashboard makes with its session. API Keys are limited by
  * their access level instead (packages/laws policy.bend), since a WebDAV client cannot step up.
  */
-export const davEffect = (method: string, overwrite: string | null): ActionEffect => {
+export const davEffect = (
+  method: string,
+  overwrite: string | null,
+  ifNoneMatch: string | null = null,
+): ActionEffect => {
   switch (method.toUpperCase()) {
     case "GET":
     case "HEAD":
@@ -117,6 +121,10 @@ export const davEffect = (method: string, overwrite: string | null): ActionEffec
     case "MOVE":
       // RFC 4918 §10.6: without `Overwrite: F` the destination is replaced.
       return overwrite?.trim().toUpperCase() === "F" ? "change" : "destroy";
+    case "PUT":
+      // A PUT replaces the file at its path unless `If-None-Match: *` makes it create one only
+      // (RFC 9110 §13.1.2), which the WebDAV engine refuses with 412 when the file exists.
+      return ifNoneMatch?.trim() === "*" ? "change" : "destroy";
     default:
       return "change";
   }

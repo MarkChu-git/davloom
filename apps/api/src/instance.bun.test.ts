@@ -72,11 +72,12 @@ describe("bunInstance", () => {
           }),
         });
         const status = await app.handle(new Request("https://davloom.test/api/registration"));
-        expect(await status.json()).toEqual({ open: true });
+        expect(await status.json()).toEqual({ open: true, tokenRequired: false, passkeys: false });
         expect(existsSync(join(dir, "data", "davloom.sqlite"))).toBe(true);
         const registered = await app.handle(
           new Request("https://davloom.test/api/registration", {
             method: "POST",
+            headers: { origin: "https://davloom.test", "content-type": "application/json" },
             body: JSON.stringify({ username: "owner", password: "a long password here" }),
           }),
         );
@@ -89,6 +90,29 @@ describe("bunInstance", () => {
       }
     },
   );
+
+  it.each([
+    [{}, { tokenRequired: false, passkeys: false }],
+    [{ DAVLOOM_SETUP_TOKEN: "  " }, { tokenRequired: false, passkeys: false }],
+    [{ DAVLOOM_SETUP_TOKEN: "a-setup-token" }, { tokenRequired: true, passkeys: false }],
+    [{ DAVLOOM_URL: "https://files.example" }, { tokenRequired: false, passkeys: true }],
+    [{ DAVLOOM_URL: "not a url" }, { tokenRequired: false, passkeys: false }],
+  ])("with %j says %j", async (vars, expected) => {
+    const dir = tmp();
+    try {
+      const app = createApp({
+        instance: bunInstance({
+          DAVLOOM_SECRET: "s".repeat(32),
+          DAVLOOM_DATA_DIR: join(dir, "data"),
+          ...vars,
+        }),
+      });
+      const status = await app.handle(new Request("https://davloom.test/api/registration"));
+      expect(await status.json()).toEqual({ open: true, ...expected });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it("names where it runs and counts operations", async () => {
     const dir = tmp();

@@ -17,6 +17,7 @@ import {
   makeCredentialCipher,
   OperationLog,
   Records,
+  setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
 import { createSqlPropertyStore } from "@davloom/database/properties";
@@ -44,6 +45,8 @@ declare global {
       readonly DAVLOOM_CHECK_LEAKED_PASSWORDS?: string;
       /** `off` turns off Better Auth's rate limit, for test harnesses only. */
       readonly DAVLOOM_AUTH_RATE_LIMIT?: string;
+      /** When set, registering the owner or importing in its place has to name it. */
+      readonly DAVLOOM_SETUP_TOKEN?: string;
       /** The public URL, e.g. https://davloom.example.workers.dev; else the request's origin. */
       readonly DAVLOOM_URL?: string;
     }
@@ -83,7 +86,7 @@ export const workersInstance = (origin: string): Instance => {
   const auth = createAuth({
     database: db,
     secret,
-    baseURL: env.DAVLOOM_URL ?? origin,
+    baseURL: configuredOrigin(env.DAVLOOM_URL) ?? origin,
     checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
     rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
     // Cloudflare sets it to the client's address, replacing any value the client sent.
@@ -139,6 +142,8 @@ export const workersInstance = (origin: string): Instance => {
       // R2 is offered only where the deployment has an R2 binding; enabling R2 needs a payment
       // method, so the default deployment has none.
       storageKinds: r2Bindings.size > 0 ? ["durable-object", "s3", "r2"] : ["durable-object", "s3"],
+      setupToken: setupTokenFrom(env.DAVLOOM_SETUP_TOKEN),
+      passkeys: configuredOrigin(env.DAVLOOM_URL) !== undefined,
     }),
   );
   return {

@@ -342,20 +342,39 @@ export const downloadFile = async (parts: readonly string[]): Promise<void> => {
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
 
+/** The error code of a refusal that XMLHttpRequest received, as `refusalCode` reads it. */
+const xhrRefusalCode = (request: XMLHttpRequest): string | undefined => {
+  try {
+    const body: unknown = JSON.parse(request.responseText);
+    const error: unknown =
+      typeof body === "object" && body !== null ? Reflect.get(body, "error") : undefined;
+    const code: unknown =
+      typeof error === "object" && error !== null ? Reflect.get(error, "code") : undefined;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 /**
- * Uploads a file with PUT. XMLHttpRequest streams the File from disk as fetch does, and reports
- * how much of it has gone, which fetch cannot.
+ * Sends one PUT. XMLHttpRequest streams the File from disk as fetch does, and reports how much of
+ * it has gone, which fetch cannot. `createOnly` sends `If-None-Match: *`, which the server refuses
+ * with 412 when the file exists.
  */
-export const uploadFile = (
+const putFile = (
   parts: readonly string[],
   file: Blob,
   onProgress: (sentBytes: number) => void,
+  createOnly: boolean,
 ): Promise<void> =>
   new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
     request.open("PUT", davHref(parts));
     for (const [name, value] of Object.entries(DASHBOARD_HEADERS)) {
       request.setRequestHeader(name, value);
+    }
+    if (createOnly) {
+      request.setRequestHeader("if-none-match", "*");
     }
     if (file.type !== "") {
       request.setRequestHeader("content-type", file.type);
@@ -366,13 +385,38 @@ export const uploadFile = (
         onProgress(file.size);
         resolve();
       } else {
-        reject(new DavError(request.status));
+        reject(
+          new DavError(
+            request.status,
+            request.status === 403 ? xhrRefusalCode(request) : undefined,
+          ),
+        );
       }
     });
     request.addEventListener("error", () => reject(new DavError(0)));
     request.addEventListener("abort", () => reject(new DavError(0)));
     request.send(file);
   });
+
+/**
+ * Uploads a file with PUT. It first only creates the file; when one is there already, it sends the
+ * file again to replace it, which asks for step-up verification (stepUp.ts).
+ */
+export const uploadFile = async (
+  parts: readonly string[],
+  file: Blob,
+  onProgress: (sentBytes: number) => void,
+): Promise<void> => {
+  try {
+    await putFile(parts, file, onProgress, true);
+  } catch (error) {
+    if (!isDavError(error) || error.status !== 412) {
+      throw error;
+    }
+    onProgress(0);
+    await withStepUp(() => putFile(parts, file, onProgress, false));
+  }
+};
 
 /** What a refused WebDAV request means, in a sentence. */
 export const davProblem = (error: unknown, path: string = joinPath([])): string => {

@@ -1,5 +1,5 @@
 import { Effect, Exit, Layer, Redacted, type Context } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Archive,
   ArchiveInvalid,
@@ -28,7 +28,7 @@ interface World {
   readonly config?: Partial<Context.Service.Shape<typeof InstanceConfig>>;
   readonly users?: number;
   readonly problem?: string | null;
-  readonly refuseWrite?: boolean;
+  readonly refuseWrite?: boolean | Error;
   /** A registration wins the race while the import writes, so the database refuses its rows. */
   readonly raced?: boolean;
 }
@@ -46,6 +46,7 @@ const world = (options: World = {}) => {
           users = 1;
           return Promise.reject(new Error("davloom: registration is closed"));
         }
+        if (options.refuseWrite instanceof Error) return Promise.reject(options.refuseWrite);
         if (options.refuseWrite) return Promise.reject(new Error("UNIQUE constraint failed"));
         writes.push(tables);
         stored = mapArchiveTables((table) => [...stored[table], ...tables[table]]);
@@ -361,6 +362,50 @@ describe("importInstance", () => {
     const w = world({ refuseWrite: true });
     const { key, file } = await sealed(owned());
     expect(reasonOf(await w.run(importInstance({ key, file })))).toMatch(/database refused/);
+  });
+
+  describe("a write the database refuses", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("is logged by its class and code alone, without the values it was bound to", async () => {
+      const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const cause = Object.assign(new Error("UNIQUE constraint failed: user.username"), {
+        name: "SqliteError",
+        code: "SQLITE_CONSTRAINT_UNIQUE",
+      });
+      const refusal = new Error(
+        'Failed query: insert into "account" values (?, ?)\nparams: a1,$argon2id$hash-of-the-password',
+        { cause },
+      );
+      refusal.name = "DrizzleQueryError";
+      const w = world({ refuseWrite: refusal });
+      const { key, file } = await sealed(owned());
+
+      expect(reasonOf(await w.run(importInstance({ key, file })))).toMatch(/database refused/);
+      const text = logged.mock.calls.flat().map(String).join("\n");
+      expect(text).toContain("DrizzleQueryError <- SqliteError (SQLITE_CONSTRAINT_UNIQUE)");
+      expect(text).not.toMatch(/params|argon2id|hash-of|insert into|username/);
+    });
+  });
+
+  it.each([
+    ["no token", undefined, false],
+    ["a wrong token", "not-it", false],
+    ["the token", "s3cret-token", true],
+  ])("with a setup token set, an import that names %s goes through: %s", async (_, sent, ok) => {
+    const w = world({ config: { setupToken: Redacted.make("s3cret-token") } });
+    const { key, file } = await sealed(owned());
+    const exit = await w.run(
+      importInstance({ key, file, ...(sent === undefined ? {} : { setupToken: sent }) }),
+    );
+    if (ok) {
+      expect(Exit.isSuccess(exit)).toBe(true);
+    } else {
+      expect(errorOf(exit)).toMatchObject({ _tag: "SetupTokenInvalid" });
+      expect(w.writes).toEqual([]);
+    }
   });
 
   it("closes when a registration wins the race with the import", async () => {

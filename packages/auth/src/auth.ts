@@ -110,6 +110,18 @@ export const createAuth = ({
     database: drizzleAdapter(database, { provider: "sqlite", schema }),
     secret,
     baseURL,
+    // Without DAVLOOM_URL the base URL is the first request's origin, which any client could have
+    // named. Davloom's app lets only same-origin requests reach these routes (apps/api
+    // same-origin.ts), so Better Auth takes the origin each request was sent to as its own, and a
+    // first request with a forged Host cannot lock the real origin out.
+    trustedOrigins: (request) => {
+      if (request === undefined || !URL.canParse(request.url)) return [];
+      const url = new URL(request.url);
+      const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+      return forwarded?.toLowerCase() === "https"
+        ? [url.origin, `https://${url.host}`]
+        : [url.origin];
+    },
     telemetry: { enabled: false },
     // On in every environment, not only with NODE_ENV=production, and in the database, which
     // every Worker isolate and Bun process shares. Better Auth's own rules apply on top of these,
