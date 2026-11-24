@@ -154,6 +154,70 @@ export const TOOLS: Readonly<Record<string, Tool>> = {
       ),
     },
   },
+  // The release workflow's image scan (PRD §11: Trivy scans only images, Dockerfiles and Compose
+  // files). The release binary, not trivy-action, whose tags were force-pushed in March 2026.
+  // Checked against trivy_0.76.2_checksums.txt of the release.
+  trivy: {
+    version: "0.76.2",
+    executable: "trivy",
+    assets: {
+      "darwin-arm64": release(
+        "aquasecurity/trivy",
+        "v0.76.2",
+        "trivy_0.76.2_macOS-ARM64.tar.gz",
+        "ae7ea358326960406b703c77b2ac490190797d80b306b5b50c2a27221da0a5b8",
+      ),
+      "darwin-x64": release(
+        "aquasecurity/trivy",
+        "v0.76.2",
+        "trivy_0.76.2_macOS-64bit.tar.gz",
+        "e08bb9ea449ecf66c6bfb03cbb8697c503ff33d35fc585c9747e3eaeb7ed4c7b",
+      ),
+      "linux-arm64": release(
+        "aquasecurity/trivy",
+        "v0.76.2",
+        "trivy_0.76.2_Linux-ARM64.tar.gz",
+        "ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3",
+      ),
+      "linux-x64": release(
+        "aquasecurity/trivy",
+        "v0.76.2",
+        "trivy_0.76.2_Linux-64bit.tar.gz",
+        "bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf",
+      ),
+    },
+  },
+  // The release image's SBOM. Checked against syft_1.57.2_checksums.txt of the release.
+  syft: {
+    version: "1.57.2",
+    executable: "syft",
+    assets: {
+      "darwin-arm64": release(
+        "anchore/syft",
+        "v1.57.2",
+        "syft_1.57.2_darwin_arm64.tar.gz",
+        "38afbcc03a9d9afac2d7572432fd2c435e051e03930582ea90f4710ffb515224",
+      ),
+      "darwin-x64": release(
+        "anchore/syft",
+        "v1.57.2",
+        "syft_1.57.2_darwin_amd64.tar.gz",
+        "73c6100bc43fbcc1c99aed3428d859c6289c4076be7e296dde7e427324c15908",
+      ),
+      "linux-arm64": release(
+        "anchore/syft",
+        "v1.57.2",
+        "syft_1.57.2_linux_arm64.tar.gz",
+        "8efe605309c98798e1ee0cffdcf8c05ca26819b4cd44c0b03650f1e963e9bdb6",
+      ),
+      "linux-x64": release(
+        "anchore/syft",
+        "v1.57.2",
+        "syft_1.57.2_linux_amd64.tar.gz",
+        "ad92bd3ec1b94a3df01d4d0aec199afa9c42b72e86da436ff5f837914d32706b",
+      ),
+    },
+  },
 };
 
 const isPlatform = (value: string): value is Platform =>
