@@ -7,6 +7,7 @@ import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
 import ./src/locks.bend as K
+import ./src/statuses.bend as S
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -898,3 +899,105 @@ law unlock_exact:
   for found: Bool
   for may_lock: Bool
   {K.decide_unlock(found, may_lock) == Bool.pick(K.Unlock, Bool.not(found), K.NotHere{}, Bool.pick(K.Unlock, Bool.not(may_lock), K.NotYours{}, K.Release{})) : K.Unlock}
+
+# --- The status of a failed operation (RFC 9110 §15, RFC 4918 §9) -----------------------------
+
+# The failures that are the server's, not the request's: retrying later or elsewhere may succeed.
+def server_fault(f: S.Failure) -> Bool:
+  match f:
+    case S.FInsufficientStorage{}:
+      True{}
+    case S.FUnavailable{}:
+      True{}
+    case S.FCrossBackend{}:
+      True{}
+    case S.FNotFound{}:
+      False{}
+    case S.FNoParent{}:
+      False{}
+    case S.FExists{}:
+      False{}
+    case S.FIsCollection{}:
+      False{}
+    case S.FNotCollection{}:
+      False{}
+    case S.FIntoItself{}:
+      False{}
+    case S.FRoot{}:
+      False{}
+    case S.FTooLarge{}:
+      False{}
+    case S.FSizeMismatch{}:
+      False{}
+    case S.FNameRefused{}:
+      False{}
+    case S.FNameRefusedReplaced{}:
+      False{}
+    case S.FHiddenObjects{}:
+      False{}
+    case S.FTooMany{}:
+      False{}
+
+# Every failure answers an error status: never a success or a redirect, which a client would take
+# as done (RFC 9110 §15).
+law failure_is_error:
+  for f: S.Failure
+  {Bool.and(Nat.is_le(400n, S.status(f)), Nat.is_lt(S.status(f), 600n)) == True{} : Bool}
+
+# A failure answers 5xx exactly when it is the server's, so a client retries only those and
+# changes the request for the others (RFC 9110 §15.5, §15.6).
+law failure_class_exact:
+  for f: S.Failure
+  {Nat.is_le(500n, S.status(f)) == server_fault(f) : Bool}
+
+# Each failure's status, with the section that sets it.
+def spec_status(f: S.Failure) -> Nat:
+  match f:
+    # RFC 9110 §15.5.5
+    case S.FNotFound{}:
+      404n
+    # RFC 4918 §9.3.1, §9.7.1, §9.8.5: a missing parent collection is 409.
+    case S.FNoParent{}:
+      409n
+    # RFC 4918 §9.3.1: MKCOL on a mapped URL is 405; so is PUT on a collection.
+    case S.FExists{}:
+      405n
+    case S.FIsCollection{}:
+      405n
+    case S.FNotCollection{}:
+      409n
+    # RFC 4918 §9.8.5: the source and destination are the same or nested.
+    case S.FIntoItself{}:
+      403n
+    case S.FRoot{}:
+      403n
+    # RFC 4918 §11.5
+    case S.FInsufficientStorage{}:
+      507n
+    # RFC 9110 §15.5.14
+    case S.FTooLarge{}:
+      413n
+    # RFC 9110 §8.6: a body that differs from its Content-Length is a malformed request.
+    case S.FSizeMismatch{}:
+      400n
+    # RFC 9110 §15.6.4
+    case S.FUnavailable{}:
+      503n
+    # RFC 9110 §15.5.4: understood, and refused for good.
+    case S.FNameRefused{}:
+      403n
+    case S.FNameRefusedReplaced{}:
+      403n
+    # RFC 9110 §15.5.10: the collection's state conflicts with the request.
+    case S.FHiddenObjects{}:
+      409n
+    # RFC 9110 §15.6.3, as RFC 4918 §9.8.5 answers a destination on another server.
+    case S.FCrossBackend{}:
+      502n
+    # PRD §5: refused in one request; nothing changed.
+    case S.FTooMany{}:
+      403n
+
+law failure_status_exact:
+  for f: S.Failure
+  {S.status(f) == spec_status(f) : Nat}

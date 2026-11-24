@@ -13,6 +13,7 @@ import {
 import {
   decideUnlock,
   evaluatePreconditions,
+  failureStatus,
   ifState,
   lockGate,
   resolveRange,
@@ -93,29 +94,6 @@ const xmlResponse = (status: number, body: string, headers?: Record<string, stri
 /** An RFC 4918 §16 precondition error body. */
 const davError = (status: number, condition: string) =>
   xmlResponse(status, `<D:error xmlns:D="DAV:">${condition}</D:error>`);
-
-const FAILURE_STATUS: Record<StorageFailure, number> = {
-  "not-found": 404,
-  "no-parent": 409,
-  exists: 405,
-  "is-collection": 405,
-  "not-collection": 409,
-  "into-itself": 403,
-  root: 403,
-  "insufficient-storage": 507,
-  "too-large": 413,
-  "size-mismatch": 400,
-  unavailable: 503,
-  // A name the store refuses for good is the client's to change, not a fault to retry later, so
-  // it is not 503. The request is well formed and the name is valid in the namespace, so it is not
-  // 400 either: 403 says the server understood it and will not carry it out (RFC 9110 §15.5.4),
-  // as RFC 4918 also answers a PUT or MKCOL that the server will not perform at that URL.
-  "name-refused": 403,
-  "name-refused-replaced": 403,
-  "hidden-objects": 409,
-  "cross-backend": 502,
-  "too-many": 403,
-};
 
 const statusLine = (status: number) => `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? ""}`.trim();
 
@@ -338,9 +316,9 @@ const EXPLAINED: Partial<Record<StorageFailure, string>> = {
 const failure = (reason: StorageFailure) => {
   const text = EXPLAINED[reason];
   return text === undefined
-    ? empty(FAILURE_STATUS[reason])
+    ? empty(failureStatus(reason))
     : new Response(text, {
-        status: FAILURE_STATUS[reason],
+        status: failureStatus(reason),
         headers: { "content-type": "text/plain; charset=utf-8" },
       });
 };

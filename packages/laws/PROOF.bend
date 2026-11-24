@@ -8,6 +8,7 @@ import ./src/names.bend as N
 import ./src/imports.bend as I
 import ./src/copying.bend as M
 import ./src/locks.bend as K
+import ./src/statuses.bend as S
 
 # Lemmas the hand-written proofs share.
 
@@ -6576,3 +6577,108 @@ def L.unlock_exact(found, may_lock):
           {==}
         case True{}:
           {==}
+
+def L.failure_is_error(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}
+
+def L.failure_class_exact(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}
+
+def L.failure_status_exact(f):
+  match f:
+    case S.FNotFound{}:
+      {==}
+    case S.FNoParent{}:
+      {==}
+    case S.FExists{}:
+      {==}
+    case S.FIsCollection{}:
+      {==}
+    case S.FNotCollection{}:
+      {==}
+    case S.FIntoItself{}:
+      {==}
+    case S.FRoot{}:
+      {==}
+    case S.FInsufficientStorage{}:
+      {==}
+    case S.FTooLarge{}:
+      {==}
+    case S.FSizeMismatch{}:
+      {==}
+    case S.FUnavailable{}:
+      {==}
+    case S.FNameRefused{}:
+      {==}
+    case S.FNameRefusedReplaced{}:
+      {==}
+    case S.FHiddenObjects{}:
+      {==}
+    case S.FCrossBackend{}:
+      {==}
+    case S.FTooMany{}:
+      {==}

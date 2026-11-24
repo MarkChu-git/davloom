@@ -37,3 +37,4 @@ export {
   type LockScope,
   type UnlockDecision,
 } from "./locks";
+export { FAILURE_NAMES, failureStatus, type FailureName } from "./statuses";
