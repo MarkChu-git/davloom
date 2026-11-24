@@ -17,9 +17,11 @@ export const ADMIN = {
   password: "correct horse battery staple",
 };
 
-export const BUN_PORT = 4310;
-export const WORKERS_PORT = 4311;
-export const DEV_WORKER_PORT = 4313;
+/** The first of the four ports the browser tests use; DAVLOOM_UI_PORT_BASE moves them, so two runs can share a machine. */
+const base = Number(process.env.DAVLOOM_UI_PORT_BASE ?? "") || 4310;
+export const BUN_PORT = base;
+export const WORKERS_PORT = base + 1;
+export const DEV_WORKER_PORT = base + 3;
 
 export const BUN_ORIGIN = `http://127.0.0.1:${BUN_PORT}`;
 export const WORKERS_ORIGIN = `http://127.0.0.1:${WORKERS_PORT}`;
