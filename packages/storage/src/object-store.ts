@@ -393,21 +393,35 @@ const attempt = async <T>(run: () => Promise<StorageResult<T>>): Promise<Storage
   }
 };
 
-/** Runs `work` on every item, at most `limit` at a time. */
+/**
+ * Runs `work` on every item, at most `limit` at a time. Once one fails, no lane starts another
+ * item, and the first failure is thrown only after every item under way has ended, so nothing
+ * runs on behind a caller that cleans up after the failure.
+ */
 const inParallel = async <T>(
   items: readonly T[],
   limit: number,
   work: (item: T) => Promise<void>,
 ) => {
   let next = 0;
+  let failed = false;
   const lane = async () => {
-    while (next < items.length) {
+    while (next < items.length && !failed) {
       const item = items[next];
       next += 1;
-      if (item !== undefined) await work(item);
+      try {
+        if (item !== undefined) await work(item);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  const lanes = await Promise.allSettled(
+    Array.from({ length: Math.min(limit, items.length) }, lane),
+  );
+  const rejected = lanes.find((settled) => settled.status === "rejected");
+  if (rejected) throw rejected.reason;
 };
 
 /** What a path reaches, and what the store holds at its keys. */
@@ -431,14 +445,24 @@ const EMPTY_PAGE: ListPage = { objects: [], prefixes: [], cursor: null };
 /**
  * The driver with the reads of a refused key answered as finding nothing, so a name the store
  * refuses is absent, as it is on any backend that never kept it: a read, a delete or a lookup of
- * it answers 404, and an entry below it 409. Writes and copies still fail with `name-refused`.
+ * it answers 404, and an entry below it 409. So is the first page of a listing of a refused
+ * prefix. Writes and copies still fail with `name-refused`.
  */
 export const readingRefusedAsAbsent = (driver: ObjectStoreDriver): ObjectStoreDriver => ({
   ...driver,
   head: async (key) => absentIfRefused(await driver.head(key), null),
   get: async (key, range) => absentIfRefused(await driver.get(key, range), null),
-  list: async (key, listOptions) =>
-    absentIfRefused(await driver.list(key, listOptions), EMPTY_PAGE),
+  list: async (key, listOptions) => {
+    const page = await driver.list(key, listOptions);
+    // Only the first page names the prefix alone. A later page that the store refuses was refused
+    // for its cursor, not its prefix: taking it as the end would cut the listing short, and a
+    // remove, copy or move would then act on part of a collection and report success.
+    if (!page.ok && page.failure === "name-refused" && listOptions.cursor) {
+      console.error("the store refused a later page of a listing", key);
+      return fail("unavailable");
+    }
+    return absentIfRefused(page, EMPTY_PAGE);
+  },
 });
 
 export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBackend => {
@@ -602,25 +626,44 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
     // recorded: such a record would make a later move of the new content resume.
     must(await properties.removeTree(journalPath(to)));
 
-    if (source.node === "file") {
-      if (!must(await driver.copy(fileKey(prefix, from), fileKey(prefix, to)))) {
-        return fail("not-found");
+    // The keys this request has written at the destination, which held none of them: what it
+    // takes away again when the store refuses one of the names part-way.
+    const written: string[] = [];
+    try {
+      if (source.node === "file") {
+        if (!must(await driver.copy(fileKey(prefix, from), fileKey(prefix, to)))) {
+          return fail("not-found");
+        }
+      } else {
+        const sourceMarker = markerKey(prefix, from);
+        const targetMarker = markerKey(prefix, to);
+        const copy = async (key: string) => {
+          const target = `${targetMarker}${key.slice(sourceMarker.length)}`;
+          // An object that went away since the listing is no longer part of the tree.
+          if (must(await driver.copy(key, target))) written.push(target);
+        };
+        if (shallow || !source.marker) {
+          must(await driver.put(targetMarker, null, { length: 0, created: now() }));
+          written.push(targetMarker);
+        } else if (sourceKeys.includes(sourceMarker)) {
+          // The marker goes first, so a store that refuses the destination's name refuses it
+          // before any entry arrives there.
+          await copy(sourceMarker);
+        }
+        await inParallel(
+          sourceKeys.filter((key) => key !== sourceMarker),
+          PARALLEL_COPIES,
+          copy,
+        );
       }
-    } else {
-      const sourceMarker = markerKey(prefix, from);
-      const targetMarker = markerKey(prefix, to);
-      if (shallow || !source.marker) {
-        must(await driver.put(targetMarker, null, { length: 0, created: now() }));
-      } else if (sourceKeys.includes(sourceMarker)) {
-        // The marker goes first, so a store that refuses the destination's name refuses it
-        // before any entry arrives there.
-        must(await driver.copy(sourceMarker, targetMarker));
-      }
-      const rest = sourceKeys.filter((key) => key !== sourceMarker);
-      await inParallel(rest, PARALLEL_COPIES, async (key) => {
-        // An object that went away since the listing is no longer part of the tree.
-        must(await driver.copy(key, `${targetMarker}${key.slice(sourceMarker.length)}`));
-      });
+    } catch (error) {
+      if (!(error instanceof Stop) || error.failure !== "name-refused") throw error;
+      // A store may refuse a key below the destination only once others arrived there, such as
+      // one past AWS S3's 1,024 bytes. The source is whole, since nothing of it has gone yet, and
+      // the destination goes back to holding nothing, so the answer can say what changed: nothing,
+      // or, when the request was to replace an entry, that entry, which was already removed.
+      await removeKeys(written);
+      return fail(outcome.replaces ? "name-refused-replaced" : "name-refused");
     }
 
     if (move) {

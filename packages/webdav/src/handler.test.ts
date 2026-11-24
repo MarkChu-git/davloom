@@ -587,6 +587,30 @@ describe("other methods", () => {
   });
 });
 
+describe("names the store refuses", () => {
+  it.each([
+    ["name-refused", /Nothing was changed\. Choose another name\./],
+    ["name-refused-replaced", /was removed before that was known.*the source is unchanged/],
+  ] as const)("answers %s with 403 and says what changed", async (reason, text) => {
+    const base = setup();
+    const storage = {
+      ...base.storage,
+      copy: () => Promise.resolve({ ok: false as const, failure: reason }),
+      move: () => Promise.resolve({ ok: false as const, failure: reason }),
+    };
+    const { dav, put } = setup({ storage });
+    await put("/f", "x");
+    for (const method of ["COPY", "MOVE"]) {
+      const response = await dav(method, "/f", {
+        headers: { destination: `${ORIGIN}${BASE}/g` },
+      });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(await response.text()).toMatch(text);
+    }
+  });
+});
+
 describe("the synchronous limit", () => {
   it.each(["COPY", "MOVE"])(
     "answers 403 with an explanation when %s is over the limit",

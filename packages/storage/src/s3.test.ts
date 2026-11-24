@@ -40,7 +40,6 @@ describe("error mapping", () => {
     ["InternalError", 500, "unavailable"],
     // A 400 that refuses the key: RustFS's, its bodyless one to HEAD, AWS S3's and MinIO's.
     ["InvalidArgument", 400, "name-refused"],
-    ["Unknown", 400, "name-refused"],
     ["KeyTooLongError", 400, "name-refused"],
     ["InvalidObjectName", 400, "name-refused"],
     ["XMinioInvalidObjectName", 400, "name-refused"],
@@ -48,12 +47,21 @@ describe("error mapping", () => {
     ["RequestTimeout", 400, "unavailable"],
     ["IncompleteBody", 400, "unavailable"],
     ["BadDigest", 400, "unavailable"],
+    // A 400 without a code, outside an answer to HEAD, is not the store's judgement of a key.
+    ["Unknown", 400, "unavailable"],
     ["Unknown", 500, "unavailable"],
     ["InvalidArgument", 500, "unavailable"],
     ["PreconditionFailed", 412, "exists"],
     ["SomethingElse", 412, "exists"],
   ])("maps %s (%i) to %s", (name, status, failure) => {
     expect(failureOfError(exception(name, status))).toBe(failure);
+  });
+
+  it("takes a 400 without a code for a refused key only in answer to HEAD", () => {
+    expect(failureOfError(exception("Unknown", 400), "head")).toBe("name-refused");
+    expect(failureOfError(exception("Unknown", 400), "other")).toBe("unavailable");
+    expect(failureOfError(exception("Unknown", 403), "head")).toBe("unavailable");
+    expect(failureOfError(exception("Unknown", 404), "head")).toBe("unavailable");
   });
 
   it("maps RustFS's refusal of a key it cannot write into XML to name-refused", () => {
@@ -376,6 +384,18 @@ describe("S3 driver requests", () => {
     expect(await driver().copy("f", "a\\..\\b")).toEqual(refused);
     // A refusal is the client's to change, not a fault of the store worth logging.
     expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("takes a bare 400 to anything but HEAD for an unavailable store, and logs it", async () => {
+    // A wrong endpoint or a proxy that answers 400 must not make the store look empty.
+    answer = () => new Response(null, { status: 400 });
+    const unavailable = { ok: false, failure: "unavailable" };
+    expect(await driver().list("p/", { recursive: true, limit: 1 })).toEqual(unavailable);
+    expect(await driver().get("f")).toEqual(unavailable);
+    expect(await driver().put("f", null, { length: 0, created: 1 })).toEqual(unavailable);
+    expect(console.error).toHaveBeenCalledTimes(3);
+    expect(await driver().head("f")).toEqual({ ok: false, failure: "name-refused" });
+    expect(console.error).toHaveBeenCalledTimes(3);
   });
 
   it("deletes in batches and ignores keys that were already gone", async () => {

@@ -52,6 +52,12 @@ export type StorageFailure =
    * have it.
    */
   | "name-refused"
+  /**
+   * A copy or move that was to replace its destination, refused as `name-refused` once the
+   * destination was removed: the source is whole and nothing arrived at the destination, but what
+   * stood there is gone.
+   */
+  | "name-refused-replaced"
   /** A copy or move between two backends, which the server does not perform. */
   | "cross-backend"
   /**
