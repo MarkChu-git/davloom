@@ -11,6 +11,7 @@ import ./src/locks.bend as K
 import ./src/statuses.bend as S
 import ./src/properties.bend as F
 import ./src/objects.bend as O
+import ./src/mounts.bend as W
 
 # Lemmas the hand-written proofs share.
 
@@ -7535,3 +7536,746 @@ def L.copy_refused_exact(replaces):
       {==}
     case True{}:
       {==}
+
+def L.mount_route_inside(op, w):
+  match op:
+    case W.OpStat{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpList{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRead{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpWrite{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpMkcol{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRemove{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpPatch{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpQuota{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+
+def L.mount_root_kept(op):
+  match op:
+    case W.OpStat{}:
+      {==}
+    case W.OpList{}:
+      {==}
+    case W.OpRead{}:
+      {==}
+    case W.OpWrite{}:
+      {==}
+    case W.OpMkcol{}:
+      {==}
+    case W.OpRemove{}:
+      {==}
+    case W.OpPatch{}:
+      {==}
+    case W.OpQuota{}:
+      {==}
+
+def L.mount_virtual_only_root(op, w):
+  match op:
+    case W.OpStat{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpList{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRead{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpWrite{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpMkcol{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpRemove{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpPatch{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+    case W.OpQuota{}:
+      match w:
+        case W.WRoot{}:
+          {==}
+        case W.WUnknownTop{}:
+          {==}
+        case W.WUnknownDeep{}:
+          {==}
+        case W.WMountRoot{}:
+          {==}
+        case W.WInside{}:
+          {==}
+
+def L.mount_transfer_safe(from, to, move, same):
+  match from:
+    case W.WRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WUnknownTop{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WUnknownDeep{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WMountRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+    case W.WInside{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+            case True{}:
+              match same:
+                case False{}:
+                  {==}
+                case True{}:
+                  {==}
+
+def L.mount_transfer_reaches(from, to, move):
+  match from:
+    case W.WRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WUnknownTop{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WUnknownDeep{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WMountRoot{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case W.WInside{}:
+      match to:
+        case W.WRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownTop{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WUnknownDeep{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WMountRoot{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case W.WInside{}:
+          match move:
+            case False{}:
+              {==}
+            case True{}:
+              {==}

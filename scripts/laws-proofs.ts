@@ -68,6 +68,17 @@ const FINITE: Record<string, string[]> = {
   ],
   "O.Status": ["O.S400{}", "O.S412{}", "O.S507{}", "O.SOther{}"],
   "O.Listing": ["O.LShowsKey{}", "O.LNotKey{}", "O.LRefused{}", "O.LFailed{}"],
+  "W.Where": ["W.WRoot{}", "W.WUnknownTop{}", "W.WUnknownDeep{}", "W.WMountRoot{}", "W.WInside{}"],
+  "W.Op": [
+    "W.OpStat{}",
+    "W.OpList{}",
+    "W.OpRead{}",
+    "W.OpWrite{}",
+    "W.OpMkcol{}",
+    "W.OpRemove{}",
+    "W.OpPatch{}",
+    "W.OpQuota{}",
+  ],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
 };
 

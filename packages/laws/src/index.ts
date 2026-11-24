@@ -55,3 +55,10 @@ export {
   type RefusedListing,
   type RefusedRead,
 } from "./objects";
+export {
+  mountRoute,
+  mountTransfer,
+  type MountOp,
+  type MountRoute,
+  type MountWhere,
+} from "./mounts";

@@ -10,6 +10,7 @@ import ./src/locks.bend as K
 import ./src/statuses.bend as S
 import ./src/properties.bend as F
 import ./src/objects.bend as O
+import ./src/mounts.bend as W
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1159,3 +1160,162 @@ law refused_page_exact:
 law copy_refused_exact:
   for replaces: Bool
   {O.copy_refused(replaces) == Bool.pick(O.Refusal, replaces, O.RReplacedGone{}, O.RNothingChanged{}) : O.Refusal}
+
+# --- The namespace of Mounts (PRD §5) ---------------------------------------------------------
+
+def in_mount(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      False{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      True{}
+    case W.WInside{}:
+      True{}
+
+def a_mount_root(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      False{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      True{}
+    case W.WInside{}:
+      False{}
+
+def at_virtual_root(w: W.Where) -> Bool:
+  match w:
+    case W.WRoot{}:
+      True{}
+    case W.WUnknownTop{}:
+      False{}
+    case W.WUnknownDeep{}:
+      False{}
+    case W.WMountRoot{}:
+      False{}
+    case W.WInside{}:
+      False{}
+
+def delegated(r: W.Route) -> Bool:
+  match r:
+    case W.Delegate{}:
+      True{}
+    case W.Virtual{}:
+      False{}
+    case W.MNotFound{}:
+      False{}
+    case W.MNoParent{}:
+      False{}
+    case W.MExists{}:
+      False{}
+    case W.MIsCollection{}:
+      False{}
+    case W.MNotCollection{}:
+      False{}
+    case W.MIntoItself{}:
+      False{}
+    case W.MRoot{}:
+      False{}
+    case W.MCrossBackend{}:
+      False{}
+
+def virtual(r: W.Route) -> Bool:
+  match r:
+    case W.Delegate{}:
+      False{}
+    case W.Virtual{}:
+      True{}
+    case W.MNotFound{}:
+      False{}
+    case W.MNoParent{}:
+      False{}
+    case W.MExists{}:
+      False{}
+    case W.MIsCollection{}:
+      False{}
+    case W.MNotCollection{}:
+      False{}
+    case W.MIntoItself{}:
+      False{}
+    case W.MRoot{}:
+      False{}
+    case W.MCrossBackend{}:
+      False{}
+
+# Whether the operation creates, replaces or removes the entry at its path.
+def replaces_entry(op: W.Op) -> Bool:
+  match op:
+    case W.OpStat{}:
+      False{}
+    case W.OpList{}:
+      False{}
+    case W.OpRead{}:
+      False{}
+    case W.OpWrite{}:
+      True{}
+    case W.OpMkcol{}:
+      True{}
+    case W.OpRemove{}:
+      True{}
+    case W.OpPatch{}:
+      False{}
+    case W.OpQuota{}:
+      False{}
+
+def lists_or_stats(op: W.Op) -> Bool:
+  match op:
+    case W.OpStat{}:
+      True{}
+    case W.OpList{}:
+      True{}
+    case W.OpRead{}:
+      False{}
+    case W.OpWrite{}:
+      False{}
+    case W.OpMkcol{}:
+      False{}
+    case W.OpRemove{}:
+      False{}
+    case W.OpPatch{}:
+      False{}
+    case W.OpQuota{}:
+      False{}
+
+# Only a path inside a Mount reaches a backend.
+law mount_route_inside:
+  for op: W.Op
+  for w: W.Where
+  {implies(delegated(W.route(op, w)), in_mount(w)) == True{} : Bool}
+
+# A Mount's root is never written over, created or removed, as a backend's root is not.
+law mount_root_kept:
+  for op: W.Op
+  {implies(replaces_entry(op), Bool.not(delegated(W.route(op, W.WMountRoot{})))) == True{} : Bool}
+
+# The namespace answers by itself only a stat or listing of its root.
+law mount_virtual_only_root:
+  for op: W.Op
+  for w: W.Where
+  {implies(virtual(W.route(op, w)), Bool.and(at_virtual_root(w), lists_or_stats(op))) == True{} : Bool}
+
+# A copy or move reaches a backend only between two paths inside Mounts of that one backend,
+# never onto a Mount's root, and never moving one.
+law mount_transfer_safe:
+  for from: W.Where
+  for to: W.Where
+  for move: Bool
+  for same: Bool
+  {implies(delegated(W.transfer(from, to, move, same)), Bool.and(Bool.and(in_mount(from), in_mount(to)), Bool.and(same, Bool.and(Bool.not(a_mount_root(to)), Bool.not(Bool.and(move, a_mount_root(from))))))) == True{} : Bool}
+
+# Between two Mounts of one backend, and off every root, a copy or move always reaches it.
+law mount_transfer_reaches:
+  for from: W.Where
+  for to: W.Where
+  for move: Bool
+  {implies(Bool.and(Bool.and(in_mount(from), in_mount(to)), Bool.and(Bool.not(a_mount_root(to)), Bool.not(Bool.and(move, a_mount_root(from))))), delegated(W.transfer(from, to, move, True{}))) == True{} : Bool}
