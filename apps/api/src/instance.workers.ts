@@ -1,12 +1,15 @@
-import { env } from "cloudflare:workers";
+import { env, waitUntil } from "cloudflare:workers";
 import { createAuth, createIdentity } from "@davloom/auth";
 import {
   Archive,
   checkR2Config,
+  createOperationRecorder,
   credentialCipherLayer,
   Identity,
   InstanceConfig,
+  InstanceSettings,
   makeCredentialCipher,
+  OperationLog,
   Records,
   StorageOpener,
 } from "@davloom/core";
@@ -15,6 +18,7 @@ import { createObjectStoreStorage } from "@davloom/storage/object-store";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
 import { createR2Driver } from "@davloom/storage/r2";
 import { createArchive } from "@davloom/database/archive";
+import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
 import { createD1Database, d1Atomic } from "@davloom/database/d1";
 import { createRepositories } from "@davloom/database/repositories";
 import { durableObjectStorage, type StorageObject } from "@davloom/storage/durable-object";
@@ -68,9 +72,12 @@ export const workersInstance = (origin: string): Instance => {
     await unsealWith(await cipher)(backendId, sealed);
   const repositories = createRepositories(db);
   const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
+  const operationLog = createOperationLog(db, d1Atomic(db));
   const layer = Layer.mergeAll(
     Layer.succeed(Records, repositories),
     Layer.succeed(Archive, createArchive(db, d1Atomic(db))),
+    Layer.succeed(OperationLog, operationLog),
+    Layer.succeed(InstanceSettings, createSettingsStore(db)),
     Layer.succeed(Identity, createIdentity(auth)),
     Layer.succeed(StorageOpener, {
       open: (backend) => {
@@ -110,5 +117,25 @@ export const workersInstance = (origin: string): Instance => {
     layer,
     authHandler: (request) => auth.handler(request),
     locks: createSqlLockStore(repositories.locks),
+    // Counts gather for 20 s, inside the 30 s that waitUntil keeps a Worker alive after its
+    // response, so an isolate writes the operation log at most three times a minute.
+    operations: createOperationRecorder({
+      write: operationLog.add,
+      schedule: (task) => waitUntil(task),
+      delayMs: 20_000,
+    }),
+    about: (request) => ({
+      runtime: "Cloudflare Workers",
+      deployment: "Cloudflare",
+      region: coloOf(request),
+      database: "Cloudflare D1",
+    }),
   };
+};
+
+/** The Cloudflare data center that served the request, such as NRT; null outside Cloudflare. */
+const coloOf = (request: Request): string | null => {
+  const cf: unknown = Reflect.get(request, "cf");
+  const colo: unknown = typeof cf === "object" && cf !== null ? Reflect.get(cf, "colo") : null;
+  return typeof colo === "string" ? colo : null;
 };

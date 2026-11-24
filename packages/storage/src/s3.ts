@@ -121,6 +121,39 @@ export const failureOfError = (error: unknown, request: RequestKind = "other"): 
     request === "head",
   );
 
+/** What the owner of a backend can do something about, by the code S3 answered with. */
+const CHECK_REASONS: ReadonlyMap<string, string> = new Map([
+  ["NoSuchBucket", "The bucket does not exist"],
+  ["InvalidAccessKeyId", "The access key is not known"],
+  ["SignatureDoesNotMatch", "The secret key does not match the access key"],
+  ["AccessDenied", "The access key may not list the bucket"],
+  ["AllAccessDisabled", "The access key may not list the bucket"],
+  ["PermanentRedirect", "The bucket is in another region"],
+  ["AuthorizationHeaderMalformed", "The bucket is in another region"],
+  ["InvalidBucketName", "The bucket name is not valid"],
+  ["RequestTimeTooSkewed", "The clocks of Davloom and the store differ"],
+]);
+
+const CHECK_STATUSES: ReadonlyMap<number, string> = new Map([
+  [403, "The access key may not list the bucket"],
+  [404, "The bucket does not exist"],
+  [301, "The bucket is in another region"],
+]);
+
+/** Why a request to an S3-compatible store failed, in words, for a connection check. */
+export const describeS3Error = (error: unknown): string => {
+  if (error instanceof S3ServiceException) {
+    const known = CHECK_REASONS.get(error.name);
+    if (known !== undefined) return known;
+    const status = error.$metadata.httpStatusCode;
+    const byStatus = status === undefined ? undefined : CHECK_STATUSES.get(status);
+    if (byStatus !== undefined) return byStatus;
+    return status === undefined ? error.name : `${error.name} (${status})`;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return `No answer from the endpoint: ${message}`;
+};
+
 /** S3 quotes its ETags. */
 export const unquote = (etag: string | undefined): string =>
   (etag ?? "").replace(/^W\//, "").replace(/^"(.*)"$/, "$1");

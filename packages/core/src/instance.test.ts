@@ -95,6 +95,19 @@ const makeWorld = (options: WorldOptions = {}) => {
         });
         return Promise.resolve();
       },
+      update: (id, change) => {
+        const index = backends.findIndex((backend) => backend.id === id);
+        const current = backends[index];
+        if (current === undefined) return Promise.resolve(false);
+        backends[index] = { ...current, ...change };
+        return Promise.resolve(true);
+      },
+      remove: (id) => {
+        const index = backends.findIndex((backend) => backend.id === id);
+        if (index === -1) return Promise.resolve(false);
+        backends.splice(index, 1);
+        return Promise.resolve(true);
+      },
       ...options.records?.backends,
     },
     mounts: {
@@ -530,6 +543,9 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: true,
         usage: { files: 2, collections: 1, bytes: 8 },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "closed",
@@ -538,6 +554,9 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "down",
@@ -546,6 +565,9 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
     ]);
   });

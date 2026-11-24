@@ -6,11 +6,14 @@ import {
   credentialCipherLayer,
   Identity,
   InstanceConfig,
+  InstanceSettings,
+  OperationLog,
   Records,
   StorageOpener,
   type StorageBackend,
 } from "@davloom/core";
 import { createArchive } from "@davloom/database/archive";
+import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
 import {
   bunSqliteAtomic,
   createBunSqliteDatabase,
@@ -54,6 +57,8 @@ const memoryInstance = (setupToken: string | null = TOKEN): Instance => {
       }),
       Layer.succeed(InstanceConfig, { setupToken, storageKinds: ["memory"] }),
       credentialCipherLayer(Redacted.make(SECRET)),
+      Layer.succeed(OperationLog, createOperationLog(db, bunSqliteAtomic(db))),
+      Layer.succeed(InstanceSettings, createSettingsStore(db)),
     ),
     authHandler: (request) => auth.handler(request),
     locks: createSqlLockStore(repositories.locks),
