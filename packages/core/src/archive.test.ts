@@ -54,6 +54,7 @@ const world = (options: World = {}) => {
         list: () => Promise.resolve([]),
         create: () => Promise.resolve(),
         rename: () => Promise.resolve(false),
+        retarget: () => Promise.resolve(false),
         remove: () => Promise.resolve(false),
       },
       apiKeys: {

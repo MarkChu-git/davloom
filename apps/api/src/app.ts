@@ -13,6 +13,7 @@ import {
   openNamespace,
   removeMount,
   renameMount,
+  retargetMount,
   requireUser,
   revokeKey,
   setupStatus,
@@ -385,7 +386,13 @@ export const createApp = ({ adapter, instance, webdavHandler }: AppOptions = {})
             Effect.flatMap(
               Effect.promise(() => readJson(req)),
               (body) =>
-                Effect.tap(renameMount(params.id, text(body.name)), () => Effect.sync(invalidate)),
+                Effect.tap(
+                  // A body with a backend points the Mount there; otherwise it renames it.
+                  typeof body.backendId === "string"
+                    ? retargetMount(params.id, { backendId: body.backendId, root: text(body.root) })
+                    : renameMount(params.id, text(body.name)),
+                  () => Effect.sync(invalidate),
+                ),
             ),
           )({ request }),
         { parse: "none" },

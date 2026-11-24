@@ -34,8 +34,15 @@ interface Building {
 }
 
 /** Parses one XML document. Throws XmlError on malformed input or a limit. */
-export const parseXml = (text: string): XmlElement => {
-  if (text.length > XML_LIMITS.bytes) throw new XmlError("body too large");
+export const parseXml = (
+  text: string,
+  limits: {
+    readonly bytes: number;
+    readonly depth: number;
+    readonly elements: number;
+  } = XML_LIMITS,
+): XmlElement => {
+  if (text.length > limits.bytes) throw new XmlError("body too large");
   const parser = new SaxesParser({ xmlns: true, position: false });
   const stack: Building[] = [];
   let root: Building | undefined;
@@ -50,7 +57,7 @@ export const parseXml = (text: string): XmlElement => {
   });
   parser.on("opentag", (tag) => {
     elements += 1;
-    if (elements > XML_LIMITS.elements || stack.length >= XML_LIMITS.depth) {
+    if (elements > limits.elements || stack.length >= limits.depth) {
       failure ??= "document too complex";
       return;
     }

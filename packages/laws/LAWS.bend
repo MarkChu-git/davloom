@@ -5,6 +5,7 @@ import ./src/preconditions.bend as C
 import ./src/ranges.bend as R
 import ./src/names.bend as N
 import ./src/imports.bend as I
+import ./src/copying.bend as M
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -618,3 +619,112 @@ law import_all_or_nothing:
   for +entries: +List<I.Entry>
   for +known: +List<Nat>
   {I.plan(entries, known) == Bool.pick(I.Plan, spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
+
+# --- Copying files between instances (PRD §7 Data Migration) ---------------------------------
+
+def writes(a: M.Action) -> Bool:
+  match a:
+    case M.Create{}:
+      False{}
+    case M.Write{}:
+      True{}
+    case M.Skip{}:
+      False{}
+    case M.Conflict{}:
+      False{}
+
+def changes(a: M.Action) -> Bool:
+  match a:
+    case M.Create{}:
+      True{}
+    case M.Write{}:
+      True{}
+    case M.Skip{}:
+      False{}
+    case M.Conflict{}:
+      False{}
+
+def differs(t: M.Target) -> Bool:
+  match t:
+    case M.TAbsent{}:
+      False{}
+    case M.TSame{}:
+      False{}
+    case M.TDiffers{}:
+      True{}
+    case M.TFolder{}:
+      False{}
+
+def absent(t: M.Target) -> Bool:
+  match t:
+    case M.TAbsent{}:
+      True{}
+    case M.TSame{}:
+      False{}
+    case M.TDiffers{}:
+      False{}
+    case M.TFolder{}:
+      False{}
+
+def holds_folder(t: M.Target) -> Bool:
+  match t:
+    case M.TAbsent{}:
+      False{}
+    case M.TSame{}:
+      False{}
+    case M.TDiffers{}:
+      False{}
+    case M.TFolder{}:
+      True{}
+
+# A migration writes a file only where nothing is, or, when asked to overwrite, over a file that
+# differs: never over a collection or over a different file it was not asked to replace.
+law copy_writes_safely:
+  for s: M.Source
+  for t: M.Target
+  for overwrite: Bool
+  {implies(writes(M.decide(s, t, overwrite)), Bool.or(absent(t), Bool.and(overwrite, differs(t)))) == True{} : Bool}
+
+# A migration changes the target only where it lacks the entry, never where it holds it already.
+law copy_skips_what_is_there:
+  for s: M.Source
+  for t: M.Target
+  for overwrite: Bool
+  {implies(Bool.or(holds_folder(t), Bool.not(Bool.or(absent(t), differs(t)))), Bool.not(changes(M.decide(s, t, overwrite)))) == True{} : Bool}
+
+# The action for each entry, written out: collections are created where nothing is and kept where
+# a collection is; files are written where nothing is, kept where the same file is, and replaced
+# only when they differ and overwrite is asked for. Anything else is a conflict.
+def spec_copy_action(s: M.Source, t: M.Target, overwrite: Bool) -> M.Action:
+  match s:
+    case M.SFolder{}:
+      match t:
+        case M.TAbsent{}:
+          M.Create{}
+        case M.TFolder{}:
+          M.Skip{}
+        case M.TSame{}:
+          M.Conflict{}
+        case M.TDiffers{}:
+          M.Conflict{}
+    case M.SFile{}:
+      match t:
+        case M.TAbsent{}:
+          M.Write{}
+        case M.TSame{}:
+          M.Skip{}
+        case M.TFolder{}:
+          M.Conflict{}
+        case M.TDiffers{}:
+          match overwrite:
+            case True{}:
+              M.Write{}
+            case False{}:
+              M.Conflict{}
+
+# The action of every entry is the one written out above.
+law copy_action_exact:
+  for s: M.Source
+  for t: M.Target
+  for overwrite: Bool
+  {M.decide(s, t, overwrite) == spec_copy_action(s, t, overwrite) : M.Action}

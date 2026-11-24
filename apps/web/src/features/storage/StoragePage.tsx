@@ -35,6 +35,7 @@ import {
   useCreateMount,
   useMounts,
   useRemoveMount,
+  useMoveMount,
   useRenameMount,
   type Backend,
   type Mount,
@@ -296,6 +297,92 @@ const MountForm = ({
   );
 };
 
+/**
+ * Points a mount at a folder of another backend, as the last step of moving its files: the mount
+ * keeps its name, so clients and keys limited to it keep their address.
+ */
+const MoveForm = ({
+  mount,
+  backends,
+  onCancel,
+  onSaved,
+}: {
+  mount: Mount;
+  backends: readonly Backend[];
+  onCancel: () => void;
+  onSaved: (backend: string) => void;
+}) => {
+  const move = useMoveMount();
+  const others = backends.filter((backend) => backend.id !== mount.backendId);
+  const [backendId, setBackendId] = useState(others[0]?.id ?? "");
+  const [root, setRoot] = useState("");
+  const [problems, setProblems] = useState<{ root?: string; failure?: string }>({});
+
+  const submit = () => {
+    const rootParts = root.split("/").filter((part) => part.trim() !== "");
+    if (rootParts.some((part) => part === "." || part === "..")) {
+      setProblems({ root: "Name a folder of the backend, without . or .. in its path." });
+      return;
+    }
+    if (backendId === "" || move.isPending) return;
+    move.mutate(
+      { id: mount.id, backendId, root: rootParts.join("/") },
+      {
+        onSuccess: () =>
+          onSaved(backends.find((backend) => backend.id === backendId)?.name ?? "the backend"),
+        onError: (error) =>
+          setProblems(
+            isApiError(error) && error.code === "invalid_input"
+              ? { root: "No folder of this name is in the backend." }
+              : { failure: describeError(error) },
+          ),
+      },
+    );
+  };
+
+  return (
+    <DialogFrame
+      title={`Move ${pathOf(mount)}`}
+      submitLabel="Move mount"
+      isSaving={move.isPending}
+      failure={
+        problems.failure ??
+        (others.length === 0 ? "Add another backend first, then copy the files to it." : undefined)
+      }
+      onCancel={onCancel}
+      onSubmit={submit}
+    >
+      <Text>
+        Copy the files first, with bun run migrate from a mount of this backend to a mount of the
+        new one. Moving the mount then shows the new backend&apos;s files under {pathOf(mount)}.
+      </Text>
+      <Selector
+        label="Backend"
+        value={backendId}
+        onChange={setBackendId}
+        options={others.map((backend) => ({
+          value: backend.id,
+          label: backend.name,
+          description: kindLabel(backend.kind),
+        }))}
+      />
+      <TextInput
+        label="Folder in the backend"
+        description="Leave it empty to show the whole backend."
+        value={root}
+        onChange={(value) => {
+          setRoot(value);
+          setProblems({});
+        }}
+        onEnter={submit}
+        isOptional
+        status={problems.root === undefined ? undefined : { type: "error", message: problems.root }}
+        {...identifier}
+      />
+    </DialogFrame>
+  );
+};
+
 /** Adds a backend. Durable Objects is the only kind this deployment offers so far. */
 const BackendForm = ({
   takenNames,
@@ -425,6 +512,23 @@ export const StoragePage = () => {
       />,
     );
 
+  const openMove = (mount: Mount) =>
+    dialog.show(
+      <MoveForm
+        key={nextFormKey()}
+        mount={mount}
+        backends={backends}
+        onCancel={() => dialog.hide()}
+        onSaved={(name) => {
+          dialog.hide();
+          toast({ body: `${pathOf(mount)} now shows ${name}.` });
+        }}
+      />,
+      () =>
+        buttonLabelled(`Actions for mount ${pathOf(mount)}`) ??
+        buttonLabelled(`Details for mount ${pathOf(mount)}`),
+    );
+
   const openRemove = (mount: Mount) =>
     confirm.show({
       title: `Remove ${pathOf(mount)}?`,
@@ -488,6 +592,7 @@ export const StoragePage = () => {
           alignment="end"
           items={[
             { label: "Rename", onClick: () => openForm(mount) },
+            { label: "Move to another backend", onClick: () => openMove(mount) },
             { type: "divider" },
             { label: "Remove", variant: "destructive", onClick: () => openRemove(mount) },
           ]}
@@ -580,6 +685,14 @@ export const StoragePage = () => {
                                     variant="secondary"
                                     width="100%"
                                     onClick={() => openForm(mount)}
+                                  />
+                                </StackItem>
+                                <StackItem size="fill">
+                                  <Button
+                                    label="Move"
+                                    variant="secondary"
+                                    width="100%"
+                                    onClick={() => openMove(mount)}
                                   />
                                 </StackItem>
                                 <StackItem size="fill">
