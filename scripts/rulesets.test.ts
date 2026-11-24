@@ -46,9 +46,15 @@ const otherWorkflows = (): string[] =>
     .filter((file) => file !== ".github/workflows/ci.yml")
     .toSorted();
 
-// A job's check run carries its name, or its ID when it has none.
+const isMatrix = (job: Record<string, unknown>): boolean =>
+  isRecord(job["strategy"]) && "matrix" in job["strategy"];
+
+// A job's check run carries its name, or its ID when it has none. A matrix job reports one check
+// per combination, under a name that adds the matrix values, so the job that needs it is the one
+// main requires.
 const checkNames = (workflow: Record<string, unknown>): string[] =>
   jobs(workflow)
+    .filter(([, job]) => !isMatrix(job))
     .map(([id, job]) => (typeof job["name"] === "string" ? job["name"] : id))
     .toSorted();
 
@@ -141,16 +147,34 @@ describe("the required jobs", () => {
     expect(triggers["pull_request"] ?? {}).toEqual({});
   });
 
-  it.each([...jobs(ci), ...jobs(codeql)])("%s has no job-level if", (_id, job) => {
-    expect(job).not.toHaveProperty("if");
+  // A skipped required check counts as passed. `always()` is the one condition allowed: it keeps a
+  // job that gathers others from being skipped when one of them failed.
+  it.each([...jobs(ci), ...jobs(codeql)])("%s has no job-level if that can skip it", (_id, job) => {
+    expect([undefined, "${{ always() }}"]).toContain(job["if"]);
   });
 
-  // A matrix job reports one check per combination, under a name that adds the matrix values, and
-  // a job that calls a reusable workflow reports its checks as `<job> / <called job>`.
-  it.each(jobs(ci))("%s reports one check under its own name", (_id, job) => {
-    expect(job["strategy"] ?? {}).not.toHaveProperty("matrix");
+  // A job that calls a reusable workflow reports its checks as `<job> / <called job>`.
+  it.each(jobs(ci))("%s reports its checks under its own name", (_id, job) => {
     expect(job).not.toHaveProperty("uses");
   });
+
+  // A matrix job's checks count only through a required job that needs it, runs whatever they
+  // answered and fails unless every one of them passed.
+  it.each(jobs(ci).filter(([, job]) => isMatrix(job)))(
+    "the matrix job %s is gathered by a required job",
+    (id) => {
+      const gathering = jobs(ci).filter(([, job]) => {
+        const needs = job["needs"];
+        return Array.isArray(needs) ? needs.includes(id) : needs === id;
+      });
+      expect(gathering.length).toBeGreaterThan(0);
+      for (const [gatherer, job] of gathering) {
+        expect(checkNames(ci)).toContain(gatherer);
+        expect(job["if"], gatherer).toBe("${{ always() }}");
+        expect(JSON.stringify(job["steps"]), gatherer).toContain("needs.*.result");
+      }
+    },
+  );
 
   // GitHub's documentation asks for job names that are unique across workflows, because a required
   // check is matched by its name and the app that reports it, and every workflow reports as GitHub

@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // What the Dashboard's page specs share: how to find what a page shows, the clock and the
 // clipboard a state needs, an answer of the API changed on its way, and the check that a page does
@@ -250,3 +250,14 @@ export const recordOf = (page: Page, kind: "key" | "mount", name: string): Locat
         has: page.getByRole("button", { name: `Details for ${kind} ${name}`, exact: true }),
       }),
     );
+
+/** The engine the current project runs: chromium, firefox or webkit. */
+export const engine = (): string => test.info().project.use.defaultBrowserType ?? "chromium";
+
+/**
+ * Skips the test outside Chromium, for a step only Chromium offers, such as the Chrome DevTools
+ * Protocol. The Chromium projects still run it.
+ */
+export const onlyInChromium = (why: string): void => {
+  test.skip(engine() !== "chromium", why);
+};

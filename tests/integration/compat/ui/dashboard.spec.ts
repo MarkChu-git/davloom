@@ -24,6 +24,8 @@ import {
   shown,
   sideNavigation,
   sidewaysOverflow,
+  engine,
+  onlyInChromium,
 } from "./helpers";
 
 // The Dashboard: its pages, how they are reached, the colors they render, and how they lay out,
@@ -490,6 +492,12 @@ const statusColorsOnPage = (): string[] => {
   }
   probe.style.color = "var(--color-background-error-inverted)";
   colors.push(getComputedStyle(probe).color);
+  // The browser's own text and page colors, which a dialog or popover takes from its UA style
+  // sheet. Chromium's are gray; Firefox's dark CanvasText is a faintly blue rgb(251 251 254).
+  for (const system of ["CanvasText", "Canvas"]) {
+    probe.style.color = system;
+    colors.push(getComputedStyle(probe).color);
+  }
   probe.remove();
   return colors;
 };
@@ -629,9 +637,25 @@ const huesOnPage = (allowed: readonly string[]): string[] => {
   };
   const found = new Set<string>();
   for (const element of document.querySelectorAll("*")) {
+    // An element without a box (head, meta, display: none), or clipped to nothing as a visually
+    // hidden file input is, paints none of its colors.
+    if (!element.checkVisibility()) continue;
+    if (/^rect\(0(px)?,? 0(px)?,? 0(px)?,? 0(px)?\)$/.test(getComputedStyle(element).clip))
+      continue;
+    // The root holds no text and draws no border: the body paints over all but its background.
+    // Firefox leaves it the faintly blue CanvasText of its dark mode.
+    const root = element === document.documentElement;
     for (const pseudoElement of pseudoElements) {
+      // Firefox computes a file button, with its own blue-gray colors, for every element.
+      if (
+        pseudoElement === "::file-selector-button" &&
+        !(element instanceof HTMLInputElement && element.type === "file")
+      ) {
+        continue;
+      }
       const style = getComputedStyle(element, pseudoElement);
       for (const property of properties) {
+        if (root && !property.startsWith("background")) continue;
         const raw = style.getPropertyValue(property);
         const where = `${property}${pseudoElement ?? ""}: `;
         // Only elements draw controls, and highlight pseudo-elements never inherit the property.
@@ -850,6 +874,9 @@ test("Rendered pages: the scan reports hues put on a page on purpose, and no gra
 
   expect(await scanWith(page, {})).toEqual([]);
   for (const { name, css, html, hasHue } of SCAN_SAMPLES) {
+    // Firefox draws the file button in a faintly blue gray of its own, which the scan rightly
+    // reports. The Dashboard shows no such button: its file inputs are visually hidden.
+    if (name.includes("file button the browser draws") && engine() === "firefox") continue;
     expect((await scanWith(page, { css, html })).length > 0, name).toBe(hasHue);
   }
 
@@ -1881,6 +1908,7 @@ test.describe("on a touch screen", () => {
   });
 
   test("Holding a row: its background is rounded and stays inside the card", async ({ page }) => {
+    onlyInChromium("It drives the browser through the Chrome DevTools Protocol.");
     const name = unique("Held key");
     await createKey(page.request, name);
     await page.goto("/credentials");
@@ -1903,6 +1931,7 @@ test.describe("on a touch screen", () => {
   test("Holding a chart: a finger shows a bar's values only while it holds the chart, above the chart", async ({
     page,
   }) => {
+    onlyInChromium("It drives the browser through the Chrome DevTools Protocol.");
     // A second, empty backend, so the chart has a bar below the default backend's.
     await api(page.request, "POST", "/api/backends", {
       name: unique("Empty"),
@@ -2120,6 +2149,10 @@ const computed = (target: Locator, property: string): Promise<string> =>
 test("Selected text and spelling marks: the selection is gray, misspellings take the error color and grammar the information color", async ({
   page,
 }) => {
+  test.skip(
+    engine() === "firefox",
+    "Firefox draws spelling marks, but offers no ::spelling-error to style them.",
+  );
   await page.goto("/");
   await expect(levelOne(page)).toHaveText("Overview");
 
@@ -2250,8 +2283,11 @@ test("Rendered pages: the scan reports a red spelling mark and a checkbox left t
   await page.goto("/");
   await expect(levelOne(page)).toHaveText("Overview");
 
-  const css = "h1::spelling-error { text-decoration-color: rgb(255 0 0); }";
-  expect(await scanWith(page, { css })).not.toEqual([]);
+  // Firefox has no ::spelling-error, so there the rule styles nothing.
+  if (engine() !== "firefox") {
+    const css = "h1::spelling-error { text-decoration-color: rgb(255 0 0); }";
+    expect(await scanWith(page, { css })).not.toEqual([]);
+  }
   const html = "<input type='checkbox' checked style='accent-color: auto'>";
   expect(await scanWith(page, { html })).not.toEqual([]);
 });
@@ -2279,6 +2315,7 @@ const imageDescriptions = async (page: Page): Promise<Map<string, string>> => {
 };
 
 test("The storage chart in words: it names the bytes on each backend", async ({ page }) => {
+  onlyInChromium("It drives the browser through the Chrome DevTools Protocol.");
   await page.goto("/");
   await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
   // The default backend holds the sample, more than any backend the other tests add.
@@ -2313,11 +2350,13 @@ test("Charts on their card's grid: the longest label on the y axis starts where 
       const card = cardWith(page, heading);
       const { start } = await card.getByRole("img", { name }).evaluate(labelEdges);
       // Within 0.05 px: on a Mac, a label measured by its ink, as TanStack measures it, starts
-      // 0.69 px out. Each edge is checked on its own, so one run reports every chart and width
-      // that misses.
+      // 0.69 px out. Firefox and WebKit lay out a label's words by font metrics of their own, a
+      // pixel or so from Chromium's, so there it is within 1.5 px. Each edge is checked on its
+      // own, so one run reports every chart and width that misses.
+      const off = Math.abs(start - (await boxOf(heading)).x);
       expect
-        .soft(start, `${title}'s longest label at ${width} px`)
-        .toBeCloseTo((await boxOf(heading)).x, 1);
+        .soft(off, `${title}'s longest label at ${width} px`)
+        .toBeLessThan(engine() === "chromium" ? 0.05 : 1.5);
     }
   }
 });

@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import {
   blockClipboard,
   cardWith,
+  engine,
   levelOne,
   onScreen,
   shown,
@@ -151,7 +152,10 @@ test("Copying the address: the clipboard holds the WebDAV address and the button
   context,
   page,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // Only Chromium lets a test grant reading the clipboard; the others let the page write to it on
+  // a click, and the test reads the button's answer.
+  const reads = engine() === "chromium";
+  if (reads) await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/");
   const copy = page.getByRole("button", { name: "Copy address" });
   await shown(copy);
@@ -160,7 +164,11 @@ test("Copying the address: the clipboard holds the WebDAV address and the button
 
   await copy.click();
   await shown(page.getByRole("button", { name: "Copied" }));
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${WORKERS_ORIGIN}/dav/`);
+  if (reads) {
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      `${WORKERS_ORIGIN}/dav/`,
+    );
+  }
 });
 
 test("Copying is blocked: the field says the browser blocked copying and asks the user to copy the text", async ({

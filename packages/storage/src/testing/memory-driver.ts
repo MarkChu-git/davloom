@@ -30,6 +30,11 @@ export interface MemoryDriver extends ObjectStoreDriver {
   keys(): string[];
   /** Makes calls fail: return a failure for a call to fail it, or null to let it run. */
   failWhen(rule: ((call: DriverCall, key: string) => StorageFailure | null) | null): void;
+  /**
+   * Refuses keys as a store with rules of its own does: every call about a key, or a listing of a
+   * prefix, that `rule` holds for fails with `name-refused`, as does a copy onto such a key.
+   */
+  refuseKeys(rule: ((key: string) => boolean) | null): void;
   /** The calls made, for counting requests. */
   readonly calls: { call: DriverCall; key: string }[];
 }
@@ -53,11 +58,14 @@ export const createMemoryDriver = (options: MemoryDriverOptions = {}): MemoryDri
   const objects = new Map<string, StoredObject>();
   const calls: { call: DriverCall; key: string }[] = [];
   let rule: ((call: DriverCall, key: string) => StorageFailure | null) | null = null;
+  let keyRule: ((key: string) => boolean) | null = null;
+  const refusesKey = (key: string) => keyRule?.(key) ?? false;
   let counter = 0;
   const nextTag = () => `e${(counter += 1).toString(36)}`;
   const keys = () => [...objects.keys()].toSorted(compareKeys);
   const refused = (call: DriverCall, key: string): StorageFailure | null => {
     calls.push({ call, key });
+    if (refusesKey(key)) return "name-refused";
     return rule ? rule(call, key) : null;
   };
   const infoOf = (key: string, stored: StoredObject): ObjectInfo => ({
@@ -111,6 +119,9 @@ export const createMemoryDriver = (options: MemoryDriverOptions = {}): MemoryDri
     failWhen: (next) => {
       rule = next;
     },
+    refuseKeys: (next) => {
+      keyRule = next;
+    },
     head: (key) => {
       const failure = refused("head", key);
       if (failure) return Promise.resolve(fail(failure));
@@ -159,7 +170,7 @@ export const createMemoryDriver = (options: MemoryDriverOptions = {}): MemoryDri
       return Promise.resolve(ok(null));
     },
     copy: (from, to) => {
-      const failure = refused("copy", from);
+      const failure = refused("copy", from) ?? (refusesKey(to) ? "name-refused" : null);
       if (failure) return Promise.resolve(fail(failure));
       const stored = objects.get(from);
       if (!stored) return Promise.resolve(ok(false));

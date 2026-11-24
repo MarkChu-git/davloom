@@ -63,11 +63,51 @@ const FULL = new Set([
   "NotEnoughSpace",
 ]);
 
-/** The Port failure for an error that a call of the SDK raised. */
-export const failureOfError = (error: unknown): StorageFailure => {
+/**
+ * Error codes of a 400 with which S3 and S3-compatible stores refuse an object key. RustFS 1.0.6
+ * refuses a key with a control character, a part that it trims to `.` or `..` (it splits at `\`
+ * as well as `/`), a part of more than 255 bytes or a marker part of more than 246 with
+ * `InvalidArgument`. AWS S3 names a key of more than 1,024 bytes `KeyTooLongError`, and MinIO an
+ * invalid one `XMinioInvalidObjectName`. Davloom builds every other part of its requests, so a
+ * 400 with one of these codes is about the key, the only part a client chose. Other 400s, such as
+ * `RequestTimeout` or `IncompleteBody`, say a request went wrong and stay unavailable.
+ */
+const REFUSED_KEY = new Set([
+  "InvalidArgument",
+  "KeyTooLongError",
+  "InvalidObjectName",
+  "XMinioInvalidObjectName",
+]);
+
+/**
+ * The name the SDK gives an error whose answer had no code. A 400 without a body is RustFS's
+ * refusal of a key only in answer to HEAD, which never has a body; to any other request it comes
+ * from something that is not the store's judgement of the key, such as a wrong endpoint or a
+ * proxy, and must not make the store look empty.
+ */
+const NO_CODE = "Unknown";
+
+/** The request an error answered: HEAD, which has no body, or any other. */
+export type RequestKind = "head" | "other";
+
+/**
+ * RustFS writes the key into the message of its refusal, and when the key holds a control
+ * character it cannot write that message as XML, so it answers 500 with this message instead.
+ */
+const UNWRITABLE_REFUSAL = "XML response contains a control character";
+
+/** The Port failure for an error that a call of the SDK raised in answer to `request`. */
+export const failureOfError = (error: unknown, request: RequestKind = "other"): StorageFailure => {
   if (!(error instanceof S3ServiceException)) return "unavailable";
   if (error.name === "NoSuchKey" || error.name === "NotFound") return "not-found";
   if (error.name === "EntityTooLarge") return "too-large";
+  if (error.$metadata.httpStatusCode === 400) {
+    if (REFUSED_KEY.has(error.name)) return "name-refused";
+    if (error.name === NO_CODE && request === "head") return "name-refused";
+  }
+  if (error.name === "InternalError" && error.message === UNWRITABLE_REFUSAL) {
+    return "name-refused";
+  }
   // A conditional put (If-None-Match: *) that found an object with its key.
   if (error.name === "PreconditionFailed" || error.$metadata.httpStatusCode === 412)
     return "exists";
@@ -107,11 +147,14 @@ const createdOf = (metadata: Record<string, string> | undefined): number | undef
 };
 
 /** Runs one SDK call, and turns what it raises into a failure. */
-const call = async <T>(run: () => Promise<T>): Promise<StorageResult<T>> => {
+const call = async <T>(
+  run: () => Promise<T>,
+  request: RequestKind = "other",
+): Promise<StorageResult<T>> => {
   try {
     return ok(await run());
   } catch (error) {
-    const failure = failureOfError(error);
+    const failure = failureOfError(error, request);
     if (failure === "unavailable") console.error("S3 request failed", error);
     return fail(failure);
   }
@@ -150,7 +193,7 @@ export const createS3Driver = ({
             created: createdOf(found.Metadata),
             contentType: found.ContentType ?? null,
           };
-        }),
+        }, "head"),
       ),
 
     get: async (key, range) =>

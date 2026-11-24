@@ -2,6 +2,7 @@ import {
   createMemoryStorage,
   createMountedStorage,
   fail,
+  parentOf,
   relationOf,
   scopeStorage,
   type Mount,
@@ -12,6 +13,7 @@ import {
 import { authorizeScoped, type Access } from "@davloom/laws";
 import { createWebDavHandler } from "../handler";
 import { createMemoryLockStore } from "../locks";
+import type { Refuses } from "./names-cases";
 
 // The namespace the table tests run against: two Mounts, each on its own memory backend. The
 // `files` Mount can exist, have a backend that is unavailable, or not exist at all; `media` always
@@ -63,6 +65,41 @@ export const unavailableBackend = (): StorageBackend => {
   };
 };
 
+/**
+ * A backend on a store that refuses some names, as the object-store adapter on RustFS answers: a
+ * refused name is never stored, so it reads as absent, and an operation that would create an
+ * entry with it fails with `name-refused` once it has checked everything else and changed nothing.
+ */
+export const refusingBackend = (inner: StorageBackend, refuses: Refuses): StorageBackend => {
+  /** Whether creating an entry of `kind` at `path` reaches the store and is refused there. */
+  const refused = async (path: Path, kind: "file" | "collection") => {
+    if (path.length === 0 || !refuses(path, kind)) return false;
+    const parent = await inner.stat(parentOf(path));
+    return parent.ok && parent.value.kind === "collection" && !(await inner.stat(path)).ok;
+  };
+  /** Whether a copy or move from `from` would create a refused entry at `to`. */
+  const refusedTransfer = async (from: Path, to: Path) => {
+    const source = await inner.stat(from);
+    return source.ok && (await refused(to, source.value.kind));
+  };
+  return {
+    ...inner,
+    write: async (path, body, options) => {
+      if (await refused(path, "file")) {
+        await body?.cancel();
+        return fail("name-refused");
+      }
+      return inner.write(path, body, options);
+    },
+    createCollection: async (path) =>
+      (await refused(path, "collection")) ? fail("name-refused") : inner.createCollection(path),
+    copy: async (from, to, options) =>
+      (await refusedTransfer(from, to)) ? fail("name-refused") : inner.copy(from, to, options),
+    move: async (from, to, options) =>
+      (await refusedTransfer(from, to)) ? fail("name-refused") : inner.move(from, to, options),
+  };
+};
+
 const seed = async (backend: StorageBackend, mount: string) => {
   for (const collection of COLLECTIONS) {
     const [name, ...rest] = collection.split("/");
@@ -79,6 +116,8 @@ export interface WorldOptions {
   /** The key's roots, or null for a key that reaches every Mount. */
   readonly scope?: Scope;
   readonly access?: Access;
+  /** Names the store behind the `files` Mount refuses, as RustFS does on the self-hosted target. */
+  readonly refuses?: Refuses;
 }
 
 export interface Call {
@@ -99,7 +138,12 @@ export const buildWorld = async (options: WorldOptions = {}) => {
     mounts.unshift({
       name: "files",
       backendId: "files",
-      backend: state === "exists" ? filesBackend : unavailableBackend(),
+      backend:
+        state !== "exists"
+          ? unavailableBackend()
+          : options.refuses
+            ? refusingBackend(filesBackend, options.refuses)
+            : filesBackend,
       root: [],
     });
   }

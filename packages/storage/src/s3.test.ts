@@ -1,5 +1,7 @@
 import { S3ServiceException } from "@aws-sdk/client-s3";
+import { createMemoryPropertyStore } from "@davloom/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createObjectStoreStorage } from "./object-store";
 import {
   createS3Client,
   createS3Driver,
@@ -13,8 +15,13 @@ import {
 // The S3 driver's own rules, and its requests and their answers through a stubbed fetch, so these
 // run without a store. s3/rustfs.test.ts runs the driver against RustFS.
 
-const exception = (name: string, status = 400) =>
-  new S3ServiceException({ name, $fault: "client", $metadata: { httpStatusCode: status } });
+const exception = (name: string, status = 400, message?: string) =>
+  new S3ServiceException({
+    name,
+    message,
+    $fault: status < 500 ? "client" : "server",
+    $metadata: { httpStatusCode: status },
+  });
 
 describe("error mapping", () => {
   it.each([
@@ -33,12 +40,36 @@ describe("error mapping", () => {
     ["InvalidAccessKeyId", 403, "unavailable"],
     ["SlowDown", 503, "unavailable"],
     ["InternalError", 500, "unavailable"],
-    ["InvalidArgument", 400, "unavailable"],
-    ["KeyTooLongError", 400, "unavailable"],
+    // A 400 that refuses the key: RustFS's, its bodyless one to HEAD, AWS S3's and MinIO's.
+    ["InvalidArgument", 400, "name-refused"],
+    ["KeyTooLongError", 400, "name-refused"],
+    ["InvalidObjectName", 400, "name-refused"],
+    ["XMinioInvalidObjectName", 400, "name-refused"],
+    // Other 400s, and the same names with another status, say the request went wrong.
+    ["RequestTimeout", 400, "unavailable"],
+    ["IncompleteBody", 400, "unavailable"],
+    ["BadDigest", 400, "unavailable"],
+    // A 400 without a code, outside an answer to HEAD, is not the store's judgement of a key.
+    ["Unknown", 400, "unavailable"],
+    ["Unknown", 500, "unavailable"],
+    ["InvalidArgument", 500, "unavailable"],
     ["PreconditionFailed", 412, "exists"],
     ["SomethingElse", 412, "exists"],
   ])("maps %s (%i) to %s", (name, status, failure) => {
     expect(failureOfError(exception(name, status))).toBe(failure);
+  });
+
+  it("takes a 400 without a code for a refused key only in answer to HEAD", () => {
+    expect(failureOfError(exception("Unknown", 400), "head")).toBe("name-refused");
+    expect(failureOfError(exception("Unknown", 400), "other")).toBe("unavailable");
+    expect(failureOfError(exception("Unknown", 403), "head")).toBe("unavailable");
+    expect(failureOfError(exception("Unknown", 404), "head")).toBe("unavailable");
+  });
+
+  it("maps RustFS's refusal of a key it cannot write into XML to name-refused", () => {
+    const refusal = exception("InternalError", 500, "XML response contains a control character");
+    expect(failureOfError(refusal)).toBe("name-refused");
+    expect(failureOfError(exception("InternalError", 500, "We hit a problem"))).toBe("unavailable");
   });
 
   it.each([
@@ -341,6 +372,62 @@ describe("S3 driver requests", () => {
       ok: false,
       failure: "too-large",
     });
+  });
+
+  it("reports a key the store refuses as name-refused, whichever call names it", async () => {
+    // RustFS answers HEAD with a bare 400, and the other calls with InvalidArgument.
+    answer = ({ method }) =>
+      method === "HEAD" ? new Response(null, { status: 400 }) : s3Error("InvalidArgument", 400);
+    const refused = { ok: false, failure: "name-refused" };
+    expect(await driver().head("a\\..\\b")).toEqual(refused);
+    expect(await driver().get("a\\..\\b")).toEqual(refused);
+    expect(await driver().list("a\\..\\b/", { recursive: true, limit: 1 })).toEqual(refused);
+    expect(await driver().put("a\\..\\b", null, { length: 0, created: 1 })).toEqual(refused);
+    expect(await driver().copy("f", "a\\..\\b")).toEqual(refused);
+    // A refusal is the client's to change, not a fault of the store worth logging.
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
+  it("takes a bare 400 to anything but HEAD for an unavailable store, and logs it", async () => {
+    // A wrong endpoint or a proxy that answers 400 must not make the store look empty.
+    answer = () => new Response(null, { status: 400 });
+    const unavailable = { ok: false, failure: "unavailable" };
+    expect(await driver().list("p/", { recursive: true, limit: 1 })).toEqual(unavailable);
+    expect(await driver().get("f")).toEqual(unavailable);
+    expect(await driver().put("f", null, { length: 0, created: 1 })).toEqual(unavailable);
+    expect(console.error).toHaveBeenCalledTimes(3);
+    expect(await driver().head("f")).toEqual({ ok: false, failure: "name-refused" });
+    expect(console.error).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps an object whose HEAD answers a bare 400 from being overwritten", async () => {
+    // AWS S3 answers HEAD of an object stored with a customer's key (SSE-C) so.
+    answer = ({ method, url }) => {
+      if (method === "HEAD") {
+        return url.pathname === "/b/b"
+          ? new Response(null, { status: 400 })
+          : new Response(null, { headers: { "content-length": "1", etag: '"a"' } });
+      }
+      if (method === "GET") {
+        const listed = url.searchParams.get("prefix") === "b";
+        return listing(
+          listed ? "<Contents><Key>b</Key><Size>1</Size></Contents>" : "",
+          "<EncodingType>url</EncodingType>",
+        );
+      }
+      return xml('<CopyObjectResult><ETag>"c"</ETag></CopyObjectResult>');
+    };
+    const storage = createObjectStoreStorage({
+      driver: driver(),
+      prefix: "",
+      properties: createMemoryPropertyStore(),
+    });
+    expect(await storage.copy(["a"], ["b"], { overwrite: false, shallow: false })).toEqual({
+      ok: false,
+      failure: "unavailable",
+    });
+    expect(seen.some((request) => request.method === "PUT")).toBe(false);
+    expect(console.error).toHaveBeenCalledWith("the store refused to read an object it lists", "b");
   });
 
   it("deletes in batches and ignores keys that were already gone", async () => {

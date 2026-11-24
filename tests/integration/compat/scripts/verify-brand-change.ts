@@ -61,9 +61,20 @@ try {
     savedBrand.replace(`accent: ["${currentAccent}"`, `accent: ["${NEW_ACCENT}"`),
   );
   if (rebuild() === 0) {
-    exitCode = run(["bunx", "--bun", "playwright", "test", "ui/styles.spec.ts"], COMPAT_DIRECTORY, {
-      DAVLOOM_EXPECTED_BRAND_LIGHT: NEW_ACCENT,
-    });
+    // In Chromium, on both runtimes: the ui job runs the same spec in Firefox and WebKit.
+    exitCode = run(
+      [
+        "bunx",
+        "--bun",
+        "playwright",
+        "test",
+        "ui/styles.spec.ts",
+        "--project=bun",
+        "--project=workers",
+      ],
+      COMPAT_DIRECTORY,
+      { DAVLOOM_EXPECTED_BRAND_LIGHT: NEW_ACCENT },
+    );
   }
 } finally {
   await Bun.write(BRAND_FILE, savedBrand);

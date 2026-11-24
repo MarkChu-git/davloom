@@ -104,7 +104,9 @@ export interface PutOptions {
 
 /**
  * The calls an object store supplies. Each returns a result instead of throwing, with the store's
- * own errors already turned into Port failures.
+ * own errors already turned into Port failures. A store that refuses a key for good, as a store
+ * that keeps objects as files refuses some, fails the call with `name-refused`: for a head, a
+ * read or a listing, the adapter takes that as no object, since none can have the key.
  */
 export interface ObjectStoreDriver {
   /** The object at `key`, or null when there is none. */
@@ -391,21 +393,35 @@ const attempt = async <T>(run: () => Promise<StorageResult<T>>): Promise<Storage
   }
 };
 
-/** Runs `work` on every item, at most `limit` at a time. */
+/**
+ * Runs `work` on every item, at most `limit` at a time. Once one fails, no lane starts another
+ * item, and the first failure is thrown only after every item under way has ended, so nothing
+ * runs on behind a caller that cleans up after the failure.
+ */
 const inParallel = async <T>(
   items: readonly T[],
   limit: number,
   work: (item: T) => Promise<void>,
 ) => {
   let next = 0;
+  let failed = false;
   const lane = async () => {
-    while (next < items.length) {
+    while (next < items.length && !failed) {
       const item = items[next];
       next += 1;
-      if (item !== undefined) await work(item);
+      try {
+        if (item !== undefined) await work(item);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane));
+  const lanes = await Promise.allSettled(
+    Array.from({ length: Math.min(limit, items.length) }, lane),
+  );
+  const rejected = lanes.find((settled) => settled.status === "rejected");
+  if (rejected) throw rejected.reason;
 };
 
 /** What a path reaches, and what the store holds at its keys. */
@@ -420,8 +436,58 @@ interface Probe {
 const ROOT_PROBE: Probe = { node: "collection", file: null, marker: true };
 const ABSENT_PROBE: Probe = { node: "absent", file: null, marker: false };
 
+/** A refused key holds no object, and no key starts with a refused prefix. */
+const absentIfRefused = <T>(result: StorageResult<T>, absent: T): StorageResult<T> =>
+  !result.ok && result.failure === "name-refused" ? ok(absent) : result;
+
+const EMPTY_PAGE: ListPage = { objects: [], prefixes: [], cursor: null };
+
+/**
+ * The driver with the reads of a refused key answered as finding nothing, so a name the store
+ * refuses is absent, as it is on any backend that never kept it: a read, a delete or a lookup of
+ * it answers 404, and an entry below it 409. So is the first page of a listing of a refused
+ * prefix. Writes and copies still fail with `name-refused`.
+ */
+export const readingRefusedAsAbsent = (driver: ObjectStoreDriver): ObjectStoreDriver => {
+  /**
+   * Whether a key whose head or read the store refused is really absent. A refusal does not
+   * always come from the key's name: AWS S3 answers HEAD of an object stored with a customer's
+   * key (SSE-C) with a bare 400, and a proxy may too. Taking such an object for absent would let
+   * a copy without overwrite, or a new file, replace it. A listing of the key as a prefix shows
+   * the key first if it exists, since no longer key sorts before it; only when it does not, or the
+   * store refuses that prefix too, is the key absent.
+   */
+  const confirmAbsent = async <T>(key: string, refused: StorageResult<T>) => {
+    if (refused.ok || refused.failure !== "name-refused") return refused;
+    const page = await driver.list(key, { recursive: true, limit: 1 });
+    if (!page.ok) return page.failure === "name-refused" ? ok(null) : fail(page.failure);
+    if (page.value.objects.some((object) => object.key === key)) {
+      console.error("the store refused to read an object it lists", key);
+      return fail("unavailable");
+    }
+    return ok(null);
+  };
+  return {
+    ...driver,
+    head: async (key) => confirmAbsent(key, await driver.head(key)),
+    get: async (key, range) => confirmAbsent(key, await driver.get(key, range)),
+    list: async (key, listOptions) => {
+      const page = await driver.list(key, listOptions);
+      // Only the first page names the prefix alone. A later page that the store refuses was refused
+      // for its cursor, not its prefix: taking it as the end would cut the listing short, and a
+      // remove, copy or move would then act on part of a collection and report success.
+      if (!page.ok && page.failure === "name-refused" && listOptions.cursor) {
+        console.error("the store refused a later page of a listing", key);
+        return fail("unavailable");
+      }
+      return absentIfRefused(page, EMPTY_PAGE);
+    },
+  };
+};
+
 export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBackend => {
-  const { driver, prefix, properties } = options;
+  const { prefix, properties } = options;
+  const driver = readingRefusedAsAbsent(options.driver);
   if (prefix !== "" && !prefix.endsWith("/")) {
     throw new Error("an object store's key prefix must be empty or end with /");
   }
@@ -556,9 +622,21 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
         // do the properties of what is left.
         const sourceMarker = markerKey(prefix, from);
         const targetMarker = markerKey(prefix, to);
-        await inParallel(sourceKeys, PARALLEL_COPIES, async (key) => {
-          must(await driver.copy(key, `${targetMarker}${key.slice(sourceMarker.length)}`));
-        });
+        // The destination already holds what the stopped move copied. What this request adds to
+        // it, it takes away again if the store refuses a name part-way, so that answer is true.
+        const held = new Set((await listAll(targetMarker)).map((object) => object.key));
+        const added: string[] = [];
+        try {
+          await inParallel(sourceKeys, PARALLEL_COPIES, async (key) => {
+            const target = `${targetMarker}${key.slice(sourceMarker.length)}`;
+            if (must(await driver.copy(key, target)) && !held.has(target)) added.push(target);
+          });
+        } catch (error) {
+          if (!(error instanceof Stop) || error.failure !== "name-refused") throw error;
+          // The keys it held got the same source's objects again; the source is whole.
+          await removeKeys(added);
+          return fail("name-refused");
+        }
         await keepCollection(parentOf(from), sourceParent);
         must(await properties.moveTree(from, to));
         await removeKeys(sourceKeys);
@@ -580,20 +658,44 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
     // recorded: such a record would make a later move of the new content resume.
     must(await properties.removeTree(journalPath(to)));
 
-    if (source.node === "file") {
-      if (!must(await driver.copy(fileKey(prefix, from), fileKey(prefix, to)))) {
-        return fail("not-found");
+    // The keys this request has written at the destination, which held none of them: what it
+    // takes away again when the store refuses one of the names part-way.
+    const written: string[] = [];
+    try {
+      if (source.node === "file") {
+        if (!must(await driver.copy(fileKey(prefix, from), fileKey(prefix, to)))) {
+          return fail("not-found");
+        }
+      } else {
+        const sourceMarker = markerKey(prefix, from);
+        const targetMarker = markerKey(prefix, to);
+        const copy = async (key: string) => {
+          const target = `${targetMarker}${key.slice(sourceMarker.length)}`;
+          // An object that went away since the listing is no longer part of the tree.
+          if (must(await driver.copy(key, target))) written.push(target);
+        };
+        if (shallow || !source.marker) {
+          must(await driver.put(targetMarker, null, { length: 0, created: now() }));
+          written.push(targetMarker);
+        } else if (sourceKeys.includes(sourceMarker)) {
+          // The marker goes first, so a store that refuses the destination's name refuses it
+          // before any entry arrives there.
+          await copy(sourceMarker);
+        }
+        await inParallel(
+          sourceKeys.filter((key) => key !== sourceMarker),
+          PARALLEL_COPIES,
+          copy,
+        );
       }
-    } else {
-      const sourceMarker = markerKey(prefix, from);
-      const targetMarker = markerKey(prefix, to);
-      if (shallow || !source.marker) {
-        must(await driver.put(targetMarker, null, { length: 0, created: now() }));
-      }
-      await inParallel(sourceKeys, PARALLEL_COPIES, async (key) => {
-        // An object that went away since the listing is no longer part of the tree.
-        must(await driver.copy(key, `${targetMarker}${key.slice(sourceMarker.length)}`));
-      });
+    } catch (error) {
+      if (!(error instanceof Stop) || error.failure !== "name-refused") throw error;
+      // A store may refuse a key below the destination only once others arrived there, such as
+      // one past AWS S3's 1,024 bytes. The source is whole, since nothing of it has gone yet, and
+      // the destination goes back to holding nothing, so the answer can say what changed: nothing,
+      // or, when the request was to replace an entry, that entry, which was already removed.
+      await removeKeys(written);
+      return fail(outcome.replaces ? "name-refused-replaced" : "name-refused");
     }
 
     if (move) {

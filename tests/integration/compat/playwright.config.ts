@@ -55,6 +55,31 @@ const SIZES = [
   { name: "phone-430-dark", viewport: { width: 430, height: 932 }, colorScheme: "dark" },
 ] as const;
 
+/** Firefox and WebKit: at a desktop size with every Worker spec, and at a tablet and phone size. */
+const OTHER_BROWSERS: {
+  name: string;
+  device: "Desktop Firefox" | "Desktop Safari";
+  viewport?: { width: number; height: number };
+  colorScheme?: "light" | "dark";
+  testMatch?: string[];
+}[] = [
+  { name: "firefox", device: "Desktop Firefox" },
+  { name: "webkit", device: "Desktop Safari" },
+  {
+    name: "webkit-phone",
+    device: "Desktop Safari",
+    viewport: { width: 390, height: 844 },
+    testMatch: CORE_FLOWS,
+  },
+  {
+    name: "firefox-tablet-dark",
+    device: "Desktop Firefox",
+    viewport: { width: 820, height: 1180 },
+    colorScheme: "dark",
+    testMatch: CORE_FLOWS,
+  },
+];
+
 /** Starts the production Worker in local workerd, with the secrets a deployment sets. */
 const worker = (port: number) => ({
   command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${port}`,
@@ -107,6 +132,24 @@ export default defineConfig({
       dependencies: ["setup"],
       testMatch: CORE_FLOWS,
       grepInvert: /@desktop/,
+    })),
+    // Every Worker spec again in Firefox and WebKit at a desktop size, and the core flows on a
+    // WebKit phone and a Firefox tablet (PRD §11: the core flows in three browsers).
+    ...OTHER_BROWSERS.map(({ name, device, viewport, colorScheme, testMatch }) => ({
+      name,
+      use: {
+        ...devices[device],
+        baseURL: WORKERS_ORIGIN,
+        storageState: STATE.workers,
+        timezoneId: "UTC",
+        launchOptions: {},
+        ...(viewport ? { viewport } : {}),
+        ...(colorScheme ? { colorScheme } : {}),
+      },
+      dependencies: ["setup"],
+      ...(testMatch
+        ? { testMatch, grepInvert: /@desktop/ }
+        : { testIgnore: ["dev-server.spec.ts", "no-api.spec.ts", "instances.setup.ts"] }),
     })),
   ],
   webServer: [
