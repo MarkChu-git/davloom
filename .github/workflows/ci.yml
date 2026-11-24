@@ -230,6 +230,12 @@ jobs:
   ui:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # Playwright's image holds the three browsers and the libraries they need, at the version
+    # tests/integration/compat pins, so nothing comes from Ubuntu's mirror, which served those
+    # libraries slowly enough to run shards into the job's limit.
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.1-noble@sha256:1507cbfc550a63a6b7396791ca4f00df17beb56342d2447b3f106c306f525579
+      options: --ipc=host
     strategy:
       fail-fast: false
       matrix:
@@ -238,49 +244,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # setup-bun unpacks Bun's zip with unzip, which the image may lack: one small package.
+      - name: Install unzip
+        run: command -v unzip || (apt-get update -q && apt-get install -y -q unzip)
       - name: Set up Bun and install dependencies
         uses: ./.github/actions/setup
-      # The key names what decides the browser builds: the Ubuntu release, the CPU, the Playwright
-      # version and the arguments of playwright:install, not the rest of bun.lock. actions/cache
-      # saves nothing after a hit, so a key that missed a change would download on every run.
-      - name: Compute the Playwright browser cache key
-        id: playwright
+      - name: Check that the image's Playwright is the one the tests pin
         working-directory: tests/integration/compat
         run: |
           bun -e '
-            const { scripts } = await Bun.file("package.json").json();
             const { version } = await Bun.file("node_modules/@playwright/test/package.json").json();
-            if (!process.env.ImageOS) throw new Error("ImageOS is not set");
-            const install = scripts["playwright:install"].replace(/[^A-Za-z0-9.]+/g, "-");
-            console.log(`key=browsers-${process.env.ImageOS}-${process.arch}-${version}-${install}`);
-          ' >> "$GITHUB_OUTPUT"
-      - name: Cache the Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ steps.playwright.outputs.key }}
-      # The runner image has what Chromium needs, but not the libraries of Firefox and WebKit,
-      # and playwright:install stops when a browser it installed cannot start. Ubuntu's mirror
-      # can serve the 180-odd packages at a crawl, so the packages are cached, and a download
-      # that stalls is stopped and tried again rather than left to run into the job's limit.
-      - name: Cache the packages of the Firefox and WebKit libraries
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.playwright.outputs.key }}
-      - name: Install the system libraries of Firefox and WebKit
-        working-directory: tests/integration/compat
-        timeout-minutes: 15
-        run: |
-          mkdir -p ~/apt-archives
-          sudo cp ~/apt-archives/*.deb /var/cache/apt/archives/ 2>/dev/null || true
-          for attempt in 1 2 3; do
-            if timeout 300 bunx --bun playwright install-deps firefox webkit; then break; fi
-            if [ "$attempt" = 3 ]; then exit 1; fi
-            echo "::warning::installing the libraries failed or stalled, attempt $attempt"
-          done
-          cp /var/cache/apt/archives/*.deb ~/apt-archives/ 2>/dev/null || true
-      - run: bun run --filter @davloom/compat-tests playwright:install
+            if (version !== "1.65.1") throw new Error(`@playwright/test is ${version}; update the ui image`);
+          '
       - name: Build the Dashboard
         run: bun run --filter @davloom/compat-tests build:web
       - name: Run shard ${{ matrix.shard }} of 6 of the Playwright specs
