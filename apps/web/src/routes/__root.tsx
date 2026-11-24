@@ -30,6 +30,8 @@ export const Route = createRootRoute({
       // hydration finds it as rendered; the scheme in use is set on <html>.
       { name: "color-scheme", content: SUPPORTED_COLOR_SCHEMES },
       { title: "Davloom" },
+      // Prerendered, so the page has one before any script runs; each page's route names its own.
+      { name: "description", content: "Davloom: your own WebDAV storage and its Dashboard." },
     ],
     links: [
       { rel: "stylesheet", href: globals },
