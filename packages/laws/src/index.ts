@@ -45,3 +45,13 @@ export {
   type PropertySource,
   type PropfindQuery,
 } from "./properties";
+export {
+  classifyObjectError,
+  confirmRefusedRead,
+  copyRefusal,
+  refusedPage,
+  type ObjectErrorCode,
+  type ObjectFailure,
+  type RefusedListing,
+  type RefusedRead,
+} from "./objects";

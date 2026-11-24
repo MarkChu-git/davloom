@@ -55,6 +55,19 @@ const FINITE: Record<string, string[]> = {
     "S.FTooMany{}",
   ],
   "F.Query": ["F.QAllProp{}", "F.QPropName{}", "F.QPropDav{}", "F.QPropOther{}"],
+  "O.Code": [
+    "O.CNotStore{}",
+    "O.CNoSuchKey{}",
+    "O.CTooLarge{}",
+    "O.CRefusedKey{}",
+    "O.CNoCode{}",
+    "O.CUnwritable{}",
+    "O.CPrecondition{}",
+    "O.CFull{}",
+    "O.COther{}",
+  ],
+  "O.Status": ["O.S400{}", "O.S412{}", "O.S507{}", "O.SOther{}"],
+  "O.Listing": ["O.LShowsKey{}", "O.LNotKey{}", "O.LRefused{}", "O.LFailed{}"],
   "K.IfState": ["K.NoHeader{}", "K.Malformed{}", "K.NoneTrue{}", "K.SomeTrue{}"],
 };
 

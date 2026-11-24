@@ -9,6 +9,7 @@ import ./src/copying.bend as M
 import ./src/locks.bend as K
 import ./src/statuses.bend as S
 import ./src/properties.bend as F
+import ./src/objects.bend as O
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -1049,3 +1050,112 @@ law propfind_dav_skip_sound:
   for quota_value: Bool
   for live_value: Bool
   {F.source(True{}, quota_name, collection, quota_value, live_value, True{}) == F.source(True{}, quota_name, collection, quota_value, live_value, False{}) : F.Source}
+
+# --- Object stores: errors and refused keys ---------------------------------------------------
+
+def code_index(c: O.Code) -> Nat:
+  match c:
+    case O.CNotStore{}:
+      0n
+    case O.CNoSuchKey{}:
+      1n
+    case O.CTooLarge{}:
+      2n
+    case O.CRefusedKey{}:
+      3n
+    case O.CNoCode{}:
+      4n
+    case O.CUnwritable{}:
+      5n
+    case O.CPrecondition{}:
+      6n
+    case O.CFull{}:
+      7n
+    case O.COther{}:
+      8n
+
+def status_index(s: O.Status) -> Nat:
+  match s:
+    case O.S400{}:
+      400n
+    case O.S412{}:
+      412n
+    case O.S507{}:
+      507n
+    case O.SOther{}:
+      0n
+
+def refused(f: O.Failure) -> Bool:
+  match f:
+    case O.ONameRefused{}:
+      True{}
+    case O.ONotFound{}:
+      False{}
+    case O.OTooLarge{}:
+      False{}
+    case O.OExists{}:
+      False{}
+    case O.OFull{}:
+      False{}
+    case O.OUnavailable{}:
+      False{}
+
+# The store's answer is about the key: a 400 with a key-refusal code, a codeless 400 to HEAD, or
+# RustFS's unwritable refusal.
+def about_key(+c: O.Code, +s: O.Status, +head: Bool) -> Bool:
+  Bool.or(Nat.is_eq(code_index(c), 5n), Bool.and(Nat.is_eq(status_index(s), 400n), Bool.or(Nat.is_eq(code_index(c), 3n), Bool.and(Nat.is_eq(code_index(c), 4n), head))))
+
+def spec_classify(+c: O.Code, +s: O.Status, +head: Bool) -> O.Failure:
+  Bool.pick(O.Failure, Nat.is_eq(code_index(c), 0n), O.OUnavailable{},
+    Bool.pick(O.Failure, Nat.is_eq(code_index(c), 1n), O.ONotFound{},
+      Bool.pick(O.Failure, Nat.is_eq(code_index(c), 2n), O.OTooLarge{},
+        Bool.pick(O.Failure, about_key(c, s, head), O.ONameRefused{},
+          Bool.pick(O.Failure, Bool.or(Nat.is_eq(code_index(c), 6n), Nat.is_eq(status_index(s), 412n)), O.OExists{},
+            Bool.pick(O.Failure, Bool.or(Nat.is_eq(code_index(c), 7n), Nat.is_eq(status_index(s), 507n)), O.OFull{}, O.OUnavailable{}))))))
+
+# Each error of the store means what the specification says, checked in its order.
+law object_error_exact:
+  for c: O.Code
+  for s: O.Status
+  for head: Bool
+  {O.classify(c, s, head) == spec_classify(c, s, head) : O.Failure}
+
+# A key counts as refused only on the store's own word about the key, so no other failure can make
+# the store look empty or let a write go ahead.
+law object_refusal_about_key:
+  for c: O.Code
+  for s: O.Status
+  for head: Bool
+  {implies(refused(O.classify(c, s, head)), about_key(c, s, head)) == True{} : Bool}
+
+# A codeless answer to anything but HEAD is never a refusal.
+law object_codeless_not_refused:
+  for s: O.Status
+  {refused(O.classify(O.CNoCode{}, s, False{})) == False{} : Bool}
+
+def spec_confirm(l: O.Listing) -> O.Confirm:
+  match l:
+    case O.LShowsKey{}:
+      O.Fault{}
+    case O.LNotKey{}:
+      O.Absent{}
+    case O.LRefused{}:
+      O.Absent{}
+    case O.LFailed{}:
+      O.ListingFailure{}
+
+# A refused read is absent only when a listing of the key as a prefix does not show the key, or
+# refuses the prefix too; a listing that shows it is a fault, and one that fails passes its failure.
+law refused_read_absent_exact:
+  for l: O.Listing
+  {O.confirm_absent(l) == spec_confirm(l) : O.Confirm}
+
+# A refused later page of a listing is a fault, never the end of the listing.
+law refused_page_exact:
+  for later: Bool
+  {O.refused_page(later) == Bool.pick(O.Page, later, O.PageFault{}, O.EmptyPage{}) : O.Page}
+
+# A copy or move refused part-way says that the destination it replaced is gone, and only then.
+law copy_refused_exact:
+  for replaces: Bool
+  {O.copy_refused(replaces) == Bool.pick(O.Refusal, replaces, O.RReplacedGone{}, O.RNothingChanged{}) : O.Refusal}

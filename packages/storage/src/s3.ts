@@ -13,6 +13,7 @@ import { Upload } from "@aws-sdk/lib-storage";
 import { fail, ok, type StorageFailure, type StorageResult } from "@davloom/core";
 import { FetchHttpHandler } from "@smithy/fetch-http-handler";
 import { DELETE_BATCH, type ObjectInfo, type ObjectStoreDriver } from "./object-store";
+import { classifyObjectError, type ObjectErrorCode } from "@davloom/laws";
 
 // The S3 driver of the object-store adapter, on the AWS SDK's S3Client (Decision 6 of
 // add-phase-1-core). Requests go through the SDK's fetch handler on every runtime: Workers have
@@ -96,26 +97,29 @@ export type RequestKind = "head" | "other";
  */
 const UNWRITABLE_REFUSAL = "XML response contains a control character";
 
-/** The Port failure for an error that a call of the SDK raised in answer to `request`. */
-export const failureOfError = (error: unknown, request: RequestKind = "other"): StorageFailure => {
-  if (!(error instanceof S3ServiceException)) return "unavailable";
-  if (error.name === "NoSuchKey" || error.name === "NotFound") return "not-found";
+/** The code of an SDK error, sorted into what the proven classification tells apart. */
+const codeOf = (error: unknown): ObjectErrorCode => {
+  if (!(error instanceof S3ServiceException)) return "not-store";
+  if (error.name === "NoSuchKey" || error.name === "NotFound") return "no-such-key";
   if (error.name === "EntityTooLarge") return "too-large";
-  if (error.$metadata.httpStatusCode === 400) {
-    if (REFUSED_KEY.has(error.name)) return "name-refused";
-    if (error.name === NO_CODE && request === "head") return "name-refused";
-  }
+  if (REFUSED_KEY.has(error.name)) return "refused-key";
+  if (error.name === NO_CODE) return "no-code";
   if (error.name === "InternalError" && error.message === UNWRITABLE_REFUSAL) {
-    return "name-refused";
+    return "unwritable-refusal";
   }
   // A conditional put (If-None-Match: *) that found an object with its key.
-  if (error.name === "PreconditionFailed" || error.$metadata.httpStatusCode === 412)
-    return "exists";
-  if (FULL.has(error.name) || error.$metadata.httpStatusCode === 507) {
-    return "insufficient-storage";
-  }
-  return "unavailable";
+  if (error.name === "PreconditionFailed") return "precondition";
+  if (FULL.has(error.name)) return "full";
+  return "other";
 };
+
+/** The Port failure for an error that a call of the SDK raised in answer to `request`. */
+export const failureOfError = (error: unknown, request: RequestKind = "other"): StorageFailure =>
+  classifyObjectError(
+    codeOf(error),
+    error instanceof S3ServiceException ? error.$metadata.httpStatusCode : undefined,
+    request === "head",
+  );
 
 /** S3 quotes its ETags. */
 export const unquote = (etag: string | undefined): string =>

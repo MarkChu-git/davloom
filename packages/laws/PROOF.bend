@@ -10,6 +10,7 @@ import ./src/copying.bend as M
 import ./src/locks.bend as K
 import ./src/statuses.bend as S
 import ./src/properties.bend as F
+import ./src/objects.bend as O
 
 # Lemmas the hand-written proofs share.
 
@@ -7024,3 +7025,513 @@ def L.propfind_dav_skip_sound(quota_name, collection, quota_value, live_value):
                   {==}
                 case True{}:
                   {==}
+
+def L.object_error_exact(c, s, head):
+  match c:
+    case O.CNotStore{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoSuchKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CTooLarge{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CRefusedKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoCode{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CUnwritable{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CPrecondition{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CFull{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.COther{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.object_refusal_about_key(c, s, head):
+  match c:
+    case O.CNotStore{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoSuchKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CTooLarge{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CRefusedKey{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CNoCode{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CUnwritable{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CPrecondition{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.CFull{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+    case O.COther{}:
+      match s:
+        case O.S400{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S412{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.S507{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+        case O.SOther{}:
+          match head:
+            case False{}:
+              {==}
+            case True{}:
+              {==}
+
+def L.object_codeless_not_refused(s):
+  match s:
+    case O.S400{}:
+      {==}
+    case O.S412{}:
+      {==}
+    case O.S507{}:
+      {==}
+    case O.SOther{}:
+      {==}
+
+def L.refused_read_absent_exact(l):
+  match l:
+    case O.LShowsKey{}:
+      {==}
+    case O.LNotKey{}:
+      {==}
+    case O.LRefused{}:
+      {==}
+    case O.LFailed{}:
+      {==}
+
+def L.refused_page_exact(later):
+  match later:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.copy_refused_exact(replaces):
+  match replaces:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
