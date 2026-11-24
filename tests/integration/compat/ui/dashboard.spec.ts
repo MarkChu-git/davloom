@@ -410,7 +410,7 @@ const STATES: readonly PageState[] = [
       await page.getByRole("button", { name: "Change password" }).click();
       const dialog = page.getByRole("dialog", { name: "Change password" });
       await dialog.getByRole("button", { name: "Change password" }).click();
-      await shown(dialog.getByText("Enter your current password."));
+      await shown(dialog.getByText("Enter your current password.", { exact: true }));
     },
   },
   {

@@ -255,6 +255,9 @@ describe("export and import", () => {
 
 // --- Imports that must change nothing -----------------------------------------------------
 
+/** The text with its first character changed. */
+const flipFirst = (text: string) => `${text.startsWith("A") ? "B" : "A"}${text.slice(1)}`;
+
 const crafted = async (change: (tables: ArchiveTables) => ArchiveTables) => {
   const source = instance(SECRET_A);
   await seed(source);
@@ -387,7 +390,8 @@ describe("an import that fails changes nothing", () => {
       ["not an object", () => "text", /not a Davloom export/],
       ["another format", (f) => ({ ...f, format: "other" }), /not a Davloom export/],
       ["another version", (f) => ({ ...f, version: 2 }), /version 1 only/],
-      ["damaged data", (f) => ({ ...f, data: `A${String(f["data"]).slice(1)}` }), /does not open/],
+      // The first character changes, whatever it was.
+      ["damaged data", (f) => ({ ...f, data: flipFirst(String(f["data"])) }), /does not open/],
       ["data that is not base64", (f) => ({ ...f, data: "%%%" }), /damaged/],
       ["a short IV", (f) => ({ ...f, iv: "AAAA" }), /damaged/],
     ];

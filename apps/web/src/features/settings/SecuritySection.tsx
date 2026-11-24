@@ -294,6 +294,16 @@ type SecurityDialog =
   | { step: "new-codes" }
   | { step: "disable" };
 
+/** The title of each step, which names the dialog for assistive technology. */
+const DIALOG_TITLES: Readonly<Record<SecurityDialog["step"], string>> = {
+  password: "Change password",
+  enable: "Set up two-step verification",
+  scan: "Set up two-step verification",
+  codes: "Backup codes",
+  "new-codes": "New backup codes",
+  disable: "Turn off two-step verification",
+};
+
 const label = (name: string | null) => name ?? "Passkey";
 
 const PasskeysPart = () => {
@@ -584,6 +594,7 @@ export const SecurityContent = () => {
         }}
         purpose={dialog?.step === "codes" ? "required" : "form"}
         width={440}
+        aria-label={dialog === undefined ? undefined : DIALOG_TITLES[dialog.step]}
       >
         <VStack key={dialogKey}>{content}</VStack>
       </Dialog>

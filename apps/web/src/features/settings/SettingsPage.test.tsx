@@ -238,7 +238,7 @@ describe("SettingsPage", () => {
       "POST /api/auth/change-password": () => json({ token: null }),
     });
     await userEvent.click(screen.getByRole("button", { name: "Change password" }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "Change password" });
     await userEvent.type(within(dialog).getByLabelText("Current password"), "the old password");
     await userEvent.click(within(dialog).getByRole("button", { name: "Generate" }));
     const generated = newPassword(dialog);
@@ -301,7 +301,7 @@ describe("SettingsPage", () => {
     });
     expect(screen.getByText("Off")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Set up" }));
-    let dialog = await screen.findByRole("dialog");
+    let dialog = await screen.findByRole("dialog", { name: "Set up two-step verification" });
     await userEvent.type(within(dialog).getByLabelText("Password"), "my password{Enter}");
     expect(await within(dialog).findByAltText("QR code for the authenticator app")).toBeTruthy();
     expect(within(dialog).getByRole<HTMLInputElement>("textbox", { name: "Setup key" }).value).toBe(
@@ -311,7 +311,7 @@ describe("SettingsPage", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Turn on" }));
     expect((await screen.findAllByText("Two-step verification is on.")).length).toBeGreaterThan(0);
     // The codes show once, so only Done closes their dialog.
-    dialog = await screen.findByRole("alertdialog");
+    dialog = await screen.findByRole("alertdialog", { name: "Backup codes" });
     expect(
       within(dialog).getByRole<HTMLInputElement>("textbox", { name: "Backup codes" }).value,
     ).toBe("aaaa-bbbb cccc-dddd");

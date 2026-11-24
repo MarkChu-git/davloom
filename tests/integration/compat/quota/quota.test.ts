@@ -390,7 +390,8 @@ const ROWS: readonly Row[] = [
         body: JSON.stringify({ name: "quota", access: "read-only" }),
       }),
     status: 201,
-    budget: budget({ d1Queries: 3, d1Calls: 3, d1RowsRead: 3, d1RowsWritten: 5 }),
+    // Two of the queries read the session and its user for the step-up check (verification.ts).
+    budget: budget({ d1Queries: 5, d1Calls: 5, d1RowsRead: 5, d1RowsWritten: 5 }),
   },
   {
     name: "DELETE /api/keys/:id",
@@ -404,7 +405,8 @@ const ROWS: readonly Row[] = [
     request: ({ davloom, state }) =>
       davloom.api(`/api/keys/${state.id ?? ""}`, { method: "DELETE" }),
     status: 200,
-    budget: budget({ d1Queries: 3, d1Calls: 3, d1RowsRead: 4, d1RowsWritten: 1 }),
+    // Two of the queries read the session and its user for the step-up check (verification.ts).
+    budget: budget({ d1Queries: 5, d1Calls: 5, d1RowsRead: 6, d1RowsWritten: 1 }),
   },
   {
     name: "GET /api/mounts",

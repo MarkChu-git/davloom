@@ -108,13 +108,15 @@ describe("moving an instance", () => {
     // A second import is refused, and changes nothing.
     expect((await importInto(bun, exported)).status).toBe(409);
 
-    // Bun (SQLite) to a new Workers instance (D1).
+    // Bun (SQLite) to a new Workers instance (D1). The keys were used on Bun, and their last use
+    // moves with them.
+    const bunKeys = await keysOf(bunApi);
     const again = await exportOf(bunApi);
     const workers = await startWorkersServer();
     servers.push(workers);
     expect((await importInto(workers, again)).status).toBe(201);
     const workersApi = await signIn(workers);
-    expect(await keysOf(workersApi)).toEqual(sourceKeys);
+    expect(await keysOf(workersApi)).toEqual(bunKeys);
     const put = await workers.fetch("/dav/files/moved.txt", {
       method: "PUT",
       headers: { authorization: basic(source.readWriteKey) },
