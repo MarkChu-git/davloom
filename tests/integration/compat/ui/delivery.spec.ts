@@ -1,5 +1,6 @@
 import { connect } from "node:net";
 import { expect, test } from "@playwright/test";
+import { onlyInChromium } from "./helpers";
 
 test("opening a deep route directly renders that route", async ({ page }) => {
   const response = await page.goto("/design-check/deep/page");
@@ -150,6 +151,7 @@ test.describe(() => {
     page,
     request,
   }) => {
+    onlyInChromium("Firefox and WebKit smooth the edges of a favicon and of an image differently.");
     // The sign-in page draws the mark on every server, also on Bun, which runs no API yet.
     await page.goto("/sign-in");
     await expect(page.getByRole("heading", { level: 1, name: "Sign in" })).toBeVisible();

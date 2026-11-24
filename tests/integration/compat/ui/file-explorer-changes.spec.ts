@@ -7,7 +7,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { boxOf, cardWith, filesAt, listed, onScreen, shown } from "./helpers";
+import { boxOf, cardWith, filesAt, listed, onlyInChromium, onScreen, shown } from "./helpers";
 import { dav, davPath, README, SAMPLE_NAMES, scratchFolder } from "./instances";
 
 // The File Explorer's scenarios about changing content on the Worker: names, moving and copying,
@@ -256,6 +256,7 @@ test("A file with a folder's name: the upload fails because a folder has the nam
 test("A dropped folder: its upload fails and says to upload the files inside it", async ({
   page,
 }, testInfo) => {
+  onlyInChromium("It drives the browser through the Chrome DevTools Protocol.");
   // Playwright cannot drop a real folder, so the drop goes through the Chrome DevTools Protocol.
   const folder = testInfo.outputPath("Album");
   mkdirSync(folder);
