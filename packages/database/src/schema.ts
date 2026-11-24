@@ -129,7 +129,7 @@ export const rateLimit = sqliteTable("rate_limit", {
 });
 
 // Each user's failed proofs of presence: wrong passwords and authenticator codes at step-up
-// verification and for a signed-in session (packages/database/src/attempts.ts). Davloom's own
+// verification and for a signed-in session (packages/auth/src/attempts.ts). Davloom's own
 // table, so no pruning of Better Auth's rate limit can lift a lock early. `last_attempt` is
 // milliseconds since the epoch of the last attempt that counted.
 export const verificationAttempts = sqliteTable("verification_attempts", {
