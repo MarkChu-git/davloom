@@ -100,6 +100,19 @@ const makeWorld = (options: WorldOptions = {}) => {
         });
         return Promise.resolve();
       },
+      update: (id, change) => {
+        const index = backends.findIndex((backend) => backend.id === id);
+        const current = backends[index];
+        if (current === undefined) return Promise.resolve(false);
+        backends[index] = { ...current, ...change };
+        return Promise.resolve(true);
+      },
+      remove: (id) => {
+        const index = backends.findIndex((backend) => backend.id === id);
+        if (index === -1) return Promise.resolve(false);
+        backends.splice(index, 1);
+        return Promise.resolve(true);
+      },
       ...options.records?.backends,
     },
     mounts: {
@@ -575,6 +588,9 @@ describe("listBackends", () => {
         available: true,
         usage: { files: 2, collections: 1, bytes: 8 },
         status: { state: "answered", ms: expect.any(Number) },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "closed",
@@ -584,6 +600,9 @@ describe("listBackends", () => {
         available: false,
         usage: null,
         status: { state: "not-opened" },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "down",
@@ -593,6 +612,9 @@ describe("listBackends", () => {
         available: false,
         usage: null,
         status: { state: "failed", failure: "unavailable", ms: expect.any(Number) },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
     ]);
   });

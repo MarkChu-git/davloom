@@ -30,7 +30,20 @@ import {
   type StorageOpener,
   type InstanceConfig,
   type CredentialCipher,
+  checkBackends,
+  davPathOf,
+  operationSummary,
+  saveStorageSettings,
+  storageSettings,
+  updateBackend,
+  verifyBackend,
+  removeBackend,
+  type InstanceSettings,
+  type OperationLog,
+  type OperationSample,
 } from "@davloom/core";
+import { InstanceConfig as InstanceConfigService } from "@davloom/core";
+import { buildInfo } from "./build-info";
 import { authorizeScoped } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
 import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
@@ -38,7 +51,15 @@ import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
 
 /** The application's Ports, which every deployment provides. */
-type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher | Archive;
+type Services =
+  | Records
+  | Identity
+  | StorageOpener
+  | InstanceConfig
+  | CredentialCipher
+  | Archive
+  | OperationLog
+  | InstanceSettings;
 
 /** What a deployment provides: the Layer of the application's Ports, Better Auth and the locks. */
 export interface Instance {
@@ -46,6 +67,18 @@ export interface Instance {
   /** Better Auth's own routes under /api/auth. */
   readonly authHandler: (request: Request) => Promise<Response>;
   readonly locks: LockStore;
+  /** Counts each WebDAV operation for the Overview; absent where nothing is counted. */
+  readonly operations?: { readonly record: (sample: OperationSample) => void };
+  /** Where this instance runs, for About this instance. */
+  readonly about?: (request: Request) => InstanceAbout;
+}
+
+/** Where an instance runs, as About this instance shows it. */
+export interface InstanceAbout {
+  readonly runtime: string;
+  readonly deployment: string;
+  readonly region: string | null;
+  readonly database: string;
 }
 
 export interface AppOptions {
@@ -103,6 +136,9 @@ const ERRORS = {
   MountInUse: { status: 409, code: "mount_in_use" },
   ArchiveInvalid: { status: 422, code: "archive_invalid" },
   CredentialsError: { status: 500, code: "credentials_error" },
+  BackendInUse: { status: 409, code: "backend_in_use" },
+  BackendNotEmpty: { status: 409, code: "backend_not_empty" },
+  BackendUnavailable: { status: 503, code: "backend_unavailable" },
 } as const;
 type ErrorTag = keyof typeof ERRORS;
 const errors: ErrorResponses<{ _tag: ErrorTag }> = ERRORS;
@@ -271,6 +307,28 @@ export const createApp = ({
   };
   const invalidate = () => {
     namespace = undefined;
+  };
+
+  // --- Operations for the Overview ----------------------------------------------------------
+  /** Serves a WebDAV request and counts it, at the cost of a counter bump in memory. */
+  const countedWebdav = async (context: { request: Request }) => {
+    const response = await webdav(context);
+    const recorder = built?.instance.operations;
+    if (recorder && !webdavHandler) {
+      const { request } = context;
+      const path = davPathOf(request.url);
+      const destination = request.headers.get("destination");
+      if (path !== null) {
+        recorder.record({
+          at: Date.now(),
+          method: request.method.toUpperCase(),
+          path,
+          destination: destination === null ? null : davPathOf(destination),
+          status: response.status,
+        });
+      }
+    }
+    return response;
   };
 
   return (
@@ -457,8 +515,74 @@ export const createApp = ({
           request,
         }),
       )
+      // --- Overview operations, backend changes and checks, settings, about ------------------
+      .get(
+        "/api/operations",
+        authed(() => operationSummary(Date.now())),
+      )
+      .post(
+        "/api/backends/check",
+        authed(() => checkBackends()),
+      )
+      .post("/api/backends/:id/verify", ({ params, request }) =>
+        authed(() => verifyBackend(params.id))({ request }),
+      )
+      .patch(
+        "/api/backends/:id",
+        ({ params, request }) =>
+          authed((_, req) =>
+            Effect.flatMap(
+              Effect.promise(() => readJson(req)),
+              (body) =>
+                Effect.tap(
+                  updateBackend(params.id, {
+                    name: text(body.name),
+                    config: body.config,
+                    secretKey: text(body.secretKey),
+                  }),
+                  () => Effect.sync(invalidate),
+                ),
+            ),
+          )({ request }),
+        { parse: "none" },
+      )
+      .delete("/api/backends/:id", ({ params, request }) =>
+        authed(() => Effect.tap(removeBackend(params.id), () => Effect.sync(invalidate)))({
+          request,
+        }),
+      )
+      .get(
+        "/api/settings/storage",
+        authed(() => storageSettings),
+      )
+      .put(
+        "/api/settings/storage",
+        authed((_, request) =>
+          Effect.flatMap(
+            Effect.promise(() => readJson(request)),
+            (body) => saveStorageSettings({ defaultBackendId: body.defaultBackendId }),
+          ),
+        ),
+        { parse: "none" },
+      )
+      .get(
+        "/api/instance",
+        authed((_, request) =>
+          Effect.map(InstanceConfigService, (config) => ({
+            ...buildInfo(),
+            ...(built?.instance.about?.(request) ?? {
+              runtime: "Unknown",
+              deployment: "Unknown",
+              region: null,
+              database: "Unknown",
+            }),
+            /** The storage kinds a new backend may take here. */
+            storageKinds: config.storageKinds,
+          })),
+        ),
+      )
       // Elysia must leave the body unread and the path undecoded: the handler gets the raw request.
-      .all("/dav", webdav, { parse: "none" })
-      .all("/dav/*", webdav, { parse: "none" })
+      .all("/dav", countedWebdav, { parse: "none" })
+      .all("/dav/*", countedWebdav, { parse: "none" })
   );
 };

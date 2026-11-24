@@ -173,3 +173,41 @@ describe("StorageChart, on an older canvas", () => {
     expect(chart().querySelectorAll("text")).toHaveLength(6);
   });
 });
+
+describe("StorageChart, with nothing stored yet", () => {
+  it("draws a track for every backend, with its size past the track", () => {
+    render(
+      <StorageChart
+        bars={[
+          { name: "One", bytes: 0, objects: 0 },
+          { name: "Two", bytes: 0, objects: 0 },
+        ]}
+      />,
+    );
+    const bars = chart().querySelectorAll(
+      '[data-ts-key^="bar"], [data-ts-key*=":bar"], rect, path',
+    );
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    const labels = [...chart().querySelectorAll("text")].map((text) => text.textContent);
+    expect(labels).toEqual(["0 bytes", "0 bytes", "One", "Two"]);
+  });
+});
+
+describe("StorageChart, tooltip", () => {
+  it("shows the tooltip outside the chart's own box, so no card edge clips it", async () => {
+    pointWith(false);
+    render(
+      <div data-testid="card" style={{ overflow: "hidden" }}>
+        <StorageChart bars={BARS} />
+      </div>,
+    );
+    act(() => chart().focus());
+    fireEvent.keyDown(chart(), { key: "ArrowDown" });
+    await waitFor(() => expect(document.body.textContent).toContain("Stored"));
+    const holder = [...document.body.querySelectorAll("*")].find(
+      (element) => element.children.length === 0 && element.textContent === "Stored",
+    );
+    expect(holder).toBeDefined();
+    expect(screen.getByTestId("card").contains(holder ?? null)).toBe(false);
+  });
+});

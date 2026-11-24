@@ -3,6 +3,13 @@
 
 export const env: Record<string, unknown> = {};
 
+/** The tasks handed to waitUntil, which a test can await. */
+export const waitedFor: Promise<unknown>[] = [];
+
+export const waitUntil = (promise: Promise<unknown>): void => {
+  waitedFor.push(promise);
+};
+
 export class DurableObject<Env = unknown> {
   protected ctx: unknown;
   protected env: Env;

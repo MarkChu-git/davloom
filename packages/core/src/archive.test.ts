@@ -49,7 +49,12 @@ const world = (options: World = {}) => {
     Layer.succeed(InstanceConfig, { setupToken: TOKEN, storageKinds: ["s3"], ...options.config }),
     Layer.succeed(Records, {
       users: { count: () => Promise.resolve(options.users ?? 0) },
-      backends: { list: () => Promise.resolve([]), create: () => Promise.resolve() },
+      backends: {
+        list: () => Promise.resolve([]),
+        create: () => Promise.resolve(),
+        update: () => Promise.resolve(false),
+        remove: () => Promise.resolve(false),
+      },
       mounts: {
         list: () => Promise.resolve([]),
         create: () => Promise.resolve(),

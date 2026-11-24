@@ -8,6 +8,9 @@ RUN bun install --frozen-lockfile --ignore-scripts \
   && bun run --filter @davloom/web build
 
 FROM oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
+# The commit About this instance shows: docker build --build-arg DAVLOOM_COMMIT=$(git rev-parse HEAD)
+ARG DAVLOOM_COMMIT=""
+ENV DAVLOOM_COMMIT=$DAVLOOM_COMMIT
 WORKDIR /app
 COPY --from=build /app /app
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 DAVLOOM_DATA_DIR=/data

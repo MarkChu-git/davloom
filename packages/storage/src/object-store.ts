@@ -871,5 +871,8 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
         const bytes = tree.files.reduce((sum, file) => sum + file.info.size, 0);
         return ok({ files: tree.files.length, collections: tree.collections.length, bytes });
       }),
+
+    // The objects stay in the bucket; only the properties Davloom kept for them go.
+    release: () => properties.removeTree([]),
   };
 };

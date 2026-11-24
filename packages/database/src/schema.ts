@@ -157,3 +157,35 @@ export const davProperties = sqliteTable(
   },
   (table) => [primaryKey({ columns: [table.backendId, table.path, table.name] })],
 );
+
+// Instance settings (PRD §7, `settings`) the administrator changes on the Dashboard, such as the
+// default backend for new Mounts.
+// `value` holds each setting as JSON.
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value", { mode: "json" }).notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+// WebDAV operations per hour (PRD §8.1). `hour` is the hour's start in milliseconds since the
+// epoch. Each isolate adds its counts in one statement every few seconds, never one per request.
+export const operationHours = sqliteTable("operation_hours", {
+  hour: integer("hour").primaryKey(),
+  operations: integer("operations").notNull(),
+  failed: integer("failed").notNull(),
+});
+
+// The latest failed WebDAV operations, kept for two days. `at` is in milliseconds since the epoch;
+// `path` and `destination` are paths under /dav.
+export const operationErrors = sqliteTable(
+  "operation_errors",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    destination: text("destination"),
+    status: integer("status").notNull(),
+  },
+  (table) => [index("operation_errors_at_idx").on(table.at)],
+);

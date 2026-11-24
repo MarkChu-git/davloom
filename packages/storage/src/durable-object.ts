@@ -681,5 +681,6 @@ export const durableObjectStorage = (
     patchProperties: (path, set, remove) => call((stub) => stub.patchProperties(path, set, remove)),
     usage: () => call((stub) => stub.usage()),
     quota: () => call((stub) => stub.quota()),
+    release: () => call((stub) => stub.destroyIfEmpty()),
   };
 };

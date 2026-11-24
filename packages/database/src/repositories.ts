@@ -115,6 +115,24 @@ export const createRepositories = (db: Database) => ({
       const now = new Date();
       await db.insert(schema.storageBackends).values({ ...record, createdAt: now, updatedAt: now });
     },
+    update: async (
+      id: string,
+      change: { name: string; config: unknown; secretKey: string | null },
+    ): Promise<boolean> =>
+      (
+        await db
+          .update(schema.storageBackends)
+          .set({ ...change, updatedAt: new Date() })
+          .where(eq(schema.storageBackends.id, id))
+          .returning({ id: schema.storageBackends.id })
+      ).length > 0,
+    remove: async (id: string): Promise<boolean> =>
+      (
+        await db
+          .delete(schema.storageBackends)
+          .where(eq(schema.storageBackends.id, id))
+          .returning({ id: schema.storageBackends.id })
+      ).length > 0,
   },
   mounts: {
     list: async (): Promise<MountRecord[]> =>

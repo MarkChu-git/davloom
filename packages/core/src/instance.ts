@@ -56,6 +56,13 @@ export class Records extends Context.Service<
         config: unknown;
         secretKey?: string | null;
       }) => Promise<void>;
+      /** Changes a backend's name and configuration; false when no backend has the id. */
+      readonly update: (
+        id: string,
+        change: { name: string; config: unknown; secretKey: string | null },
+      ) => Promise<boolean>;
+      /** Removes a backend's record; false when no backend has the id. */
+      readonly remove: (id: string) => Promise<boolean>;
     };
     readonly mounts: {
       readonly list: () => Promise<MountRecord[]>;
@@ -403,31 +410,61 @@ const backendStatusOf = (usage: StorageResult<Usage> | null, ms: number): Backen
       ? { state: "answered", ms }
       : { state: "failed", failure: usage.failure, ms };
 
+/** The fields of a backend's configuration that the Dashboard may see: never a secret. */
+const PUBLIC_CONFIG: Readonly<Record<string, readonly string[]>> = {
+  s3: ["endpoint", "region", "bucket", "prefix", "forcePathStyle", "accessKeyId"],
+  r2: ["binding", "prefix"],
+};
+
+/** A backend's configuration without its secrets, as the API returns it. */
+export const publicConfig = (kind: string, config: unknown): Record<string, string | boolean> => {
+  const view: Record<string, string | boolean> = {};
+  if (typeof config !== "object" || config === null) return view;
+  for (const field of PUBLIC_CONFIG[kind] ?? []) {
+    const value: unknown = Reflect.get(config, field);
+    if (typeof value === "string" || typeof value === "boolean") view[field] = value;
+  }
+  return view;
+};
+
 export const listBackends = Effect.gen(function* () {
   const records = yield* Records;
   const opener = yield* StorageOpener;
   const backends = yield* promise(() => records.backends.list());
-  return yield* Effect.forEach(backends, (backend) =>
-    Effect.gen(function* () {
-      const storage = opener.open(backend);
-      const started = Date.now();
-      const usage = storage
-        ? yield* promise(() =>
-            storage
-              .usage()
-              .catch((): StorageResult<Usage> => ({ ok: false, failure: "unavailable" })),
-          )
-        : null;
-      return {
-        id: backend.id,
-        name: backend.name,
-        kind: backend.kind,
-        createdAt: backend.createdAt.toISOString(),
-        available: usage?.ok === true,
-        usage: usage?.ok ? usage.value : null,
-        status: backendStatusOf(usage, Date.now() - started),
-      };
-    }),
+  return yield* Effect.forEach(
+    backends,
+    (backend) =>
+      Effect.gen(function* () {
+        const storage = opener.open(backend);
+        const started = Date.now();
+        const [usage, quota] = storage
+          ? yield* promise(() =>
+              Promise.all([
+                storage
+                  .usage()
+                  .catch((): StorageResult<Usage> => ({ ok: false, failure: "unavailable" })),
+                storage.quota?.([]).catch(() => null) ?? null,
+              ]),
+            )
+          : [null, null];
+        return {
+          id: backend.id,
+          name: backend.name,
+          kind: backend.kind,
+          createdAt: backend.createdAt.toISOString(),
+          available: usage?.ok === true,
+          usage: usage?.ok ? usage.value : null,
+          status: backendStatusOf(usage, Date.now() - started),
+          /** The bytes the backend may hold in all, where it knows its limit; else null. */
+          capacity:
+            quota?.ok && quota.value.available !== null
+              ? quota.value.used + quota.value.available
+              : null,
+          config: publicConfig(backend.kind, backend.config),
+          hasSecretKey: backend.secretKey !== null,
+        };
+      }),
+    { concurrency: "unbounded" },
   );
 });
 

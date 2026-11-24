@@ -1,9 +1,12 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleCanceledAnimations } from "../../test/layout";
 import { json, renderPage } from "../../test/render";
 import type { Backend, Mount, Overview } from "../api/queries";
 import { OverviewPage } from "./OverviewPage";
+
+handleCanceledAnimations();
 
 afterEach(() => {
   cleanup();
@@ -91,33 +94,37 @@ describe("OverviewPage, tiles", () => {
       tiles: {
         Stored: ["2.5 MB", "12 files in 3 folders"],
         Mounts: ["3", "On 2 of 3 backends"],
-        Backends: ["3", "1 unavailable"],
+        "Known capacity": ["No fixed limit", "2.5 MB stored"],
       },
     },
     {
       title: "one backend with one of each",
       overview: {
         usage: { files: 1, collections: 1, bytes: 120 },
-        backends: [backend({ id: "b1", name: "Only" })],
+        backends: [backend({ id: "b1", name: "Only", capacity: 400 })],
         mounts: [mount({ id: "m", name: "m", backendId: "b1", root: "" })],
       },
       tiles: {
         Stored: ["120 bytes", "1 file in 1 folder"],
         Mounts: ["1", "On 1 of 1 backend"],
-        Backends: ["1", "Available"],
+        "Known capacity": ["25%", "100 bytes of 400 bytes"],
       },
     },
     {
       title: "two backends that both answer",
       overview: {
         usage: { files: 0, collections: 0, bytes: 0 },
-        backends: [backend({ id: "b1", name: "One" }), backend({ id: "b2", name: "Two" })],
+        backends: [
+          backend({ id: "b1", name: "One", capacity: 1000 }),
+          backend({ id: "b2", name: "Two", capacity: 1000, usage: null }),
+          backend({ id: "b3", name: "Three", capacity: null }),
+        ],
         mounts: [],
       },
       tiles: {
         Stored: ["0 bytes", "0 files in 0 folders"],
-        Mounts: ["0", "On 0 of 2 backends"],
-        Backends: ["2", "All available"],
+        Mounts: ["0", "On 0 of 3 backends"],
+        "Known capacity": ["5%", "100 bytes of 2 kB"],
       },
     },
   ])("reads the figures of $title", async ({ overview, tiles }) => {
@@ -135,7 +142,7 @@ describe("OverviewPage, tiles", () => {
     const { container } = await renderPage(<OverviewPage />, {
       api: { "GET /api/overview": () => new Promise<Response>(() => undefined) },
     });
-    for (const label of ["Stored", "Mounts", "Backends"]) {
+    for (const label of ["Stored", "Mounts", "Known capacity"]) {
       expect(screen.getAllByText(label, { exact: true }).length).toBeGreaterThan(0);
     }
     expect(screen.queryByRole("img", { name: "Bytes stored on each backend" })).toBeNull();
