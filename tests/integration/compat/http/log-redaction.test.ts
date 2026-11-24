@@ -289,6 +289,21 @@ const failImport = async (
   }
 };
 
+/**
+ * The audit trail as GET /api/audit answers it, once it holds the refused WebDAV credentials,
+ * which each deployment counts in memory and writes some seconds later.
+ */
+const readTrail = async ({ api }: Davloom): Promise<string> => {
+  const deadline = Date.now() + 40_000;
+  for (;;) {
+    const response = await api("/api/audit?limit=100");
+    const text = await response.text();
+    if (response.status !== 200) throw new Error(`audit: ${response.status} ${text}`);
+    if (text.includes('"webdav.auth"') || Date.now() > deadline) return text;
+    await new Promise((done) => setTimeout(done, 1000));
+  }
+};
+
 /** The forms a secret takes on its way: as it is, in Basic Auth, in Base64 and percent-encoded. */
 const formsOf = (secret: string): string[] => [
   secret,
@@ -310,11 +325,13 @@ describe.each(DEPLOYMENTS)("logs of %s", (name, start, skip) => {
   let logs = "";
   let secrets: [string, string][] = [];
   let refusedImport: { answer: string; logs: string; values: string[] } | null = null;
+  let trailText = "";
 
   beforeAll(async () => {
     if (skip) return;
     davloom = await startDavloom(start);
     const { issued, exported } = await drive(davloom);
+    trailText = await readTrail(davloom);
     if (exported !== null && !name.includes("RustFS")) {
       refusedImport = await failImport(start, exported);
     }
@@ -362,6 +379,22 @@ describe.each(DEPLOYMENTS)("logs of %s", (name, start, skip) => {
 
     it.each(Object.entries(CANARY))("the %s sent never appears", (_what, value) => {
       for (const form of formsOf(value)) expect(logs).not.toContain(form);
+    });
+
+    it("the audit trail records the sign-ins, the step-up and the refused WebDAV keys", () => {
+      for (const action of ["sign-in", "step-up", "backend.create", "export", "webdav.auth"]) {
+        expect(trailText).toContain(`"action":"${action}"`);
+      }
+      expect(trailText).toContain('"outcome":"failure"');
+    });
+
+    it("no event of the audit trail holds a secret, in any form", () => {
+      const found = secrets.flatMap(([what, value]) =>
+        formsOf(value)
+          .filter((form) => trailText.includes(form))
+          .map((form) => `${what} as ${form}`),
+      );
+      expect(found).toEqual([]);
     });
 
     it.skipIf(name.includes("RustFS"))(

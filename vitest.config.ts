@@ -23,6 +23,7 @@ export const thresholds = {
   "packages/database/src/**": { lines: 93, branches: 95 },
   "packages/laws/src/**": { lines: 100, branches: 97 },
   "packages/migrate/src/**": { lines: 100, branches: 89 },
+  "packages/schema/src/**": { lines: 100, branches: 86, functions: 100 },
   "packages/storage/src/**": { lines: 99, branches: 92, functions: 98 },
   "packages/ui/src/**": { lines: 100, branches: 100 },
   "packages/webdav/src/**": { lines: 97, branches: 90, functions: 96 },

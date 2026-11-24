@@ -1,15 +1,19 @@
 import {
   OPERATION_RETENTION_MS,
+  isAuditAction,
+  isAuditOutcome,
+  type AuditCursor,
+  type AuditRecord,
   type HourCount,
   type OperationBatch,
   type OperationErrorRecord,
 } from "@davloom/core";
-import { desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, or, sql } from "drizzle-orm";
 import type { Atomic } from "./archive";
 import type { Database } from "./repositories";
 import * as schema from "./schema";
 
-// The Instance Settings and Operation Log Ports on the instance database.
+// The Instance Settings, Operation Log and Audit Log Ports on the instance database.
 
 /** The Instance Settings Port: one row per key, its value as JSON. */
 export const createSettingsStore = (db: Database) => ({
@@ -79,5 +83,48 @@ export const createOperationLog = (db: Database, atomic: Atomic) => ({
         .limit(errorLimit),
     ]);
     return { hours: hourRows, errors: errorRows };
+  },
+});
+
+const audit = schema.auditEvents;
+
+/**
+ * The Audit Log Port. Events go in one atomic group of statements with the removal of what is
+ * older than the cutoff, which touches no row when nothing has aged out. A counted event whose id
+ * is kept adds its count to the kept one.
+ */
+export const createAuditLog = (db: Database, atomic: Atomic) => ({
+  add: async (events: readonly AuditRecord[], cutoff: number): Promise<void> => {
+    const statements: { run: () => unknown }[] = [];
+    if (events.length > 0) {
+      statements.push(
+        db
+          .insert(audit)
+          .values([...events])
+          .onConflictDoUpdate({
+            target: audit.id,
+            set: { count: sql`${audit.count} + excluded.count` },
+          }),
+      );
+    }
+    statements.push(db.delete(audit).where(lt(audit.at, cutoff)));
+    await atomic(statements);
+  },
+  list: async (cursor: AuditCursor | null, limit: number): Promise<AuditRecord[]> => {
+    const rows = await db
+      .select()
+      .from(audit)
+      .where(
+        cursor === null
+          ? undefined
+          : or(lt(audit.at, cursor.at), and(eq(audit.at, cursor.at), lt(audit.id, cursor.id))),
+      )
+      .orderBy(desc(audit.at), desc(audit.id))
+      .limit(limit);
+    // A row of an action or outcome this release does not know, as a later release may write,
+    // is left out rather than shown as something else.
+    return rows.flatMap(({ action, outcome, ...row }) =>
+      isAuditAction(action) && isAuditOutcome(outcome) ? [{ ...row, action, outcome }] : [],
+    );
   },
 });

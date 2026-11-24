@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import { createAdmin, createAuth, createIdentity } from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
   createMemoryStorage,
   createOperationRecorder,
   credentialCipherLayer,
@@ -20,7 +21,11 @@ import {
   createBunSqliteDatabase,
   migrateBunSqliteDatabase,
 } from "@davloom/database/bun-sqlite";
-import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import { createRepositories } from "@davloom/database/repositories";
 import { Layer, Redacted } from "effect";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +82,7 @@ const world = async () => {
         Layer.succeed(InstanceConfig, { storageKinds: ["memory", "s3"] }),
         credentialCipherLayer(Redacted.make(SECRET)),
         Layer.succeed(OperationLog, log),
+        Layer.succeed(AuditLog, createAuditLog(db, bunSqliteAtomic(db))),
         Layer.succeed(InstanceSettings, createSettingsStore(db)),
       ),
       authHandler: (request) => auth.handler(request),

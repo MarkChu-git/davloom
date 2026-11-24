@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@davloom/laws": "workspace:*",
+    "@davloom/schema": "workspace:*",
     "effect": "4.1.4"
   }
 }

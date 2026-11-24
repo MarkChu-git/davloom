@@ -36,3 +36,4 @@ export * from "./archive";
 export * from "./backends";
 export * from "./operations";
 export * from "./settings";
+export * from "./audit";

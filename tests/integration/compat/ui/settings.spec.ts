@@ -66,6 +66,7 @@ test("The sections on offer: every section the instance can fill, Storage among 
   await expect(sections).toHaveText([
     "Profile",
     "Sign-in and security",
+    "Activity",
     "Appearance",
     "WebDAV",
     "Storage",
@@ -258,4 +259,22 @@ test("About this instance: its version, how it runs, its address, its WebDAV add
   await expect
     .poll(async () => (await factsOf(page)).find(({ label }) => label === "Storage")?.value)
     .toContain("Cloudflare Durable Objects");
+});
+
+test("Activity: the audit trail lists a key created and revoked, newest first", async ({
+  page,
+}) => {
+  const name = `activity-${Date.now().toString(36)}`;
+  const created = await api(page.request, "POST", "/api/keys", { name, access: "read-only" });
+  await api(page.request, "DELETE", `/api/keys/${String(Reflect.get(Object(created), "id"))}`);
+  await page.goto("/settings?section=activity");
+  await shown(page.getByRole("heading", { level: 2, name: "Activity" }));
+  const items = page.getByRole("main").getByRole("listitem");
+  await shown(items.filter({ hasText: `Created the key ${name}` }));
+  const texts = await items.allTextContents();
+  const revoked = texts.findIndex((text) => text.startsWith("Revoked a key"));
+  const createdAt = texts.findIndex((text) => text.startsWith(`Created the key ${name}`));
+  expect(revoked).toBeGreaterThanOrEqual(0);
+  expect(revoked).toBeLessThan(createdAt);
+  expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
 });

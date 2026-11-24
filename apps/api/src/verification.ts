@@ -25,6 +25,9 @@ export const API_ACTIONS: Readonly<Record<string, RouteEffect>> = {
   "GET /api/overview": "read",
   "GET /api/operations": "read",
   "GET /api/instance": "read",
+  // The trail names actions and their targets, never a secret.
+  "GET /api/audit": "read",
+  "GET /api/openapi.json": "read",
   "POST /api/export": "disclose",
   "GET /api/keys": "read",
   "POST /api/keys": "credential",

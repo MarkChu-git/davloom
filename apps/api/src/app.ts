@@ -44,7 +44,23 @@ import {
   type InstanceSettings,
   type OperationLog,
   type OperationSample,
+  auditPage,
+  keyStartOf,
+  recordAudit,
+  type AuditEntry,
+  type AuditLog,
+  type RefusedCredential,
 } from "@davloom/core";
+import {
+  decodeBody,
+  type BodyInvalid,
+  type BodyNotJson,
+  decodeQuery,
+  encodeWith,
+  openApiDocument,
+  ROUTES,
+  type RouteName,
+} from "@davloom/schema";
 import {
   InstanceConfig as InstanceConfigService,
   redactedError,
@@ -54,7 +70,7 @@ import { buildInfo } from "./build-info";
 import { crossSiteRefusal } from "./same-origin";
 import { authorizeScoped, verificationLevel, type ActionEffect } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
-import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
+import { Cause, Effect, Redacted, type Exit, type Layer, type Schema } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
 import {
@@ -74,7 +90,8 @@ type Services =
   | CredentialCipher
   | Archive
   | OperationLog
-  | InstanceSettings;
+  | InstanceSettings
+  | AuditLog;
 
 /** What a deployment provides: the Layer of the application's Ports, Better Auth and the locks. */
 export interface Instance {
@@ -86,6 +103,10 @@ export interface Instance {
   readonly operations?: { readonly record: (sample: OperationSample) => void };
   /** Where this instance runs, for About this instance. */
   readonly about?: (request: Request) => InstanceAbout;
+  /** The client's address as the deployment knows it, for the audit trail; else null. */
+  readonly clientAddress?: (request: Request) => string | null;
+  /** Counts refused WebDAV credentials for the audit trail; absent where nothing is counted. */
+  readonly refusedCredentials?: { readonly refused: (credential: RefusedCredential) => void };
 }
 
 /** Where an instance runs, as About this instance shows it. */
@@ -174,6 +195,8 @@ const ERRORS = {
   BackendInUse: { status: 409, code: "backend_in_use" },
   BackendNotEmpty: { status: 409, code: "backend_not_empty" },
   BackendUnavailable: { status: 503, code: "backend_unavailable" },
+  BodyNotJson: { status: 400, code: "invalid_json" },
+  BodyInvalid: { status: 422, code: "invalid_body" },
 } as const;
 type ErrorTag = keyof typeof ERRORS;
 const errors: ErrorResponses<{ _tag: ErrorTag }> = ERRORS;
@@ -197,18 +220,81 @@ export const DASHBOARD_HEADER = "x-davloom-dashboard";
 const CREDENTIAL_TTL_MS = 30_000;
 const NAMESPACE_TTL_MS = 5_000;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+/** The routes that take a JSON body, by `METHOD pattern`. */
+type BodyRoute = {
+  [Name in RouteName]: (typeof ROUTES)[Name] extends { body: unknown } ? Name : never;
+}[RouteName];
 
-const readJson = async (request: Request): Promise<Record<string, unknown>> => {
-  try {
-    const value: unknown = await request.json();
-    return isRecord(value) ? value : {};
-  } catch {
-    return {};
+/** Decodes a request's body with its route's schema (packages/schema). */
+const bodyOf = <Name extends BodyRoute>(
+  name: Name,
+  request: Request,
+): Effect.Effect<(typeof ROUTES)[Name]["body"]["Type"], BodyNotJson | BodyInvalid> =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the route's own body schema
+  decodeBody(ROUTES[name].body as Schema.Codec<(typeof ROUTES)[Name]["body"]["Type"]>, request);
+
+/** The OpenAPI document, built on its first request. */
+let openApi: Record<string, unknown> | undefined;
+
+/** Whether a sign-in's second step carries the cookie that its first step set (Better Auth). */
+const isSecondStep = (request: Request) =>
+  /(?:^|;\s*)(?:__Secure-)?better-auth\.two_factor=/.test(request.headers.get("cookie") ?? "");
+
+/** The events of Better Auth paths other than sign-ins, recorded when they succeed. */
+const AUTH_CHANGES: Readonly<Record<string, AuditEntry>> = {
+  "/sign-out": { action: "sign-out" },
+  "/change-password": { action: "password", target: "changed" },
+  "/change-email": { action: "email", target: "changed" },
+  "/two-factor/disable": { action: "two-factor", target: "disabled" },
+  "/two-factor/generate-backup-codes": { action: "two-factor", target: "backup codes" },
+  "/passkey/verify-registration": { action: "passkey", target: "added" },
+  "/passkey/update-passkey": { action: "passkey", target: "renamed" },
+  "/passkey/delete-passkey": { action: "passkey", target: "removed" },
+  "/revoke-session": { action: "sessions", target: "one" },
+  "/revoke-sessions": { action: "sessions", target: "all" },
+  "/revoke-other-sessions": { action: "sessions", target: "others" },
+};
+
+/**
+ * The audit event of a Better Auth path, from its request and answer; null for none. A sign-in is
+ * recorded when it succeeds or is refused; any other path only when it succeeds.
+ */
+export const authAuditEntry = async (
+  path: string,
+  request: Request,
+  response: Response,
+): Promise<AuditEntry | null> => {
+  const signIn = (target: string): AuditEntry | null =>
+    // A rate-limited or failing server says nothing about the credentials.
+    response.status === 429 || response.status >= 500
+      ? null
+      : { action: "sign-in", outcome: response.ok ? "success" : "failure", target };
+  switch (path) {
+    case "/sign-in/email":
+    case "/sign-in/username": {
+      if (!response.ok) return signIn("password");
+      // A password sign-in with two-step verification on is complete only after the second step.
+      const answer: unknown = await response
+        .clone()
+        .json()
+        .catch(() => null);
+      const pending =
+        typeof answer === "object" &&
+        answer !== null &&
+        Reflect.get(answer, "twoFactorRedirect") === true;
+      return pending ? null : signIn("password");
+    }
+    case "/two-factor/verify-totp":
+      if (isSecondStep(request)) return signIn("authenticator");
+      return response.ok ? { action: "two-factor", target: "enabled" } : null;
+    case "/two-factor/verify-backup-code":
+      return isSecondStep(request) ? signIn("backup code") : null;
+    case "/passkey/verify-authentication":
+      return signIn("passkey");
+    default:
+      return response.ok && Object.hasOwn(AUTH_CHANGES, path) ? (AUTH_CHANGES[path] ?? null) : null;
   }
 };
-const text = (value: unknown) => (typeof value === "string" ? value : "");
 
 export const createApp = ({
   adapter,
@@ -246,18 +332,30 @@ export const createApp = ({
       }
     | undefined;
 
+  /** The client's address, for the audit trail. */
+  const addressOf = (request: Request) => built?.instance.clientAddress?.(request) ?? null;
+
+  /** Records an event of the audit trail, with the client's address. */
+  const audit = (request: Request, entry: AuditEntry) =>
+    recordAudit({ address: addressOf(request), ...entry });
+
+  /**
+   * Serves a route with its contract (packages/schema): the program's answer is encoded through
+   * the route's response schema and sent with its status.
+   */
   const api =
     (
+      name: RouteName,
       program: (request: Request) => Effect.Effect<unknown, { _tag: ErrorTag }, Services>,
-      status = 200,
     ) =>
     async ({ request }: { request: Request }) => {
       const current = get(request);
       if (current === undefined) return new Response(null, { status: 501 });
       if (current === null) return NOT_CONFIGURED();
-      return await current.run(program(request), {
+      const contract = ROUTES[name];
+      return await current.run(Effect.flatMap(program(request), encodeWith(contract.response)), {
         errors,
-        successStatus: status,
+        successStatus: contract.status,
         // A defect's message can hold the values a query was bound to, so only its class, code
         // and stack frames go to the log.
         onDefect: (cause) => {
@@ -267,15 +365,14 @@ export const createApp = ({
       });
     };
   const authed = <A>(
+    name: RouteName,
     program: (
       user: { id: string },
       request: Request,
     ) => Effect.Effect<A, { _tag: ErrorTag }, Services>,
-    status = 200,
   ) =>
-    api(
-      (request) => Effect.flatMap(requireUser(request.headers), (user) => program(user, request)),
-      status,
+    api(name, (request) =>
+      Effect.flatMap(requireUser(request.headers), (user) => program(user, request)),
     );
 
   /**
@@ -289,14 +386,25 @@ export const createApp = ({
     const basic = parseBasicCredentials(request.headers.get("authorization"));
     if (basic) {
       const now = Date.now();
+      // A refused key is counted, never kept: only the start Davloom shows of every key.
+      const refused = () =>
+        current.instance.refusedCredentials?.refused({
+          at: now,
+          address: addressOf(request),
+          keyStart: keyStartOf(basic.password),
+        });
       const cached = credentials.get(basic.password);
-      if (cached && cached.until > now) return cached.credential;
+      if (cached && cached.until > now) {
+        if (cached.credential === null) refused();
+        return cached.credential;
+      }
       const exit = await Effect.runPromiseExit(
         Effect.provide(verifyApiKey(basic.password, now), current.instance.layer),
       );
       const credential = exit._tag === "Success" ? exit.value : null;
       if (credentials.size > 1000) credentials.clear();
       credentials.set(basic.password, { credential, until: now + CREDENTIAL_TTL_MS });
+      if (credential === null) refused();
       return credential;
     }
     if (request.headers.get(DASHBOARD_HEADER) === "1") {
@@ -405,7 +513,12 @@ export const createApp = ({
       const refused = await refuseUnverified(request, effect);
       if (refused) return refused;
     }
-    return await current.instance.authHandler(request);
+    const response = await current.instance.authHandler(request);
+    const entry = await authAuditEntry(path, request, response);
+    if (entry !== null) {
+      await Effect.runPromise(Effect.provide(audit(request, entry), current.instance.layer));
+    }
+    return response;
   };
 
   // --- Operations for the Overview ----------------------------------------------------------
@@ -452,242 +565,297 @@ export const createApp = ({
         if (effect === undefined) return UNCLASSIFIED();
         return effect === "public" ? undefined : await refuseUnverified(request, effect);
       })
-      .get("/api/health", () => ({ status: "ok" }))
+      .get("/api/health", () => ({ status: "ok" as const }))
       .all("/api/auth/*", authRoute, { parse: "none" })
       // --- Registration and step-up verification -------------------------------------------
       .get(
         "/api/registration",
-        api(() => registrationStatus),
+        api("GET /api/registration", () => registrationStatus),
       )
       .post(
         "/api/registration",
-        api(
-          (request) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(request)),
-              (body) =>
-                Effect.tap(
-                  registerOwner({
-                    username: text(body.username),
-                    name: text(body.name),
-                    email: text(body.email),
-                    password: text(body.password),
-                    setupToken: text(body.setupToken),
-                  }),
-                  () => Effect.sync(invalidate),
+        api("POST /api/registration", (request) =>
+          Effect.flatMap(bodyOf("POST /api/registration", request), (body) =>
+            registerOwner({
+              username: body.username ?? "",
+              name: body.name ?? "",
+              email: body.email ?? "",
+              password: body.password ?? "",
+              setupToken: body.setupToken ?? "",
+            }).pipe(
+              Effect.tap(() =>
+                Effect.andThen(
+                  Effect.sync(invalidate),
+                  audit(request, { action: "registration", target: body.username?.trim() }),
                 ),
+              ),
+              Effect.tapError((error) =>
+                error._tag === "RegistrationClosed" || error._tag === "SetupTokenInvalid"
+                  ? audit(request, { action: "registration", outcome: "failure" })
+                  : Effect.void,
+              ),
             ),
-          201,
+          ),
         ),
         { parse: "none" },
       )
       .post(
         "/api/registration/import",
-        api(
-          (request) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(request)),
-              (body) =>
-                Effect.tap(
-                  importInstance({
-                    key: text(body.key),
-                    file: body.file,
-                    setupToken: text(body.setupToken),
-                  }),
-                  () => Effect.sync(invalidate),
-                ),
+        api("POST /api/registration/import", (request) =>
+          Effect.flatMap(bodyOf("POST /api/registration/import", request), (body) =>
+            importInstance({
+              key: body.key ?? "",
+              file: body.file,
+              setupToken: body.setupToken ?? "",
+            }).pipe(
+              Effect.tap(() =>
+                Effect.andThen(Effect.sync(invalidate), audit(request, { action: "import" })),
+              ),
+              Effect.tapError((error) =>
+                error._tag === "RegistrationClosed" ||
+                error._tag === "SetupTokenInvalid" ||
+                error._tag === "ArchiveInvalid"
+                  ? audit(request, { action: "import", outcome: "failure" })
+                  : Effect.void,
+              ),
             ),
-          201,
+          ),
         ),
         { parse: "none" },
       )
       .post(
         "/api/verify",
-        api((request) =>
-          Effect.flatMap(
-            Effect.promise(() => readJson(request)),
-            (body) =>
-              reverify(request.headers, { password: text(body.password), code: text(body.code) }),
+        api("POST /api/verify", (request) =>
+          Effect.flatMap(bodyOf("POST /api/verify", request), (body) =>
+            reverify(request.headers, {
+              password: body.password ?? "",
+              code: body.code ?? "",
+            }).pipe(
+              Effect.tap(() => audit(request, { action: "step-up" })),
+              Effect.tapError((error) =>
+                error._tag === "VerificationLocked"
+                  ? audit(request, { action: "step-up", outcome: "locked" })
+                  : error._tag === "WrongPassword" || error._tag === "WrongCode"
+                    ? audit(request, { action: "step-up", outcome: "failure" })
+                    : Effect.void,
+              ),
+            ),
           ),
         ),
         { parse: "none" },
       )
       .post(
         "/api/export",
-        authed(() =>
-          Effect.map(exportInstance, ({ key, file }) => ({ key: Redacted.value(key), file })),
+        authed("POST /api/export", (_, request) =>
+          Effect.map(exportInstance, ({ key, file }) => ({ key: Redacted.value(key), file })).pipe(
+            Effect.tap(() => audit(request, { action: "export" })),
+          ),
         ),
       )
       .get(
         "/api/me",
-        authed((user) => Effect.succeed(user)),
+        authed("GET /api/me", (user) => Effect.succeed(user)),
       )
       .get(
         "/api/overview",
-        authed(() =>
+        authed("GET /api/overview", () =>
           Effect.all({ usage: instanceUsage, mounts: listMounts, backends: listBackends }),
         ),
       )
       .get(
+        "/api/audit",
+        authed("GET /api/audit", (_, request) =>
+          Effect.flatMap(decodeQuery(ROUTES["GET /api/audit"].query, request.url), auditPage),
+        ),
+      )
+      .get(
+        "/api/openapi.json",
+        authed("GET /api/openapi.json", () =>
+          Effect.sync(() => (openApi ??= openApiDocument(buildInfo().version))),
+        ),
+      )
+      .get(
         "/api/keys",
-        authed(() => listKeys),
+        authed("GET /api/keys", () => listKeys),
       )
       .post(
         "/api/keys",
-        authed(
-          (user, request) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(request)),
-              (body) =>
-                createKey(user.id, {
-                  name: text(body.name),
-                  access: text(body.access),
-                  expiresInDays: typeof body.expiresInDays === "number" ? body.expiresInDays : null,
-                  paths: body.paths,
-                }),
+        authed("POST /api/keys", (user, request) =>
+          Effect.flatMap(bodyOf("POST /api/keys", request), (body) =>
+            Effect.tap(
+              createKey(user.id, {
+                name: body.name ?? "",
+                access: body.access ?? "",
+                expiresInDays: body.expiresInDays ?? null,
+                paths: body.paths,
+              }),
+              () => audit(request, { action: "key.create", target: body.name?.trim() }),
             ),
-          201,
+          ),
         ),
         { parse: "none" },
       )
       .patch(
         "/api/keys/:id",
         ({ params, request }) =>
-          authed((_, req) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(req)),
-              (body) => renameKey(params.id, { name: text(body.name) }),
+          authed("PATCH /api/keys/:id", (_, req) =>
+            Effect.flatMap(bodyOf("PATCH /api/keys/:id", req), (body) =>
+              Effect.tap(renameKey(params.id, { name: body.name ?? "" }), (renamed) =>
+                audit(req, { action: "key.rename", target: renamed.name }),
+              ),
             ),
           )({ request }),
         { parse: "none" },
       )
       .delete("/api/keys/:id", ({ params, request }) =>
-        authed(() =>
-          Effect.tap(revokeKey(params.id), () => Effect.sync(() => credentials.clear())),
+        authed("DELETE /api/keys/:id", (_, req) =>
+          Effect.tap(revokeKey(params.id), () =>
+            Effect.andThen(
+              Effect.sync(() => credentials.clear()),
+              audit(req, { action: "key.revoke", target: params.id }),
+            ),
+          ),
         )({ request }),
       )
       .get(
         "/api/backends",
-        authed(() => listBackends),
+        authed("GET /api/backends", () => listBackends),
       )
       .post(
         "/api/backends",
-        authed(
-          (_, request) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(request)),
-              (body) =>
-                createBackend({
-                  name: text(body.name),
-                  kind: text(body.kind) || "durable-object",
-                  config: body.config,
-                  secretKey: text(body.secretKey),
-                }),
+        authed("POST /api/backends", (_, request) =>
+          Effect.flatMap(bodyOf("POST /api/backends", request), (body) =>
+            Effect.tap(
+              createBackend({
+                name: body.name ?? "",
+                kind: body.kind || "durable-object",
+                config: body.config,
+                secretKey: body.secretKey ?? "",
+              }),
+              () => audit(request, { action: "backend.create", target: body.name?.trim() }),
             ),
-          201,
+          ),
         ),
         { parse: "none" },
       )
       .get(
         "/api/mounts",
-        authed(() => listMounts),
+        authed("GET /api/mounts", () => listMounts),
       )
       .post(
         "/api/mounts",
-        authed(
-          (_, request) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(request)),
-              (body) =>
-                Effect.tap(
-                  createMount({
-                    name: text(body.name),
-                    backendId: text(body.backendId),
-                    root: text(body.root),
-                  }),
-                  () => Effect.sync(invalidate),
+        authed("POST /api/mounts", (_, request) =>
+          Effect.flatMap(bodyOf("POST /api/mounts", request), (body) =>
+            Effect.tap(
+              createMount({
+                name: body.name ?? "",
+                backendId: body.backendId ?? "",
+                root: body.root ?? "",
+              }),
+              () =>
+                Effect.andThen(
+                  Effect.sync(invalidate),
+                  audit(request, { action: "mount.create", target: body.name }),
                 ),
             ),
-          201,
+          ),
         ),
         { parse: "none" },
       )
       .patch(
         "/api/mounts/:id",
         ({ params, request }) =>
-          authed((_, req) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(req)),
-              (body) =>
-                Effect.tap(
-                  // A body with a backend points the Mount there; otherwise it renames it.
-                  typeof body.backendId === "string"
-                    ? retargetMount(params.id, { backendId: body.backendId, root: text(body.root) })
-                    : renameMount(params.id, text(body.name)),
-                  () => Effect.sync(invalidate),
-                ),
+          authed("PATCH /api/mounts/:id", (_, req) =>
+            Effect.flatMap(bodyOf("PATCH /api/mounts/:id", req), (body) =>
+              Effect.tap(
+                // A body with a backend points the Mount there; otherwise it renames it.
+                body.backendId === undefined
+                  ? renameMount(params.id, body.name ?? "")
+                  : retargetMount(params.id, { backendId: body.backendId, root: body.root ?? "" }),
+                () =>
+                  Effect.andThen(
+                    Effect.sync(invalidate),
+                    audit(req, {
+                      action: "mount.edit",
+                      target: body.backendId === undefined ? body.name : params.id,
+                    }),
+                  ),
+              ),
             ),
           )({ request }),
         { parse: "none" },
       )
       .delete("/api/mounts/:id", ({ params, request }) =>
-        authed(() => Effect.tap(removeMount(params.id), () => Effect.sync(invalidate)))({
-          request,
-        }),
+        authed("DELETE /api/mounts/:id", (_, req) =>
+          Effect.tap(removeMount(params.id), () =>
+            Effect.andThen(
+              Effect.sync(invalidate),
+              audit(req, { action: "mount.remove", target: params.id }),
+            ),
+          ),
+        )({ request }),
       )
       // --- Overview operations, backend changes and checks, settings, about ------------------
       .get(
         "/api/operations",
-        authed(() => operationSummary(Date.now())),
+        authed("GET /api/operations", () => operationSummary(Date.now())),
       )
       .post(
         "/api/backends/check",
-        authed(() => checkBackends()),
+        authed("POST /api/backends/check", () => checkBackends()),
       )
       .post("/api/backends/:id/verify", ({ params, request }) =>
-        authed(() => verifyBackend(params.id))({ request }),
+        authed("POST /api/backends/:id/verify", () => verifyBackend(params.id))({ request }),
       )
       .patch(
         "/api/backends/:id",
         ({ params, request }) =>
-          authed((_, req) =>
-            Effect.flatMap(
-              Effect.promise(() => readJson(req)),
-              (body) =>
-                Effect.tap(
-                  updateBackend(params.id, {
-                    name: text(body.name),
-                    config: body.config,
-                    secretKey: text(body.secretKey),
-                  }),
-                  () => Effect.sync(invalidate),
-                ),
+          authed("PATCH /api/backends/:id", (_, req) =>
+            Effect.flatMap(bodyOf("PATCH /api/backends/:id", req), (body) =>
+              Effect.tap(
+                updateBackend(params.id, {
+                  name: body.name ?? "",
+                  config: body.config,
+                  secretKey: body.secretKey ?? "",
+                }),
+                () =>
+                  Effect.andThen(
+                    Effect.sync(invalidate),
+                    audit(req, { action: "backend.edit", target: body.name?.trim() }),
+                  ),
+              ),
             ),
           )({ request }),
         { parse: "none" },
       )
       .delete("/api/backends/:id", ({ params, request }) =>
-        authed(() => Effect.tap(removeBackend(params.id), () => Effect.sync(invalidate)))({
-          request,
-        }),
+        authed("DELETE /api/backends/:id", (_, req) =>
+          Effect.tap(removeBackend(params.id), () =>
+            Effect.andThen(
+              Effect.sync(invalidate),
+              audit(req, { action: "backend.remove", target: params.id }),
+            ),
+          ),
+        )({ request }),
       )
       .get(
         "/api/settings/storage",
-        authed(() => storageSettings),
+        authed("GET /api/settings/storage", () => storageSettings),
       )
       .put(
         "/api/settings/storage",
-        authed((_, request) =>
-          Effect.flatMap(
-            Effect.promise(() => readJson(request)),
-            (body) => saveStorageSettings({ defaultBackendId: body.defaultBackendId }),
+        authed("PUT /api/settings/storage", (_, request) =>
+          Effect.flatMap(bodyOf("PUT /api/settings/storage", request), (body) =>
+            Effect.tap(saveStorageSettings({ defaultBackendId: body.defaultBackendId }), () =>
+              audit(request, { action: "settings", target: "default backend" }),
+            ),
           ),
         ),
         { parse: "none" },
       )
       .get(
         "/api/instance",
-        authed((_, request) =>
+        authed("GET /api/instance", (_, request) =>
           Effect.map(InstanceConfigService, (config) => ({
             ...buildInfo(),
             ...(built?.instance.about?.(request) ?? {

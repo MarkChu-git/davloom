@@ -260,3 +260,21 @@ export const operationErrors = sqliteTable(
   },
   (table) => [index("operation_errors_at_idx").on(table.at)],
 );
+
+// The audit trail (PRD §7 `audit_events`), kept for 90 days. `at` is in milliseconds since the
+// epoch. `target` names what an action acted on, such as a key's name, and never holds a secret;
+// `count` is how many times a counted event, such as a refused WebDAV credential, happened in its
+// minute, whose id it shares in every isolate.
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    action: text("action").notNull(),
+    outcome: text("outcome").notNull(),
+    address: text("address"),
+    target: text("target"),
+    count: integer("count").notNull().default(1),
+  },
+  (table) => [index("audit_events_at_idx").on(table.at, table.id)],
+);
