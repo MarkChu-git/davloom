@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 import { durableObjectSuite } from "../test/durable-object-suite";
 import { localNamespace, sqliteObjectState, type SqliteEngine } from "../test/sqlite-object";
@@ -22,6 +23,14 @@ const full = localNamespace((state) => new FullStorageObject(state, env), engine
 durableObjectSuite("Bun", { storage, full, runs: 60 });
 
 const streamOf = (text: string) => new Blob([text]).stream();
+
+/** The usage counted from the entry rows, as `usage` did before it kept totals. */
+const counted = (database: SqliteEngine) =>
+  database
+    .query(
+      "SELECT COALESCE(SUM(kind = 0), 0) AS files, COALESCE(SUM(kind = 1), 0) AS collections, COALESCE(SUM(size), 0) AS bytes FROM entries",
+    )
+    .all()[0];
 
 describe("the Durable Objects adapter on its SQLite rows", () => {
   it("drops the chunks a write left pending when the object starts again", async () => {
@@ -126,6 +135,98 @@ describe("the Durable Objects adapter on its SQLite rows", () => {
     object.createCollection(["d"]);
     await object.write(["d", "f"], streamOf("12345"), {});
     expect(object.usage()).toEqual({ ok: true, value: { files: 1, collections: 1, bytes: 5 } });
+  });
+
+  it("counts the entries of an object made before it kept totals, once, when it starts", async () => {
+    const database = engine();
+    const first = new StorageObject(sqliteObjectState(database), env);
+    first.createCollection(["d"]);
+    await first.write(["d", "f"], streamOf("12345"), {});
+    await first.write(["g"], streamOf("ab"), {});
+    // The schema of 2026-11-23 had no totals.
+    database.exec("DROP TABLE totals");
+    const restarted = new StorageObject(sqliteObjectState(database), env);
+    await Promise.resolve();
+    expect(restarted.usage()).toEqual({
+      ok: true,
+      value: { files: 2, collections: 1, bytes: 7 },
+    });
+    // A later start keeps the totals rather than count again.
+    database.exec("UPDATE totals SET files = 40 WHERE id = 0");
+    const again = new StorageObject(sqliteObjectState(database), env);
+    await Promise.resolve();
+    expect(again.usage()).toMatchObject({ ok: true, value: { files: 40 } });
+  });
+
+  it("keeps the totals in one row, whatever the object holds", async () => {
+    const database = engine();
+    const object = new StorageObject(sqliteObjectState(database), env);
+    for (let index = 0; index < 30; index += 1)
+      await object.write([`f${index}`], streamOf("x"), {});
+    expect(database.query("SELECT COUNT(*) AS n FROM totals").all()).toEqual([{ n: 1 }]);
+    expect(object.quota()).toMatchObject({ ok: true, value: { used: 30 } });
+  });
+
+  it("takes a removed file off the totals when the object is full", async () => {
+    const database = engine();
+    const object = new FullStorageObject(sqliteObjectState(database), env);
+    object.createCollection(["d"]);
+    await object.write(["d", "f"], streamOf("xyz"), {});
+    object.setFull(true);
+    expect(object.remove(["d"])).toEqual({ ok: true, value: null });
+    expect(object.usage()).toEqual({ ok: true, value: counted(database) });
+    expect(object.usage()).toEqual({ ok: true, value: { files: 0, collections: 0, bytes: 0 } });
+  });
+
+  it("keeps the totals equal to a count of the entry rows on random operations", async () => {
+    const name = fc.constantFrom("a", "b", "c");
+    const path = fc.array(name, { minLength: 1, maxLength: 3 });
+    const op = fc.oneof(
+      fc.record({ kind: fc.constant("write" as const), path, size: fc.nat({ max: 9 }) }),
+      fc.record({ kind: fc.constant("mismatch" as const), path, size: fc.nat({ max: 9 }) }),
+      fc.record({ kind: fc.constant("mkcol" as const), path }),
+      fc.record({ kind: fc.constant("remove" as const), path }),
+      fc.record({
+        kind: fc.constant("copy" as const),
+        from: path,
+        to: path,
+        overwrite: fc.boolean(),
+        shallow: fc.boolean(),
+      }),
+      fc.record({
+        kind: fc.constant("move" as const),
+        from: path,
+        to: path,
+        overwrite: fc.boolean(),
+      }),
+      fc.record({ kind: fc.constant("full" as const), full: fc.boolean() }),
+    );
+    await fc.assert(
+      fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 20 }), async (ops) => {
+        const database = engine();
+        const object = new FullStorageObject(sqliteObjectState(database), env);
+        for (const step of ops) {
+          if (step.kind === "write")
+            await object.write(step.path, streamOf("x".repeat(step.size)), { size: step.size });
+          else if (step.kind === "mismatch")
+            await object.write(step.path, streamOf("x".repeat(step.size + 1)), {
+              size: step.size,
+            });
+          else if (step.kind === "mkcol") object.createCollection(step.path);
+          else if (step.kind === "remove") object.remove(step.path);
+          else if (step.kind === "copy")
+            object.copy(step.from, step.to, { overwrite: step.overwrite, shallow: step.shallow });
+          else if (step.kind === "move")
+            object.move(step.from, step.to, { overwrite: step.overwrite });
+          else object.setFull(step.full);
+          expect(object.usage(), JSON.stringify(step)).toEqual({
+            ok: true,
+            value: counted(database),
+          });
+        }
+      }),
+      { numRuns: 200 },
+    );
   });
 
   it("keeps a removal when the parent's time cannot be written", async () => {

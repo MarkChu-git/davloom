@@ -68,6 +68,21 @@ const SCHEMA = `
   );
   CREATE TABLE IF NOT EXISTS pending (content INTEGER PRIMARY KEY);
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+  CREATE TABLE IF NOT EXISTS totals (
+    id INTEGER PRIMARY KEY CHECK (id = 0),
+    files INTEGER NOT NULL,
+    collections INTEGER NOT NULL,
+    bytes INTEGER NOT NULL
+  );
+`;
+
+// The usage of the backend is kept as running totals in the one row of `totals`, changed in the
+// transaction of every write, removal, copy and move, so the Dashboard reads one row however many
+// entries the object holds (the Free plan reads 5 million rows a day). An object made before the
+// table existed counts its entries once, when it next starts.
+const BACKFILL = `
+  INSERT INTO totals (id, files, collections, bytes)
+  SELECT 0, COALESCE(SUM(kind = 0), 0), COALESCE(SUM(kind = 1), 0), COALESCE(SUM(size), 0) FROM entries
 `;
 
 const FILE = 0;
@@ -119,6 +134,7 @@ export class StorageObject extends DurableObject {
         "DELETE FROM chunks WHERE content IN (SELECT content FROM pending) AND content NOT IN (SELECT content FROM entries WHERE content IS NOT NULL)",
       );
       this.sql.exec("DELETE FROM pending");
+      if (!this.one("SELECT id FROM totals WHERE id = 0")) this.sql.exec(BACKFILL);
       return Promise.resolve();
     });
   }
@@ -238,8 +254,35 @@ export class StorageObject extends DurableObject {
       .toArray();
   }
 
+  /**
+   * Adds to the running totals. A plain statement rather than `change`, so a full object still
+   * removes: the row keeps its size whatever the numbers.
+   */
+  private count(files: number, collections: number, bytes: number) {
+    if (files === 0 && collections === 0 && bytes === 0) return;
+    this.sql.exec(
+      "UPDATE totals SET files = files + ?, collections = collections + ?, bytes = bytes + ? WHERE id = 0",
+      files,
+      collections,
+      bytes,
+    );
+  }
+
+  /** Adds the entries of `rows` to the totals, or takes them away with `sign` -1. */
+  private countRows(rows: readonly EntryRow[], sign: 1 | -1) {
+    let files = 0;
+    let bytes = 0;
+    for (const row of rows) {
+      if (row.kind === FILE) files += 1;
+      bytes += row.size;
+    }
+    this.count(sign * files, sign * (rows.length - files), sign * bytes);
+  }
+
   private deleteTree(id: number) {
-    const ids = this.subtree(id).map((row) => row.id);
+    const rows = this.subtree(id);
+    this.countRows(rows, -1);
+    const ids = rows.map((row) => row.id);
     for (const entry of ids) {
       this.sql.exec(
         "DELETE FROM chunks WHERE content IN (SELECT content FROM entries WHERE id = ? AND content IS NOT NULL)",
@@ -411,6 +454,7 @@ export class StorageObject extends DurableObject {
       const time = Date.now();
       const contentType = options.contentType ?? null;
       if (target.row) {
+        this.count(0, 0, size - target.row.size);
         this.sql.exec("DELETE FROM chunks WHERE content = ?", target.row.content ?? 0);
         this.change(
           "UPDATE entries SET size = ?, content = ?, modified = ?, content_type = ? WHERE id = ?",
@@ -432,6 +476,7 @@ export class StorageObject extends DurableObject {
           time,
           contentType,
         );
+        this.count(1, 0, size);
       }
       this.sql.exec("DELETE FROM pending WHERE content = ?", content);
       if (!target.row) this.touch(this.idOf(parent), time);
@@ -463,6 +508,7 @@ export class StorageObject extends DurableObject {
         time,
         time,
       );
+      this.count(0, 1, 0);
       this.touch(this.idOf(parent), time);
       const row = this.resolve(path).row;
       return row ? ok(this.entryOf(path, row)) : fail("unavailable");
@@ -536,6 +582,7 @@ export class StorageObject extends DurableObject {
         );
         this.touch(source.row.parent, time);
       } else {
+        this.countRows(rows, 1);
         const ids = new Map<number, number>();
         for (const row of rows) {
           const newParent = row.depth === 0 ? parentId : (ids.get(row.parent) ?? parentId);
@@ -623,18 +670,17 @@ export class StorageObject extends DurableObject {
     });
   }
 
+  /** The running totals: one row read, however many entries the object holds. */
   usage(): StorageResult<Usage> {
     const row = this.one<{ files: number; collections: number; bytes: number }>(
-      "SELECT COALESCE(SUM(kind = 0), 0) AS files, COALESCE(SUM(kind = 1), 0) AS collections, COALESCE(SUM(size), 0) AS bytes FROM entries",
+      "SELECT files, collections, bytes FROM totals WHERE id = 0",
     );
     return ok(row ?? { files: 0, collections: 0, bytes: 0 });
   }
 
   /** RFC 4331 quota: the bytes of file content, and what the object may still store. */
   quota(): StorageResult<Quota> {
-    const used =
-      this.one<{ bytes: number }>("SELECT COALESCE(SUM(size), 0) AS bytes FROM entries")?.bytes ??
-      0;
+    const used = this.one<{ bytes: number }>("SELECT bytes FROM totals WHERE id = 0")?.bytes ?? 0;
     return ok({
       used,
       available: Math.max(0, OBJECT_LIMIT_BYTES - this.ctx.storage.sql.databaseSize),

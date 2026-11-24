@@ -147,8 +147,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 7,
       objectCalls: 2,
-      objectRowsRead: 12,
-      objectRowsWritten: 9,
+      objectRowsRead: 13,
+      objectRowsWritten: 10,
     }),
   },
   {
@@ -162,8 +162,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 1,
       d1RowsRead: 4,
       objectCalls: 2,
-      objectRowsRead: 17,
-      objectRowsWritten: 8,
+      objectRowsRead: 18,
+      objectRowsWritten: 9,
     }),
   },
   {
@@ -176,8 +176,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 7,
       objectCalls: 2,
-      objectRowsRead: 12,
-      objectRowsWritten: 15,
+      objectRowsRead: 13,
+      objectRowsWritten: 16,
     }),
   },
   {
@@ -189,8 +189,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 7,
       objectCalls: 1,
-      objectRowsRead: 5,
-      objectRowsWritten: 4,
+      objectRowsRead: 6,
+      objectRowsWritten: 5,
     }),
   },
   {
@@ -226,8 +226,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 8,
       objectCalls: 2,
-      objectRowsRead: 17,
-      objectRowsWritten: 7,
+      objectRowsRead: 18,
+      objectRowsWritten: 8,
     }),
   },
   {
@@ -248,8 +248,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 8,
       objectCalls: 2,
-      objectRowsRead: 233,
-      objectRowsWritten: 124,
+      objectRowsRead: 234,
+      objectRowsWritten: 125,
     }),
   },
   {
@@ -302,8 +302,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 3,
       d1RowsRead: 9,
       objectCalls: 2,
-      objectRowsRead: 14,
-      objectRowsWritten: 3,
+      objectRowsRead: 15,
+      objectRowsWritten: 4,
     }),
   },
   {
@@ -354,8 +354,8 @@ const ROWS: readonly Row[] = [
       d1Calls: 2,
       d1RowsRead: 10,
       objectCalls: 3,
-      objectRowsRead: 19,
-      objectRowsWritten: 8,
+      objectRowsRead: 20,
+      objectRowsWritten: 9,
     }),
   },
   {
@@ -372,8 +372,8 @@ const ROWS: readonly Row[] = [
       d1Queries: 6,
       d1Calls: 6,
       d1RowsRead: 10,
-      objectCalls: 2,
-      objectRowsRead: 238,
+      objectCalls: 3,
+      objectRowsRead: 3,
     }),
   },
   {
@@ -420,8 +420,8 @@ const ROWS: readonly Row[] = [
       d1Queries: 3,
       d1Calls: 3,
       d1RowsRead: 4,
-      objectCalls: 1,
-      objectRowsRead: 124,
+      objectCalls: 2,
+      objectRowsRead: 2,
     }),
   },
   {
@@ -438,7 +438,14 @@ const modeled: { day?: Record<string, number>; users?: Record<string, number> } 
 /** The first request of an API Key, when the Worker has not cached it: 30 s after its last. */
 const COLD_KEY = {
   name: "PROPFIND depth 0 with an API Key not yet cached",
-  budget: budget({ d1Queries: 2, d1Calls: 2, d1RowsRead: 3, objectCalls: 2, objectRowsRead: 1 }),
+  budget: budget({
+    d1Queries: 3,
+    d1Calls: 3,
+    d1RowsRead: 4,
+    d1RowsWritten: 1,
+    objectCalls: 2,
+    objectRowsRead: 1,
+  }),
 };
 
 /** Collection sizes around the Free plan's 50 D1 queries per request. */
@@ -572,8 +579,9 @@ describe("costs that stay flat as a collection grows", () => {
     expect(status).toBe(201);
     expectWithinFree(usage);
     expect(usage).toMatchObject({ d1Queries: 2, objectCalls: 2 });
-    // Each file writes its entry, its chunk and the content counter; the copy writes its root.
-    expect(usage.objectRowsWritten).toBeLessThanOrEqual(6 * files + 4);
+    // Each file writes its entry, its chunk and the content counter; the copy writes its root and
+    // the usage totals.
+    expect(usage.objectRowsWritten).toBeLessThanOrEqual(6 * files + 5);
   });
 
   it.each(SIZES)("MOVE of a collection of %i files", async (files) => {
@@ -592,6 +600,24 @@ describe("costs that stay flat as a collection grows", () => {
     // A move renames one row, however large the collection.
     expect(usage).toMatchObject({ d1Queries: 5, objectCalls: 2, objectRowsWritten: 4 });
   });
+
+  // Before 2026-11-24 the usage counted every entry row of the backend on each Dashboard visit.
+  it.each(SIZES)(
+    "GET /api/overview and /api/backends with %i more files in the backend",
+    async (files) => {
+      await filled(`/files/flat-usage-${files}`, files);
+      for (const [path, most] of [
+        ["/api/overview", 3],
+        ["/api/backends", 2],
+      ] as const) {
+        const { status, usage } = await measure(() => davloom.api(path));
+        expect(status).toBe(200);
+        expectWithinFree(usage);
+        // The totals row once per usage or quota, however many entries the backend holds.
+        expect(usage.objectRowsRead, path).toBeLessThanOrEqual(most);
+      }
+    },
+  );
 });
 
 /**
