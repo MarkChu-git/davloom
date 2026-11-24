@@ -27,6 +27,7 @@ import {
   engine,
   onlyInChromium,
 } from "./helpers";
+import { axeViolations } from "./axe";
 
 // The Dashboard: its pages, how they are reached, the colors they render, and how they lay out,
 // against the Worker's real API. Tests that change data change their own: a folder, a key or a
@@ -729,6 +730,31 @@ for (const scheme of ["light", "dark"] as const) {
       );
       const allowed = await page.evaluate(statusColorsOnPage);
       expect(await page.evaluate(huesOnPage, allowed)).toEqual([]);
+      await still?.(page);
+    });
+
+    // The same states through axe-core, in desktop Chromium as PRD §11 places the audit.
+    test(`Accessibility: ${name} has no axe-core violation in ${scheme} mode`, async ({ page }) => {
+      onlyInChromium("The accessibility audit runs in desktop Chromium.");
+      await page.emulateMedia({ colorScheme: scheme });
+      if (width !== undefined) {
+        await page.setViewportSize({ width, height: 900 });
+      }
+      await before?.(page);
+      await page.goto(typeof path === "string" ? path : await path(page));
+      await show(page);
+      expect(await page.evaluate(bodyIsDark)).toBe(scheme === "dark");
+      // Colors in the middle of a transition are neither the old nor the new contrast.
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation instanceof CSSTransition)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
+
+      expect(await axeViolations(page)).toEqual([]);
       await still?.(page);
     });
   }
