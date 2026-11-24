@@ -349,4 +349,27 @@ describe("migrate", () => {
       "PROPPATCH /x.txt did not set every property",
     );
   });
+
+  it("sets on a later run the dead properties an earlier run stopped before", async () => {
+    const source = server("https://old.example");
+    const target = server("https://new.example");
+    await source.dav("PUT", "/f", { body: "f" });
+    await source.dav("PROPPATCH", "/f", { body: proppatch("note", "kept") });
+    await source.dav("PROPPATCH", "/f", { body: proppatch("tag", "also") });
+    const failing: Endpoint = {
+      ...target.endpoint(),
+      fetch: async (request) =>
+        request.method === "PROPPATCH"
+          ? new Response(null, { status: 503 })
+          : await target.fetch(request),
+    };
+    await expect(migrate({ source: source.endpoint(), target: failing })).rejects.toThrow(
+      "PROPPATCH /f answered 503",
+    );
+    await target.dav("PROPPATCH", "/f", { body: proppatch("tag", "the target's") });
+    const again = await migrate({ source: source.endpoint(), target: target.endpoint() });
+    expect(again).toMatchObject({ skipped: 1, properties: 1 });
+    expect(await deadProperty(target, "/f", "note")).toContain("kept");
+    expect(await deadProperty(target, "/f", "tag")).toContain("the target's");
+  });
 });

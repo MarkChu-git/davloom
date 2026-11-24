@@ -12,7 +12,8 @@ import { migrate, MigrationError } from "./migrate";
 const USAGE = `Usage: bun run migrate -- [--overwrite] [--quiet] <source URL> <target URL>
 
 Copies every folder, file and dead property from the source collection to the target collection,
-and checks each written file's SHA-256. Running it again copies only what is missing.
+and checks each written file's SHA-256. Running it again copies only what is missing. The two
+collections must not hold each other, also not through two Mounts of one backend.
 
 Environment:
   DAVLOOM_SOURCE_KEY  an API Key of the source (Read Only is enough)

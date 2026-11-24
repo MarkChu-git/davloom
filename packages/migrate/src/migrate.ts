@@ -244,20 +244,25 @@ interface Seen {
   readonly state: CopyTarget;
   /** The target file's entity tag when it was looked at. */
   readonly etag: string;
+  /** The names of the dead properties the target holds there, in Clark notation. */
+  readonly properties: ReadonlySet<string>;
 }
+
+const nameOf = (property: XmlElement) => `{${property.ns}}${property.local}`;
 
 /** What the target holds where the source holds `entry`. */
 const targetState = async (options: MigrateOptions, entry: Entry): Promise<Seen> => {
   const found = await stat(options.target, entry.path);
-  if (found === null) return { state: "absent", etag: "" };
-  if (found.kind === "folder") return { state: "folder", etag: "" };
+  if (found === null) return { state: "absent", etag: "", properties: new Set() };
+  const properties = new Set(found.properties.map(nameOf));
+  if (found.kind === "folder") return { state: "folder", etag: "", properties };
   if (entry.kind === "folder" || found.size !== entry.size)
-    return { state: "differs", etag: found.etag };
+    return { state: "differs", etag: found.etag, properties };
   const [a, b] = await Promise.all([
     hashOf(options.source, entry.path),
     hashOf(options.target, entry.path),
   ]);
-  return { state: a === b ? "same" : "differs", etag: found.etag };
+  return { state: a === b ? "same" : "differs", etag: found.etag, properties };
 };
 
 /** Copies every entry under the source collection to the target collection. */
@@ -305,8 +310,17 @@ export const migrate = async (options: MigrateOptions): Promise<MigrateReport> =
       } else {
         report.skipped += 1;
       }
-      // What a run creates or writes gets the source's dead properties; what it skips keeps its own.
-      if (action !== "skip") report.properties += await setProperties(options.target, entry);
+      // What a run creates or writes gets the source's dead properties. What it skips keeps the
+      // values it has, and gets only those it lacks, as when an earlier run stopped before them.
+      report.properties += await setProperties(
+        options.target,
+        action === "skip"
+          ? {
+              ...entry,
+              properties: entry.properties.filter((p) => !seen.properties.has(nameOf(p))),
+            }
+          : entry,
+      );
       if (entry.kind === "folder") pending.push(entry.path);
       options.onEntry?.({ path, action });
     }
