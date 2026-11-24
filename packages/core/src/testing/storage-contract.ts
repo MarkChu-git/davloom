@@ -92,6 +92,106 @@ const opArbitrary: fc.Arbitrary<Op> = fc.oneof(
 
 export const storageContract = (adapter: string, { make, runs = 60 }: ContractOptions) => {
   describe(`storage contract: ${adapter}`, () => {
+    // Requests that reach one backend at once (PRD §15, concurrency): each finishes with an
+    // answer of its own, nothing is lost or mixed, and the tree stays readable.
+    describe("at once", () => {
+      const texts = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"];
+
+      it("create-only writes of one new file: exactly one wins, and the file holds its text", async () => {
+        const storage = await make();
+        const results = await Promise.all(
+          texts.map((text) =>
+            storage.write(["f"], streamOf(text), { size: text.length, ifAbsent: true }),
+          ),
+        );
+        const outcomes = results.map(failureOf);
+        expect(outcomes.filter((o) => o === "ok")).toHaveLength(1);
+        expect(outcomes.every((o) => o === "ok" || o === "exists")).toBe(true);
+        const winner = texts[outcomes.indexOf("ok")];
+        expect(await snapshot(storage)).toEqual({ f: winner });
+      });
+
+      it("writes of one file: each succeeds, and the file holds one whole text", async () => {
+        const storage = await make();
+        const results = await Promise.all(
+          texts.map((text) => storage.write(["f"], streamOf(text), { size: text.length })),
+        );
+        expect(results.map(failureOf)).toEqual(texts.map(() => "ok"));
+        expect(texts).toContain((await snapshot(storage))["f"]);
+      });
+
+      it("writes of many files in one collection: every file arrives", async () => {
+        const storage = await make();
+        await storage.createCollection(["d"]);
+        const results = await Promise.all(
+          texts.map((text) => storage.write(["d", text], streamOf(text), { size: text.length })),
+        );
+        expect(results.map(failureOf)).toEqual(texts.map(() => "ok"));
+        expect(await snapshot(storage)).toEqual({
+          "d/": "",
+          ...Object.fromEntries(texts.map((text) => [`d/${text}`, text])),
+        });
+      });
+
+      it("creating one collection: it exists once, and no answer is an error", async () => {
+        const storage = await make();
+        const results = await Promise.all(texts.map(() => storage.createCollection(["d"])));
+        const outcomes = results.map(failureOf);
+        expect(outcomes).toContain("ok");
+        expect(outcomes.every((o) => o === "ok" || o === "exists")).toBe(true);
+        expect(await snapshot(storage)).toEqual({ "d/": "" });
+      });
+
+      it("moving one file to two places: it is never lost", async () => {
+        const storage = await make();
+        await storage.write(["f"], streamOf("kept"), { size: 4 });
+        const results = await Promise.all([
+          storage.move(["f"], ["a"], { overwrite: false }),
+          storage.move(["f"], ["b"], { overwrite: false }),
+        ]);
+        expect(results.map(failureOf)).toContain("ok");
+        const tree = await snapshot(storage);
+        expect(Object.values(tree)).toContain("kept");
+        expect(Object.values(tree)).not.toContain("<unreadable>");
+      });
+
+      it("copying one tree to two places: both copies are whole", async () => {
+        const storage = await make();
+        await storage.createCollection(["src"]);
+        for (const text of texts) {
+          await storage.write(["src", text], streamOf(text), { size: text.length });
+        }
+        const results = await Promise.all([
+          storage.copy(["src"], ["one"], { overwrite: false, shallow: false }),
+          storage.copy(["src"], ["two"], { overwrite: false, shallow: false }),
+        ]);
+        expect(results.map(failureOf)).toEqual(["ok", "ok"]);
+        const tree = await snapshot(storage);
+        for (const root of ["src", "one", "two"]) {
+          for (const text of texts) expect(tree[`${root}/${text}`]).toBe(text);
+        }
+      });
+
+      it("removing a collection while writing into it: the tree stays readable", async () => {
+        const storage = await make();
+        await storage.createCollection(["d"]);
+        await storage.write(["d", "old"], streamOf("old"), { size: 3 });
+        const results = await Promise.all([
+          storage.remove(["d"]),
+          ...texts.map((text) => storage.write(["d", text], streamOf(text), { size: text.length })),
+        ]);
+        for (const outcome of results.map(failureOf)) {
+          expect(["ok", "no-parent", "not-found"]).toContain(outcome);
+        }
+        const tree = await snapshot(storage);
+        expect(Object.values(tree)).not.toContain("<unreadable>");
+        for (const [key, text] of Object.entries(tree)) {
+          if (!key.endsWith("/"))
+            expect(key.split("/").at(-1) === text || text === "old").toBe(true);
+        }
+      });
+    });
+
     it("an empty backend has an empty root collection", async () => {
       const storage = await make();
       const root = await storage.stat([]);

@@ -61,3 +61,14 @@ bun install --frozen-lockfile
 bun run --filter @davloom/web build
 DAVLOOM_SECRET=… DAVLOOM_SETUP_TOKEN=… DAVLOOM_S3_ENDPOINT=… bun apps/api/src/entry.bun.ts
 ```
+
+## Smoke test
+
+Once setup is done and a Read/Write API Key exists, check the stack end to end from a checkout
+of this repository:
+
+```bash
+DAVLOOM_SMOKE_KEY=dav_… bun scripts/smoke.ts http://localhost:3000
+```
+
+`docs/deployment/cloudflare.md` lists what it checks.

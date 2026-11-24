@@ -68,3 +68,18 @@ as a custom domain and `workers.dev`.
 `.github/workflows/deploy.yml` deploys every push to `main` once the repository has the secrets
 `CLOUDFLARE_API_TOKEN` (Workers Scripts Edit, D1 Edit, Account Settings Read, and Workers Routes
 Edit for a custom domain) and `CLOUDFLARE_ACCOUNT_ID`. Without them it succeeds without deploying.
+
+## Smoke test
+
+`scripts/smoke.ts` checks a running deployment end to end with one Read/Write API Key. It loads
+the Dashboard, checks the setup state and the Basic challenge, and runs a WebDAV round trip:
+a 1 MiB file, a byte range, a dead property, a lock and copy and move, in a new folder of the
+first Mount that it deletes at the end.
+
+```bash
+DAVLOOM_SMOKE_KEY=dav_… bun scripts/smoke.ts https://davloom.example.com
+```
+
+The Deploy workflow runs it after each deploy when the repository has a `DAVLOOM_SMOKE_KEY`
+secret and a `DAVLOOM_SMOKE_URL` variable. The same check runs against a Docker deployment, and
+the compatibility tests run it against local workerd and the Bun and RustFS stack.
