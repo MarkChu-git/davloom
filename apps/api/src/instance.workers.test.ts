@@ -44,9 +44,9 @@ describe("workersInstance", () => {
   });
 
   it("offers Durable Objects and S3, opens them, and nothing it does not know", async () => {
-    setBindings({ DAVLOOM_SECRET: SECRET, DAVLOOM_SETUP_TOKEN: " token " });
+    setBindings({ DAVLOOM_SECRET: SECRET });
     const { opener, config } = await services(workersInstance("https://x.test"));
-    expect(config).toMatchObject({ setupToken: "token", storageKinds: ["durable-object", "s3"] });
+    expect(config).toMatchObject({ storageKinds: ["durable-object", "s3"] });
     expect(opener.open(backend("durable-object"))).not.toBeNull();
     expect(opener.open(backend("r2", { binding: "FILES" }))).toBeNull();
     expect(opener.open(backend("memory"))).toBeNull();
@@ -66,10 +66,7 @@ describe("workersInstance", () => {
   it("offers R2 where the deployment has an R2 binding, and opens backends of it", async () => {
     setBindings({ DAVLOOM_SECRET: SECRET, FILES: bucket(), NOT_A_BUCKET: { get: () => null } });
     const { opener, config } = await services(workersInstance("https://x.test"));
-    expect(config).toMatchObject({
-      setupToken: null,
-      storageKinds: ["durable-object", "s3", "r2"],
-    });
+    expect(config).toMatchObject({ storageKinds: ["durable-object", "s3", "r2"] });
     expect(opener.open(backend("r2", { binding: "FILES" }))).not.toBeNull();
     expect(opener.open(backend("r2", { binding: "NOT_A_BUCKET" }))).toBeNull();
     expect(opener.open(backend("r2", { binding: 7 }))).toBeNull();

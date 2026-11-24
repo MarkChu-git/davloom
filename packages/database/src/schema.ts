@@ -13,6 +13,11 @@ export const user = sqliteTable("user", {
   image: text("image"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
+  // The username plugin: the name the owner signs in with, normalized to lower case, and as typed.
+  username: text("username").unique(),
+  displayUsername: text("display_username"),
+  // The two-factor plugin: whether sign-in asks for a second step.
+  twoFactorEnabled: flag("two_factor_enabled").default(false),
 });
 
 export const session = sqliteTable(
@@ -25,6 +30,8 @@ export const session = sqliteTable(
     updatedAt: timestamp("updated_at").notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    // When the session last proved presence again for a step-up action; null until it does.
+    verifiedAt: timestamp("verified_at"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -65,6 +72,50 @@ export const verification = sqliteTable(
     updatedAt: timestamp("updated_at"),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+// The two-factor plugin's TOTP secret and backup codes, both encrypted with the instance secret.
+export const twoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: flag("verified").default(true),
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: timestamp("locked_until"),
+  },
+  (table) => [
+    index("two_factor_secret_idx").on(table.secret),
+    index("two_factor_user_id_idx").on(table.userId),
+  ],
+);
+
+// The passkey plugin's WebAuthn credentials.
+export const passkey = sqliteTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: flag("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at"),
+    aaguid: text("aaguid"),
+  },
+  (table) => [
+    index("passkey_user_id_idx").on(table.userId),
+    index("passkey_credential_id_idx").on(table.credentialID),
+  ],
 );
 
 export const apikey = sqliteTable(

@@ -14,12 +14,11 @@ import {
   type ArchiveTables,
 } from "./archive";
 import { CredentialCipher, CredentialsError, makeCredentialCipher } from "./credentials";
-import { InstanceConfig, Records, SetupClosed } from "./instance";
+import { InstanceConfig, Records, RegistrationClosed } from "./instance";
 
 // The export and import services against a fake Archive that keeps its rows in memory. The
 // database package runs the same services against Bun SQLite.
 
-const TOKEN = "setup-token-0123456789";
 const SECRET = "s".repeat(32);
 
 const empty = (): ArchiveTables => mapArchiveTables(() => []);
@@ -30,25 +29,32 @@ interface World {
   readonly users?: number;
   readonly problem?: string | null;
   readonly refuseWrite?: boolean;
+  /** A registration wins the race while the import writes, so the database refuses its rows. */
+  readonly raced?: boolean;
 }
 
 const world = (options: World = {}) => {
   let stored = options.tables ?? empty();
+  let users = options.users ?? 0;
   const writes: ArchiveTables[] = [];
   const layer = Layer.mergeAll(
     Layer.succeed(Archive, {
       read: () => Promise.resolve(stored),
       check: () => options.problem ?? null,
       write: (tables) => {
+        if (options.raced) {
+          users = 1;
+          return Promise.reject(new Error("davloom: registration is closed"));
+        }
         if (options.refuseWrite) return Promise.reject(new Error("UNIQUE constraint failed"));
         writes.push(tables);
         stored = mapArchiveTables((table) => [...stored[table], ...tables[table]]);
         return Promise.resolve();
       },
     }),
-    Layer.succeed(InstanceConfig, { setupToken: TOKEN, storageKinds: ["s3"], ...options.config }),
+    Layer.succeed(InstanceConfig, { storageKinds: ["s3"], ...options.config }),
     Layer.succeed(Records, {
-      users: { count: () => Promise.resolve(options.users ?? 0) },
+      users: { count: () => Promise.resolve(users) },
       backends: { list: () => Promise.resolve([]), create: () => Promise.resolve() },
       mounts: {
         list: () => Promise.resolve([]),
@@ -277,7 +283,7 @@ describe("importInstance", () => {
   it("refuses rows the database does not accept, and writes nothing", async () => {
     const w = world({ problem: "The name of row 1 of mounts is not text." });
     const { key, file } = await sealed(empty());
-    expect(reasonOf(await w.run(importInstance({ token: TOKEN, key, file })))).toBe(
+    expect(reasonOf(await w.run(importInstance({ key, file })))).toBe(
       "The name of row 1 of mounts is not text.",
     );
     expect(w.writes).toEqual([]);
@@ -286,16 +292,20 @@ describe("importInstance", () => {
   it("reports a write the database refused", async () => {
     const w = world({ refuseWrite: true });
     const { key, file } = await sealed(empty());
-    expect(reasonOf(await w.run(importInstance({ token: TOKEN, key, file })))).toMatch(
-      /database refused/,
-    );
+    expect(reasonOf(await w.run(importInstance({ key, file })))).toMatch(/database refused/);
+  });
+
+  it("closes when a registration wins the race with the import", async () => {
+    const w = world({ raced: true });
+    const { key, file } = await sealed(empty());
+    expect(errorOf(await w.run(importInstance({ key, file })))).toBeInstanceOf(RegistrationClosed);
   });
 
   it("refuses an instance with a user", async () => {
     const { key, file } = await sealed(empty());
-    expect(
-      errorOf(await world({ users: 1 }).run(importInstance({ token: TOKEN, key, file }))),
-    ).toBeInstanceOf(SetupClosed);
+    expect(errorOf(await world({ users: 1 }).run(importInstance({ key, file })))).toBeInstanceOf(
+      RegistrationClosed,
+    );
   });
 
   it.each([
@@ -324,7 +334,7 @@ describe("importInstance", () => {
   ] as const)("with %s, imports the backends it should", async (_, config, expected) => {
     const w = world({ config });
     const { key, file } = await sealed({ ...empty(), storage_backends: [backend("b1", "A")] });
-    expect(Exit.isSuccess(await w.run(importInstance({ token: TOKEN, key, file })))).toBe(true);
+    expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
     expect(w.read().storage_backends.map((r) => [r["name"], r["kind"]])).toEqual(expected);
   });
 
@@ -334,7 +344,7 @@ describe("importInstance", () => {
       ...empty(),
       storage_backends: [backend("b1", "Default"), backend("b2", "Default 2")],
     });
-    expect(Exit.isSuccess(await w.run(importInstance({ token: TOKEN, key, file })))).toBe(true);
+    expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
     const added = w.read().storage_backends[2];
     expect(added?.["name"]).toBe("Default 3");
     expect(added?.["config"]).toMatchObject(S3.config);
@@ -346,7 +356,7 @@ describe("importInstance", () => {
       config: { defaultBackend: { ...S3, config: { bucket: 1 }, secretKey: null } },
     });
     const { key, file } = await sealed(empty());
-    expect(Exit.isSuccess(await w.run(importInstance({ token: TOKEN, key, file })))).toBe(true);
+    expect(Exit.isSuccess(await w.run(importInstance({ key, file })))).toBe(true);
     expect(w.read().storage_backends[0]).toMatchObject({ config: { bucket: 1 }, secret_key: null });
   });
 });

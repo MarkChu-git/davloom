@@ -67,17 +67,25 @@ const errorOf = async (run: () => Promise<unknown>): Promise<unknown> => {
   throw new Error("expected the call to fail");
 };
 
+const insertUser = (id: string) =>
+  db
+    .insert(schema.user)
+    .values({ id, name: id, email: `${id}@davloom.test`, createdAt: T0, updatedAt: T0 });
+
 describe("users", () => {
   it("counts the users", async () => {
     expect(await repositories.users.count()).toBe(0);
 
-    for (const id of ["u1", "u2"]) {
-      await db
-        .insert(schema.user)
-        .values({ id, name: id, email: `${id}@davloom.test`, createdAt: T0, updatedAt: T0 });
-    }
+    await insertUser("u1");
 
-    expect(await repositories.users.count()).toBe(2);
+    expect(await repositories.users.count()).toBe(1);
+  });
+
+  it("holds one user, its owner: the database refuses a second", async () => {
+    await insertUser("u1");
+
+    await expect(insertUser("u2")).rejects.toThrow(/registration is closed/);
+    expect(await repositories.users.count()).toBe(1);
   });
 });
 

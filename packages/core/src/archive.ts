@@ -2,13 +2,7 @@ import { planImport, type ImportEntry } from "@davloom/laws";
 import { Context, Data, Effect, Redacted } from "effect";
 import { checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
-import {
-  constantTimeEqual,
-  InstanceConfig,
-  Records,
-  SetupClosed,
-  SetupTokenInvalid,
-} from "./instance";
+import { InstanceConfig, Records, RegistrationClosed } from "./instance";
 import { parseScope } from "./scope";
 
 // Data export and import (PRD §8.5 Data Export, Data Migration). An export holds the records of an
@@ -17,7 +11,7 @@ import { parseScope } from "./scope";
 // expire. The whole export is encrypted with AES-256-GCM under a random key that the admin gets
 // once, beside the file, so no credential is ever exported in plaintext: not a backend's secret
 // key, which the export carries decrypted inside the ciphertext, and not the hashes of passwords
-// and API Keys. Only an instance without users imports, with its setup token, and an import
+// and API Keys. Only an instance without users imports, in place of registering its owner, and an import
 // writes every row or none (the law import_all_or_nothing).
 
 export const ARCHIVE_TABLES = [
@@ -316,17 +310,14 @@ const withDefaultBackend = (
  * Imports an export into an instance that has no user yet, in place of the first-run setup. Every
  * record is written, or, when the file, the key or a record is invalid, none.
  */
-export const importInstance = (input: { token: string; key: string; file: unknown }) =>
+export const importInstance = (input: { key: string; file: unknown }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const config = yield* InstanceConfig;
     const archive = yield* Archive;
     const cipher = yield* CredentialCipher;
-    if (config.setupToken === null || (yield* Effect.promise(() => records.users.count())) > 0) {
-      return yield* Effect.fail(new SetupClosed());
-    }
-    if (!constantTimeEqual(input.token, config.setupToken)) {
-      return yield* Effect.fail(new SetupTokenInvalid());
+    if ((yield* Effect.promise(() => records.users.count())) > 0) {
+      return yield* Effect.fail(new RegistrationClosed());
     }
     const tables = withDefaultBackend(yield* openArchive(input.file, input.key), config);
     const problem = archive.check(tables);
@@ -351,14 +342,22 @@ export const importInstance = (input: { token: string; key: string; file: unknow
           : row,
       );
     }
-    yield* Effect.tryPromise({
+    const written = yield* Effect.tryPromise({
       try: () => archive.write({ ...tables, storage_backends: backends }),
-      catch: (error) => {
+      catch: (error) => error,
+    }).pipe(
+      Effect.as(true),
+      Effect.catch((error) => {
         console.error("Import failed to write:", String(error));
-        return new ArchiveInvalid({
-          reason: "The database refused the records, so nothing was imported.",
-        });
-      },
-    });
+        return Effect.succeed(false);
+      }),
+    );
+    if (!written) {
+      // A registration that won the race makes the database refuse every imported user.
+      if ((yield* Effect.promise(() => records.users.count())) > 0) {
+        return yield* Effect.fail(new RegistrationClosed());
+      }
+      return yield* invalid("The database refused the records, so nothing was imported.");
+    }
     return Object.fromEntries(ARCHIVE_TABLES.map((table) => [table, tables[table].length]));
   });

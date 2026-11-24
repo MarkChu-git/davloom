@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { createAuth, createIdentity } from "@davloom/auth";
+import { createAuth, createIdentity, leakedPasswordCheckFrom } from "@davloom/auth";
 import {
   Archive,
   checkR2Config,
@@ -29,8 +29,8 @@ declare global {
       readonly STORAGE: DurableObjectNamespace<StorageObject>;
       /** The instance secret: signs sessions. At least 32 bytes. */
       readonly DAVLOOM_SECRET?: string;
-      /** The token the first-run setup asks for. */
-      readonly DAVLOOM_SETUP_TOKEN?: string;
+      /** `off` turns off the check of new passwords against Have I Been Pwned. */
+      readonly DAVLOOM_CHECK_LEAKED_PASSWORDS?: string;
       /** The public URL, e.g. https://davloom.example.workers.dev; else the request's origin. */
       readonly DAVLOOM_URL?: string;
     }
@@ -67,7 +67,12 @@ export const workersInstance = (origin: string): Instance => {
   const unseal = async (backendId: string, sealed: string) =>
     await unsealWith(await cipher)(backendId, sealed);
   const repositories = createRepositories(db);
-  const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
+  const auth = createAuth({
+    database: db,
+    secret,
+    baseURL: env.DAVLOOM_URL ?? origin,
+    checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+  });
   const layer = Layer.mergeAll(
     Layer.succeed(Records, repositories),
     Layer.succeed(Archive, createArchive(db, d1Atomic(db))),
@@ -100,7 +105,6 @@ export const workersInstance = (origin: string): Instance => {
     credentialCipherLayer(Redacted.make(secret)),
 
     Layer.succeed(InstanceConfig, {
-      setupToken: env.DAVLOOM_SETUP_TOKEN?.trim() ? env.DAVLOOM_SETUP_TOKEN.trim() : null,
       // R2 is offered only where the deployment has an R2 binding; enabling R2 needs a payment
       // method, so the default deployment has none.
       storageKinds: r2Bindings.size > 0 ? ["durable-object", "s3", "r2"] : ["durable-object", "s3"],

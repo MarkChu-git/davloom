@@ -1,5 +1,9 @@
 import {
-  completeSetup,
+  registerOwner,
+  registrationStatus,
+  requireVerified,
+  responseFromExit,
+  reverify,
   exportInstance,
   importInstance,
   type Archive,
@@ -16,7 +20,6 @@ import {
   retargetMount,
   requireUser,
   revokeKey,
-  setupStatus,
   verifyApiKey,
   relationOf,
   scopeStorage,
@@ -30,11 +33,12 @@ import {
   type InstanceConfig,
   type CredentialCipher,
 } from "@davloom/core";
-import { authorizeScoped } from "@davloom/laws";
+import { authorizeScoped, verificationLevel, type ActionEffect } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
 import { Cause, Effect, Redacted, type Exit, type Layer } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
 import { parseBasicCredentials } from "@davloom/auth";
+import { apiEffect, authEffect, davEffect, updateUserEffect } from "./verification";
 
 /** The application's Ports, which every deployment provides. */
 type Services = Records | Identity | StorageOpener | InstanceConfig | CredentialCipher | Archive;
@@ -93,8 +97,15 @@ const HTTPS_ONLY = () =>
 const notImplemented: WebDavHandler = () => new Response(null, { status: 501 });
 
 const ERRORS = {
-  SetupClosed: { status: 409, code: "setup_closed" },
-  SetupTokenInvalid: { status: 403, code: "setup_token_invalid" },
+  RegistrationClosed: { status: 409, code: "registration_closed" },
+  UsernameRefused: { status: 400, code: "username_refused" },
+  PasswordRefused: { status: 400, code: "password_refused" },
+  EmailRefused: { status: 400, code: "email_refused" },
+  PasswordCheckFailed: { status: 503, code: "password_check_failed" },
+  VerificationRequired: { status: 403, code: "verification_required" },
+  WrongPassword: { status: 400, code: "wrong_password" },
+  CodeRequired: { status: 400, code: "code_required" },
+  WrongCode: { status: 400, code: "wrong_code" },
   InvalidInput: { status: 400, code: "invalid_input" },
   NotFound: { status: 404, code: "not_found" },
   NameTaken: { status: 409, code: "name_taken" },
@@ -113,6 +124,9 @@ const UNAUTHORIZED = () =>
   });
 
 const NOT_CONFIGURED = () => Response.json({ error: { code: "not_configured" } }, { status: 503 });
+
+/** A route or Better Auth path that has no entry in verification.ts. */
+const UNCLASSIFIED = () => Response.json({ error: { code: "not_found" } }, { status: 404 });
 
 /** The header that marks a Dashboard request, which a cross-site form cannot send. */
 export const DASHBOARD_HEADER = "x-davloom-dashboard";
@@ -196,11 +210,14 @@ export const createApp = ({
       status,
     );
 
-  /** The credential of a WebDAV request: an API Key by Basic Auth, or the Dashboard's session. */
+  /**
+   * The credential of a WebDAV request: an API Key by Basic Auth, or the Dashboard's session. A
+   * session's request that needs step-up verification and has none gets the refusal instead.
+   */
   const credentialOf = async (
     request: Request,
     current: NonNullable<ReturnType<typeof get>>,
-  ): Promise<Credential | null> => {
+  ): Promise<Credential | Response | null> => {
     const basic = parseBasicCredentials(request.headers.get("authorization"));
     if (basic) {
       const now = Date.now();
@@ -215,12 +232,18 @@ export const createApp = ({
       return credential;
     }
     if (request.headers.get(DASHBOARD_HEADER) === "1") {
+      const effect = davEffect(request.method, request.headers.get("overwrite"));
       const exit = await Effect.runPromiseExit(
-        Effect.provide(requireUser(request.headers), current.instance.layer),
+        Effect.provide(
+          requireVerified(request.headers, effect, Date.now()),
+          current.instance.layer,
+        ),
       );
-      return exit._tag === "Success"
-        ? { keyId: `session:${exit.value.id}`, access: "read-write", scope: null }
-        : null;
+      if (exit._tag === "Success") {
+        return { keyId: `session:${exit.value.id}`, access: "read-write", scope: null };
+      }
+      const refused = responseFromExit(exit, { errors });
+      return refused.status === 403 ? refused : null;
     }
     return null;
   };
@@ -231,6 +254,7 @@ export const createApp = ({
     if (current === undefined) return await notImplemented(request);
     if (current === null) return NOT_CONFIGURED();
     const credential = await credentialOf(request, current);
+    if (credential instanceof Response) return credential;
     // The Dashboard signs in with its own page; a Basic challenge would open the browser's dialog.
     if (!credential) {
       return request.headers.get(DASHBOARD_HEADER) === "1"
@@ -272,6 +296,46 @@ export const createApp = ({
     namespace = undefined;
   };
 
+  /**
+   * Refuses an action that needs step-up verification when the session has not proved presence
+   * within the window (packages/laws verification.bend); undefined when it may run.
+   */
+  const refuseUnverified = async (
+    request: Request,
+    effect: ActionEffect,
+  ): Promise<Response | undefined> => {
+    if (verificationLevel(effect) !== "step-up") return undefined;
+    const current = get(request);
+    if (current === undefined) return new Response(null, { status: 501 });
+    if (current === null) return NOT_CONFIGURED();
+    const exit = await Effect.runPromiseExit(
+      Effect.provide(requireVerified(request.headers, effect, Date.now()), current.instance.layer),
+    );
+    return exit._tag === "Success" ? undefined : responseFromExit(exit, { errors });
+  };
+
+  /** Better Auth's routes, limited to the paths verification.ts names. */
+  const authRoute = async ({ request }: { request: Request }) => {
+    const current = get(request);
+    if (!current) return new Response(null, { status: 501 });
+    const path = new URL(request.url).pathname.slice("/api/auth".length);
+    let effect = authEffect(path);
+    if (effect === undefined) return UNCLASSIFIED();
+    if (path === "/update-user") {
+      effect = updateUserEffect(
+        await request
+          .clone()
+          .json()
+          .catch(() => null),
+      );
+    }
+    if (effect !== "public") {
+      const refused = await refuseUnverified(request, effect);
+      if (refused) return refused;
+    }
+    return await current.instance.authHandler(request);
+  };
+
   return (
     new Elysia(adapter ? { adapter } : {})
       .onRequest(({ request }) => {
@@ -281,34 +345,35 @@ export const createApp = ({
         if (pathname === "/api/health" || pathname === "/api/health/") return undefined;
         return /^\/(api|dav)(\/|$)/.test(pathname) ? HTTPS_ONLY() : undefined;
       })
+      // Every route below names its effect in verification.ts; one that does not is refused, and
+      // a step-up action without a fresh verification answers 403 verification_required.
+      .onBeforeHandle(async ({ request, route }) => {
+        if (route === "/api/auth/*" || route === "/dav" || route === "/dav/*") return undefined;
+        const method = request.method === "HEAD" ? "GET" : request.method;
+        const effect = apiEffect(method, route);
+        if (effect === undefined) return UNCLASSIFIED();
+        return effect === "public" ? undefined : await refuseUnverified(request, effect);
+      })
       .get("/api/health", () => ({ status: "ok" }))
-      .all(
-        "/api/auth/*",
-        async ({ request }) => {
-          const current = get(request);
-          return current
-            ? await current.instance.authHandler(request)
-            : new Response(null, { status: 501 });
-        },
-        { parse: "none" },
-      )
+      .all("/api/auth/*", authRoute, { parse: "none" })
+      // --- Registration and step-up verification -------------------------------------------
       .get(
-        "/api/setup",
-        api(() => setupStatus),
+        "/api/registration",
+        api(() => registrationStatus),
       )
       .post(
-        "/api/setup",
+        "/api/registration",
         api(
           (request) =>
             Effect.flatMap(
               Effect.promise(() => readJson(request)),
               (body) =>
                 Effect.tap(
-                  completeSetup({
+                  registerOwner({
+                    username: text(body.username),
                     name: text(body.name),
                     email: text(body.email),
                     password: text(body.password),
-                    token: text(body.token),
                   }),
                   () => Effect.sync(invalidate),
                 ),
@@ -318,18 +383,28 @@ export const createApp = ({
         { parse: "none" },
       )
       .post(
-        "/api/setup/import",
+        "/api/registration/import",
         api(
           (request) =>
             Effect.flatMap(
               Effect.promise(() => readJson(request)),
               (body) =>
-                Effect.tap(
-                  importInstance({ token: text(body.token), key: text(body.key), file: body.file }),
-                  () => Effect.sync(invalidate),
+                Effect.tap(importInstance({ key: text(body.key), file: body.file }), () =>
+                  Effect.sync(invalidate),
                 ),
             ),
           201,
+        ),
+        { parse: "none" },
+      )
+      .post(
+        "/api/verify",
+        api((request) =>
+          Effect.flatMap(
+            Effect.promise(() => readJson(request)),
+            (body) =>
+              reverify(request.headers, { password: text(body.password), code: text(body.code) }),
+          ),
         ),
         { parse: "none" },
       )

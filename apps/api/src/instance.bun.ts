@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAuth, createIdentity } from "@davloom/auth";
+import { createAuth, createIdentity, leakedPasswordCheckFrom } from "@davloom/auth";
 import {
   Archive,
   credentialCipherLayer,
@@ -36,7 +36,7 @@ const S3_MAX_ENTRIES = 1000;
 
 export type BunEnv = Readonly<Record<string, string | undefined>>;
 
-/** The S3-compatible backend the first-run setup creates, from DAVLOOM_S3_* variables, or null. */
+/** The S3-compatible backend registration creates, from DAVLOOM_S3_* variables, or null. */
 export const defaultS3Backend = (env: BunEnv) => {
   if (!env.DAVLOOM_S3_ENDPOINT) return null;
   return {
@@ -70,7 +70,12 @@ export const bunInstance =
     const db = createBunSqliteDatabase(sqlite);
     migrateBunSqliteDatabase(db);
     const repositories = createRepositories(db);
-    const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
+    const auth = createAuth({
+      database: db,
+      secret,
+      baseURL: env.DAVLOOM_URL ?? origin,
+      checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+    });
     const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
     const unseal = async (backendId: string, sealed: string) =>
       await unsealWith(await cipher)(backendId, sealed);
@@ -85,7 +90,6 @@ export const bunInstance =
             : null,
       }),
       Layer.succeed(InstanceConfig, {
-        setupToken: env.DAVLOOM_SETUP_TOKEN?.trim() ? env.DAVLOOM_SETUP_TOKEN.trim() : null,
         storageKinds: ["s3"],
         defaultBackend: defaultS3Backend(env),
       }),

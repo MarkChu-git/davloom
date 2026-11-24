@@ -1,4 +1,4 @@
-import fc from "fast-check";
+import { assert, boolean, constantFrom, property } from "fast-check";
 import { describe, expect, it } from "vitest";
 import bend from "./compiled/verification.mjs";
 import {
@@ -38,8 +38,8 @@ describe("verificationPermits", () => {
   });
 
   it("agrees with the compiled allows for every level", () => {
-    fc.assert(
-      fc.property(fc.constantFrom(...ACTION_EFFECTS), fc.boolean(), (effect, fresh) => {
+    assert(
+      property(constantFrom(...ACTION_EFFECTS), boolean(), (effect, fresh) => {
         const level = bend.level({
           $: (
             {

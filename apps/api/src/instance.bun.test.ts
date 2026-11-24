@@ -1,5 +1,5 @@
 import { Redacted } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,56 +52,43 @@ describe("bunInstance", () => {
     expect(() => bunInstance({})("http://x")).toThrow("DAVLOOM_SECRET");
   });
 
-  it("creates its database in the data directory, with setup open for the token", async () => {
-    const dir = tmp();
-    try {
-      const app = createApp({
-        instance: bunInstance({
-          DAVLOOM_SECRET: "s".repeat(32),
-          DAVLOOM_SETUP_TOKEN: "  token  ",
-          DAVLOOM_DATA_DIR: join(dir, "data"),
-        }),
+  it.each([
+    ["on by default", undefined, true],
+    ["off when the variable says off", "off", false],
+  ])(
+    "creates its database in the data directory, with the leaked-password check %s",
+    async (_case, check, refuses) => {
+      const dir = tmp();
+      const fetch = vi.fn(async () => {
+        throw new TypeError("offline");
       });
-      const status = await app.handle(new Request("https://davloom.test/api/setup"));
-      expect(await status.json()).toEqual({ needed: true, open: true });
-      expect(existsSync(join(dir, "data", "davloom.sqlite"))).toBe(true);
-      const setup = await app.handle(
-        new Request("https://davloom.test/api/setup", {
-          method: "POST",
-          body: JSON.stringify({
-            name: "A",
-            email: "a@b.test",
-            password: "a long password",
-            token: "token",
+      vi.stubGlobal("fetch", fetch);
+      try {
+        const app = createApp({
+          instance: bunInstance({
+            DAVLOOM_SECRET: "s".repeat(32),
+            DAVLOOM_DATA_DIR: join(dir, "data"),
+            DAVLOOM_CHECK_LEAKED_PASSWORDS: check,
           }),
-        }),
-      );
-      expect(setup.status).toBe(201);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps setup closed when the token is blank", async () => {
-    const dir = tmp();
-    try {
-      const app = createApp({
-        instance: bunInstance({
-          DAVLOOM_SECRET: "s".repeat(32),
-          DAVLOOM_SETUP_TOKEN: " ",
-          DAVLOOM_DATA_DIR: dir,
-        }),
-      });
-      expect(
-        await (await app.handle(new Request("https://davloom.test/api/setup"))).json(),
-      ).toEqual({
-        needed: true,
-        open: false,
-      });
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+        });
+        const status = await app.handle(new Request("https://davloom.test/api/registration"));
+        expect(await status.json()).toEqual({ open: true });
+        expect(existsSync(join(dir, "data", "davloom.sqlite"))).toBe(true);
+        const registered = await app.handle(
+          new Request("https://davloom.test/api/registration", {
+            method: "POST",
+            body: JSON.stringify({ username: "owner", password: "a long password here" }),
+          }),
+        );
+        // Offline, the check refuses rather than let an unchecked password through.
+        expect(registered.status).toBe(refuses ? 503 : 201);
+        expect(fetch).toHaveBeenCalledTimes(refuses ? 1 : 0);
+      } finally {
+        vi.unstubAllGlobals();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("ensureDefaultBucket", () => {

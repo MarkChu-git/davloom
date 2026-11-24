@@ -1,12 +1,18 @@
 import { Context, Data, Effect, Redacted } from "effect";
 import { checkR2Config, checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
-import { isValidName, isValidPath, type Access } from "@davloom/laws";
+import {
+  isValidName,
+  isValidPath,
+  verificationPermits,
+  type Access,
+  type ActionEffect,
+} from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
 import { formatRoot, parseScope, type Scope } from "./scope";
 import type { Path, StorageBackend, Usage } from "./storage";
 
-// The application services of one Davloom instance: first-run setup, API Keys, storage backends and
+// The application services of one Davloom instance: registration of its owner, API Keys, storage backends and
 // Mounts, and the credential check of WebDAV requests. They reach the database, the identity
 // provider and the storage backends only through the Ports below.
 
@@ -76,19 +82,50 @@ export class Records extends Context.Service<
   }
 >()("@davloom/core/Records") {}
 
+/** The signed-in owner, as the identity provider describes them. */
+export interface SessionUser {
+  readonly id: string;
+  /** The display name. */
+  readonly name: string;
+  /** The username they sign in with, as they typed it; null for an owner from an old export. */
+  readonly username: string | null;
+  /** Their email, or null when they gave none. */
+  readonly email: string | null;
+  readonly twoFactorEnabled: boolean;
+  /** When this session last proved presence, as milliseconds since the epoch. */
+  readonly verifiedAt: number;
+}
+
+/** What the identity provider made of a registration. */
+export type RegistrationResult =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly refusal: "closed" }
+  | {
+      readonly ok: false;
+      readonly refusal: "field";
+      readonly field: "username" | "password" | "email";
+      readonly reason: string;
+    }
+  | { readonly ok: false; readonly refusal: "check-failed"; readonly reason: string };
+
 /** The Port to the identity provider (Better Auth). */
 export class Identity extends Context.Service<
   Identity,
   {
-    readonly createAdmin: (details: {
+    /** Creates the owner, unless a user exists already; atomic in the database. */
+    readonly registerOwner: (details: {
+      username: string;
       name: string;
-      email: string;
+      email: string | null;
       password: string;
-    }) => Promise<{ id: string }>;
+    }) => Promise<RegistrationResult>;
     /** The signed-in user of a request, or null. */
-    readonly sessionUser: (
+    readonly sessionUser: (headers: Headers) => Promise<SessionUser | null>;
+    /** Checks the password, and the authenticator code when two-step verification is on. */
+    readonly reverify: (
       headers: Headers,
-    ) => Promise<{ id: string; name: string; email: string } | null>;
+      input: { password: string; code: string },
+    ) => Promise<"verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code">;
     readonly createApiKey: (details: {
       userId: string;
       name: string;
@@ -108,11 +145,9 @@ export class StorageOpener extends Context.Service<
 export class InstanceConfig extends Context.Service<
   InstanceConfig,
   {
-    /** The token the first-run setup asks for; setup is closed without one. */
-    readonly setupToken: string | null;
     /** The storage kinds this runtime can open; the first is the default for new backends. */
     readonly storageKinds: readonly string[];
-    /** The backend the first-run setup creates, when the deployment names one (self-hosted). */
+    /** The backend registration creates, when the deployment names one (self-hosted). */
     readonly defaultBackend?: {
       readonly kind: string;
       readonly config: unknown;
@@ -121,8 +156,26 @@ export class InstanceConfig extends Context.Service<
   }
 >()("@davloom/core/InstanceConfig") {}
 
-export class SetupClosed extends Data.TaggedError("SetupClosed")<{}> {}
-export class SetupTokenInvalid extends Data.TaggedError("SetupTokenInvalid")<{}> {}
+/** The instance has its owner, so registration and imports are closed. */
+export class RegistrationClosed extends Data.TaggedError("RegistrationClosed")<{}> {}
+/** The identity provider refused a field of a registration, for the reason it gives. */
+export class UsernameRefused extends Data.TaggedError("UsernameRefused")<{
+  readonly reason: string;
+}> {}
+export class PasswordRefused extends Data.TaggedError("PasswordRefused")<{
+  readonly reason: string;
+}> {}
+export class EmailRefused extends Data.TaggedError("EmailRefused")<{ readonly reason: string }> {}
+/** The leaked-password check could not reach its service, so the password was not accepted. */
+export class PasswordCheckFailed extends Data.TaggedError("PasswordCheckFailed")<{
+  readonly reason: string;
+}> {}
+/** A step-up action needs the session to prove presence again first. */
+export class VerificationRequired extends Data.TaggedError("VerificationRequired")<{}> {}
+export class WrongPassword extends Data.TaggedError("WrongPassword")<{}> {}
+/** Two-step verification is on, so a re-verification needs the authenticator's code too. */
+export class CodeRequired extends Data.TaggedError("CodeRequired")<{}> {}
+export class WrongCode extends Data.TaggedError("WrongCode")<{}> {}
 export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly field: string }> {}
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class NameTaken extends Data.TaggedError("NameTaken")<{}> {}
@@ -151,60 +204,63 @@ const insert = (run: () => Promise<void>) =>
     Effect.catch((error) => (isUnique(error) ? Effect.fail(new NameTaken()) : Effect.die(error))),
   );
 
-/** Compares two secrets in time that does not depend on where they differ. */
-export const constantTimeEqual = (a: string, b: string) => {
-  const left = new TextEncoder().encode(a);
-  const right = new TextEncoder().encode(b);
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  }
-  return difference === 0;
-};
-
 export const DEFAULT_MOUNT = "files";
 
-// --- Setup ---------------------------------------------------------------------------------
+// --- Registration --------------------------------------------------------------------------
 
-export const setupStatus = Effect.gen(function* () {
+/** Registration is open while the instance has no user: the first account becomes its owner. */
+export const registrationStatus = Effect.gen(function* () {
   const records = yield* Records;
-  const config = yield* InstanceConfig;
-  const users = yield* promise(() => records.users.count());
-  return { needed: users === 0, open: users === 0 && config.setupToken !== null };
+  return { open: (yield* promise(() => records.users.count())) === 0 };
 });
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
-/** Creates the administrator, a default backend and its Mount. Only while no user exists. */
-export const completeSetup = (input: {
+/**
+ * Creates the owner, then a default backend and its Mount. Only the first registration wins; any
+ * later one, including one that raced it, fails with RegistrationClosed.
+ */
+export const registerOwner = (input: {
+  username: string;
   name: string;
   email: string;
   password: string;
-  token: string;
 }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const identity = yield* Identity;
     const config = yield* InstanceConfig;
-    if (config.setupToken === null || (yield* promise(() => records.users.count())) > 0) {
-      return yield* Effect.fail(new SetupClosed());
+    if ((yield* promise(() => records.users.count())) > 0) {
+      return yield* Effect.fail(new RegistrationClosed());
     }
-    if (!constantTimeEqual(input.token, config.setupToken))
-      return yield* Effect.fail(new SetupTokenInvalid());
-    if (input.name.trim() === "" || input.name.length > 100)
-      return yield* Effect.fail(new InvalidInput({ field: "name" }));
-    if (!EMAIL.test(input.email) || input.email.length > 254)
+    const username = input.username.trim();
+    if (username === "") return yield* Effect.fail(new InvalidInput({ field: "username" }));
+    const name = input.name.trim() === "" ? username : input.name.trim();
+    if (name.length > 100) return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    const email = input.email.trim();
+    if (email !== "" && (!EMAIL.test(email) || email.length > 254))
       return yield* Effect.fail(new InvalidInput({ field: "email" }));
-    if (input.password.length < 12 || input.password.length > 128) {
-      return yield* Effect.fail(new InvalidInput({ field: "password" }));
-    }
-    const user = yield* promise(() =>
-      identity.createAdmin({
-        name: input.name.trim(),
-        email: input.email,
+    const result = yield* promise(() =>
+      identity.registerOwner({
+        username,
+        name,
+        email: email === "" ? null : email,
         password: input.password,
       }),
     );
+    if (!result.ok) {
+      if (result.refusal === "closed") return yield* Effect.fail(new RegistrationClosed());
+      if (result.refusal === "check-failed")
+        return yield* Effect.fail(new PasswordCheckFailed({ reason: result.reason }));
+      const reason = result.reason;
+      return yield* Effect.fail(
+        result.field === "username"
+          ? new UsernameRefused({ reason })
+          : result.field === "password"
+            ? new PasswordRefused({ reason })
+            : new EmailRefused({ reason }),
+      );
+    }
     const backends = yield* promise(() => records.backends.list());
     let backendId = backends[0]?.id;
     if (backendId === undefined) {
@@ -216,7 +272,7 @@ export const completeSetup = (input: {
         secretKey: null,
       };
       // The deployment's own S3 settings are checked like any other; an invalid one is stored as
-      // it is and shows as unavailable, so setup still completes and the admin can fix it.
+      // it is and shows as unavailable, so registration still completes and the owner can fix it.
       const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
       if (checked?.ok) chosen = { ...chosen, config: checked.config };
       const cipher = yield* CredentialCipher;
@@ -243,15 +299,54 @@ export const completeSetup = (input: {
         }),
       );
     }
-    return { userId: user.id };
+    return { userId: result.id };
   });
 
-/** The signed-in administrator, or Unauthorized. */
+/** The signed-in owner, or Unauthorized. */
 export const requireUser = (headers: Headers) =>
   Effect.gen(function* () {
     const identity = yield* Identity;
     const user = yield* promise(() => identity.sessionUser(headers));
     return user ?? (yield* Effect.fail(new Unauthorized()));
+  });
+
+// --- Step-up verification (PRD §6) ---------------------------------------------------------
+
+/** How long a verification lasts for step-up actions. */
+export const STEP_UP_WINDOW_MS = 5 * 60_000;
+
+/** Whether a session that proved presence at `verifiedAt` counts as fresh at `now`. */
+export const isFresh = (verifiedAt: number, now: number): boolean =>
+  Number.isFinite(verifiedAt) && verifiedAt <= now && now - verifiedAt < STEP_UP_WINDOW_MS;
+
+/**
+ * The signed-in owner, when the session may run an action of this effect now: a step-up action
+ * needs a verification within the window, else it fails with VerificationRequired.
+ */
+export const requireVerified = (headers: Headers, effect: ActionEffect, now: number) =>
+  Effect.gen(function* () {
+    const user = yield* requireUser(headers);
+    if (!verificationPermits(effect, isFresh(user.verifiedAt, now))) {
+      return yield* Effect.fail(new VerificationRequired());
+    }
+    return user;
+  });
+
+/** Proves presence again: the password, and the authenticator code when two-step is on. */
+export const reverify = (headers: Headers, input: { password: string; code: string }) =>
+  Effect.gen(function* () {
+    const identity = yield* Identity;
+    const result = yield* promise(() => identity.reverify(headers, input));
+    if (result === "verified") return { verified: true };
+    return yield* Effect.fail(
+      result === "no-session"
+        ? new Unauthorized()
+        : result === "wrong-password"
+          ? new WrongPassword()
+          : result === "code-required"
+            ? new CodeRequired()
+            : new WrongCode(),
+    );
   });
 
 // --- API Keys ------------------------------------------------------------------------------
