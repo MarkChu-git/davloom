@@ -97,6 +97,11 @@ const FAILURE_STATUS: Record<StorageFailure, number> = {
   "too-large": 413,
   "size-mismatch": 400,
   unavailable: 503,
+  // A name the store refuses for good is the client's to change, not a fault to retry later, so
+  // it is not 503. The request is well formed and the name is valid in the namespace, so it is not
+  // 400 either: 403 says the server understood it and will not carry it out (RFC 9110 §15.5.4),
+  // as RFC 4918 also answers a PUT or MKCOL that the server will not perform at that URL.
+  "name-refused": 403,
   "hidden-objects": 409,
   "cross-backend": 502,
   "too-many": 403,
@@ -299,13 +304,25 @@ const preconditionResponse = (verdict: "failed" | "not-modified", entry: Entry |
 const TOO_MANY =
   "This copy or move involves more entries than this storage handles in one request. Nothing was changed. Copy or move the folder in parts.";
 
-const failure = (reason: StorageFailure) =>
-  reason === "too-many"
-    ? new Response(TOO_MANY, {
+/** Why a name was refused, for the person behind the client. */
+const NAME_REFUSED =
+  "The storage behind this folder cannot keep an entry with this name. Nothing was changed. Choose another name.";
+
+/** The explanations of the failures that the person behind the client can act on. */
+const EXPLAINED: Partial<Record<StorageFailure, string>> = {
+  "too-many": TOO_MANY,
+  "name-refused": NAME_REFUSED,
+};
+
+const failure = (reason: StorageFailure) => {
+  const text = EXPLAINED[reason];
+  return text === undefined
+    ? empty(FAILURE_STATUS[reason])
+    : new Response(text, {
         status: FAILURE_STATUS[reason],
         headers: { "content-type": "text/plain; charset=utf-8" },
-      })
-    : empty(FAILURE_STATUS[reason]);
+      });
+};
 
 export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   const { basePath, storage, locks } = options;

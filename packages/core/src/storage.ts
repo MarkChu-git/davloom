@@ -44,6 +44,14 @@ export type StorageFailure =
    * file of the same name: removing, copying or moving it would lose or expose them.
    */
   | "hidden-objects"
+  /**
+   * The backend's store refuses a name that the namespace allows, for good: an S3-compatible store
+   * that keeps objects as files may refuse a key with a control character, a part that it trims to
+   * `.` or `..`, or a collection marker longer than its file system takes. Retrying cannot help,
+   * and nothing changed. A read or a listing of such a name finds nothing, since no object can
+   * have it.
+   */
+  | "name-refused"
   /** A copy or move between two backends, which the server does not perform. */
   | "cross-backend"
   /**

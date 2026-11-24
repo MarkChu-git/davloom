@@ -44,6 +44,7 @@ import {
   decodeHref,
   DISTINCT,
   NAMES,
+  REFUSED,
   SAME,
   url,
 } from "../../../../packages/webdav/src/tables/names-cases";
@@ -126,8 +127,14 @@ const lock = async (folder: Folder, path: string, scope: LockScope, depth: LockD
     body: lockBody(scope),
   });
 
-describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) => {
+describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip, refuses) => {
   const workers = targetName.startsWith("Workers");
+  /**
+   * Whether the target's store refuses a name (refusedByFileStore on the self-hosted target):
+   * where it would be created it answers REFUSED and changes nothing, and it then answers as a
+   * name that does not exist.
+   */
+  const refused = (name: string, kind: "file" | "collection") => refuses?.([name], kind) ?? false;
   let davloom: Davloom | undefined;
 
   beforeAll(async () => {
@@ -541,8 +548,16 @@ describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) =>
   describe.skipIf(skip)("Unicode names", () => {
     it.each(NAMES)("a file named with %s round-trips through PUT and GET", async (_label, name) => {
       const folder = await world("names");
-      expect((await folder.put(url(name), `content of ${name}`)).status).toBe(201);
+      const put = await folder.put(url(name), `content of ${name}`);
       const response = await folder.dav("GET", url(name));
+      if (refused(name, "file")) {
+        expect(put.status).toBe(REFUSED);
+        await response.body?.cancel();
+        expect(response.status).toBe(404);
+        expect(await snapshot(folder, "")).toEqual({});
+        return;
+      }
+      expect(put.status).toBe(201);
       expect(response.status).toBe(200);
       expect(await response.text()).toBe(`content of ${name}`);
     });
@@ -551,11 +566,16 @@ describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) =>
       "PROPFIND lists a collection named with %s by an href that decodes to it",
       async (_label, name) => {
         const folder = await world("names");
-        expect((await folder.mkcol(url(name))).status).toBe(201);
-        expect((await folder.put(`${url(name)}/inner.txt`, "x")).status).toBe(201);
+        const refusal = refused(name, "collection");
+        expect((await folder.mkcol(url(name))).status).toBe(refusal ? REFUSED : 201);
+        expect((await folder.put(`${url(name)}/inner.txt`, "x")).status).toBe(refusal ? 409 : 201);
         const response = await folder.dav("PROPFIND", "/", { headers: { depth: "1" } });
         const listed = hrefs(await response.text()).map((href = "") => href);
         const member = listed.filter((href) => href !== `${folder.base}/`);
+        if (refusal) {
+          expect(member).toEqual([]);
+          return;
+        }
         expect(member).toHaveLength(1);
         expect(member[0]?.endsWith("/")).toBe(true);
         expect(decodeHref((member[0] ?? "").slice(folder.base.length + 1, -1))).toBe(name);
@@ -570,7 +590,8 @@ describe.each(TARGETS)("the protocol tables on %s", (targetName, start, skip) =>
         await folder.put(`${url(name)}/inner.txt`, "x");
         const response = await folder.dav("DELETE", url(name));
         await response.body?.cancel();
-        expect(response.status).toBe(204);
+        // Nothing of a refused name was made, so there is nothing to delete.
+        expect(response.status).toBe(refused(name, "collection") ? 404 : 204);
         expect(await exists(folder, url(name))).toBe(false);
       },
     );

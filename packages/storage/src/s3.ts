@@ -63,11 +63,39 @@ const FULL = new Set([
   "NotEnoughSpace",
 ]);
 
+/**
+ * Error names of a 400 with which S3 and S3-compatible stores refuse an object key. RustFS 1.0.6
+ * refuses a key with a control character, a part that it trims to `.` or `..` (it splits at `\`
+ * as well as `/`), a part of more than 255 bytes or a marker part of more than 246 with
+ * `InvalidArgument`, and its answer to HEAD has no body, which the SDK names `Unknown`. AWS S3
+ * names a key of more than 1,024 bytes `KeyTooLongError`, and MinIO an invalid one
+ * `XMinioInvalidObjectName`. Davloom builds every other part of its requests, so a 400 of these
+ * names is about the key, the only part a client chose. Other 400s, such as `RequestTimeout` or
+ * `IncompleteBody`, say a request went wrong and stay unavailable.
+ */
+const REFUSED_KEY = new Set([
+  "InvalidArgument",
+  "Unknown",
+  "KeyTooLongError",
+  "InvalidObjectName",
+  "XMinioInvalidObjectName",
+]);
+
+/**
+ * RustFS writes the key into the message of its refusal, and when the key holds a control
+ * character it cannot write that message as XML, so it answers 500 with this message instead.
+ */
+const UNWRITABLE_REFUSAL = "XML response contains a control character";
+
 /** The Port failure for an error that a call of the SDK raised. */
 export const failureOfError = (error: unknown): StorageFailure => {
   if (!(error instanceof S3ServiceException)) return "unavailable";
   if (error.name === "NoSuchKey" || error.name === "NotFound") return "not-found";
   if (error.name === "EntityTooLarge") return "too-large";
+  if (error.$metadata.httpStatusCode === 400 && REFUSED_KEY.has(error.name)) return "name-refused";
+  if (error.name === "InternalError" && error.message === UNWRITABLE_REFUSAL) {
+    return "name-refused";
+  }
   // A conditional put (If-None-Match: *) that found an object with its key.
   if (error.name === "PreconditionFailed" || error.$metadata.httpStatusCode === 412)
     return "exists";

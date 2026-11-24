@@ -97,3 +97,39 @@ export const SAME: readonly (readonly [string, string])[] = [
   ["a%2Db", "a-b"],
   ["%5F", "_"],
 ];
+
+// --- Names a store refuses ----------------------------------------------------------------------
+
+/**
+ * The status Davloom answers when the store behind a backend refuses, for good, a name that the
+ * namespace allows (the Port's `name-refused`): the client's to change, so neither 400 nor 503.
+ */
+export const REFUSED = 403;
+
+/** Whether a store may refuse to keep an entry of `kind` at `names`. */
+export type Refuses = (names: readonly string[], kind: "file" | "collection") => boolean;
+
+const utf8Bytes = (text: string) => new TextEncoder().encode(text).length;
+
+/** Trims Unicode white space, as Rust's `str::trim` does; unlike String#trim, it keeps U+FEFF. */
+const trimmed = (text: string) => text.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+
+/** RustFS takes 255 bytes for a part, and keeps a collection's marker with `__XLDIR__` after it. */
+const MARKER_BYTES = 255 - "__XLDIR__".length;
+
+/**
+ * The names that an S3-compatible store keeping objects as files, as RustFS 1.0.6 does on the
+ * self-hosted target, refuses (packages/storage/s3/rustfs.test.ts): a name with a C0 control
+ * character other than tab, a name with a part that is `.` or `..` once split at `\` and trimmed,
+ * and a collection whose name takes more than 246 bytes. A store refuses only what it would
+ * create, so the oracles accept REFUSED where the answer would otherwise create the entry; such a
+ * name is never stored, so everything else answers as for any name that does not exist.
+ */
+export const refusedByFileStore: Refuses = (names, kind) =>
+  names.some(
+    (name) =>
+      Array.from({ length: name.length }, (_, index) => name.charCodeAt(index)).some(
+        (code) => code < 0x20 && code !== 0x09,
+      ) || name.split("\\").some((part) => trimmed(part) === "." || trimmed(part) === ".."),
+  ) ||
+  (kind === "collection" && utf8Bytes(names.at(-1) ?? "") > MARKER_BYTES);

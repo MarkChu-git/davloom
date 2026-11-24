@@ -16,7 +16,9 @@ import { createS3Client, createS3Driver } from "../src/s3";
 // from an empty tree; the tests without a prefix take a bucket of their own.
 //
 // Keys that RustFS refuses and AWS S3 accepts, found by putting them directly (each refused with
-// 400 InvalidArgument). The scenarios that need them run on the memory driver in
+// 400 InvalidArgument, or 500 InternalError when the key holds a control character that RustFS
+// cannot write into its error's XML). The adapter reads such a key as absent and fails a write of
+// it with name-refused. The scenarios that need such keys stored run on the memory driver in
 // src/object-store.test.ts, which keeps any key as AWS S3 does:
 // - a key with an empty part, such as `docs//b.txt` ("Invalid object key");
 // - a key with a `.` or `..` part, such as `./d.txt`, `docs/../c.txt` or `dir/.` ("Invalid object
@@ -155,8 +157,42 @@ describe("S3 driver on RustFS", () => {
     expect((await storage.createCollection(["中".repeat(82)])).ok).toBe(true);
     expect(await storage.createCollection([`${"中".repeat(82)}a`])).toEqual({
       ok: false,
-      failure: "unavailable",
+      failure: "name-refused",
     });
+  });
+
+  // The names of the WebDAV tables that RustFS refuses (refusedByFileStore in
+  // packages/webdav/src/tables/names-cases.ts): each reads as absent, and creating it fails with
+  // name-refused rather than unavailable and leaves the tree as it was.
+  it.each([
+    ["encoded backslashes", "..\\docs\\secret.txt"],
+    ["a backslash before the parent", "\\..\\docs"],
+    ["a parent with a trailing space", ".. "],
+    ["a parent with a leading space", " .."],
+    ["a line feed", "a\nb"],
+    ["a carriage return", "a\rb"],
+    ["CR LF", "a\r\nb"],
+    ["a control character", "a\u0001b"],
+  ])("finds nothing at a name with %s and refuses to create it", async (_, name) => {
+    const { storage, prefix } = backend();
+    expect((await storage.write(["a"], text("a"), { size: 1 })).ok).toBe(true);
+    expect(await storage.stat([name])).toEqual({ ok: false, failure: "not-found" });
+    expect(await storage.read([name])).toEqual({ ok: false, failure: "not-found" });
+    expect(await storage.list([name])).toEqual({ ok: false, failure: "not-found" });
+    expect(await storage.remove([name])).toEqual({ ok: false, failure: "not-found" });
+    expect(await storage.write([name, "f"], text("x"), { size: 1 })).toEqual({
+      ok: false,
+      failure: "no-parent",
+    });
+    for (const result of [
+      await storage.write([name], text("x"), { size: 1 }),
+      await storage.createCollection([name]),
+      await storage.copy(["a"], [name], { overwrite: false, shallow: false }),
+      await storage.move(["a"], [name], { overwrite: false }),
+    ]) {
+      expect(result).toEqual({ ok: false, failure: "name-refused" });
+    }
+    expect(await keysUnder(prefix)).toEqual([`${prefix}a`]);
   });
 
   it("gives S3's ETag without quotes and keeps it on a read", async () => {

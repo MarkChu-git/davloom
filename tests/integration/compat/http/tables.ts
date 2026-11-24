@@ -1,4 +1,8 @@
 import { childElements, DAV, parseXml, textOf, type XmlElement } from "@davloom/webdav/xml";
+import {
+  refusedByFileStore,
+  type Refuses,
+} from "../../../../packages/webdav/src/tables/names-cases";
 import { basic, startWorkersServer, type Davloom } from "./davloom";
 import { hasDocker, startSelfHostedServer } from "./selfhosted";
 import type { Server } from "./servers";
@@ -7,13 +11,19 @@ import type { Server } from "./servers";
 // Mount that stands in for the namespace root an in-process table builds its world in, and a
 // snapshot of a folder taken over WebDAV, as the in-process tables take one of a backend.
 
+/**
+ * Each target, and the names its store refuses: none on Workers, whose Durable Objects keep every
+ * valid name, and on the self-hosted target the names RustFS refuses, which Davloom answers with
+ * REFUSED (names-cases.ts) and leaves the tree as it was.
+ */
 export const TARGETS: readonly (readonly [
   name: string,
   start: () => Promise<Server>,
   skip: boolean,
+  refuses: Refuses | undefined,
 ])[] = [
-  ["Workers with D1 and Durable Objects", startWorkersServer, false],
-  ["Bun with SQLite and RustFS", startSelfHostedServer, !hasDocker()],
+  ["Workers with D1 and Durable Objects", startWorkersServer, false, undefined],
+  ["Bun with SQLite and RustFS", startSelfHostedServer, !hasDocker(), refusedByFileStore],
 ];
 
 export interface Call {

@@ -104,7 +104,9 @@ export interface PutOptions {
 
 /**
  * The calls an object store supplies. Each returns a result instead of throwing, with the store's
- * own errors already turned into Port failures.
+ * own errors already turned into Port failures. A store that refuses a key for good, as a store
+ * that keeps objects as files refuses some, fails the call with `name-refused`: for a head, a
+ * read or a listing, the adapter takes that as no object, since none can have the key.
  */
 export interface ObjectStoreDriver {
   /** The object at `key`, or null when there is none. */
@@ -420,8 +422,28 @@ interface Probe {
 const ROOT_PROBE: Probe = { node: "collection", file: null, marker: true };
 const ABSENT_PROBE: Probe = { node: "absent", file: null, marker: false };
 
+/** A refused key holds no object, and no key starts with a refused prefix. */
+const absentIfRefused = <T>(result: StorageResult<T>, absent: T): StorageResult<T> =>
+  !result.ok && result.failure === "name-refused" ? ok(absent) : result;
+
+const EMPTY_PAGE: ListPage = { objects: [], prefixes: [], cursor: null };
+
+/**
+ * The driver with the reads of a refused key answered as finding nothing, so a name the store
+ * refuses is absent, as it is on any backend that never kept it: a read, a delete or a lookup of
+ * it answers 404, and an entry below it 409. Writes and copies still fail with `name-refused`.
+ */
+export const readingRefusedAsAbsent = (driver: ObjectStoreDriver): ObjectStoreDriver => ({
+  ...driver,
+  head: async (key) => absentIfRefused(await driver.head(key), null),
+  get: async (key, range) => absentIfRefused(await driver.get(key, range), null),
+  list: async (key, listOptions) =>
+    absentIfRefused(await driver.list(key, listOptions), EMPTY_PAGE),
+});
+
 export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBackend => {
-  const { driver, prefix, properties } = options;
+  const { prefix, properties } = options;
+  const driver = readingRefusedAsAbsent(options.driver);
   if (prefix !== "" && !prefix.endsWith("/")) {
     throw new Error("an object store's key prefix must be empty or end with /");
   }
@@ -589,8 +611,13 @@ export const createObjectStoreStorage = (options: ObjectStoreOptions): StorageBa
       const targetMarker = markerKey(prefix, to);
       if (shallow || !source.marker) {
         must(await driver.put(targetMarker, null, { length: 0, created: now() }));
+      } else if (sourceKeys.includes(sourceMarker)) {
+        // The marker goes first, so a store that refuses the destination's name refuses it
+        // before any entry arrives there.
+        must(await driver.copy(sourceMarker, targetMarker));
       }
-      await inParallel(sourceKeys, PARALLEL_COPIES, async (key) => {
+      const rest = sourceKeys.filter((key) => key !== sourceMarker);
+      await inParallel(rest, PARALLEL_COPIES, async (key) => {
         // An object that went away since the listing is no longer part of the tree.
         must(await driver.copy(key, `${targetMarker}${key.slice(sourceMarker.length)}`));
       });

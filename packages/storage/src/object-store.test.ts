@@ -587,6 +587,84 @@ const tree = async () => {
   return made;
 };
 
+/** RustFS's rule for keys in short: no part that is `..` once split at `\`, no long marker. */
+const rustfsLike = (key: string) =>
+  key.split(/[/\\]/).some((part) => part.trim() === "..") ||
+  key.split("/").some((part, index, parts) => index === parts.length - 2 && part.length > 246);
+
+/** An adapter on a memory driver that refuses keys as RustFS does. */
+const refusing = () => {
+  const made = make();
+  made.driver.refuseKeys(rustfsLike);
+  return made;
+};
+
+describe("keys the store refuses", () => {
+  const odd = "..\\x";
+
+  it("finds no entry at a refused name, nor any below it", async () => {
+    const { storage } = refusing();
+    expect(await storage.stat([odd])).toEqual(failed("not-found"));
+    expect(await storage.stat([odd, "f"])).toEqual(failed("not-found"));
+    expect(await storage.read([odd])).toEqual(failed("not-found"));
+    expect(await storage.list([odd])).toEqual(failed("not-found"));
+    expect(await storage.remove([odd])).toEqual(failed("not-found"));
+    expect(await storage.properties([[odd]])).toEqual({ ok: true, value: {} });
+    expect(await storage.write([odd, "f"], text("x"), {})).toEqual(failed("no-parent"));
+  });
+
+  it("refuses to create an entry of a refused name and changes nothing", async () => {
+    const { storage, driver } = refusing();
+    await storage.write(["a"], text("a"), {});
+    await storage.createCollection(["box"]);
+    const before = driver.keys();
+    expect(await storage.write([odd], text("x"), { size: 1 })).toEqual(failed("name-refused"));
+    expect(await storage.write([odd], text("x"), {})).toEqual(failed("name-refused"));
+    expect(await storage.createCollection([odd])).toEqual(failed("name-refused"));
+    expect(await storage.createCollection(["n".repeat(247)])).toEqual(failed("name-refused"));
+    expect(await storage.copy(["a"], [odd], { overwrite: false, shallow: false })).toEqual(
+      failed("name-refused"),
+    );
+    expect(await storage.move(["a"], [odd], { overwrite: true })).toEqual(failed("name-refused"));
+    expect(await storage.copy(["box"], [odd], { overwrite: false, shallow: true })).toEqual(
+      failed("name-refused"),
+    );
+    expect(driver.keys()).toEqual(before);
+    expect(await snapshot(storage)).toEqual({ a: "a", "box/": "" });
+  });
+
+  it("keeps a file and the entries below a name whose marker it refuses", async () => {
+    const { storage } = refusing();
+    const long = "n".repeat(255);
+    expect((await storage.write([long], text("x"), {})).ok).toBe(true);
+    expect(await names(storage, [])).toEqual([long]);
+    expect(await storage.remove([long])).toEqual({ ok: true, value: null });
+    expect(await storage.createCollection([long])).toEqual(failed("name-refused"));
+    expect(await storage.stat([long])).toEqual(failed("not-found"));
+  });
+
+  it.each(["copy", "move"] as const)(
+    "refuses to %s a collection onto a name whose marker it refuses, before anything arrives",
+    async (method) => {
+      const { storage, driver } = refusing();
+      await storage.createCollection(["box"]);
+      await Promise.all(
+        Array.from({ length: 20 }, (_, index) =>
+          storage.write(["box", `f${index}`], text("x"), {}),
+        ),
+      );
+      const before = driver.keys();
+      const long = "n".repeat(255);
+      const result =
+        method === "copy"
+          ? await storage.copy(["box"], [long], { overwrite: false, shallow: false })
+          : await storage.move(["box"], [long], { overwrite: false });
+      expect(result).toEqual(failed("name-refused"));
+      expect(driver.keys()).toEqual(before);
+    },
+  );
+});
+
 describe("failures part-way", () => {
   it("a move whose removal fails leaves the entries in both places", async () => {
     const { storage, driver } = await tree();

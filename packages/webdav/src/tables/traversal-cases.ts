@@ -1,3 +1,4 @@
+import { REFUSED, type Refuses } from "./names-cases";
 import { BASE, FILES, under } from "./world";
 
 // Path traversal and encoding (PRD §11, §12): 80 payloads at each entry point that takes a path,
@@ -157,8 +158,19 @@ export type Entry = (typeof ENTRIES)[number];
 
 const SOURCE = ["files", "photos", "a.jpg"];
 
-/** The statuses RFC 4918 and the policy allow for the payload at the entry point. */
-export const expected = (entry: Entry, resolved: Resolved): number[] => {
+/**
+ * The statuses RFC 4918 and the policy allow for the payload at the entry point, on a store that
+ * refuses the names `refuses` holds for, or on one that keeps every valid name. Where the answer
+ * would create the entry, a store that refuses its name makes it REFUSED (names-cases.ts).
+ */
+export const expected = (entry: Entry, resolved: Resolved, refuses?: Refuses): number[] => {
+  const statuses = expectedOnAnyStore(entry, resolved);
+  if (!refuses || resolved.kind !== "path" || !statuses.includes(201)) return statuses;
+  const kind = entry === "MKCOL" ? "collection" : "file";
+  return refuses(resolved.names, kind) ? [...statuses, REFUSED] : statuses;
+};
+
+const expectedOnAnyStore = (entry: Entry, resolved: Resolved): number[] => {
   if (entry === "If") {
     // A tagged list is true only for a resource the key may read; `Not` of an unknown tag holds.
     return resolved.kind === "path" && relationOf(resolved.names) === "inside" ? [204] : [412];

@@ -31,7 +31,7 @@ const TREE: Record<string, string> = Object.fromEntries([
     .map(([path, content]) => [path.slice("files".length), content]),
 ]);
 
-describe.each(TARGETS)("path traversal and encoding on %s", (_name, start, skip) => {
+describe.each(TARGETS)("path traversal and encoding on %s", (_name, start, skip, refuses) => {
   let davloom: Davloom | undefined;
   let files: Folder;
   let key = "";
@@ -95,7 +95,7 @@ describe.each(TARGETS)("path traversal and encoding on %s", (_name, start, skip)
         // not the WebDAV 404 of the in-process handler, and it never touches the files.
         expect(after).toEqual(before);
       } else {
-        expect(expected(entry, resolved)).toContain(response.status);
+        expect(expected(entry, resolved, refuses)).toContain(response.status);
       }
       // Nothing outside the scope is read: no content and no name of a file outside it.
       for (const content of OUTSIDE_CONTENT) expect(text).not.toContain(content);
