@@ -1342,7 +1342,8 @@ describe("the audit trail (PRD §7)", () => {
         })
       ).status,
     ).toBe(201);
-    expect(actions(await trail(w))).toContain("registration failure");
+    // A refused registration on an instance that has its owner is anyone's request: no write.
+    expect(actions(await trail(w))).not.toContain("registration failure");
     await target.signIn();
     const imported = actions(await trail(target));
     expect(imported).toEqual(expect.arrayContaining(["import failure", "import success"]));

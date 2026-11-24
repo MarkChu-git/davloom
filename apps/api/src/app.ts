@@ -589,8 +589,10 @@ export const createApp = ({
                   audit(request, { action: "registration", target: body.username?.trim() }),
                 ),
               ),
+              // Once the owner exists, a refused registration is anyone's request and costs no write:
+              // the audit trail is not a way to spend the instance's daily write quota.
               Effect.tapError((error) =>
-                error._tag === "RegistrationClosed" || error._tag === "SetupTokenInvalid"
+                error._tag === "SetupTokenInvalid"
                   ? audit(request, { action: "registration", outcome: "failure" })
                   : Effect.void,
               ),
@@ -612,9 +614,7 @@ export const createApp = ({
                 Effect.andThen(Effect.sync(invalidate), audit(request, { action: "import" })),
               ),
               Effect.tapError((error) =>
-                error._tag === "RegistrationClosed" ||
-                error._tag === "SetupTokenInvalid" ||
-                error._tag === "ArchiveInvalid"
+                error._tag === "SetupTokenInvalid" || error._tag === "ArchiveInvalid"
                   ? audit(request, { action: "import", outcome: "failure" })
                   : Effect.void,
               ),

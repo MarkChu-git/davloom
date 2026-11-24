@@ -34,6 +34,26 @@ describe("createAuditLog", () => {
     ]);
   });
 
+  it.each([1, 13, 14, 15, 28, 29, 60])(
+    "writes %i events in statements that each bind at most 100 parameters, as D1 allows",
+    async (n) => {
+      const { sqlite, db } = fresh();
+      const bound: number[] = [];
+      const atomic = bunSqliteAtomic(db);
+      const log = createAuditLog(db, (statements) => {
+        for (const statement of statements) {
+          const query = (statement as { toSQL?: () => { params: unknown[] } }).toSQL?.();
+          if (query) bound.push(query.params.length);
+        }
+        return atomic(statements);
+      });
+      const events = Array.from({ length: n }, (_, i) => event(`e${i}`, NOW - i));
+      await log.add(events, 0);
+      expect(Math.max(...bound)).toBeLessThanOrEqual(100);
+      expect(sqlite.query("select count(*) as n from audit_events").get()).toEqual({ n });
+    },
+  );
+
   it("adds the count of an event whose id it keeps", async () => {
     const { log } = fresh();
     const counted = event("webdav.auth:1", NOW, { action: "webdav.auth", count: 3 });

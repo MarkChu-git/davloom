@@ -8,7 +8,7 @@ import {
   type OperationBatch,
   type OperationErrorRecord,
 } from "@davloom/core";
-import { and, desc, eq, gte, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gte, lt, or, sql } from "drizzle-orm";
 import type { Atomic } from "./archive";
 import type { Database } from "./repositories";
 import * as schema from "./schema";
@@ -88,6 +88,11 @@ export const createOperationLog = (db: Database, atomic: Atomic) => ({
 
 const audit = schema.auditEvents;
 
+/** The parameters D1 binds to one statement at most. */
+const MAX_BOUND = 100;
+/** The columns an audit row binds. */
+const AUDIT_COLUMNS = Object.keys(getTableColumns(audit)).length;
+
 /**
  * The Audit Log Port. Events go in one atomic group of statements with the removal of what is
  * older than the cutoff, which touches no row when nothing has aged out. A counted event whose id
@@ -96,11 +101,13 @@ const audit = schema.auditEvents;
 export const createAuditLog = (db: Database, atomic: Atomic) => ({
   add: async (events: readonly AuditRecord[], cutoff: number): Promise<void> => {
     const statements: { run: () => unknown }[] = [];
-    if (events.length > 0) {
+    // D1 binds at most 100 parameters to a statement, so the rows go in groups that stay under it.
+    const perStatement = Math.max(1, Math.floor(MAX_BOUND / AUDIT_COLUMNS));
+    for (let start = 0; start < events.length; start += perStatement) {
       statements.push(
         db
           .insert(audit)
-          .values([...events])
+          .values(events.slice(start, start + perStatement))
           .onConflictDoUpdate({
             target: audit.id,
             set: { count: sql`${audit.count} + excluded.count` },
