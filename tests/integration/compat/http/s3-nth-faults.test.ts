@@ -59,26 +59,19 @@ describe.each(S3_TARGETS)("the nth store request failing on $name", (target) => 
       const { answer, faulted } = await checkFaulted(deployment, kase, reference, [
         { nth, fault: mode.fault },
       ]);
-      // A store request that fails for good fails the WebDAV request: none is ignored. PROPFIND
-      // ignores a failure to read dead properties, the known bug that the test below shows.
-      if (
-        mode.name === "403 AccessDenied" &&
-        nth <= reference.requests &&
-        kase.method !== "PROPFIND"
-      ) {
+      // A store request that fails for good fails the WebDAV request: none is ignored.
+      if (mode.name === "403 AccessDenied" && nth <= reference.requests) {
         expect(faulted).toBe(1);
         expect(STORE_FAILED, `answered ${answer.status}`).toContain(answer.status);
       }
     },
   );
 
-  // Known product bug: PROPFIND (packages/webdav/src/handler.ts) reads dead properties with
-  // `storage.properties`, and when that fails it answers 207 as if the entries had none, instead
-  // of 503. On an object store, `properties` first checks that each entry exists with a head and a
-  // listing, so a store that fails then makes a PROPFIND drop every dead property of the answer,
-  // and a client that syncs properties takes them for removed.
-  it.skipIf(target.skip).fails(
-    "PROPFIND keeps dead properties or fails when the store fails while reading them (known bug)",
+  // PROPFIND reads dead properties after it checks that each entry exists, with a head and a
+  // listing on an object store; it once answered 207 without them when that check failed, so a
+  // client that syncs properties took them for removed.
+  it.skipIf(target.skip)(
+    "PROPFIND keeps dead properties or fails when the store fails while reading them",
     async () => {
       const { davloom, mount, proxy, store } = deployment;
       await store.reset({ ...WORLD, "w/props.txt": "with a dead property" });

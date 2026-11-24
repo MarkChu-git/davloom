@@ -624,7 +624,11 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       query.props.every((prop) => prop.ns === DAV && Object.hasOwn(LIVE, prop.local))
         ? null
         : await storage.properties(entries.map((e) => e.path));
-    const dead: Record<string, readonly DeadProperty[]> = deadResult?.ok ? deadResult.value : {};
+    // Dead properties that cannot be read fail the request: a 207 without them would tell the
+    // client the entries have none, and allprop or propname cannot name what is missing to give it
+    // a status of its own in a propstat.
+    if (deadResult && !deadResult.ok) return failure(deadResult.failure);
+    const dead: Record<string, readonly DeadProperty[]> = deadResult?.value ?? {};
 
     const responses: string[] = [];
     // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.

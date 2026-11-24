@@ -366,6 +366,33 @@ describe("COPY and MOVE", () => {
 });
 
 describe("PROPFIND", () => {
+  // A 207 without the dead properties would tell the client the entry has none, and allprop and
+  // propname cannot name what is missing; live properties alone need no read of dead ones.
+  it.each([
+    ["allprop", "<D:allprop/>", "0", 503],
+    ["propname", "<D:propname/>", "0", 503],
+    ["a dead property", '<D:prop><Z:tag xmlns:Z="urn:z"/></D:prop>', "1", 503],
+    ["live properties only", "<D:prop><D:getetag/><D:resourcetype/></D:prop>", "1", 207],
+  ])(
+    "answers %s with %i when the dead properties cannot be read",
+    async (_, inner, depth, status) => {
+      const { createMemoryStorage } = await import("@davloom/core");
+      const backend = createMemoryStorage();
+      const storage = {
+        ...backend,
+        properties: async () => ({ ok: false, failure: "unavailable" }) as const,
+      };
+      const { put, mkcol, dav } = setup({ storage });
+      await mkcol("/c");
+      await put("/c/a", "x");
+      const response = await dav("PROPFIND", "/c", {
+        headers: { depth },
+        body: propfindBody(inner),
+      });
+      expect(response.status).toBe(status);
+    },
+  );
+
   it("lists a collection with Depth 1", async () => {
     const { put, mkcol, dav } = setup();
     await mkcol("/c");
