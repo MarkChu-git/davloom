@@ -10,7 +10,7 @@ import { useState } from "react";
 import { importInstance, register, registrationQuery, signInWithPassword } from "../api/account";
 import { describeError, isApiError } from "../api/client";
 import { keys } from "../api/queries";
-import { AuthFrame, Waiting } from "./AuthFrame";
+import { AuthFrame } from "./AuthFrame";
 import { registrationProblems, type RegistrationFields } from "./forms";
 import { GoTo } from "./GoTo";
 import { NewPasswordField } from "./PasswordField";
@@ -182,9 +182,8 @@ export const RegisterPage = () => {
     onChange: setSetupToken,
   };
 
-  if (registration.isPending) {
-    return <Waiting label="Checking this instance" />;
-  }
+  // While the instance is being read, the form shows already: the prerendered page paints it
+  // before any script runs. The setup token's field joins it if the instance asks for one.
   if (registration.data?.open === false) {
     return <GoTo href="/sign-in" />;
   }

@@ -73,6 +73,19 @@ const chunkName = (id: string, context: { getModuleInfo: GetModuleInfo }) => {
   return roots.size === 1 && (roots.get("dashboard")?.size ?? 0) > 1 ? "dashboard" : null;
 };
 
+/** Every page of the Dashboard, each prerendered to an HTML file of its own. */
+const PRERENDERED_PAGES = [
+  "/",
+  "/files",
+  "/credentials",
+  "/storage",
+  "/settings",
+  "/sign-in",
+  "/register",
+  "/design-check",
+  "/design-check/deep/page",
+];
+
 export default defineConfig({
   build: {
     rolldownOptions: {
@@ -99,8 +112,15 @@ export default defineConfig({
       unstable_moduleResolution: { type: "commonJS" },
     }),
     tanstackStart({
-      // The Dashboard is a client-side app. `index` lets static hosts use it as their SPA fallback.
-      spa: { enabled: true, prerender: { outputPath: "/index" } },
+      // Every page's frame is rendered into an HTML file of its own at build time, which needs no
+      // data, so the browser paints the page before any script has run.
+      prerender: { enabled: true, crawlLinks: false },
+      pages: PRERENDERED_PAGES.map((path) => ({
+        path,
+        // `/files` becomes files.html, which Workers static assets and the Bun entry serve at
+        // /files; `/` becomes index.html, the fallback for a path no page has.
+        prerender: { enabled: true, autoSubfolderIndex: path === "/" },
+      })),
     }),
     react(),
   ],

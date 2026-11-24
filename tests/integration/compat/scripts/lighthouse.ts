@@ -17,7 +17,7 @@ import lighthouse, { type Config, type Flags, type Result } from "lighthouse";
 import desktopConfig from "lighthouse/core/config/desktop-config.js";
 import { computeMedianRun } from "lighthouse/core/lib/median-run.js";
 import { ReportGenerator } from "lighthouse/report/generator/report-generator.js";
-import { ADMIN, SETUP_TOKEN, startWorkersServer } from "../http/davloom";
+import { ADMIN, signInOwner, startWorkersServer } from "../http/davloom";
 
 /** The lowest median score, out of 100, that any category of any page may have. */
 const THRESHOLD = 96;
@@ -28,14 +28,14 @@ type Category = (typeof CATEGORIES)[number];
 
 /**
  * What the instance holds when a page is measured. The pages run in this order: `new` before the
- * administrator exists, `signed-out` after, and `signed-in` with the administrator's session.
+ * owner has an account, `signed-out` after, and `signed-in` with the owner's session.
  */
 type State = "new" | "signed-out" | "signed-in";
 const STATES: readonly State[] = ["new", "signed-out", "signed-in"];
 
 /** Every Dashboard page. Add a page here; `path` must be where the page stays once it has loaded. */
 const PAGES: readonly { name: string; path: string; state: State }[] = [
-  { name: "setup", path: "/setup", state: "new" },
+  { name: "register", path: "/register", state: "new" },
   { name: "sign-in", path: "/sign-in", state: "signed-out" },
   { name: "overview", path: "/", state: "signed-in" },
   { name: "files", path: "/files", state: "signed-in" },
@@ -113,29 +113,24 @@ mkdirSync(REPORT_DIRECTORY, { recursive: true });
 
 const measurements: Measurement[] = [];
 
+let hasOwner = false;
+
 /** Moves the instance on to `state`, and returns the headers its pages are measured with. */
 const reach = async (state: State): Promise<Record<string, string>> => {
   if (state === "new") return {};
-  const setup = await server.fetch("/api/setup", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ ...ADMIN, token: SETUP_TOKEN }),
-  });
-  if (setup.status !== 201 && setup.status !== 409) {
-    throw new Error(`setup failed: ${setup.status} ${await setup.text()}`);
+  // `--only` can skip the pages before this one, so the owner is created where it is first needed.
+  if (!hasOwner) {
+    const registered = await server.fetch("/api/registration", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(ADMIN),
+    });
+    if (registered.status !== 201) {
+      throw new Error(`registration failed: ${registered.status} ${await registered.text()}`);
+    }
+    hasOwner = true;
   }
-  if (state === "signed-out") return {};
-  const signIn = await server.fetch("/api/auth/sign-in/email", {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: server.url },
-    body: JSON.stringify({ email: ADMIN.email, password: ADMIN.password }),
-  });
-  if (!signIn.ok) throw new Error(`sign-in failed: ${signIn.status} ${await signIn.text()}`);
-  const cookie = signIn.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-  return { cookie };
+  return state === "signed-out" ? {} : { cookie: await signInOwner(server) };
 };
 
 const measure = async (

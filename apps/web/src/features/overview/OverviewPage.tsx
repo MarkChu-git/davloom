@@ -10,12 +10,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
+import { useQuery } from "@tanstack/react-query";
 import { Folder, HardDrive, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { describeError } from "../api/client";
 import { webdavAddress } from "../api/dav";
 import {
   kindLabel,
+  operationsQuery,
   useCheckBackends,
   useOperations,
   useOverview,
@@ -25,6 +27,7 @@ import {
 } from "../api/queries";
 import { filesHref } from "../files/paths";
 import { backendStatus } from "../storage/backendStatus";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { CopyField } from "../shell/CopyField";
 import { formatBytes, formatCount } from "../shell/format";
 import { PageHeader } from "../shell/PageHeader";
@@ -32,7 +35,7 @@ import { usePageGutter } from "../shell/pageWidth";
 import { LoadError } from "../shell/QueryState";
 import { StatusLabel } from "../shell/StatusLabel";
 import { TitleAction, TitleRow } from "../shell/TitleRow";
-import { OperationsChart, StorageChart } from "./charts";
+import { OperationsChart, StorageChart } from "./lazyCharts";
 import { ErrorViewSwitch, RecentErrors } from "./RecentErrors";
 
 const TILE_GAP = spacingVars["--spacing-4"];
@@ -225,7 +228,9 @@ const OperationsPanel = () => {
 };
 
 const RecentErrorsPanel = () => {
-  const operations = useOperations();
+  // The Operations panel above shows a failed read and offers Try again; this panel, put on the
+  // page after it, does not read again on its own.
+  const operations = useQuery({ ...operationsQuery, retryOnMount: false });
   const errors = operations.data?.errors;
   return (
     <Panel title="Recent operation errors" action={<ErrorViewSwitch />}>
@@ -301,109 +306,121 @@ export const OverviewPage = () => {
               />
             ) : (
               <>
-                <Tiles overview={data} />
-                <OperationsPanel />
-                <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
+                {/* Built one part at a time once the page's header is on screen. */}
+                <AfterFirstPaint>
+                  <Tiles overview={data} />
+                </AfterFirstPaint>
+                <AfterFirstPaint>
+                  <OperationsPanel />
+                </AfterFirstPaint>
+                <AfterFirstPaint>
+                  <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
+                    <Panel
+                      title="Storage by backend"
+                      action={
+                        <TitleAction
+                          label="Manage storage"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Icon icon={HardDrive} size="sm" />}
+                          href="/storage"
+                        />
+                      }
+                    >
+                      {data === undefined ? (
+                        <Skeleton width="100%" height={44} />
+                      ) : (
+                        <StorageChart
+                          bars={data.backends.map((backend) => ({
+                            name: backend.name,
+                            bytes: backend.usage?.bytes ?? 0,
+                            objects:
+                              (backend.usage?.files ?? 0) + (backend.usage?.collections ?? 0),
+                          }))}
+                        />
+                      )}
+                    </Panel>
+                    <Panel
+                      title="Connections"
+                      action={
+                        <TitleAction
+                          label="Check connections"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Icon icon={RefreshCw} size="sm" />}
+                          isLoading={check.isPending}
+                          isDisabled={data === undefined}
+                          onClick={checkConnections}
+                        />
+                      }
+                    >
+                      {data === undefined ? (
+                        <Skeleton width="100%" height={44} />
+                      ) : (
+                        <List density="compact" edge="flush" hasDividers>
+                          {data.backends.map((backend) => {
+                            const paths = data.mounts
+                              .filter((mount) => mount.backendId === backend.id)
+                              .map((mount) => `/${mount.name}`);
+                            // The default backend's mark leads the line of its mounts, so a narrow
+                            // window cuts the paths short rather than the mark.
+                            const details = [
+                              ...(backend.id === defaultBackendId ? ["Default"] : []),
+                              kindLabel(backend.kind),
+                              ...paths,
+                            ];
+                            return (
+                              <ListItem
+                                key={backend.id}
+                                label={backend.name}
+                                description={details.join(" · ")}
+                                endContent={<StatusLabel {...backendStatus(backend)} />}
+                              />
+                            );
+                          })}
+                        </List>
+                      )}
+                    </Panel>
+                  </Grid>
+                </AfterFirstPaint>
+                <AfterFirstPaint>
                   <Panel
-                    title="Storage by backend"
+                    title="Mounts"
                     action={
                       <TitleAction
-                        label="Manage storage"
+                        label="Open Files"
                         variant="secondary"
                         size="sm"
-                        icon={<Icon icon={HardDrive} size="sm" />}
-                        href="/storage"
+                        icon={<Icon icon={Folder} size="sm" />}
+                        href="/files"
                       />
                     }
                   >
                     {data === undefined ? (
                       <Skeleton width="100%" height={44} />
+                    ) : data.mounts.length === 0 ? (
+                      <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
                     ) : (
-                      <StorageChart
-                        bars={data.backends.map((backend) => ({
-                          name: backend.name,
-                          bytes: backend.usage?.bytes ?? 0,
-                          objects: (backend.usage?.files ?? 0) + (backend.usage?.collections ?? 0),
-                        }))}
-                      />
-                    )}
-                  </Panel>
-                  <Panel
-                    title="Connections"
-                    action={
-                      <TitleAction
-                        label="Check connections"
-                        variant="secondary"
-                        size="sm"
-                        icon={<Icon icon={RefreshCw} size="sm" />}
-                        isLoading={check.isPending}
-                        isDisabled={data === undefined}
-                        onClick={checkConnections}
-                      />
-                    }
-                  >
-                    {data === undefined ? (
-                      <Skeleton width="100%" height={44} />
-                    ) : (
-                      <List density="compact" edge="flush" hasDividers>
-                        {data.backends.map((backend) => {
-                          const paths = data.mounts
-                            .filter((mount) => mount.backendId === backend.id)
-                            .map((mount) => `/${mount.name}`);
-                          // The default backend's mark leads the line of its mounts, so a narrow
-                          // window cuts the paths short rather than the mark.
-                          const details = [
-                            ...(backend.id === defaultBackendId ? ["Default"] : []),
-                            kindLabel(backend.kind),
-                            ...paths,
-                          ];
-                          return (
-                            <ListItem
-                              key={backend.id}
-                              label={backend.name}
-                              description={details.join(" · ")}
-                              endContent={<StatusLabel {...backendStatus(backend)} />}
-                            />
-                          );
-                        })}
+                      <List density="compact" edge="outset">
+                        {data.mounts.map((mount) => (
+                          <ListItem
+                            key={mount.id}
+                            label={`/${mount.name}`}
+                            description={[
+                              data.backends.find((backend) => backend.id === mount.backendId)
+                                ?.name ?? "Unknown backend",
+                              mount.root === "" ? "whole backend" : `/${mount.root}`,
+                            ].join(" · ")}
+                            href={filesHref(`/${mount.name}`)}
+                          />
+                        ))}
                       </List>
                     )}
                   </Panel>
-                </Grid>
-                <Panel
-                  title="Mounts"
-                  action={
-                    <TitleAction
-                      label="Open Files"
-                      variant="secondary"
-                      size="sm"
-                      icon={<Icon icon={Folder} size="sm" />}
-                      href="/files"
-                    />
-                  }
-                >
-                  {data === undefined ? (
-                    <Skeleton width="100%" height={44} />
-                  ) : data.mounts.length === 0 ? (
-                    <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
-                  ) : (
-                    <List density="compact" edge="outset">
-                      {data.mounts.map((mount) => (
-                        <ListItem
-                          key={mount.id}
-                          label={`/${mount.name}`}
-                          description={[
-                            data.backends.find((backend) => backend.id === mount.backendId)?.name ??
-                              "Unknown backend",
-                            mount.root === "" ? "whole backend" : `/${mount.root}`,
-                          ].join(" · ")}
-                          href={filesHref(`/${mount.name}`)}
-                        />
-                      ))}
-                    </List>
-                  )}
-                </Panel>
-                <RecentErrorsPanel />
+                </AfterFirstPaint>
+                <AfterFirstPaint>
+                  <RecentErrorsPanel />
+                </AfterFirstPaint>
               </>
             )}
           </VStack>

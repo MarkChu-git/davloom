@@ -2,6 +2,12 @@
 @import "@astryxdesign/core/astryx.css";
 @import "@davloom/ui/themes/davloom.css";
 
+/* AppShell draws a menu button in the prerendered phone frame (DashboardShell), whose bar has
+   the page's own Menu button instead. */
+body[inert] [data-testid="mobile-nav-toggle"] {
+  display: none;
+}
+
 /* The document sits outside every component, so it takes its colors from the theme here. */
 body {
   background-color: var(--color-background-body);

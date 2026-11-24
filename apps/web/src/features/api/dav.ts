@@ -4,8 +4,12 @@ import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
 // The Dashboard's WebDAV client. It reaches /dav with the session cookie, which the server takes
 // only from a request that carries the Dashboard's header: a cross-site form cannot send one.
 
-/** The WebDAV address of this instance, where clients connect. */
-export const webdavAddress = (): string => `${location.origin}/dav/`;
+/**
+ * The WebDAV address of this instance, where clients connect. The prerendered frame knows no
+ * origin, so it shows the path alone until the browser renders the page.
+ */
+export const webdavAddress = (): string =>
+  typeof location === "undefined" ? "/dav/" : `${location.origin}/dav/`;
 
 export const DASHBOARD_HEADERS = { "x-davloom-dashboard": "1" } as const;
 

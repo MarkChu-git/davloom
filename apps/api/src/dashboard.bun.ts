@@ -60,7 +60,8 @@ const serveFile = async (request: Request, path: string, cacheControl: string) =
 
 /**
  * Serves the Dashboard's production build from disk, the way Workers static assets do: a file if one
- * exists, otherwise index.html so that the client-side router can handle the path.
+ * exists, a page's prerendered HTML file (`/files` from files.html), and otherwise index.html so
+ * that the client-side router can handle the path.
  */
 export const createDashboardHandler = (directory: string) => {
   const root = resolve(directory);
@@ -95,6 +96,15 @@ export const createDashboardHandler = (directory: string) => {
       return serveFile(request, requested, isAsset ? IMMUTABLE : REVALIDATE);
     }
     // A path with an extension asked for a specific file, so the Dashboard is not the answer.
-    return extname(decodedPath) ? notFound() : serveFile(request, indexFile, REVALIDATE);
+    if (extname(decodedPath)) {
+      return notFound();
+    }
+    // Each page is prerendered to an HTML file of its own, as `/files` to files.html, which
+    // Workers static assets serve at the same address.
+    const page = `${requested}.html`;
+    if (requested !== root && (await Bun.file(page).exists())) {
+      return serveFile(request, page, REVALIDATE);
+    }
+    return serveFile(request, indexFile, REVALIDATE);
   };
 };

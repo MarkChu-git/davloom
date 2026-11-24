@@ -39,6 +39,7 @@ import { CopyField } from "../shell/CopyField";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { formatDate, formatRelative } from "../shell/format";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { QueryState } from "../shell/QueryState";
@@ -449,77 +450,79 @@ export const CredentialsPage = () => {
                 />
               }
             />
-            <VStack ref={tableRef}>
-              <QueryState query={apiKeys} title="Cannot read the keys">
-                {(data) => {
-                  const rows = data.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
-                  if (rows.length === 0) {
-                    return (
-                      <EmptyState
-                        title="No keys yet"
-                        description="A WebDAV client signs in with a key as its password."
-                        actions={
-                          <Button
-                            label="Create a key"
-                            variant="primary"
-                            onClick={() => setKeyDialog({ step: "form" })}
-                          />
-                        }
+            {/* Built once the page's header is on screen, in a render of its own. */}
+            <AfterFirstPaint>
+              <VStack ref={tableRef}>
+                <QueryState query={apiKeys} title="Cannot read the keys">
+                  {(data) => {
+                    const rows = data.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
+                    if (rows.length === 0) {
+                      return (
+                        <EmptyState
+                          title="No keys yet"
+                          actions={
+                            <Button
+                              label="Create a key"
+                              variant="primary"
+                              onClick={() => setKeyDialog({ step: "form" })}
+                            />
+                          }
+                        />
+                      );
+                    }
+                    return isNarrowTable ? (
+                      // Where a column per detail has no room, as on a phone, each key is a row with
+                      // its name, first characters and status. Opening the row shows the rest and
+                      // Revoke.
+                      <ExpandableList
+                        records={rows.map((key) => ({
+                          id: key.id,
+                          title: key.name,
+                          summary: <KeySummary apiKey={key} />,
+                          details: (
+                            <>
+                              <KeyFacts apiKey={key} />
+                              <Button
+                                label="Rename"
+                                variant="secondary"
+                                width="100%"
+                                onClick={() => openRename(key)}
+                              />
+                              <Button
+                                label="Revoke"
+                                variant="destructive"
+                                width="100%"
+                                onClick={() => openRevoke(key, rows)}
+                              />
+                            </>
+                          ),
+                          toggleLabel: `Details for key ${key.name}`,
+                        }))}
                       />
+                    ) : (
+                      <Card padding={0} elevation="low">
+                        <Table<KeyRow>
+                          data={rows.map((key) => ({ ...key }))}
+                          columns={[
+                            ...WIDE_COLUMNS,
+                            {
+                              key: "actions",
+                              header: <VisuallyHidden>Actions</VisuallyHidden>,
+                              width: pixel(64),
+                              align: "end",
+                              renderCell: (key) => keyMenu(key, rows),
+                            },
+                          ]}
+                          idKey="id"
+                          textOverflow="truncate"
+                          hasHover
+                        />
+                      </Card>
                     );
-                  }
-                  return isNarrowTable ? (
-                    // Where a column per detail has no room, as on a phone, each key is a row with
-                    // its name, first characters and status. Opening the row shows the rest and
-                    // Revoke.
-                    <ExpandableList
-                      records={rows.map((key) => ({
-                        id: key.id,
-                        title: key.name,
-                        summary: <KeySummary apiKey={key} />,
-                        details: (
-                          <>
-                            <KeyFacts apiKey={key} />
-                            <Button
-                              label="Rename"
-                              variant="secondary"
-                              width="100%"
-                              onClick={() => openRename(key)}
-                            />
-                            <Button
-                              label="Revoke"
-                              variant="destructive"
-                              width="100%"
-                              onClick={() => openRevoke(key, rows)}
-                            />
-                          </>
-                        ),
-                        toggleLabel: `Details for key ${key.name}`,
-                      }))}
-                    />
-                  ) : (
-                    <Card padding={0} elevation="low">
-                      <Table<KeyRow>
-                        data={rows.map((key) => ({ ...key }))}
-                        columns={[
-                          ...WIDE_COLUMNS,
-                          {
-                            key: "actions",
-                            header: <VisuallyHidden>Actions</VisuallyHidden>,
-                            width: pixel(64),
-                            align: "end",
-                            renderCell: (key) => keyMenu(key, rows),
-                          },
-                        ]}
-                        idKey="id"
-                        textOverflow="truncate"
-                        hasHover
-                      />
-                    </Card>
-                  );
-                }}
-              </QueryState>
-            </VStack>
+                  }}
+                </QueryState>
+              </VStack>
+            </AfterFirstPaint>
           </VStack>
           <Dialog
             isOpen={keyDialog !== undefined}

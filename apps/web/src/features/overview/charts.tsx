@@ -36,6 +36,7 @@ import { curveMonotoneX } from "d3-shape";
 import { useMemo } from "react";
 import type { OperationError, OperationHour } from "../api/queries";
 import { formatBytes, formatCount, formatRelative } from "../shell/format";
+import { BAR_HEIGHT, OPERATIONS_HEIGHT, TIMELINE_HEIGHT } from "./chartHeights";
 import { ErrorDetails, ErrorSubject } from "./ErrorParts";
 import { causeOf, glyphPaths, lanesFor, minutesAgo, nameOf, requestOf, shortSpan } from "./errors";
 import { TouchHold } from "./TouchHold";
@@ -378,7 +379,7 @@ export const OperationsChart = ({ hours }: { hours: readonly OperationHour[] }) 
         <Chart
           {...stylex.props(styles.chart)}
           definition={definition}
-          height={200}
+          height={OPERATIONS_HEIGHT}
           measureText={measureLabel}
           ariaLabel="Operations per hour, last 24 hours"
           ariaDescription={describeOperations(points)}
@@ -481,7 +482,7 @@ export const StorageChart = ({ bars }: { bars: readonly BackendBar[] }) => {
         <Chart
           {...stylex.props(styles.chart)}
           definition={definition}
-          height={Math.max(1, byUse.length) * 44}
+          height={Math.max(1, byUse.length) * BAR_HEIGHT}
           measureText={measureLabel}
           ariaLabel="Bytes stored on each backend"
           ariaDescription={description}
@@ -510,7 +511,6 @@ const LANES = 2;
 const LANE_STEP = 2 * MARKER + LANE_GAP;
 /** The room beside the plot for half a marker on either end of the day. */
 const INSET = MARKER + 4;
-const TIMELINE_HEIGHT = 128;
 
 const DISC = colorVars["--color-error-muted"];
 const GLYPH = colorVars["--color-on-error-muted"];

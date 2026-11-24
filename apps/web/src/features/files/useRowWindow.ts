@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 // A large folder (PRD §8.2) renders only the rows near the viewport, with a spacer row in place of
 // the rest above and below, so a folder of 50,000 entries scrolls as one of fifty does. Sorting,
@@ -43,8 +43,18 @@ export interface RowWindow<T> {
  * once a row is on screen.
  */
 export const useRowWindow = <T>(all: readonly T[], estimate: number): RowWindow<T> => {
-  const [wrapper, wrapperRef] = useState<HTMLDivElement | null>(null);
   const isWindowed = all.length >= WINDOW_FROM;
+  const [wrapper, setWrapper] = useState<HTMLDivElement | null>(null);
+  // A listing that is not windowed keeps no element in state, so putting it on screen does not
+  // render the page again. A new callback once the listing becomes windowed hands the element on.
+  const wrapperRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      if (isWindowed) {
+        setWrapper(element);
+      }
+    },
+    [isWindowed],
+  );
   const scroller = useMemo(
     () => (isWindowed && wrapper !== null ? scrollParentOf(wrapper) : null),
     [isWindowed, wrapper],

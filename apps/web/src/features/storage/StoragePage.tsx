@@ -42,6 +42,7 @@ import {
 } from "../api/queries";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { LoadingRows, QueryState } from "../shell/QueryState";
@@ -532,115 +533,122 @@ export const StoragePage = () => {
                 />
               }
             />
-            <VStack gap={3}>
-              <TitleRow
-                title={<Heading level={2}>Backends</Heading>}
-                actions={
-                  <TitleAction
-                    label="Add backend"
-                    variant="secondary"
-                    size="sm"
-                    icon={<Icon icon={Plus} size="sm" />}
-                    isDisabled={backendsQuery.data === undefined}
-                    onClick={() => openBackendForm()}
-                  />
-                }
-                gap={3}
-              />
-              <QueryState
-                query={backendsQuery}
-                title="Cannot read the backends"
-                loading={<LoadingRows rows={2} />}
-              >
-                {(data) => (
-                  <Grid columns={{ minWidth: 300, max: 3, repeat: "fill" }} gap={4}>
-                    {data.map((backend) => (
-                      <BackendCard
-                        key={backend.id}
-                        backend={backend}
-                        mountCount={mounts.filter((mount) => mount.backendId === backend.id).length}
-                        isDefault={backend.id === settings.data?.defaultBackendId}
-                        checkedAt={backendsQuery.dataUpdatedAt}
-                        onEdit={() => openBackendForm(backend)}
-                        onRemove={() => openRemoveBackend(backend)}
-                      />
-                    ))}
-                  </Grid>
-                )}
-              </QueryState>
-            </VStack>
-            <VStack gap={3}>
-              <Heading level={2}>Mounts</Heading>
-              <VStack ref={tableRef}>
-                <QueryState query={mountsQuery} title="Cannot read the mounts">
-                  {(data) =>
-                    data.length === 0 ? (
-                      <EmptyState
-                        title="No mounts yet"
-                        description="A mount shows a backend, or a folder of one, to WebDAV clients."
-                      />
-                    ) : isNarrowTable ? (
-                      // Where a column per detail has no room, as on a phone, each mount is a row
-                      // with its path and backend, the same shape as a key's on Credentials.
-                      // Opening the row shows its folder, and Rename and Remove.
-                      <ExpandableList
-                        records={data.map((mount) => ({
-                          id: mount.id,
-                          title: pathOf(mount),
-                          summary: backendName(mount.backendId),
-                          details: (
-                            <>
-                              <MetadataList>
-                                <MetadataListItem label="Folder">
-                                  {folderOf(mount)}
-                                </MetadataListItem>
-                              </MetadataList>
-                              <HStack gap={2}>
-                                <StackItem size="fill">
-                                  <Button
-                                    label="Rename"
-                                    variant="secondary"
-                                    width="100%"
-                                    onClick={() => openForm(mount)}
-                                  />
-                                </StackItem>
-                                <StackItem size="fill">
-                                  <Button
-                                    label="Move"
-                                    variant="secondary"
-                                    width="100%"
-                                    onClick={() => openMove(mount)}
-                                  />
-                                </StackItem>
-                                <StackItem size="fill">
-                                  <Button
-                                    label="Remove"
-                                    variant="destructive"
-                                    width="100%"
-                                    onClick={() => openRemove(mount)}
-                                  />
-                                </StackItem>
-                              </HStack>
-                            </>
-                          ),
-                          toggleLabel: `Details for mount ${pathOf(mount)}`,
-                        }))}
-                      />
-                    ) : (
-                      <Card padding={0} elevation="low">
-                        <Table<MountRow>
-                          data={data.map((mount) => ({ ...mount }))}
-                          columns={columns}
-                          idKey="id"
-                          textOverflow="truncate"
-                          hasHover
-                        />
-                      </Card>
-                    )
+            {/* Built one section at a time once the page's header is on screen. */}
+            <AfterFirstPaint>
+              <VStack gap={3}>
+                <TitleRow
+                  title={<Heading level={2}>Backends</Heading>}
+                  actions={
+                    <TitleAction
+                      label="Add backend"
+                      variant="secondary"
+                      size="sm"
+                      icon={<Icon icon={Plus} size="sm" />}
+                      isDisabled={backendsQuery.data === undefined}
+                      onClick={() => openBackendForm()}
+                    />
                   }
+                  gap={3}
+                />
+                <QueryState
+                  query={backendsQuery}
+                  title="Cannot read the backends"
+                  loading={<LoadingRows rows={2} />}
+                >
+                  {(data) => (
+                    <Grid columns={{ minWidth: 300, max: 3, repeat: "fill" }} gap={4}>
+                      {data.map((backend) => (
+                        <BackendCard
+                          key={backend.id}
+                          backend={backend}
+                          mountCount={
+                            mounts.filter((mount) => mount.backendId === backend.id).length
+                          }
+                          isDefault={backend.id === settings.data?.defaultBackendId}
+                          checkedAt={backendsQuery.dataUpdatedAt}
+                          onEdit={() => openBackendForm(backend)}
+                          onRemove={() => openRemoveBackend(backend)}
+                        />
+                      ))}
+                    </Grid>
+                  )}
                 </QueryState>
               </VStack>
-            </VStack>
+            </AfterFirstPaint>
+            <AfterFirstPaint>
+              <VStack gap={3}>
+                <Heading level={2}>Mounts</Heading>
+                <VStack ref={tableRef}>
+                  <QueryState query={mountsQuery} title="Cannot read the mounts">
+                    {(data) =>
+                      data.length === 0 ? (
+                        <EmptyState
+                          title="No mounts yet"
+                          description="A mount shows a backend, or a folder of one, to WebDAV clients."
+                        />
+                      ) : isNarrowTable ? (
+                        // Where a column per detail has no room, as on a phone, each mount is a row
+                        // with its path and backend, the same shape as a key's on Credentials.
+                        // Opening the row shows its folder, and Rename and Remove.
+                        <ExpandableList
+                          records={data.map((mount) => ({
+                            id: mount.id,
+                            title: pathOf(mount),
+                            summary: backendName(mount.backendId),
+                            details: (
+                              <>
+                                <MetadataList>
+                                  <MetadataListItem label="Folder">
+                                    {folderOf(mount)}
+                                  </MetadataListItem>
+                                </MetadataList>
+                                <HStack gap={2}>
+                                  <StackItem size="fill">
+                                    <Button
+                                      label="Rename"
+                                      variant="secondary"
+                                      width="100%"
+                                      onClick={() => openForm(mount)}
+                                    />
+                                  </StackItem>
+                                  <StackItem size="fill">
+                                    <Button
+                                      label="Move"
+                                      variant="secondary"
+                                      width="100%"
+                                      onClick={() => openMove(mount)}
+                                    />
+                                  </StackItem>
+                                  <StackItem size="fill">
+                                    <Button
+                                      label="Remove"
+                                      variant="destructive"
+                                      width="100%"
+                                      onClick={() => openRemove(mount)}
+                                    />
+                                  </StackItem>
+                                </HStack>
+                              </>
+                            ),
+                            toggleLabel: `Details for mount ${pathOf(mount)}`,
+                          }))}
+                        />
+                      ) : (
+                        <Card padding={0} elevation="low">
+                          <Table<MountRow>
+                            data={data.map((mount) => ({ ...mount }))}
+                            columns={columns}
+                            idKey="id"
+                            textOverflow="truncate"
+                            hasHover
+                          />
+                        </Card>
+                      )
+                    }
+                  </QueryState>
+                </VStack>
+              </VStack>
+            </AfterFirstPaint>
           </VStack>
           {dialog.element}
           {confirm.element}

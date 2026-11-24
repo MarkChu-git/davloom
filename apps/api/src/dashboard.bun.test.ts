@@ -16,6 +16,9 @@ writeFileSync(join(root, "index.html"), "<!doctype html>index");
 writeFileSync(join(root, "assets", "app.js"), "console.log(1)");
 writeFileSync(join(root, "assets", "large.js"), LARGE_SCRIPT);
 writeFileSync(join(root, "robots.txt"), "User-agent: *\n");
+writeFileSync(join(root, "files.html"), "<!doctype html>files");
+mkdirSync(join(root, "design-check", "deep"), { recursive: true });
+writeFileSync(join(root, "design-check", "deep", "page.html"), "<!doctype html>deep");
 writeFileSync(join(root, "..", "davloom-outside.txt"), "secret");
 // A build whose index.html is large enough to compress.
 const largeRoot = mkdtempSync(join(tmpdir(), "davloom-dashboard-"));
@@ -38,6 +41,11 @@ describe("the Dashboard handler", () => {
     ["/assets/app.js", 200, "console.log(1)"],
     ["/", 200, "<!doctype html>index"],
     ["/settings", 200, "<!doctype html>index"],
+    ["/files", 200, "<!doctype html>files"],
+    ["/files/", 200, "<!doctype html>files"],
+    ["/design-check/deep/page", 200, "<!doctype html>deep"],
+    ["/design-check/deep", 200, "<!doctype html>index"],
+    ["/files.html", 200, "<!doctype html>files"],
     ["/files/deep/path", 200, "<!doctype html>index"],
     ["/missing.js", 404, ""],
     ["/api/me", 404, ""],

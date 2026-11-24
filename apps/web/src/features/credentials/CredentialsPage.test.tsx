@@ -218,7 +218,7 @@ describe("CredentialsPage, wide", () => {
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Revoke" }),
     );
-    expect(await screen.findByText("No keys yet")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No keys yet" })).toBeTruthy();
   });
 });
 
@@ -291,7 +291,7 @@ describe("CredentialsPage, narrow", () => {
 describe("CredentialsPage, states", () => {
   it("offers a first key when there is none", async () => {
     await renderPage(<Page />, { api: keysApi([]) });
-    expect(await screen.findByText("No keys yet")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "No keys yet" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Create a key" }));
     expect(await screen.findByRole("heading", { name: "Create a key" })).toBeTruthy();
   });

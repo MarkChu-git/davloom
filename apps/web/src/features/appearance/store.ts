@@ -1,4 +1,5 @@
-import { Store, useStore } from "@tanstack/react-store";
+import { Store } from "@tanstack/react-store";
+import { useSyncExternalStore } from "react";
 import { APPEARANCE_STORAGE_KEY } from "./script";
 
 export type AppearanceMode = "light" | "dark" | "system";
@@ -41,7 +42,19 @@ if (typeof window !== "undefined") {
   });
 }
 
-export const useAppearanceMode = (): AppearanceMode => useStore(appearanceStore, (mode) => mode);
+const subscribe = (onChange: () => void) => appearanceStore.subscribe(onChange).unsubscribe;
+
+/**
+ * The mode in use. Each page's HTML is prerendered without storage, so while React hydrates it the
+ * mode is the one the HTML holds, "system", and the stored mode follows right after. The page has
+ * the stored mode from the first paint all the same: the first-paint script put it on <html>.
+ */
+export const useAppearanceMode = (): AppearanceMode =>
+  useSyncExternalStore(
+    subscribe,
+    () => appearanceStore.state,
+    () => "system",
+  );
 
 export const setAppearanceMode = (mode: AppearanceMode): void => {
   appearanceStore.setState(() => mode);

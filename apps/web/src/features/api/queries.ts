@@ -102,6 +102,7 @@ export const kindLabel = (kind: string): string => BACKEND_KINDS[kind] ?? kind;
 
 export const keys = {
   me: ["me"] as const,
+  session: ["session"] as const,
   overview: ["overview"] as const,
   apiKeys: ["keys"] as const,
   backends: ["backends"] as const,
@@ -136,6 +137,22 @@ export const createQueryClient = (): QueryClient => {
   return client;
 };
 
+let browserClient: QueryClient | undefined;
+
+/**
+ * The browser's one client for the visit, which client.tsx fills with the page's first reads before
+ * the page renders. The prerender, which runs once per page, makes a client of its own each time.
+ */
+export const browserQueryClient = (): QueryClient => {
+  browserClient ??= createQueryClient();
+  return browserClient;
+};
+
+/** Starts the next visit with a client of its own, as a test that opens the Dashboard again needs. */
+export const forgetBrowserQueryClient = (): void => {
+  browserClient = undefined;
+};
+
 export const meQuery = queryOptions({
   queryKey: keys.me,
   queryFn: () => apiFetch<User>("/api/me"),
@@ -143,19 +160,46 @@ export const meQuery = queryOptions({
   staleTime: 60_000,
 });
 
+/**
+ * Whether this browser is signed in, as Better Auth's session endpoint answers: 200 with the
+ * session, or 200 with null. The sign-in page asks it rather than /api/me, whose 401 for a visitor
+ * who is not signed in the browser reports as an error.
+ */
+export const sessionQuery = queryOptions({
+  queryKey: keys.session,
+  queryFn: () => apiFetch<{ user: User } | null>("/api/auth/get-session"),
+  retry: false,
+});
+
 export const useMe = () => useQuery(meQuery);
 
-export const useOverview = () =>
-  useQuery({ queryKey: keys.overview, queryFn: () => apiFetch<Overview>("/api/overview") });
+export const overviewQuery = queryOptions({
+  queryKey: keys.overview,
+  queryFn: () => apiFetch<Overview>("/api/overview"),
+});
 
-export const useApiKeys = () =>
-  useQuery({ queryKey: keys.apiKeys, queryFn: () => apiFetch<ApiKey[]>("/api/keys") });
+export const apiKeysQuery = queryOptions({
+  queryKey: keys.apiKeys,
+  queryFn: () => apiFetch<ApiKey[]>("/api/keys"),
+});
 
-export const useBackends = () =>
-  useQuery({ queryKey: keys.backends, queryFn: () => apiFetch<Backend[]>("/api/backends") });
+export const backendsQuery = queryOptions({
+  queryKey: keys.backends,
+  queryFn: () => apiFetch<Backend[]>("/api/backends"),
+});
 
-export const useMounts = () =>
-  useQuery({ queryKey: keys.mounts, queryFn: () => apiFetch<Mount[]>("/api/mounts") });
+export const mountsQuery = queryOptions({
+  queryKey: keys.mounts,
+  queryFn: () => apiFetch<Mount[]>("/api/mounts"),
+});
+
+export const useOverview = () => useQuery(overviewQuery);
+
+export const useApiKeys = () => useQuery(apiKeysQuery);
+
+export const useBackends = () => useQuery(backendsQuery);
+
+export const useMounts = () => useQuery(mountsQuery);
 
 /** After a change to storage, everything that shows storage reads it again. */
 const useInvalidateStorage = () => {
@@ -320,25 +364,28 @@ export const instanceKeys = {
   instance: ["instance"] as const,
 };
 
-export const useOperations = () =>
-  useQuery({
-    queryKey: instanceKeys.operations,
-    queryFn: () => apiFetch<Operations>("/api/operations"),
-    refetchInterval: 60_000,
-  });
+export const operationsQuery = queryOptions({
+  queryKey: instanceKeys.operations,
+  queryFn: () => apiFetch<Operations>("/api/operations"),
+  refetchInterval: 60_000,
+});
 
-export const useStorageSettings = () =>
-  useQuery({
-    queryKey: instanceKeys.storageSettings,
-    queryFn: () => apiFetch<StorageSettings>("/api/settings/storage"),
-  });
+export const storageSettingsQuery = queryOptions({
+  queryKey: instanceKeys.storageSettings,
+  queryFn: () => apiFetch<StorageSettings>("/api/settings/storage"),
+});
 
-export const useInstanceInfo = () =>
-  useQuery({
-    queryKey: instanceKeys.instance,
-    queryFn: () => apiFetch<InstanceInfo>("/api/instance"),
-    staleTime: 5 * 60_000,
-  });
+export const instanceInfoQuery = queryOptions({
+  queryKey: instanceKeys.instance,
+  queryFn: () => apiFetch<InstanceInfo>("/api/instance"),
+  staleTime: 5 * 60_000,
+});
+
+export const useOperations = () => useQuery(operationsQuery);
+
+export const useStorageSettings = () => useQuery(storageSettingsQuery);
+
+export const useInstanceInfo = () => useQuery(instanceInfoQuery);
 
 export const useSaveStorageSettings = () => {
   const client = useQueryClient();

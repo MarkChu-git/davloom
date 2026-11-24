@@ -63,6 +63,7 @@ import {
 import { keys, useBackends, useMounts } from "../api/queries";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
 import { formatBytes, formatDateTime, formatRelative } from "../shell/format";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { PageHeader, TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { LoadingRows } from "../shell/QueryState";
@@ -950,7 +951,8 @@ export const FileExplorerPage = ({
               <UploadPanel path={path} folders={folderNames} onSettled={showUploadResult} />
             ) : null}
 
-            {content}
+            {/* Built once the header and the toolbar are on screen, in a render of its own. */}
+            <AfterFirstPaint>{content}</AfterFirstPaint>
           </VStack>
           {/* The dialog mounts open, with its header, once the file is known: one that opened
               later than it mounted took no name from its header. */}

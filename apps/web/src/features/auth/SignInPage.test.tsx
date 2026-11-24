@@ -19,11 +19,18 @@ const ME = {
 };
 const SIGNED_OUT = () => json({ error: { code: "unauthorized" } }, 401);
 const CLOSED: Handler = () => json({ open: false });
+/** Better Auth's session endpoint for a visitor who is not signed in. */
+const NO_SESSION: Handler = () => json(null);
 
 const showForm = async (api: Record<string, Handler> = {}, redirect?: string) => {
   const page = await renderPage(<SignInPage redirect={redirect} />, {
     path: "/sign-in",
-    api: { "GET /api/me": SIGNED_OUT, "GET /api/registration": CLOSED, ...api },
+    api: {
+      "GET /api/auth/get-session": NO_SESSION,
+      "GET /api/me": SIGNED_OUT,
+      "GET /api/registration": CLOSED,
+      ...api,
+    },
   });
   await screen.findByRole("heading", { name: "Sign in" });
   return page;
@@ -62,14 +69,14 @@ const secondStep = async (verify: Record<string, Handler>) => {
 };
 
 describe("SignInPage", () => {
-  it("waits while it checks the session", async () => {
+  it("shows the form while it checks the session", async () => {
     await renderPage(<SignInPage />, {
       api: {
-        "GET /api/me": () => new Promise<Response>(() => undefined),
+        "GET /api/auth/get-session": () => new Promise<Response>(() => undefined),
         "GET /api/registration": CLOSED,
       },
     });
-    expect(screen.getByText("Checking the session")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 
   it.each([
@@ -79,7 +86,10 @@ describe("SignInPage", () => {
   ])("a signed-in visit with redirect %j opens %j", async (redirect, href) => {
     const { router } = await renderPage(<SignInPage redirect={redirect} />, {
       path: "/sign-in",
-      api: { "GET /api/me": () => json(ME), "GET /api/registration": CLOSED },
+      api: {
+        "GET /api/auth/get-session": () => json({ user: ME }),
+        "GET /api/registration": CLOSED,
+      },
     });
     await waitFor(() => expect(router.state.location.href).toBe(href));
   });
@@ -87,7 +97,10 @@ describe("SignInPage", () => {
   it("sends a visitor of an instance without an owner to create the account", async () => {
     const { router } = await renderPage(<SignInPage />, {
       path: "/sign-in",
-      api: { "GET /api/me": SIGNED_OUT, "GET /api/registration": () => json({ open: true }) },
+      api: {
+        "GET /api/auth/get-session": NO_SESSION,
+        "GET /api/registration": () => json({ open: true }),
+      },
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/register"));
   });
@@ -237,6 +250,9 @@ describe("SignInPage", () => {
   ])("offers a passkey sign-in only when passkeys are %s", async (_case, status, shown) => {
     vi.stubGlobal("PublicKeyCredential", function PublicKeyCredential() {});
     await showForm({ "GET /api/registration": () => json(status) });
-    expect(screen.queryByRole("button", { name: "Sign in with a passkey" }) !== null).toBe(shown);
+    // The form shows before the instance has answered; the passkey button follows its answer.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Sign in with a passkey" }) !== null).toBe(shown),
+    );
   });
 });
