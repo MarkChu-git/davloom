@@ -8,6 +8,10 @@
     "probe/**/*.ts",
     "identity/suite.ts",
     "identity/d1.test.ts",
+    "upgrade/samples.ts",
+    "upgrade/suite.ts",
+    "upgrade/tables.ts",
+    "upgrade/d1.test.ts",
     "vitest.d1.config.ts",
     "vitest.workerd.config.ts",
     "vitest.storage.config.ts"
