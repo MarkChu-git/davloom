@@ -36,6 +36,7 @@ const session = (token: string, userAgent: string) => ({
 /** The answers the security section reads: the owner, passkeys and sessions. */
 const securityApi = (overrides: Record<string, Handler> = {}): Record<string, Handler> => ({
   "GET /api/me": () => json(ME),
+  "GET /api/registration": () => json({ open: false, tokenRequired: false, passkeys: true }),
   "GET /api/auth/passkey/list-user-passkeys": () =>
     json([
       {
@@ -354,6 +355,15 @@ describe("SettingsPage", () => {
     ).toBe("1111-2222");
     await userEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("says passkeys are off on an instance without DAVLOOM_URL, and does not ask for them", async () => {
+    const { calls } = await showSecurity({
+      "GET /api/registration": () => json({ open: false, tokenRequired: false, passkeys: false }),
+    });
+    expect(await screen.findByText("Off: DAVLOOM_URL is not set")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add passkey" })).toBeNull();
+    expect(calls.some((call) => call.url.includes("/passkey/"))).toBe(false);
   });
 
   it("lists the passkeys and removes one", async () => {

@@ -656,6 +656,38 @@ law import_all_or_nothing:
   for +known: +List<Nat>
   {I.plan(entries, known) == Bool.pick(I.Plan, spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
 
+def count_one(c: I.Count) -> Bool:
+  match c:
+    case I.CNone{}:
+      False{}
+    case I.COne{}:
+      True{}
+    case I.CMany{}:
+      False{}
+
+def count_none(c: I.Count) -> Bool:
+  match c:
+    case I.CNone{}:
+      True{}
+    case I.COne{}:
+      False{}
+    case I.CMany{}:
+      False{}
+
+# An export starts an instance only with exactly one user who can sign in with a password, so an
+# import always closes registration: an export without a user, with two, or with a user who has no
+# password is refused before anything is written.
+law import_needs_one_owner:
+  for users: I.Count
+  for logins: I.Count
+  {I.owned(users, logins) == Bool.and(count_one(users), Bool.not(count_none(logins))) : Bool}
+
+# No count of logins makes an export without exactly one user acceptable.
+law import_refuses_ownerless:
+  for users: I.Count
+  for logins: I.Count
+  {implies(Bool.not(count_one(users)), Bool.not(I.owned(users, logins))) == True{} : Bool}
+
 # --- Copying files between instances (PRD §7 Data Migration) ---------------------------------
 
 def writes(a: M.Action) -> Bool:

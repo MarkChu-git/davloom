@@ -1,7 +1,11 @@
+export { LOCK_MS, MAX_ATTEMPTS } from "./attempts";
 export {
+  CLIENT_IP_HEADER,
+  configuredOrigin,
   createAdmin,
   createAuth,
   leakedPasswordCheckFrom,
+  rateLimitFrom,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   PLACEHOLDER_EMAIL_DOMAIN,

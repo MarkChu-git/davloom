@@ -227,4 +227,14 @@ export const SAMPLES: Readonly<Record<string, readonly Sample[]>> = {
       },
     },
   ],
+  "0006_rate_limit": [
+    {
+      table: "rate_limit",
+      row: { id: "rate-1", key: "203.0.113.7|/sign-in/username", count: 2, last_request: LATER },
+    },
+    {
+      table: "rate_limit",
+      row: { id: "rate-2", key: "davloom:presence:user-1", count: 5, last_request: LATER },
+    },
+  ],
 };

@@ -1,8 +1,9 @@
-import { planImport, type ImportEntry } from "@davloom/laws";
+import { exportHasOwner, planImport, type ImportEntry } from "@davloom/laws";
 import { Context, Data, Effect, Redacted } from "effect";
 import { checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
-import { InstanceConfig, Records, RegistrationClosed } from "./instance";
+import { InstanceConfig, Records, RegistrationClosed, requireSetupToken } from "./instance";
+import { redactedError } from "./redact";
 import { parseScope } from "./scope";
 
 // Data export and import (PRD §8.5 Data Export, Data Migration). An export holds the records of an
@@ -317,7 +318,7 @@ const withDefaultBackend = (
  * Imports an export into an instance that has no user yet, in place of registering its owner. Every
  * record is written, or, when the file, the key or a record is invalid, none.
  */
-export const importInstance = (input: { key: string; file: unknown }) =>
+export const importInstance = (input: { key: string; file: unknown; setupToken?: string }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const config = yield* InstanceConfig;
@@ -326,9 +327,22 @@ export const importInstance = (input: { key: string; file: unknown }) =>
     if ((yield* Effect.promise(() => records.users.count())) > 0) {
       return yield* Effect.fail(new RegistrationClosed());
     }
+    yield* requireSetupToken(input.setupToken ?? "");
     const tables = withDefaultBackend(yield* openArchive(input.file, input.key), config);
     const problem = archive.check(tables);
     if (problem !== null) return yield* invalid(problem);
+    // The import takes the place of registering the owner, so the export must bring exactly one
+    // user who can sign in. Otherwise registration would stay open, and the first visitor would
+    // become the owner of the imported backends and Mounts.
+    const ownerLogins = tables.account.filter(
+      (row) =>
+        text(row, "user_id") === text(tables.user[0] ?? {}, "id") &&
+        text(row, "provider_id") === "credential" &&
+        text(row, "password") !== "",
+    ).length;
+    if (!exportHasOwner(tables.user.length, ownerLogins)) {
+      return yield* invalid("The export must hold exactly one user who signs in with a password.");
+    }
     const target = yield* Effect.promise(() => archive.read());
     const known = importEntries(target).flatMap(({ entry }) => entry.defines);
     const planned = importEntries(tables);
@@ -355,7 +369,8 @@ export const importInstance = (input: { key: string; file: unknown }) =>
     }).pipe(
       Effect.as(true),
       Effect.catch((error) => {
-        console.error("Import failed to write:", String(error));
+        // The database's message holds the rows' values, password hashes and sealed secrets too.
+        console.error("Import failed to write:", redactedError(error));
         return Effect.succeed(false);
       }),
     );

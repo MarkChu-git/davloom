@@ -1,5 +1,5 @@
 import { toList } from "./bend";
-import bend, { type BendEntry } from "./compiled/imports.mjs";
+import bend, { type BendCount, type BendEntry } from "./compiled/imports.mjs";
 
 /**
  * One entry of an import: the keys it defines, such as `backend:<id>` and `backend-name:<name>`,
@@ -40,3 +40,13 @@ export const planImport = (
   );
   return bend.plan(list, toList(known.map(numberOf))).$ === "Apply" ? "apply" : "reject";
 };
+
+const countOf = (n: number): BendCount => ({ $: n <= 0 ? "CNone" : n === 1 ? "COne" : "CMany" });
+
+/**
+ * Whether an export can start an instance (the laws import_needs_one_owner and
+ * import_refuses_ownerless): it holds exactly one user, and that user has at least one login with
+ * a password, so the import makes them the owner and closes registration.
+ */
+export const exportHasOwner = (users: number, ownerLogins: number): boolean =>
+  bend.owned(countOf(users), countOf(ownerLogins));

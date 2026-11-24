@@ -3,9 +3,10 @@ import { passkey } from "@better-auth/passkey";
 import * as schema from "@davloom/database/schema";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { hashPassword } from "better-auth/crypto";
 import { haveIBeenPwned, twoFactor, username } from "better-auth/plugins";
+import { clearAttempts, takeAttempt } from "./attempts";
 
 export interface AuthOptions {
   /** A Drizzle database on the SQLite dialect: D1 in the cloud, Bun SQLite when self-hosted. */
@@ -17,7 +18,41 @@ export interface AuthOptions {
    * The check fails closed: when the service cannot be reached, the password is refused.
    */
   readonly checkLeakedPasswords?: boolean;
+  /**
+   * Whether Better Auth limits how often a client may call its routes (default true), counted in
+   * the database so every isolate and process shares the count. Only test harnesses that sign in
+   * many times from one address turn it off.
+   */
+  readonly rateLimit?: boolean;
+  /**
+   * The headers that name the client's address for the rate limit, which the runtime sets and a
+   * client cannot: CF-Connecting-IP on Workers, Davloom's own header on Bun (CLIENT_IP_HEADER).
+   */
+  readonly clientIpHeaders?: readonly string[];
+  /**
+   * The instance's public origin from its configuration (DAVLOOM_URL), which passkeys are bound
+   * to. Without one, passkeys are off: an origin taken from a request's Host could be any name a
+   * client sends.
+   */
+  readonly passkeyOrigin?: string | undefined;
 }
+
+/** The origin a configured URL names, or undefined when it is missing or not http(s). */
+export const configuredOrigin = (value: string | undefined): string | undefined => {
+  if (value === undefined || !URL.canParse(value.trim())) return undefined;
+  const url = new URL(value.trim());
+  return url.protocol === "https:" || url.protocol === "http:" ? url.origin : undefined;
+};
+
+/** The header that Davloom's Bun server sets to the client's address, replacing any it was sent. */
+export const CLIENT_IP_HEADER = "x-davloom-client-ip";
+
+/**
+ * Whether DAVLOOM_AUTH_RATE_LIMIT leaves Better Auth's rate limit on: it is on unless the variable
+ * says `0`, `false`, `off` or `no`.
+ */
+export const rateLimitFrom = (value: string | undefined): boolean =>
+  !["0", "false", "off", "no"].includes((value ?? "").trim().toLowerCase());
 
 /**
  * Whether DAVLOOM_CHECK_LEAKED_PASSWORDS leaves the leaked-password check on: it is on unless the
@@ -46,19 +81,63 @@ export const publicEmail = (email: string): string | null =>
 /** The paths after which a passkey sign-in replaces the browser's earlier session. */
 const PASSKEY_SIGN_IN = "/passkey/verify-authentication";
 
+/**
+ * The routes that check an authenticator code. Without a session they are the second step of a
+ * sign-in, which Better Auth locks itself; with one they turn two-step verification on, and
+ * Davloom counts the failures (attempts.ts).
+ */
+const SECOND_FACTOR = new Set(["/two-factor/verify-totp", "/two-factor/verify-backup-code"]);
+
+/** The answer to an attempt made while the user is locked out. */
+const lockedOut = () =>
+  new APIError("TOO_MANY_REQUESTS", {
+    message: "Too many wrong attempts. Wait 15 minutes, then try again.",
+    code: "VERIFICATION_LOCKED",
+  });
+
 /** The identity configuration shared by every deployment. */
 export const createAuth = ({
   database,
   secret,
   baseURL,
   checkLeakedPasswords = true,
+  rateLimit = true,
+  clientIpHeaders = [],
+  passkeyOrigin,
 }: AuthOptions) => {
-  const origin = new URL(baseURL);
+  const passkeyUrl = passkeyOrigin === undefined ? undefined : new URL(passkeyOrigin);
   return betterAuth({
     database: drizzleAdapter(database, { provider: "sqlite", schema }),
     secret,
     baseURL,
+    // Without DAVLOOM_URL the base URL is the first request's origin, which any client could have
+    // named. Davloom's app lets only same-origin requests reach these routes (apps/api
+    // same-origin.ts), so Better Auth takes the origin each request was sent to as its own, and a
+    // first request with a forged Host cannot lock the real origin out.
+    trustedOrigins: (request) => {
+      if (request === undefined || !URL.canParse(request.url)) return [];
+      const url = new URL(request.url);
+      const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+      return forwarded?.toLowerCase() === "https"
+        ? [url.origin, `https://${url.host}`]
+        : [url.origin];
+    },
     telemetry: { enabled: false },
+    // On in every environment, not only with NODE_ENV=production, and in the database, which
+    // every Worker isolate and Bun process shares. Better Auth's own rules apply on top of these,
+    // such as 3 sign-ins per 10 seconds.
+    rateLimit: {
+      enabled: rateLimit,
+      storage: "database",
+      window: 60,
+      max: 100,
+      customRules: {
+        "/sign-in/*": { window: 60, max: 10 },
+        "/two-factor/*": { window: 60, max: 10 },
+        "/passkey/*": { window: 60, max: 30 },
+      },
+    },
+    advanced: { ipAddress: { ipAddressHeaders: [...clientIpHeaders] } },
     // The owner registers through Davloom's own /api/registration, which calls the sign-up
     // endpoint on the server once no user exists; the public route stays closed.
     disabledPaths: ["/sign-up/email"],
@@ -81,7 +160,25 @@ export const createAuth = ({
       },
     },
     hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        // A code that a signed-in session sends over HTTP counts towards the user's lock. Davloom's
+        // own step-up verification calls the route on the server, without a request, and counts
+        // its attempts itself (identity.ts).
+        if (!SECOND_FACTOR.has(ctx.path) || !ctx.request) return;
+        const found = await getSessionFromCtx(ctx);
+        if (!found) return;
+        if (!(await takeAttempt(ctx.context.adapter, found.user.id))) throw lockedOut();
+      }),
       after: createAuthMiddleware(async (ctx) => {
+        if (
+          SECOND_FACTOR.has(ctx.path) &&
+          ctx.request &&
+          !(ctx.context.returned instanceof Error)
+        ) {
+          const found = ctx.context.newSession ?? (await getSessionFromCtx(ctx));
+          if (found) await clearAttempts(ctx.context.adapter, found.user.id);
+          return;
+        }
         // A passkey proves presence by starting a new session. The browser's earlier session, of
         // the same person, ends with it, so a step-up leaves one session behind, not two.
         if (ctx.path !== PASSKEY_SIGN_IN) return;
@@ -101,7 +198,9 @@ export const createAuth = ({
     plugins: [
       username(),
       twoFactor({ issuer: "Davloom" }),
-      passkey({ rpID: origin.hostname, rpName: "Davloom", origin: origin.origin }),
+      ...(passkeyUrl === undefined
+        ? []
+        : [passkey({ rpID: passkeyUrl.hostname, rpName: "Davloom", origin: passkeyUrl.origin })]),
       haveIBeenPwned({
         enabled: checkLeakedPasswords,
         customPasswordCompromisedMessage:

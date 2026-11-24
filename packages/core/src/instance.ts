@@ -9,6 +9,8 @@ import {
   type ActionEffect,
 } from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
+import { redactedError } from "./redact";
+import { setupTokenMatches } from "./setup-token";
 import { formatRoot, parseScope, type Scope } from "./scope";
 import type { Path, StorageBackend, StorageFailure, StorageResult, Usage } from "./storage";
 
@@ -138,7 +140,9 @@ export class Identity extends Context.Service<
     readonly reverify: (
       headers: Headers,
       input: { password: string; code: string },
-    ) => Promise<"verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code">;
+    ) => Promise<
+      "verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code" | "locked"
+    >;
     readonly createApiKey: (details: {
       userId: string;
       name: string;
@@ -166,11 +170,20 @@ export class InstanceConfig extends Context.Service<
       readonly config: unknown;
       readonly secretKey: Redacted.Redacted | null;
     } | null;
+    /**
+     * The token that registering the owner, or importing in its place, has to name
+     * (DAVLOOM_SETUP_TOKEN). Without one the first visitor may register.
+     */
+    readonly setupToken?: Redacted.Redacted | null;
+    /** Whether passkeys are on, which needs the instance's configured public URL. */
+    readonly passkeys?: boolean;
   }
 >()("@davloom/core/InstanceConfig") {}
 
 /** The instance has its owner, so registration and imports are closed. */
 export class RegistrationClosed extends Data.TaggedError("RegistrationClosed")<{}> {}
+/** The deployment sets a setup token, and the registration or import did not name it. */
+export class SetupTokenInvalid extends Data.TaggedError("SetupTokenInvalid")<{}> {}
 /** The identity provider refused a field of a registration, for the reason it gives. */
 export class UsernameRefused extends Data.TaggedError("UsernameRefused")<{
   readonly reason: string;
@@ -189,6 +202,8 @@ export class WrongPassword extends Data.TaggedError("WrongPassword")<{}> {}
 /** Two-step verification is on, so a re-verification needs the authenticator's code too. */
 export class CodeRequired extends Data.TaggedError("CodeRequired")<{}> {}
 export class WrongCode extends Data.TaggedError("WrongCode")<{}> {}
+/** Too many wrong attempts at re-verification; the lock lifts after a quarter of an hour. */
+export class VerificationLocked extends Data.TaggedError("VerificationLocked")<{}> {}
 export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly field: string }> {}
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class NameTaken extends Data.TaggedError("NameTaken")<{}> {}
@@ -221,11 +236,27 @@ export const DEFAULT_MOUNT = "files";
 
 // --- Registration --------------------------------------------------------------------------
 
-/** Registration is open while the instance has no user: the first account becomes its owner. */
+/**
+ * Registration is open while the instance has no user: the first account becomes its owner. It
+ * also says whether registering needs the deployment's setup token, and whether passkeys are on.
+ */
 export const registrationStatus = Effect.gen(function* () {
   const records = yield* Records;
-  return { open: (yield* promise(() => records.users.count())) === 0 };
+  const config = yield* InstanceConfig;
+  return {
+    open: (yield* promise(() => records.users.count())) === 0,
+    tokenRequired: config.setupToken !== undefined && config.setupToken !== null,
+    passkeys: config.passkeys === true,
+  };
 });
+
+/** Fails with SetupTokenInvalid unless `given` is the deployment's setup token, when it sets one. */
+export const requireSetupToken = (given: string) =>
+  Effect.gen(function* () {
+    const config = yield* InstanceConfig;
+    const matches = yield* setupTokenMatches(config.setupToken, given);
+    return matches ? undefined : yield* Effect.fail(new SetupTokenInvalid());
+  });
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
@@ -238,6 +269,7 @@ export const registerOwner = (input: {
   name: string;
   email: string;
   password: string;
+  setupToken?: string;
 }) =>
   Effect.gen(function* () {
     const records = yield* Records;
@@ -246,6 +278,7 @@ export const registerOwner = (input: {
     if ((yield* promise(() => records.users.count())) > 0) {
       return yield* Effect.fail(new RegistrationClosed());
     }
+    yield* requireSetupToken(input.setupToken ?? "");
     const username = input.username.trim();
     if (username === "") return yield* Effect.fail(new InvalidInput({ field: "username" }));
     const name = input.name.trim() === "" ? username : input.name.trim();
@@ -274,44 +307,46 @@ export const registerOwner = (input: {
             : new EmailRefused({ reason }),
       );
     }
-    const backends = yield* promise(() => records.backends.list());
-    let backendId = backends[0]?.id;
-    if (backendId === undefined) {
-      const id = crypto.randomUUID();
-      backendId = id;
-      let chosen = config.defaultBackend ?? {
-        kind: config.storageKinds[0] ?? "durable-object",
-        config: {},
-        secretKey: null,
-      };
-      // The deployment's own S3 settings are checked like any other; an invalid one is stored as
-      // it is and shows as unavailable, so registration still completes and the owner can fix it.
-      const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
-      if (checked?.ok) chosen = { ...chosen, config: checked.config };
-      const cipher = yield* CredentialCipher;
-      const secret = chosen.secretKey;
-      const sealed = secret ? yield* cipher.seal(id, secret) : null;
-      yield* insert(() =>
-        records.backends.create({
-          id,
-          name: "Default",
-          kind: chosen.kind,
-          config: chosen.config,
-          ...(sealed === null ? {} : { secretKey: sealed }),
-        }),
-      );
+    // The owner's files go only to the backend and Mount registration creates now. A record that
+    // exists before the instance has an owner was made by nobody the owner trusts, such as an
+    // import that brought no user, so registration drops it rather than adopt it. Dropping a
+    // record leaves the files of its store where they are.
+    for (const orphan of yield* promise(() => records.mounts.list())) {
+      yield* promise(() => records.mounts.remove(orphan.id));
     }
-    const mounts = yield* promise(() => records.mounts.list());
-    if (mounts.length === 0) {
-      yield* insert(() =>
-        records.mounts.create({
-          id: crypto.randomUUID(),
-          name: DEFAULT_MOUNT,
-          backendId: backendId ?? "",
-          root: "",
-        }),
-      );
+    for (const orphan of yield* promise(() => records.backends.list())) {
+      yield* promise(() => records.backends.remove(orphan.id));
     }
+    const backendId = crypto.randomUUID();
+    let chosen = config.defaultBackend ?? {
+      kind: config.storageKinds[0] ?? "durable-object",
+      config: {},
+      secretKey: null,
+    };
+    // The deployment's own S3 settings are checked like any other; an invalid one is stored as
+    // it is and shows as unavailable, so registration still completes and the owner can fix it.
+    const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
+    if (checked?.ok) chosen = { ...chosen, config: checked.config };
+    const cipher = yield* CredentialCipher;
+    const secret = chosen.secretKey;
+    const sealed = secret ? yield* cipher.seal(backendId, secret) : null;
+    yield* insert(() =>
+      records.backends.create({
+        id: backendId,
+        name: "Default",
+        kind: chosen.kind,
+        config: chosen.config,
+        ...(sealed === null ? {} : { secretKey: sealed }),
+      }),
+    );
+    yield* insert(() =>
+      records.mounts.create({
+        id: crypto.randomUUID(),
+        name: DEFAULT_MOUNT,
+        backendId,
+        root: "",
+      }),
+    );
     return { userId: result.id };
   });
 
@@ -358,7 +393,9 @@ export const reverify = (headers: Headers, input: { password: string; code: stri
           ? new WrongPassword()
           : result === "code-required"
             ? new CodeRequired()
-            : new WrongCode(),
+            : result === "locked"
+              ? new VerificationLocked()
+              : new WrongCode(),
     );
   });
 
@@ -797,7 +834,7 @@ export const verifyApiKey = (key: string, now: number) =>
       // The sign-in stands whether or not the record is written.
       yield* promise(() =>
         records.apiKeys.recordUse(record.id, new Date(now)).catch((error: unknown) => {
-          console.error("Could not record the use of an API Key:", error);
+          console.error("Could not record the use of an API Key:", redactedError(error));
         }),
       );
     }

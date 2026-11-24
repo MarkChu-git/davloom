@@ -191,4 +191,62 @@ describe("RegisterPage", () => {
       file: { format: "davloom-export" },
     });
   });
+
+  it("asks for no setup token when the deployment sets none", async () => {
+    await showForm();
+    expect(screen.queryByLabelText("Setup token")).toBeNull();
+  });
+
+  it("sends the setup token the deployment asks for, and shows a refusal under it", async () => {
+    let attempts = 0;
+    const { calls } = await showForm({
+      "GET /api/registration": () => json({ open: true, tokenRequired: true, passkeys: false }),
+      "POST /api/registration": () => {
+        attempts += 1;
+        return json({ error: { code: "setup_token_invalid" } }, 403);
+      },
+    });
+    await userEvent.type(screen.getByLabelText("Username"), "owner");
+    await userEvent.type(passwordInput(), "a long password here");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect((await screen.findAllByText("Enter the setup token.")).length).toBeGreaterThan(0);
+    expect(attempts).toBe(0);
+    await userEvent.type(screen.getByLabelText("Setup token"), " the-token ");
+    await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    expect(
+      (await screen.findAllByText("That is not this instance's setup token.")).length,
+    ).toBeGreaterThan(0);
+    expect(await sentBody(calls, "/api/registration")).toEqual({
+      username: "owner",
+      name: "",
+      email: "",
+      password: "a long password here",
+      setupToken: "the-token",
+    });
+  });
+
+  it("sends the setup token with an import too", async () => {
+    const { router, calls } = await showForm({
+      "GET /api/registration": () => json({ open: true, tokenRequired: true, passkeys: false }),
+      "POST /api/registration/import": () => json({ user: 1 }, 201),
+    });
+    await userEvent.click(screen.getByRole("radio", { name: "From an export" }));
+    const file = new File([JSON.stringify({ format: "davloom-export" })], "export.json", {
+      type: "application/json",
+    });
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+    if (input === null) throw new Error("no file input");
+    await userEvent.upload(input, file);
+    await userEvent.type(screen.getByLabelText("Export key"), "the-key");
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect((await screen.findAllByText("Enter the setup token.")).length).toBeGreaterThan(0);
+    await userEvent.type(screen.getByLabelText("Setup token"), "the-token");
+    await userEvent.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
+    expect(await sentBody(calls, "/api/registration/import")).toEqual({
+      key: "the-key",
+      file: { format: "davloom-export" },
+      setupToken: "the-token",
+    });
+  });
 });

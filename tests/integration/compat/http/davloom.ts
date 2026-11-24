@@ -15,7 +15,10 @@ export const ADMIN = {
  * The tests' Workers run offline, so they leave out the check of new passwords against Have I
  * Been Pwned, which would otherwise refuse every password it cannot check.
  */
-export const OFFLINE_VARS = { DAVLOOM_CHECK_LEAKED_PASSWORDS: "off" } as const;
+export const OFFLINE_VARS = {
+  DAVLOOM_CHECK_LEAKED_PASSWORDS: "off",
+  DAVLOOM_AUTH_RATE_LIMIT: "off",
+} as const;
 
 /** Creates the owner on a fresh instance and signs in; the Cookie header of the session. */
 export const registerOwner = async (server: Server): Promise<string> => {

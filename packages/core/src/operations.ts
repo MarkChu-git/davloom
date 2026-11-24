@@ -1,3 +1,4 @@
+import { redactedError } from "./redact";
 import { Context, Effect } from "effect";
 
 // The WebDAV operations of the last day, for the Overview (PRD §8.1): how many ran in each hour,
@@ -117,7 +118,7 @@ export const createOperationRecorder = ({
       await write(batch, now());
     } catch (error) {
       // Counts are a convenience: a failed write loses one batch and never fails a request.
-      console.error("could not write the operation log:", error);
+      console.error("could not write the operation log:", redactedError(error));
     }
   };
 

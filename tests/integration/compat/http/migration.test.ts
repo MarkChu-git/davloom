@@ -88,7 +88,11 @@ describe("moving an instance", () => {
     servers.push(bun);
     const imported = await importInto(bun, exported);
     expect(imported.status).toBe(201);
-    expect(await (await bun.fetch("/api/registration")).json()).toEqual({ open: false });
+    expect(await (await bun.fetch("/api/registration")).json()).toEqual({
+      open: false,
+      tokenRequired: false,
+      passkeys: false,
+    });
     const bunApi = await signIn(bun);
     expect(await keysOf(bunApi)).toEqual(sourceKeys);
     expect(await (await bunApi("/api/mounts")).json()).toEqual(sourceMounts);
@@ -145,7 +149,11 @@ describe("moving an instance", () => {
         message: "The key does not open this file, or the file is damaged.",
       },
     });
-    expect(await (await bun.fetch("/api/registration")).json()).toEqual({ open: true });
+    expect(await (await bun.fetch("/api/registration")).json()).toEqual({
+      open: true,
+      tokenRequired: false,
+      passkeys: false,
+    });
   });
 
   it("exports only for a signed-in administrator", async () => {

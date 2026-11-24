@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { openArchive, sealArchive, type ArchiveTables } from "@davloom/core";
+import { Effect, Redacted } from "effect";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ADMIN, OFFLINE_VARS, SECRET, startDavloom, stringField, type Davloom } from "./davloom";
 import { hasDocker, SECRET_KEY, startSelfHostedServer } from "./selfhosted";
@@ -59,6 +61,9 @@ const DEPLOYMENTS: readonly [string, () => Promise<Server>, boolean][] = [
 
 const json = (value: unknown) => JSON.stringify(value);
 
+/** A value only the refused import's rows hold. */
+const PROPERTY_CANARY = "dead-property-canary-7q8w9e";
+
 const PROPFIND = '<D:propfind xmlns:D="DAV:"><D:allprop/></D:propfind>';
 const LOCK =
   '<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype><D:owner>redaction</D:owner></D:lockinfo>';
@@ -70,11 +75,22 @@ const settle = async (response: Promise<Response>): Promise<number> => {
   return answer.status;
 };
 
+/** An export file and its key, as POST /api/export answers them. */
+interface Exported {
+  readonly key: string;
+  readonly file: unknown;
+}
+
 /**
  * Every request the redaction check covers. It returns the secrets that only the server knew
- * before it answered: the export key.
+ * before it answered, the export key, and the export itself.
  */
-const drive = async ({ server, dav, api, readOnlyKey }: Davloom): Promise<string[]> => {
+const drive = async ({
+  server,
+  dav,
+  api,
+  readOnlyKey,
+}: Davloom): Promise<{ issued: string[]; exported: Exported | null }> => {
   // WebDAV with the Read / Write key, on paths that succeed.
   await settle(dav("/files/redaction/", { method: "MKCOL" }));
   await settle(dav("/files/redaction/a.txt", { method: "PUT", body: "a" }));
@@ -175,8 +191,6 @@ const drive = async ({ server, dav, api, readOnlyKey }: Davloom): Promise<string
   await settle(api("/api/me"));
   await settle(api("/api/keys"));
   await settle(api("/api/overview"));
-  const exported = await api("/api/export", { method: "POST" });
-  const exportKey = exported.status === 200 ? stringField(await exported.json(), "key") : "";
   // An S3 secret: a backend whose endpoint answers nothing, so every call to it fails and logs.
   const backend = await api("/api/backends", {
     method: "POST",
@@ -205,6 +219,10 @@ const drive = async ({ server, dav, api, readOnlyKey }: Davloom): Promise<string
   await settle(dav("/redaction/f.txt"));
   await settle(api("/api/backends"));
   await settle(api("/api/overview"));
+  // An export, which holds the S3 backend too.
+  const exported = await api("/api/export", { method: "POST" });
+  const exportBody: unknown = exported.status === 200 ? await exported.json() : null;
+  const exportKey = exportBody === null ? "" : stringField(exportBody, "key");
   // A new password, last, since it changes the administrator's.
   await settle(
     api("/api/auth/change-password", {
@@ -213,7 +231,53 @@ const drive = async ({ server, dav, api, readOnlyKey }: Davloom): Promise<string
     }),
   );
   await signIn(CANARY.newPassword);
-  return exportKey === "" ? [] : [exportKey];
+  return {
+    issued: exportKey === "" ? [] : [exportKey],
+    exported:
+      exportBody === null
+        ? null
+        : { key: exportKey, file: Reflect.get(Object(exportBody), "file") },
+  };
+};
+
+/**
+ * Imports the export into a fresh instance with one dead property twice, which no rule of the
+ * import plan catches and the database refuses for its primary key, and returns what the instance
+ * logged and the values the refused rows hold. A database's refusal names the values a query was
+ * bound to, so a log of it would hold them, as it would hold password hashes and sealed secrets.
+ */
+const failImport = async (
+  start: () => Promise<Server>,
+  exported: Exported,
+): Promise<{ answer: string; logs: string; values: string[] }> => {
+  const tables: ArchiveTables = await Effect.runPromise(openArchive(exported.file, exported.key));
+  const backend = tables.storage_backends.find((row) => row["name"] === "Redaction");
+  if (backend === undefined) throw new Error("the export holds no S3 backend");
+  const property = {
+    backend_id: backend["id"],
+    path: "redaction.txt",
+    name: "{urn:davloom:redaction}note",
+    xml: `<note xmlns="urn:davloom:redaction">${PROPERTY_CANARY}</note>`,
+  };
+  const sealed = await Effect.runPromise(
+    sealArchive({ ...tables, dav_properties: [...tables.dav_properties, property, property] }),
+  );
+  const server = await start();
+  try {
+    const response = await server.fetch("/api/registration/import", {
+      method: "POST",
+      body: json({ key: Redacted.value(sealed.key), file: sealed.file }),
+    });
+    const answer = `${response.status} ${await response.text()}`;
+    await new Promise((done) => setTimeout(done, 500));
+    return {
+      answer,
+      logs: server.logs?.() ?? "",
+      values: [PROPERTY_CANARY, String(backend["id"])],
+    };
+  } finally {
+    await server.stop();
+  }
 };
 
 /** The forms a secret takes on its way: as it is, in Basic Auth, in Base64 and percent-encoded. */
@@ -236,11 +300,15 @@ describe.each(DEPLOYMENTS)("logs of %s", (name, start, skip) => {
   let davloom: Davloom;
   let logs = "";
   let secrets: [string, string][] = [];
+  let refusedImport: { answer: string; logs: string; values: string[] } | null = null;
 
   beforeAll(async () => {
     if (skip) return;
     davloom = await startDavloom(start);
-    const issued = await drive(davloom);
+    const { issued, exported } = await drive(davloom);
+    if (exported !== null && !name.includes("RustFS")) {
+      refusedImport = await failImport(start, exported);
+    }
     // A moment for the last log lines to reach the pipe.
     await new Promise((done) => setTimeout(done, 500));
     logs = davloom.server.logs?.() ?? "";
@@ -286,5 +354,18 @@ describe.each(DEPLOYMENTS)("logs of %s", (name, start, skip) => {
     it.each(Object.entries(CANARY))("the %s sent never appears", (_what, value) => {
       for (const form of formsOf(value)) expect(logs).not.toContain(form);
     });
+
+    it.skipIf(name.includes("RustFS"))(
+      "an import the database refuses is logged without the rows' values",
+      () => {
+        expect(refusedImport?.answer).toMatch(/^422 .*The database refused the records/);
+        expect(refusedImport?.logs).toContain("Import failed to write");
+        for (const value of [...(refusedImport?.values ?? []), CANARY.s3Secret]) {
+          for (const form of formsOf(value)) expect(refusedImport?.logs).not.toContain(form);
+        }
+        expect(refusedImport?.values).toHaveLength(2);
+        expect(refusedImport?.logs).not.toMatch(/params:/);
+      },
+    );
   });
 });

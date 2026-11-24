@@ -46,14 +46,16 @@ const encodedHref = (key: string, kind: EntryKind): string =>
 
 const status = (code: number) => new Response(null, { status: code });
 
-type Put = (key: string, body: string, contentType: string) => Promise<number>;
+type Put = (key: string, body: string, contentType: string, createOnly: boolean) => Promise<number>;
 
 /** A stand-in for XMLHttpRequest that sends each PUT to `put`, reporting half its bytes first. */
 const requestInto = (put: Put) =>
   class FakeRequest {
     status = 0;
+    responseText = "";
     private url = "";
     private contentType = "";
+    private createOnly = false;
     private readonly listeners = new Map<string, () => void>();
     private progress?: (event: { loaded: number }) => void;
     readonly upload = {
@@ -70,6 +72,9 @@ const requestInto = (put: Put) =>
       if (name === "content-type") {
         this.contentType = value;
       }
+      if (name === "if-none-match" && value === "*") {
+        this.createOnly = true;
+      }
     }
 
     addEventListener(type: string, listener: () => void) {
@@ -84,7 +89,12 @@ const requestInto = (put: Put) =>
       const body = await file.text();
       this.progress?.({ loaded: Math.floor(file.size / 2) });
       // A refusal with status 0 stands for a connection that dropped.
-      this.status = await put(keyOf(hrefParts(this.url) ?? []), body, this.contentType);
+      this.status = await put(
+        keyOf(hrefParts(this.url) ?? []),
+        body,
+        this.contentType,
+        this.createOnly,
+      );
       this.listeners.get(this.status === 0 ? "error" : "load")?.();
     }
   };
@@ -322,7 +332,7 @@ export class FakeDav {
   };
 
   /** Stores a PUT, as the upload's XMLHttpRequest sends it, and answers its status. */
-  async put(key: string, body: string, contentType: string): Promise<number> {
+  async put(key: string, body: string, contentType: string, createOnly = false): Promise<number> {
     await this.pause(`PUT ${key}`);
     const refusal = this.refusals.get(`PUT ${key}`);
     if (refusal !== undefined) {
@@ -333,6 +343,9 @@ export class FakeDav {
     }
     if (this.nodes.get(key)?.kind === "folder") {
       return 405;
+    }
+    if (createOnly && this.nodes.has(key)) {
+      return 412;
     }
     this.file(key, { body, contentType });
     return 201;
@@ -352,7 +365,9 @@ export class FakeDav {
   installUploads(): void {
     vi.stubGlobal(
       "XMLHttpRequest",
-      requestInto((key, body, contentType) => this.put(key, body, contentType)),
+      requestInto((key, body, contentType, createOnly) =>
+        this.put(key, body, contentType, createOnly),
+      ),
     );
   }
 }

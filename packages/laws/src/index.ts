@@ -19,7 +19,7 @@ export {
   type Relation,
 } from "./policy";
 export { isValidName, isValidPath } from "./names";
-export { planImport, type ImportEntry } from "./imports";
+export { exportHasOwner, planImport, type ImportEntry } from "./imports";
 export { decideMigration, type CopyAction, type CopySource, type CopyTarget } from "./copying";
 export {
   decideUnlock,

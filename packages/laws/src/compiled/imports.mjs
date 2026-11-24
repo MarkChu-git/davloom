@@ -273,6 +273,22 @@ function $plan(_entries_0, _known_0) {
   return $decide($$valid(_entries_0, _known_0), _entries_0);
 }
 
+function $owned(_users_0, _logins_0) {
+  if (_users_0.$ === "CNone") {
+    return false;
+  } else if (_users_0.$ === "COne") {
+    if (_logins_0.$ === "CNone") {
+      return false;
+    } else if (_logins_0.$ === "COne") {
+      return true;
+    } else {
+      return true;
+    }
+  } else {
+    return false;
+  }
+}
+
 function $Nat_is_eq(_a_0, _b_0) {
   return $Cmp_is_eq(cmp_new(_a_0, _b_0));
 }
@@ -318,4 +334,5 @@ const $$valid = $valid;export default {
   "valid": run_lib((a0,a1) => run_loop($valid(a0,a1)), 2),
   "decide": run_lib((a0,a1) => run_loop($decide(a0,a1)), 2),
   "plan": run_lib((a0,a1) => run_loop($plan(a0,a1)), 2),
+  "owned": run_lib((a0,a1) => run_loop($owned(a0,a1)), 2),
 };

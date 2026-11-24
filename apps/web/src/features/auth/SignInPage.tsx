@@ -248,7 +248,7 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
         isLoading={isSigningIn}
         onClick={() => void submit()}
       />
-      {canUsePasskeys() ? (
+      {registration.data?.passkeys === true && canUsePasskeys() ? (
         <>
           <Divider />
           <Button

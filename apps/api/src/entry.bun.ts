@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { configuredOrigin } from "@davloom/auth";
 import { createApp } from "./app";
 import { createDashboardHandler } from "./dashboard.bun";
 import { bunInstance, ensureDefaultBucket } from "./instance.bun";
@@ -15,6 +16,7 @@ await ensureDefaultBucket(process.env);
 const app = createApp({
   instance: bunInstance(process.env),
   allowHttp: process.env.DAVLOOM_ALLOW_HTTP === "1",
+  publicOrigin: configuredOrigin(process.env.DAVLOOM_URL),
 })
   // Not `.get`: Elysia prefers a method's own routes over `.all`, so `.get("/*")` would take GET and
   // HEAD away from the WebDAV routes.

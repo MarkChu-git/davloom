@@ -8,7 +8,11 @@ import { ADMIN, DEV_WORKER_PORT, MOUNT, STATE, WORKERS_PORT, seedSample } from "
 
 const prepare = async (port: number, stateFile: string, cookieHost: string) => {
   const origin = `http://127.0.0.1:${port}`;
-  const context = await playwrightRequest.newContext({ baseURL: origin });
+  // The API takes changes only from the instance's own origin, as the Dashboard sends them.
+  const context = await playwrightRequest.newContext({
+    baseURL: origin,
+    extraHTTPHeaders: { origin },
+  });
   const status: unknown = await (await context.get("/api/registration")).json();
   if (typeof status === "object" && status !== null && Reflect.get(status, "open") === true) {
     const created = await context.post("/api/registration", { data: ADMIN });

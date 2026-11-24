@@ -57,8 +57,16 @@ openssl rand -base64 48 | bunx --bun wrangler secret put DAVLOOM_SECRET
 
 Open the Worker's address right after deploying and create your account: registration is open
 only while the instance has no account, so the first visitor becomes the owner, and it closes for
-everyone once the owner exists. Then create an API Key on Credentials and mount
+everyone, permanently, once the owner exists. Then create an API Key on Credentials and mount
 `https://<worker>/dav/`. Registration creates a Durable Objects backend and the Mount `files`.
+
+Until you register, anyone who finds the address could register first. To close that window, set
+the optional secret `DAVLOOM_SETUP_TOKEN` before you deploy: registration, and importing an
+export in its place, then ask for it. Without it, register right after deploying.
+
+```bash
+openssl rand -base64 32 | tee /dev/stderr | bunx --bun wrangler secret put DAVLOOM_SETUP_TOKEN
+```
 
 Davloom refuses passwords shorter than 12 characters and passwords that appear in known breaches,
 which it checks with the Have I Been Pwned range API (`api.pwnedpasswords.com`; only the first
@@ -67,8 +75,13 @@ Davloom refuses the new password with `password_check_failed` (503) rather than 
 unchecked. `DAVLOOM_CHECK_LEAKED_PASSWORDS=off` (a plain variable) turns the check off, for an
 instance without internet access.
 
-`DAVLOOM_URL` (a plain variable) names the public address when the Worker answers on several, such
-as a custom domain and `workers.dev`.
+`DAVLOOM_URL` (a plain variable) names the public address, such as
+`https://davloom.example.workers.dev` or a custom domain. Set it: passkeys are bound to it and are
+off without it, and once it is set the API accepts changes only from pages on that address. Without
+it, the API accepts changes from the address each request was sent to.
+
+Sign-in is rate limited in D1 by the client's address, and step-up verification locks for 15
+minutes after five wrong passwords or authenticator codes.
 
 ## Deploying from GitHub
 

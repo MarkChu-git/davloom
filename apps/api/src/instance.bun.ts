@@ -1,7 +1,14 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAuth, createIdentity, leakedPasswordCheckFrom } from "@davloom/auth";
+import {
+  CLIENT_IP_HEADER,
+  configuredOrigin,
+  createAuth,
+  createIdentity,
+  leakedPasswordCheckFrom,
+  rateLimitFrom,
+} from "@davloom/auth";
 import {
   Archive,
   credentialCipherLayer,
@@ -12,6 +19,7 @@ import {
   makeCredentialCipher,
   OperationLog,
   Records,
+  setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
 import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
@@ -77,8 +85,12 @@ export const bunInstance =
     const auth = createAuth({
       database: db,
       secret,
-      baseURL: env.DAVLOOM_URL ?? origin,
+      baseURL: configuredOrigin(env.DAVLOOM_URL) ?? origin,
       checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+      rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
+      // node-server.bun.ts sets it to the socket's address, replacing any value the client sent.
+      clientIpHeaders: [CLIENT_IP_HEADER],
+      passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
     });
     const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
     const unseal = async (backendId: string, sealed: string) =>
@@ -102,6 +114,8 @@ export const bunInstance =
       Layer.succeed(InstanceConfig, {
         storageKinds: ["s3"],
         defaultBackend: defaultS3Backend(env),
+        setupToken: setupTokenFrom(env.DAVLOOM_SETUP_TOKEN),
+        passkeys: configuredOrigin(env.DAVLOOM_URL) !== undefined,
       }),
       credentialCipherLayer(Redacted.make(secret)),
     );

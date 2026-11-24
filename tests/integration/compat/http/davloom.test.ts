@@ -11,7 +11,7 @@ afterAll(() => davloom?.server.stop());
 describe("registration and sign-in", () => {
   it("registration closes once the owner exists", async () => {
     const status = await davloom.server.fetch("/api/registration");
-    expect(await status.json()).toEqual({ open: false });
+    expect(await status.json()).toEqual({ open: false, tokenRequired: false, passkeys: false });
     const again = await davloom.server.fetch("/api/registration", {
       method: "POST",
       body: JSON.stringify({ ...ADMIN, username: "mallory", email: "other@example.com" }),

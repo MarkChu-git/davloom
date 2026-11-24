@@ -6,7 +6,10 @@ import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 export const SECRET = "local-instance-secret-for-tests-only-0123456789";
 /** The test Workers run offline, so they leave out the leaked-password check (`../http/davloom.ts`). */
-export const OFFLINE_VARS = { DAVLOOM_CHECK_LEAKED_PASSWORDS: "off" } as const;
+export const OFFLINE_VARS = {
+  DAVLOOM_CHECK_LEAKED_PASSWORDS: "off",
+  DAVLOOM_AUTH_RATE_LIMIT: "off",
+} as const;
 export const ADMIN = {
   username: "admin",
   name: "Admin",
@@ -46,6 +49,13 @@ export const davPath = (path: string, isFolder = false): string => {
   return `/dav/${names.map((name) => encodeURIComponent(name)).join("/")}${isFolder ? "/" : ""}`;
 };
 
+/**
+ * The headers of a change to the API, which takes one only as JSON from its own origin
+ * (apps/api/src/same-origin.ts). The request context is no browser page, so it says what a
+ * browser would for the Dashboard's own requests, whatever host the project reaches.
+ */
+const SAME_ORIGIN_JSON = { "content-type": "application/json", "sec-fetch-site": "same-origin" };
+
 /** Whether an answer asks the session to prove presence again (apps/api/src/verification.ts). */
 const needsStepUp = async (response: APIResponse): Promise<boolean> =>
   response.status() === 403 && (await response.text()).includes("verification_required");
@@ -56,7 +66,7 @@ const needsStepUp = async (response: APIResponse): Promise<boolean> =>
  */
 export const reverify = async (request: APIRequestContext): Promise<void> => {
   const response = await request.post("/api/verify", {
-    headers: { "content-type": "application/json" },
+    headers: SAME_ORIGIN_JSON,
     data: JSON.stringify({ password: ADMIN.password }),
   });
   if (!response.ok()) {
@@ -210,7 +220,7 @@ export const api = async (
   const response = await withStepUp(request, () =>
     request.fetch(path, {
       method,
-      headers: { "content-type": "application/json" },
+      headers: SAME_ORIGIN_JSON,
       data: body === undefined ? undefined : JSON.stringify(body),
     }),
   );

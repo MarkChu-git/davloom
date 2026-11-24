@@ -86,7 +86,9 @@ export const runSmoke = async (options: SmokeOptions): Promise<SmokeResult> => {
     const response = await send("/api/registration", { anonymous: true });
     await expectStatus(response, 200);
     const body: unknown = await response.json();
-    if (JSON.stringify(body) !== '{"open":false}') {
+    const open: unknown =
+      typeof body === "object" && body !== null ? Reflect.get(body, "open") : undefined;
+    if (open !== false) {
       throw new CheckFailed(`registration state ${JSON.stringify(body)}`);
     }
   });
