@@ -89,6 +89,23 @@ describe("bunInstance", () => {
       }
     },
   );
+
+  it("names where it runs and counts operations", async () => {
+    const dir = tmp();
+    try {
+      const instance = bunInstance({
+        DAVLOOM_SECRET: "s".repeat(32),
+        DAVLOOM_DATA_DIR: join(dir, "data"),
+      })("http://x");
+      const about = instance.about?.(new Request("http://x/"));
+      expect(about).toMatchObject({ runtime: `Bun ${Bun.version}`, deployment: "Self-hosted" });
+      expect(about?.database).toMatch(/^SQLite \d+\.\d+/);
+      expect(typeof about?.region).toBe("string");
+      expect(instance.operations).toBeDefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("ensureDefaultBucket", () => {

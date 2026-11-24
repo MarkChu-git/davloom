@@ -33,8 +33,15 @@
     {
       "idx": 4,
       "version": "6",
-      "when": 1795537353921,
-      "tag": "0004_accounts",
+      "when": 1795537336053,
+      "tag": "0004_settings_and_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795543808218,
+      "tag": "0005_accounts",
       "breakpoints": true
     }
   ]

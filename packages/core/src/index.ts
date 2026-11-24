@@ -31,3 +31,6 @@ export {
   type Scope,
 } from "./scope";
 export * from "./archive";
+export * from "./backends";
+export * from "./operations";
+export * from "./settings";

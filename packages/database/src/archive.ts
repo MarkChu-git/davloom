@@ -27,6 +27,7 @@ const TABLES: Readonly<Record<ArchiveTable, SQLiteTable>> = {
   mounts: schema.mounts,
   apikey: schema.apikey,
   dav_properties: schema.davProperties,
+  settings: schema.settings,
 };
 
 /** D1 binds at most 100 values to one statement. */

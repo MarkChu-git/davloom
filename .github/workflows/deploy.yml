@@ -50,10 +50,11 @@ jobs:
         if: steps.secrets.outputs.present == 'true'
         working-directory: apps/api
         run: bunx --bun wrangler d1 migrations apply davloom --remote
+      # The commit goes into the build, for About this instance on the Dashboard.
       - name: Deploy the Worker
         if: steps.secrets.outputs.present == 'true'
         working-directory: apps/api
-        run: bunx --bun wrangler deploy
+        run: bunx --bun wrangler deploy --define "DAVLOOM_BUILD_COMMIT:\"$GITHUB_SHA\""
       # PRD §15: the release smoke test against the deployment, when the repository names one.
       - name: Smoke-test the deployment
         if: steps.secrets.outputs.present == 'true' && env.DAVLOOM_SMOKE_KEY != '' && env.DAVLOOM_SMOKE_URL != ''

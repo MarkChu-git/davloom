@@ -7,13 +7,19 @@
     "cloud/**/*.ts",
     "identity/suite.ts",
     "identity/bun-sqlite.test.ts",
+    "upgrade/samples.ts",
+    "upgrade/suite.ts",
+    "upgrade/tables.ts",
+    "upgrade/bun-sqlite.test.ts",
     "probe/**/*.ts",
+    "quota/**/*.ts",
     "scripts/**/*.ts",
     "ui/**/*.ts",
     "playwright.config.ts",
     "vitest.bun-sqlite.config.ts",
     "vitest.cloud.config.ts",
-    "vitest.http.config.ts"
+    "vitest.http.config.ts",
+    "vitest.quota.config.ts"
   ],
-  "exclude": ["probe/*.workers.ts"]
+  "exclude": ["probe/*.workers.ts", "quota/*.workers.ts"]
 }

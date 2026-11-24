@@ -7,7 +7,7 @@ import { parseScope } from "./scope";
 
 // Data export and import (PRD §8.5 Data Export, Data Migration). An export holds the records of an
 // instance: its users and their password logins, its storage backends, Mounts, API Keys and dead
-// properties, as the rows of their tables. Sessions, verifications and locks are left out: they
+// properties and the instance's settings, as the rows of their tables. Sessions, verifications and locks are left out: they
 // expire. The whole export is encrypted with AES-256-GCM under a random key that the admin gets
 // once, beside the file, so no credential is ever exported in plaintext: not a backend's secret
 // key, which the export carries decrypted inside the ciphertext, and not the hashes of passwords
@@ -21,6 +21,7 @@ export const ARCHIVE_TABLES = [
   "mounts",
   "apikey",
   "dav_properties",
+  "settings",
 ] as const;
 export type ArchiveTable = (typeof ARCHIVE_TABLES)[number];
 export type ArchiveRow = Readonly<Record<string, unknown>>;
@@ -34,6 +35,7 @@ export const mapArchiveTables = <T>(f: (table: ArchiveTable) => T): Record<Archi
   mounts: f("mounts"),
   apikey: f("apikey"),
   dav_properties: f("dav_properties"),
+  settings: f("settings"),
 });
 
 /** The Port to the rows of the tables an export holds. Column names are those of the database. */
@@ -252,6 +254,11 @@ export const importEntries = (tables: ArchiveTables): Planned[] => [
     label: `property ${text(row, "name")} of ${text(row, "path") || "/"}`,
     entry: { defines: [], needs: [`backend:${text(row, "backend_id")}`] },
   })),
+  // A setting that names a backend the import leaves out falls back as an unset one does.
+  ...tables.settings.map((row) => ({
+    label: `setting ${text(row, "key")}`,
+    entry: { defines: [`setting:${text(row, "key")}`], needs: [] },
+  })),
 ];
 
 /** The first entry an import cannot apply, and why, for the message of a rejected import. */
@@ -307,7 +314,7 @@ const withDefaultBackend = (
 };
 
 /**
- * Imports an export into an instance that has no user yet, in place of the first-run setup. Every
+ * Imports an export into an instance that has no user yet, in place of registering its owner. Every
  * record is written, or, when the file, the key or a record is invalid, none.
  */
 export const importInstance = (input: { key: string; file: unknown }) =>

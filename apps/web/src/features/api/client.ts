@@ -119,6 +119,12 @@ export const describeError = (error: unknown): string => {
       return "It is no longer there.";
     case "invalid_input":
       return "Check the values and try again.";
+    case "backend_in_use":
+      return "A mount uses this backend. Move or remove the mount first.";
+    case "backend_not_empty":
+      return "This backend still holds files. Delete them first.";
+    case "backend_unavailable":
+      return "The backend did not answer. Try again.";
     case "archive_invalid":
       return error.detail ?? "This export cannot be imported.";
     case VERIFICATION_REQUIRED:

@@ -77,12 +77,19 @@ const withStepUp = async (
   return await send();
 };
 
+const stepUpDialog = (page: Page) => page.getByRole("dialog", { name: "Verify it is you" });
+
+/** Leaves the step-up dialog open from now on, for a spec that looks at the dialog itself. */
+export const keepStepUpOpen = async (page: Page): Promise<void> => {
+  await page.removeLocatorHandler(stepUpDialog(page));
+};
+
 /**
  * Answers the Dashboard's step-up dialog with the owner's password whenever it opens, so that a
  * spec that deletes, replaces or changes credentials through the page carries on.
  */
 export const answerStepUp = async (page: Page): Promise<void> => {
-  const dialog = page.getByRole("dialog", { name: "Verify it is you" });
+  const dialog = stepUpDialog(page);
   await page.addLocatorHandler(dialog, async () => {
     await dialog.getByLabel("Password").fill(ADMIN.password);
     await dialog.getByRole("button", { name: "Verify" }).click();

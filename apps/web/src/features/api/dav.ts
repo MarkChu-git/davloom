@@ -18,6 +18,20 @@ export interface Entry {
   /** ISO time, or "" when the server sent none. */
   modifiedAt: string;
   contentType: string;
+  /** The write lock that covers the entry (RFC 4918 §6), or null when none does. */
+  lock: EntryLock | null;
+}
+
+/** A write lock as PROPFIND's lockdiscovery reports it. */
+export interface EntryLock {
+  /** The lock's token, which UNLOCK names; null when the server keeps it from this session. */
+  token: string | null;
+  /** Who took the lock, as its client described itself; "" when it did not. */
+  owner: string;
+  /** Where the lock is rooted: the entry itself, or a folder above it. */
+  root: string[] | undefined;
+  /** When the lock runs out, as ISO time; "" for a lock without a timeout. */
+  expiresAt: string;
 }
 
 /** A WebDAV request the server refused, with its status, and the API's code when it sent one. */
@@ -68,6 +82,7 @@ export interface DavResponse {
   contentLength: string | null;
   lastModified: string | null;
   contentType: string | null;
+  locks?: EntryLock[];
 }
 
 /** The names of a path in an href, which may be a full URL or a path, each decoded. */
@@ -121,6 +136,7 @@ export const entriesOf = (
       sizeBytes: response.isCollection || !Number.isFinite(size) ? 0 : size,
       modifiedAt: isoOf(response.lastModified),
       contentType: response.contentType ?? "",
+      lock: response.locks?.[0] ?? null,
     });
   }
   return entries;
@@ -133,39 +149,63 @@ const firstText = (scope: Element, name: string): string | null => {
   return found === undefined ? null : (found.textContent ?? "").trim();
 };
 
+/** When a lock with a `Second-N` timeout, read at `now`, runs out; "" for Infinite or none. */
+export const expiryOf = (timeout: string | null, now: number): string => {
+  const seconds = /^second-(\d+)$/i.exec(timeout ?? "")?.[1];
+  return seconds === undefined ? "" : new Date(now + Number(seconds) * 1000).toISOString();
+};
+
+/** The active locks of a propstat's lockdiscovery. */
+const locksOf = (scope: Element, now: number): EntryLock[] =>
+  [...scope.getElementsByTagNameNS(DAV_NS, "activelock")].map((active) => {
+    const token = active.getElementsByTagNameNS(DAV_NS, "locktoken")[0];
+    const root = active.getElementsByTagNameNS(DAV_NS, "lockroot")[0];
+    const owner = active.getElementsByTagNameNS(DAV_NS, "owner")[0];
+    const rootHref = root === undefined ? null : firstText(root, "href");
+    return {
+      token: token === undefined ? null : firstText(token, "href"),
+      owner: (owner?.textContent ?? "").trim(),
+      root: rootHref === null ? undefined : hrefParts(rootHref),
+      expiresAt: expiryOf(firstText(active, "timeout"), now),
+    };
+  });
+
 /** Reads a multistatus body with the browser's XML parser. Only the 200 propstat counts. */
-export const parseMultistatus = (xml: string): DavResponse[] => {
+export const parseMultistatus = (xml: string, now: number = Date.now()): DavResponse[] => {
   const document = new DOMParser().parseFromString(xml, "application/xml");
   if (document.getElementsByTagName("parsererror").length > 0) {
     throw new DavError(502);
   }
-  return [...document.getElementsByTagNameNS(DAV_NS, "response")].flatMap((response) => {
-    const href = firstText(response, "href");
-    if (href === null) {
-      return [];
-    }
-    const found = [...response.getElementsByTagNameNS(DAV_NS, "propstat")].find((propstat) =>
-      /\s200\s/.test(` ${firstText(propstat, "status") ?? ""} `),
-    );
-    if (found === undefined) {
+  return [...document.getElementsByTagNameNS(DAV_NS, "response")].flatMap(
+    (response): DavResponse[] => {
+      const href = firstText(response, "href");
+      if (href === null) {
+        return [];
+      }
+      const found = [...response.getElementsByTagNameNS(DAV_NS, "propstat")].find((propstat) =>
+        /\s200\s/.test(` ${firstText(propstat, "status") ?? ""} `),
+      );
+      if (found === undefined) {
+        return [
+          { href, isCollection: false, contentLength: null, lastModified: null, contentType: null },
+        ];
+      }
       return [
-        { href, isCollection: false, contentLength: null, lastModified: null, contentType: null },
+        {
+          href,
+          isCollection: found.getElementsByTagNameNS(DAV_NS, "collection").length > 0,
+          contentLength: firstText(found, "getcontentlength"),
+          lastModified: firstText(found, "getlastmodified"),
+          contentType: firstText(found, "getcontenttype"),
+          locks: locksOf(found, now),
+        },
       ];
-    }
-    return [
-      {
-        href,
-        isCollection: found.getElementsByTagNameNS(DAV_NS, "collection").length > 0,
-        contentLength: firstText(found, "getcontentlength"),
-        lastModified: firstText(found, "getlastmodified"),
-        contentType: firstText(found, "getcontenttype"),
-      },
-    ];
-  });
+    },
+  );
 };
 
 const PROPFIND_BODY = `<?xml version="1.0" encoding="utf-8"?>
-<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:getcontentlength/><D:getlastmodified/><D:getcontenttype/></D:prop></D:propfind>`;
+<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:getcontentlength/><D:getlastmodified/><D:getcontenttype/><D:lockdiscovery/></D:prop></D:propfind>`;
 
 const send = async (
   method: string,
@@ -246,6 +286,43 @@ export const transferEntry = async (
   });
 };
 
+/** The owner the Dashboard names in its locks, which Finder and other clients show. */
+export const DASHBOARD_LOCK_OWNER = "Davloom Dashboard";
+
+/** The longest lock the server grants, in seconds; it shortens a longer request to its own limit. */
+export const LOCK_SECONDS = 3600;
+
+const LOCK_BODY = `<?xml version="1.0" encoding="utf-8"?>
+<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype><D:owner><D:href>${DASHBOARD_LOCK_OWNER}</D:href></D:owner></D:lockinfo>`;
+
+/**
+ * Takes an exclusive write lock on an entry through the instance's own lock store, so every
+ * WebDAV client sees it, as Finder shows a locked file. A folder's lock covers all it holds.
+ */
+export const lockEntry = async (parts: readonly string[], kind: EntryKind): Promise<void> => {
+  await send("LOCK", parts, {
+    isFolder: kind === "folder",
+    headers: {
+      depth: kind === "folder" ? "infinity" : "0",
+      timeout: `Second-${LOCK_SECONDS}`,
+      "content-type": "application/xml; charset=utf-8",
+    },
+    body: LOCK_BODY,
+  });
+};
+
+/** Releases a lock that covers an entry, whichever client took it. */
+export const unlockEntry = async (
+  parts: readonly string[],
+  kind: EntryKind,
+  token: string,
+): Promise<void> => {
+  await send("UNLOCK", parts, {
+    isFolder: kind === "folder",
+    headers: { "lock-token": `<${token}>` },
+  });
+};
+
 /** Reads a file whole, for a text preview. */
 export const readText = async (parts: readonly string[]): Promise<string> =>
   (await send("GET", parts)).text();
@@ -321,7 +398,7 @@ export const davProblem = (error: unknown, path: string = joinPath([])): string 
     case 413:
       return "The file is larger than one request may carry.";
     case 423:
-      return "Another client has locked it.";
+      return "It is locked. Unlock it, then try again.";
     case 501:
       return "This server does not serve files yet.";
     case 502:

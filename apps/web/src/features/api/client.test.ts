@@ -24,6 +24,9 @@ describe("error codes", () => {
     ["name_taken", 409, "already in use"],
     ["not_found", 404, "no longer there"],
     ["invalid_input", 400, "Check the values"],
+    ["backend_in_use", 409, "A mount uses this backend"],
+    ["backend_not_empty", 409, "still holds files"],
+    ["backend_unavailable", 503, "did not answer"],
     ["http_501", 501, "does not run the management API"],
     ["http_500", 500, "(500)"],
   ])("%s says %s", (code, status, words) => {

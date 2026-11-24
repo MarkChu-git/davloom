@@ -121,6 +121,9 @@ const seed = async (source: Instance) => {
       xml: '<x:tag xmlns:x="urn:x">1</x:tag>',
     },
   ]);
+  await db
+    .insert(schema.settings)
+    .values({ key: "storage.defaultBackendId", value: "b2", updatedAt: T0 });
 };
 
 const exported = async (source: Instance) => {
@@ -160,6 +163,7 @@ describe("export and import", () => {
       mounts: 2,
       apikey: 2,
       dav_properties: 1,
+      settings: 1,
     });
     const before = await source.archive.read();
     const after = await target.archive.read();
@@ -438,6 +442,18 @@ describe("an import that fails changes nothing", () => {
     expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
     const [user] = await target.db.select().from(schema.user);
     expect(user).toMatchObject({ username: null, twoFactorEnabled: false });
+  });
+
+  it("imports an export made before settings were exported, with the settings unset", async () => {
+    const { key, file } = await crafted((t) => {
+      const older = { ...t };
+      Reflect.deleteProperty(older, "settings");
+      return older;
+    });
+    const target = instance(SECRET_B);
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
+    expect(await target.db.select().from(schema.settings)).toEqual([]);
+    expect(await target.db.select().from(schema.mounts)).toHaveLength(2);
   });
 
   it("leaves two-step verification behind, since its secret stays with the old instance", async () => {

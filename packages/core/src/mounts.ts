@@ -200,6 +200,7 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
       let files = 0;
       let collections = 0;
       let bytes = 0;
+      let measuredAt: number | undefined;
       for (const mount of mounts) {
         if (seen.has(mount.backendId)) continue;
         seen.add(mount.backendId);
@@ -208,8 +209,15 @@ export const createMountedStorage = (mounts: readonly Mount[], created = 0): Sto
         files += result.value.files;
         collections += result.value.collections;
         bytes += result.value.bytes;
+        // The sum is as old as its oldest part.
+        const at = result.value.measuredAt;
+        if (at !== undefined) measuredAt = Math.min(measuredAt ?? at, at);
       }
-      return ok({ files, collections, bytes });
+      return ok(
+        measuredAt === undefined
+          ? { files, collections, bytes }
+          : { files, collections, bytes, measuredAt },
+      );
     },
   };
 };

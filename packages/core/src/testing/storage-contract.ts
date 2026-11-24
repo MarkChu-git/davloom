@@ -41,6 +41,28 @@ export const snapshot = async (
   return tree;
 };
 
+/** The files, collections and bytes of a backend, counted by walking its whole tree. */
+export const recount = async (
+  storage: StorageBackend,
+  path: Path = [],
+): Promise<{ files: number; collections: number; bytes: number }> => {
+  const total = { files: 0, collections: 0, bytes: 0 };
+  const listed = await storage.list(path);
+  if (!listed.ok) return total;
+  for (const entry of listed.value) {
+    if (entry.kind === "collection") {
+      const inner = await recount(storage, entry.path);
+      total.files += inner.files;
+      total.collections += inner.collections + 1;
+      total.bytes += inner.bytes;
+    } else {
+      total.files += 1;
+      total.bytes += entry.size;
+    }
+  }
+  return total;
+};
+
 type Op =
   | { op: "write"; path: Path; text: string }
   | { op: "mkcol"; path: Path }
@@ -464,6 +486,24 @@ export const storageContract = (adapter: string, { make, runs = 60 }: ContractOp
             expect(await run(storage, op), JSON.stringify(op)).toBe(await run(model, op));
           }
           expect(await snapshot(storage)).toEqual(await snapshot(model));
+        }),
+        { numRuns: runs },
+      );
+    });
+
+    // An adapter may keep its usage as running totals rather than count on every call: whatever
+    // happens, the totals equal a count of the whole tree.
+    it("keeps its usage equal to a count of its tree after every operation", async () => {
+      await fc.assert(
+        fc.asyncProperty(fc.array(opArbitrary, { minLength: 1, maxLength: 12 }), async (ops) => {
+          const storage = await make();
+          for (const op of ops) {
+            await run(storage, op);
+            expect(await storage.usage(), JSON.stringify(op)).toEqual({
+              ok: true,
+              value: await recount(storage),
+            });
+          }
         }),
         { numRuns: runs },
       );

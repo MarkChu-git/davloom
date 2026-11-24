@@ -408,7 +408,7 @@ describe("SettingsPage", () => {
     [
       [backend("durable-object"), backend("durable-object", false), backend("s3")],
       [],
-      "Cloudflare Durable Objects, s3",
+      "Cloudflare Durable Objects, S3 compatible",
       "3",
       "0",
     ],
@@ -432,9 +432,10 @@ describe("SettingsPage", () => {
       api: {
         "GET /api/backends": () => new Promise<Response>(() => undefined),
         "GET /api/mounts": () => new Promise<Response>(() => undefined),
+        "GET /api/instance": () => new Promise<Response>(() => undefined),
       },
     });
-    expect(screen.getAllByText("…")).toHaveLength(3);
+    expect(screen.getAllByText("…")).toHaveLength(9);
   });
 
   it("offers the sections in a selector on a narrow page, and opens the chosen one", async () => {
@@ -446,7 +447,7 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("combobox", { name: "Section" }));
     expect(await screen.findByRole("option", { name: "Data export" })).toBeTruthy();
     // In happy-dom a click on an option closes the listbox without choosing it, so the keys do.
-    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
     await waitFor(() => expect(router.state.location.href).toBe("/settings?section=export"));
   });
 
@@ -463,6 +464,7 @@ describe("SettingsPage", () => {
       "Sign-in and security",
       "Appearance",
       "WebDAV",
+      "Storage",
       "Data export",
       "About this instance",
     ]);

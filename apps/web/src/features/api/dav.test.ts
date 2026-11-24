@@ -77,8 +77,9 @@ describe("folder listings", () => {
         sizeBytes: 120,
         modifiedAt: "2026-11-16T15:30:00.000Z",
         contentType: "text/markdown",
+        lock: null,
       },
-      { name: "Old", kind: "folder", sizeBytes: 0, modifiedAt: "", contentType: "" },
+      { name: "Old", kind: "folder", sizeBytes: 0, modifiedAt: "", contentType: "", lock: null },
     ]);
   });
 

@@ -99,6 +99,12 @@ export interface Usage {
   readonly files: number;
   readonly collections: number;
   readonly bytes: number;
+  /**
+   * When the counts were measured, in milliseconds since the epoch, for a backend that answers
+   * from an earlier count rather than counting now (an object store lists its whole bucket to
+   * count); absent when the counts are current.
+   */
+  readonly measuredAt?: number;
 }
 
 export interface StorageBackend {
@@ -140,7 +146,21 @@ export interface StorageBackend {
    * knows its limit; `available` is null for a backend without one.
    */
   quota?(path: Path): Promise<StorageResult<Quota>>;
+  /**
+   * Asks the backend's store whether it answers, with the store's own reason when it does not,
+   * such as a bucket that does not exist. A backend without one is checked with a stat of its root.
+   */
+  check?(): Promise<BackendCheck>;
+  /**
+   * Gives up what Davloom keeps for the backend outside its records, once the backend is removed:
+   * a Durable Object deletes its storage, and fails with `exists` while it holds any entry, since
+   * nothing could reach that entry afterwards; an object store drops the dead properties Davloom
+   * kept for it and leaves every object in its bucket.
+   */
+  release?(): Promise<StorageResult<null>>;
 }
+
+export type BackendCheck = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 export interface Quota {
   readonly used: number;

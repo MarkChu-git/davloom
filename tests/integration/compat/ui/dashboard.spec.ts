@@ -4,6 +4,7 @@ import {
   api,
   createKey,
   createMount,
+  keepStepUpOpen,
   LONG_LOG_NAME,
   SAMPLE_NAMES,
   scratchFolder,
@@ -28,6 +29,7 @@ import {
   engine,
   onlyInChromium,
 } from "./helpers";
+import { axeViolations } from "./axe";
 
 // The Dashboard: its pages, how they are reached, the colors they render, and how they lay out,
 // against the Worker's real API. Tests that change data change their own: a folder, a key or a
@@ -402,6 +404,61 @@ const STATES: readonly PageState[] = [
       shown(page.getByRole("main").getByRole("button", { name: "Sign out", exact: true })),
   },
   {
+    name: "the Change password dialog with a field error",
+    path: "/settings?section=security",
+    show: async (page) => {
+      await page.getByRole("button", { name: "Change password" }).click();
+      const dialog = page.getByRole("dialog", { name: "Change password" });
+      await dialog.getByRole("button", { name: "Change password" }).click();
+      await shown(dialog.getByText("Enter your current password."));
+    },
+  },
+  {
+    name: "the two-step setup with its QR code",
+    path: "/settings?section=security",
+    // The answer of Better Auth, so that the scan leaves two-step verification off.
+    before: async (page) => {
+      await page.route("**/api/auth/two-factor/enable", (route) =>
+        route.fulfill({
+          json: {
+            totpURI: "otpauth://totp/Davloom:admin?secret=JBSWY3DPEHPK3PXP&issuer=Davloom",
+            backupCodes: ["aaaaa-bbbbb", "ccccc-ddddd"],
+          },
+        }),
+      );
+    },
+    show: async (page) => {
+      await page.getByRole("button", { name: "Set up" }).click();
+      const asked = page.getByRole("dialog", { name: "Set up two-step verification" });
+      await asked.getByLabel("Password").fill("any password");
+      await asked.getByRole("button", { name: "Continue" }).click();
+      await shown(page.getByRole("button", { name: "Copy key" }));
+    },
+  },
+  {
+    name: "the sign-out confirmation",
+    path: "/settings?section=security",
+    show: async (page) => {
+      await page.getByRole("main").getByRole("button", { name: "Sign out", exact: true }).click();
+      await shown(page.getByRole("alertdialog", { name: "Sign out?" }));
+    },
+  },
+  {
+    name: "the step-up dialog",
+    path: "/settings?section=export",
+    // A refusal as a session signed in long ago meets it.
+    before: async (page) => {
+      await keepStepUpOpen(page);
+      await page.route("**/api/export", (route) =>
+        route.fulfill({ status: 403, json: { error: { code: "verification_required" } } }),
+      );
+    },
+    show: async (page) => {
+      await page.getByRole("button", { name: "Export" }).click();
+      await shown(page.getByRole("dialog", { name: "Verify it is you" }));
+    },
+  },
+  {
     name: "WebDAV settings",
     path: "/settings?section=webdav",
     show: (page) => shown(page.getByRole("button", { name: "Copy address" })),
@@ -731,6 +788,31 @@ for (const scheme of ["light", "dark"] as const) {
       );
       const allowed = await page.evaluate(statusColorsOnPage);
       expect(await page.evaluate(huesOnPage, allowed)).toEqual([]);
+      await still?.(page);
+    });
+
+    // The same states through axe-core, in desktop Chromium as PRD §11 places the audit.
+    test(`Accessibility: ${name} has no axe-core violation in ${scheme} mode`, async ({ page }) => {
+      onlyInChromium("The accessibility audit runs in desktop Chromium.");
+      await page.emulateMedia({ colorScheme: scheme });
+      if (width !== undefined) {
+        await page.setViewportSize({ width, height: 900 });
+      }
+      await before?.(page);
+      await page.goto(typeof path === "string" ? path : await path(page));
+      await show(page);
+      expect(await page.evaluate(bodyIsDark)).toBe(scheme === "dark");
+      // Colors in the middle of a transition are neither the old nor the new contrast.
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation instanceof CSSTransition)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
+
+      expect(await axeViolations(page)).toEqual([]);
       await still?.(page);
     });
   }

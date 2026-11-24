@@ -1,0 +1,33 @@
+name: Load test
+
+# Grafana k6 against the production Worker in local workerd, every Thursday and by hand (PRD §11:
+# scheduled, and never against Cloud Free). It fails when a request fails or an operation's 95th
+# percentile passes its threshold in tests/integration/compat/load/davloom.js. It is not a
+# required check, because a run takes minutes. k6 runs in Grafana's image, pinned by digest in
+# scripts/lib/tools.ts, so the runner's Docker checks every layer it pulls.
+on:
+  schedule:
+    - cron: "17 3 * * 4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  load-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      # From the repository root, where bunfig.toml starts on Bun the tools whose launchers name
+      # Node. The script builds the Dashboard, which the production Worker serves, then runs k6.
+      - name: Run the k6 load test
+        run: bun run --filter @davloom/compat-tests test:load

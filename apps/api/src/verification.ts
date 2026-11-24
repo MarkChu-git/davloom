@@ -23,16 +23,25 @@ export const API_ACTIONS: Readonly<Record<string, RouteEffect>> = {
   "POST /api/verify": "public",
   "GET /api/me": "read",
   "GET /api/overview": "read",
+  "GET /api/operations": "read",
+  "GET /api/instance": "read",
   "POST /api/export": "disclose",
   "GET /api/keys": "read",
   "POST /api/keys": "credential",
+  // A new name changes nothing a key can reach.
+  "PATCH /api/keys/:id": "change",
   "DELETE /api/keys/:id": "credential",
   "GET /api/backends": "read",
   // A backend holds the secret key of its S3-compatible store.
   "POST /api/backends": "credential",
   "PATCH /api/backends/:id": "credential",
   "DELETE /api/backends/:id": "destroy",
-  "PUT /api/settings/default-backend": "destroy",
+  // Checks only ask the stores whether they answer.
+  "POST /api/backends/check": "read",
+  "POST /api/backends/:id/verify": "read",
+  "GET /api/settings/storage": "read",
+  // Choosing another default backend changes where Davloom stores by default.
+  "PUT /api/settings/storage": "destroy",
   "GET /api/mounts": "read",
   "POST /api/mounts": "change",
   // Renaming or retargeting a Mount changes what every key limited to it reaches.

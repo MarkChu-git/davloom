@@ -12,6 +12,7 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Contrast,
   FileDown,
+  HardDrive,
   Info,
   Link as LinkIcon,
   Lock,
@@ -21,13 +22,13 @@ import {
 import { useState, type ReactNode } from "react";
 import { webdavAddress } from "../api/dav";
 import { describeError } from "../api/client";
-import { exportInstance, kindLabel, useBackends, useMounts } from "../api/queries";
+import { exportInstance } from "../api/queries";
 import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
 import { CopyField } from "../shell/CopyField";
-import { formatCount } from "../shell/format";
 import { TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
+import { AboutContent, StorageSettingsContent } from "./InstanceSections";
 import { ProfileContent } from "./ProfileSection";
 import { SecurityContent } from "./SecuritySection";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./sections";
@@ -37,6 +38,7 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   security: Lock,
   appearance: Contrast,
   webdav: LinkIcon,
+  storage: HardDrive,
   export: FileDown,
   about: Info,
 };
@@ -161,34 +163,24 @@ const ExportSection = () => {
   );
 };
 
-const AboutSection = () => {
-  const backends = useBackends();
-  const mounts = useMounts();
-  const kinds = [...new Set((backends.data ?? []).map((backend) => kindLabel(backend.kind)))];
-  return (
-    <SectionFrame title="About this instance">
-      <Details>
-        <MetadataListItem label="Address">{location.origin}</MetadataListItem>
-        <MetadataListItem label="WebDAV address">{webdavAddress()}</MetadataListItem>
-        <MetadataListItem label="Storage">
-          {backends.data === undefined ? "…" : kinds.length === 0 ? "None" : kinds.join(", ")}
-        </MetadataListItem>
-        <MetadataListItem label="Backends">
-          {backends.data === undefined ? "…" : formatCount(backends.data.length)}
-        </MetadataListItem>
-        <MetadataListItem label="Mounts">
-          {mounts.data === undefined ? "…" : formatCount(mounts.data.length)}
-        </MetadataListItem>
-      </Details>
-    </SectionFrame>
-  );
-};
+const StorageSection = () => (
+  <SectionFrame title="Storage">
+    <StorageSettingsContent />
+  </SectionFrame>
+);
+
+const AboutSection = () => (
+  <SectionFrame title="About this instance">
+    <AboutContent />
+  </SectionFrame>
+);
 
 const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
   profile: ProfileSection,
   security: SecuritySection,
   appearance: AppearanceSection,
   webdav: WebDavSection,
+  storage: StorageSection,
   export: ExportSection,
   about: AboutSection,
 };

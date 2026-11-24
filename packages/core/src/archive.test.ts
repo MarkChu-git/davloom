@@ -55,7 +55,12 @@ const world = (options: World = {}) => {
     Layer.succeed(InstanceConfig, { storageKinds: ["s3"], ...options.config }),
     Layer.succeed(Records, {
       users: { count: () => Promise.resolve(users) },
-      backends: { list: () => Promise.resolve([]), create: () => Promise.resolve() },
+      backends: {
+        list: () => Promise.resolve([]),
+        create: () => Promise.resolve(),
+        update: () => Promise.resolve(false),
+        remove: () => Promise.resolve(false),
+      },
       mounts: {
         list: () => Promise.resolve([]),
         create: () => Promise.resolve(),
@@ -67,6 +72,8 @@ const world = (options: World = {}) => {
         findByHash: () => Promise.resolve(null),
         list: () => Promise.resolve([]),
         remove: () => Promise.resolve(false),
+        recordUse: () => Promise.resolve(),
+        rename: () => Promise.resolve(false),
       },
     }),
     Layer.effect(CredentialCipher, makeCredentialCipher(Redacted.make(SECRET))),

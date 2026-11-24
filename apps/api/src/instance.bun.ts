@@ -6,11 +6,15 @@ import {
   Archive,
   credentialCipherLayer,
   Identity,
+  createOperationRecorder,
   InstanceConfig,
+  InstanceSettings,
   makeCredentialCipher,
+  OperationLog,
   Records,
   StorageOpener,
 } from "@davloom/core";
+import { createOperationLog, createSettingsStore } from "@davloom/database/instance-data";
 import { createArchive } from "@davloom/database/archive";
 import {
   bunSqliteAtomic,
@@ -79,9 +83,15 @@ export const bunInstance =
     const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
     const unseal = async (backendId: string, sealed: string) =>
       await unsealWith(await cipher)(backendId, sealed);
+    const operationLog = createOperationLog(db, bunSqliteAtomic(db));
+    const sqliteVersion =
+      sqlite.query<{ version: string }, []>("SELECT sqlite_version() AS version").get()?.version ??
+      "";
     const layer = Layer.mergeAll(
       Layer.succeed(Records, repositories),
       Layer.succeed(Archive, createArchive(db, bunSqliteAtomic(db))),
+      Layer.succeed(OperationLog, operationLog),
+      Layer.succeed(InstanceSettings, createSettingsStore(db)),
       Layer.succeed(Identity, createIdentity(auth)),
       Layer.succeed(StorageOpener, {
         open: (backend) =>
@@ -99,6 +109,17 @@ export const bunInstance =
       layer,
       authHandler: (request) => auth.handler(request),
       locks: createSqlLockStore(repositories.locks),
+      operations: createOperationRecorder({
+        write: operationLog.add,
+        schedule: (task) => void task,
+        delayMs: 10_000,
+      }),
+      about: () => ({
+        runtime: `Bun ${Bun.version}`,
+        deployment: "Self-hosted",
+        region: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        database: `SQLite ${sqliteVersion}`.trim(),
+      }),
     };
   };
 
