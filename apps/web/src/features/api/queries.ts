@@ -310,6 +310,8 @@ export interface InstanceInfo {
   deployment: string;
   region: string | null;
   database: string;
+  /** The storage kinds a new backend may take on this instance. */
+  storageKinds: string[];
 }
 
 export const instanceKeys = {

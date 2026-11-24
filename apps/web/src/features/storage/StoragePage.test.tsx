@@ -116,15 +116,15 @@ describe("StoragePage, backends", () => {
     for (const text of [
       "Cloudflare Durable Objects",
       "Available",
-      "1.5 kB",
-      "Files3",
-      "Folders2",
+      "EndpointBuilt in",
+      "Objects5",
+      "Stored1.5 kB, no fixed limit",
       "Mounts2",
     ]) {
       expect(primary).toContain(text);
     }
     const archive = cardOf("Archive").textContent;
-    for (const text of ["s3-ish", "Unavailable", "StoredUnknown", "FilesUnknown", "Mounts0"]) {
+    for (const text of ["s3-ish", "Unavailable", "StoredUnknown", "ObjectsUnknown", "Mounts0"]) {
       expect(archive).toContain(text);
     }
   });
@@ -173,7 +173,7 @@ describe("StoragePage, backends", () => {
       },
     });
     await userEvent.click(await screen.findByRole("button", { name: "Add backend" }));
-    expect(within(await dialog()).getByText("Cloudflare Durable Objects")).toBeTruthy();
+    expect(within(await dialog()).getAllByText("Cloudflare Durable Objects")).not.toHaveLength(0);
     await fill(field(/^Name/), " Cold {Enter}");
     expect(await screen.findAllByText("Added backend “Cold”.")).not.toHaveLength(0);
     expect(await screen.findByRole("heading", { level: 3, name: "Cold" })).toBeTruthy();

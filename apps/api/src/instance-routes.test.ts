@@ -302,6 +302,7 @@ describe("/api/instance", () => {
       deployment: "Self-hosted",
       region: "Asia/Tokyo",
       database: "SQLite 3.51.0",
+      storageKinds: ["memory", "s3"],
     });
   });
 });

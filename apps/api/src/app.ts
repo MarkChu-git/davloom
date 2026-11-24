@@ -41,6 +41,7 @@ import {
   type OperationLog,
   type OperationSample,
 } from "@davloom/core";
+import { InstanceConfig as InstanceConfigService } from "@davloom/core";
 import { buildInfo } from "./build-info";
 import { authorizeScoped } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
@@ -555,7 +556,7 @@ export const createApp = ({
       .get(
         "/api/instance",
         authed((_, request) =>
-          Effect.sync(() => ({
+          Effect.map(InstanceConfigService, (config) => ({
             ...buildInfo(),
             ...(built?.instance.about?.(request) ?? {
               runtime: "Unknown",
@@ -563,6 +564,8 @@ export const createApp = ({
               region: null,
               database: "Unknown",
             }),
+            /** The storage kinds a new backend may take here. */
+            storageKinds: config.storageKinds,
           })),
         ),
       )
