@@ -121,3 +121,42 @@ describe("Durable Objects adapter", () => {
     });
   });
 });
+
+/** A collection `src` holding `files` empty files, so a copy writes files + 1 entries. */
+const tree = async (files: number) => {
+  const storage = fresh();
+  await storage.createCollection(["src"]);
+  await Promise.all(
+    Array.from({ length: files }, (_, i) =>
+      storage.write(["src", `f${i}`], new Blob([]).stream(), { size: 0 }),
+    ),
+  );
+  return storage;
+};
+
+describe("the synchronous limit of the Durable Objects adapter", () => {
+  it("copies a tree of exactly 1,000 entries", { timeout: 60_000 }, async () => {
+    const storage = await tree(999);
+    expect((await storage.copy(["src"], ["dst"], { overwrite: false, shallow: false })).ok).toBe(
+      true,
+    );
+  });
+
+  it(
+    "refuses to copy a tree of 1,001 entries, and changes nothing",
+    { timeout: 60_000 },
+    async () => {
+      const storage = await tree(1000);
+      expect(await storage.copy(["src"], ["dst"], { overwrite: false, shallow: false })).toEqual({
+        ok: false,
+        failure: "too-many",
+      });
+      expect(await storage.stat(["dst"])).toEqual({ ok: false, failure: "not-found" });
+      // A move only renames, so it has no limit; a shallow copy writes one entry.
+      expect((await storage.copy(["src"], ["one"], { overwrite: false, shallow: true })).ok).toBe(
+        true,
+      );
+      expect((await storage.move(["src"], ["moved"], { overwrite: false })).ok).toBe(true);
+    },
+  );
+});

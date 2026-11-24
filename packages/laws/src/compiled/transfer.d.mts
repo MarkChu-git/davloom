@@ -31,5 +31,7 @@ declare const module: {
     destParent: BendNode,
     overwrite: boolean,
   ): BendOutcome;
+  within_limit(count: number, limit: number): boolean;
+  resume_move(journalMatches: boolean, dest: BendNode): boolean;
 };
 export default module;

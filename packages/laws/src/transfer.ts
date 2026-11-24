@@ -1,3 +1,4 @@
+import { MAX_NAT } from "./bend";
 import bend, { type BendNode, type BendOutcome } from "./compiled/transfer.mjs";
 
 /** What a path reaches. */
@@ -77,3 +78,25 @@ export const decideMove = (facts: TransferFacts): Outcome =>
       facts.overwrite,
     ),
   );
+
+/**
+ * Whether a copy or move of `count` entries stays within the `limit` a backend handles in one
+ * request (the law limit_exact); over the limit, the request executes nothing. Counts and limits
+ * past Bend's largest Nat are clamped, which keeps every answer.
+ */
+export const withinLimit = (count: number, limit: number): boolean => {
+  if (!Number.isInteger(count) || !Number.isInteger(limit) || count < 0 || limit < 0) {
+    throw new RangeError(`not a count and a limit: ${count}, ${limit}`);
+  }
+  if (limit >= MAX_NAT) return true;
+  if (count > MAX_NAT) return false;
+  return bend.within_limit(count, limit);
+};
+
+/**
+ * Whether a move resumes an earlier one that stopped while removing its source (the laws
+ * resume_into_collection and resume_needs_journal): only when the source records a move to this
+ * destination, and the destination is a collection.
+ */
+export const resumeMove = (journalMatches: boolean, destination: Node): boolean =>
+  bend.resume_move(journalMatches, NODES[destination]);

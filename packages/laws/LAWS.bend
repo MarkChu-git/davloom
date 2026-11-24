@@ -122,6 +122,35 @@ law move_decides_in_order:
   for overwrite: Bool
   {T.decide_move(source_root, source, inside, dest_root, dest, parent, overwrite) == Bool.pick(T.Outcome, source_root, T.Root{}, spec_copy(source, inside, dest_root, dest, parent, overwrite)) : T.Outcome}
 
+# --- The synchronous limit and recovery of moves (PRD §5) --------------------------------------
+
+def spec_fits(+count: Nat, +limit: Nat) -> Bool:
+  match count limit:
+    case 0n _:
+      True{}
+    case 1n+c 0n:
+      False{}
+    case 1n+c 1n+l:
+      spec_fits(c, l)
+
+# A copy or move proceeds exactly when its entries are at most the limit.
+law limit_exact:
+  for +count: Nat
+  for +limit: Nat
+  {T.within_limit(count, limit) == spec_fits(count, limit) : Bool}
+
+# A move resumes only into a collection, which an earlier move of the same source filled.
+law resume_into_collection:
+  for journal: Bool
+  for dest: T.Node
+  {implies(T.resume_move(journal, dest), folder(dest)) == True{} : Bool}
+
+# A move resumes only when the source records the earlier move to this destination.
+law resume_needs_journal:
+  for journal: Bool
+  for dest: T.Node
+  {implies(T.resume_move(journal, dest), journal) == True{} : Bool}
+
 # --- API Key permissions (PRD §6) ------------------------------------------------------------
 
 # The methods that change their request target, per RFC 4918; COPY only reads its source.

@@ -39,6 +39,13 @@ declare global {
 
 const MIN_SECRET_BYTES = 32;
 
+// The most objects one copy or move touches, its source and a destination it replaces (PRD §5).
+// Each object costs internal subrequests on R2, at most 1,000 per invocation, and subrequests to
+// the internet on S3, at most 50 per invocation on the Free plan. The request's own heads,
+// listings, markers and batch deletes take about 17 more on S3, so 30 objects leave a margin.
+const R2_MAX_ENTRIES = 400;
+const S3_MAX_ENTRIES_ON_WORKERS = 30;
+
 /**
  * Whether a binding is an R2 bucket. Duck typing is not enough: a service binding answers `in` for
  * every name, so the binding's own class is asked.
@@ -76,10 +83,16 @@ export const workersInstance = (origin: string): Instance => {
             driver: createR2Driver({ bucket }),
             prefix: checked.config.prefix,
             properties: createSqlPropertyStore(db, backend.id),
+            maxEntries: R2_MAX_ENTRIES,
           });
         }
         if (backend.kind === "s3") {
-          return openS3Backend(backend, unseal, createSqlPropertyStore(db, backend.id));
+          return openS3Backend(
+            backend,
+            unseal,
+            createSqlPropertyStore(db, backend.id),
+            S3_MAX_ENTRIES_ON_WORKERS,
+          );
         }
         return null;
       },

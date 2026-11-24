@@ -1,3 +1,4 @@
+import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   decideCopy,
@@ -5,6 +6,8 @@ import {
   decideMove,
   decideRemove,
   decideWrite,
+  resumeMove,
+  withinLimit,
   type Node,
   type Outcome,
   type TransferFacts,
@@ -106,5 +109,52 @@ describe("transfer decisions", () => {
     ["DELETE of a missing resource is 404", decideRemove(false, "absent"), { kind: "missing" }],
   ] as const)("%s", (_, actual, expected) => {
     expect(actual).toEqual(expected);
+  });
+});
+
+describe("withinLimit", () => {
+  it.each([
+    [0, 0, true],
+    [0, 400, true],
+    [400, 400, true],
+    [401, 400, false],
+    [1000, 1000, true],
+    [1001, 1000, false],
+    [5, 0, false],
+    [2 ** 50, 1000, false],
+    [2 ** 50, 2 ** 49, true],
+    [3, 2 ** 52, true],
+  ])("%i entries within %i: %s", (count, limit, expected) => {
+    expect(withinLimit(count, limit)).toBe(expected);
+  });
+
+  it("agrees with <= for any count and limit", () => {
+    fc.assert(
+      fc.property(fc.nat({ max: 5000 }), fc.nat({ max: 5000 }), (count, limit) => {
+        expect(withinLimit(count, limit)).toBe(count <= limit);
+      }),
+    );
+  });
+
+  it.each([
+    [-1, 1],
+    [1, -1],
+    [1.5, 2],
+    [Number.NaN, 2],
+  ])("refuses %s and %s", (count, limit) => {
+    expect(() => withinLimit(count, limit)).toThrow(RangeError);
+  });
+});
+
+describe("resumeMove", () => {
+  it.each([
+    [true, "collection", true],
+    [true, "file", false],
+    [true, "absent", false],
+    [false, "collection", false],
+    [false, "file", false],
+    [false, "absent", false],
+  ] as const)("journal %s, destination %s: %s", (journal, destination, expected) => {
+    expect(resumeMove(journal, destination)).toBe(expected);
   });
 });

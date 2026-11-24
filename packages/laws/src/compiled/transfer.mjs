@@ -307,6 +307,30 @@ function $decide_move(_source_is_root_0, _source_0, _inside_0, _dest_is_root_0, 
     return $decide_copy(_source_0, _inside_0, _dest_is_root_0, _dest_0, _dest_parent_0, _overwrite_0);
   }
 }
+
+function $within_limit(_count_0, _limit_0) {
+  return $Nat_is_le(_count_0, _limit_0);
+}
+
+function $resume_move(_journal_matches_0, _dest_0) {
+  if (_journal_matches_0) {
+    return $is_folder(_dest_0);
+  } else {
+    return false;
+  }
+}
+
+function $Nat_is_le(_a_0, _b_0) {
+  return $Cmp_is_le(cmp_new(_a_0, _b_0));
+}
+
+function $Cmp_is_le(_c_0) {
+  if (_c_0.$ === "GT") {
+    return false;
+  } else {
+    return true;
+  }
+}
 export default {
   "node_exists": run_lib((a0) => run_loop($node_exists(a0)), 1),
   "is_folder": run_lib((a0) => run_loop($is_folder(a0)), 1),
@@ -322,4 +346,6 @@ export default {
   "copy_inside": run_lib((a0,a1,a2,a3,a4,a5) => run_loop($copy_inside(a0,a1,a2,a3,a4,a5)), 6),
   "decide_copy": run_lib((a0,a1,a2,a3,a4,a5) => run_loop($decide_copy(a0,a1,a2,a3,a4,a5)), 6),
   "decide_move": run_lib((a0,a1,a2,a3,a4,a5,a6) => run_loop($decide_move(a0,a1,a2,a3,a4,a5,a6)), 7),
+  "within_limit": run_lib((a0,a1) => run_loop($within_limit(nat_in(a0),nat_in(a1))), 2),
+  "resume_move": run_lib((a0,a1) => run_loop($resume_move(a0,a1)), 2),
 };
