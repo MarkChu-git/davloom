@@ -10,8 +10,8 @@ import { startBunServer, type Server } from "./servers";
 
 export const RUSTFS_IMAGE =
   "rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a";
-const ACCESS_KEY = "davloom";
-const SECRET_KEY = "davloom-selfhosted-test-secret";
+export const ACCESS_KEY = "davloom";
+export const SECRET_KEY = "davloom-selfhosted-test-secret";
 
 export const hasDocker = () => spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
 
@@ -34,8 +34,18 @@ const waitFor = async (url: string, timeoutMs: number) => {
   throw new Error(`${url} did not answer in time`);
 };
 
+export interface SelfHostedOptions {
+  /**
+   * The endpoint the Bun server is to use, given RustFS's own; such as a proxy in front of it
+   * (s3-proxy.ts). RustFS's own when absent.
+   */
+  readonly endpointFor?: (rustfs: string) => string;
+}
+
 /** Starts RustFS and the Bun server; stopping the server also removes RustFS and the data. */
-export const startSelfHostedServer = async (): Promise<Server> => {
+export const startSelfHostedServer = async ({
+  endpointFor = (rustfs) => rustfs,
+}: SelfHostedOptions = {}): Promise<Server> => {
   const container = docker(
     "run",
     "-d",
@@ -57,7 +67,7 @@ export const startSelfHostedServer = async (): Promise<Server> => {
       DAVLOOM_SECRET: SECRET,
       DAVLOOM_SETUP_TOKEN: SETUP_TOKEN,
       DAVLOOM_DATA_DIR: dataDir,
-      DAVLOOM_S3_ENDPOINT: endpoint,
+      DAVLOOM_S3_ENDPOINT: endpointFor(endpoint),
       DAVLOOM_S3_ACCESS_KEY_ID: ACCESS_KEY,
       DAVLOOM_S3_SECRET_ACCESS_KEY: SECRET_KEY,
       DAVLOOM_S3_BUCKET: "davloom",

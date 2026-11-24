@@ -619,12 +619,20 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       if (!children.ok) return failure(children.failure);
       entries.push(...children.value);
     }
+    // No dead property lives in the DAV: namespace (PROPPATCH refuses it), so a request that names
+    // only DAV: properties, quota and unknown ones included, needs no read of dead properties. Nor
+    // does an entry whose properties this key may not see.
+    const deadPaths = entries.map((e) => e.path).filter((p) => mayRead(p));
     const deadResult =
-      query.kind === "prop" &&
-      query.props.every((prop) => prop.ns === DAV && Object.hasOwn(LIVE, prop.local))
+      (query.kind === "prop" && query.props.every((prop) => prop.ns === DAV)) ||
+      deadPaths.length === 0
         ? null
-        : await storage.properties(entries.map((e) => e.path));
-    const dead: Record<string, readonly DeadProperty[]> = deadResult?.ok ? deadResult.value : {};
+        : await storage.properties(deadPaths);
+    // Dead properties that cannot be read fail the request: a 207 without them would tell the
+    // client the entries have none, and allprop or propname cannot name what is missing to give it
+    // a status of its own in a propstat.
+    if (deadResult && !deadResult.ok) return failure(deadResult.failure);
+    const dead: Record<string, readonly DeadProperty[]> = deadResult?.value ?? {};
 
     const responses: string[] = [];
     // RFC 4331 quota, computed once per request and only when asked for: allprop leaves it out.
