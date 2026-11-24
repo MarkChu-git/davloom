@@ -29,3 +29,30 @@ describe("the coverage gate", () => {
     );
   });
 });
+
+// The V1 targets, copied from the Coverage Gates table of PRD §11. Packages the table does not
+// name (laws, migrate, storage) have no target; their thresholds still only go up.
+const V1_TARGETS: readonly (readonly [string, number, number, number | null])[] = [
+  ["packages/webdav/src/**", 95, 90, 95],
+  ["packages/core/src/**", 95, 90, 95],
+  ["packages/auth/src/**", 90, 85, null],
+  ["packages/database/src/**", 90, 85, null],
+  ["apps/api/src/**", 80, 75, null],
+  ["apps/web/src/**", 80, 75, null],
+  ["packages/ui/src/**", 80, 75, null],
+];
+
+const thresholdOf = (glob: string): Partial<Record<"lines" | "branches" | "functions", number>> =>
+  Object.entries(thresholds).find(([key]) => key === glob)?.[1] ?? {};
+
+describe("the V1 coverage targets", () => {
+  it.each(V1_TARGETS)(
+    "%s gates lines at %i%%, branches at %i%% and functions at %s%%",
+    (glob, lines, branches, functions) => {
+      const threshold = thresholdOf(glob);
+      expect(threshold.lines ?? 0).toBeGreaterThanOrEqual(lines);
+      expect(threshold.branches ?? 0).toBeGreaterThanOrEqual(branches);
+      if (functions !== null) expect(threshold.functions ?? 0).toBeGreaterThanOrEqual(functions);
+    },
+  );
+});
