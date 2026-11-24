@@ -1,5 +1,6 @@
 import { connect } from "node:net";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures";
 import { onlyInChromium } from "./helpers";
 
 test("opening a deep route directly renders that route", async ({ page }) => {

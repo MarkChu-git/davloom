@@ -6,7 +6,8 @@ import {
   readFileSync,
   writeFileSync,
 } from "node:fs";
-import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Page, type TestInfo } from "@playwright/test";
+import { test } from "./fixtures";
 import { boxOf, cardWith, filesAt, listed, onlyInChromium, onScreen, shown } from "./helpers";
 import { dav, davPath, README, SAMPLE_NAMES, scratchFolder } from "./instances";
 

@@ -9,7 +9,6 @@ Create `deploy/docker/.env` (never commit it; the image build leaves it out):
 
 ```bash
 DAVLOOM_SECRET=<at least 32 random bytes, e.g. from: openssl rand -base64 48>
-DAVLOOM_SETUP_TOKEN=<a token for the first-run setup, e.g. from: openssl rand -hex 16>
 RUSTFS_SECRET_KEY=<a password for RustFS>
 # The address people open. For a first try on this machine, leave it out and open localhost.
 # DAVLOOM_URL=https://files.example.com
@@ -31,8 +30,9 @@ then expects):
 docker compose -f deploy/docker/compose.yaml up -d
 ```
 
-On its first start Davloom creates the bucket `davloom` when it is missing, and the first-run setup
-creates the backend `Default` on it with the Mount `files`. Put Davloom behind HTTPS (a reverse proxy
+On its first start Davloom creates the bucket `davloom` when it is missing. Open it right after
+starting and create your account: the first account becomes the owner, registration then closes
+for everyone, and it creates the backend `Default` on the bucket with the Mount `files`. Put Davloom behind HTTPS (a reverse proxy
 such as Caddy) before you expose it: WebDAV clients send the API Key with every request.
 
 Davloom serves WebDAV and its API over plain HTTP only on the machine itself (`localhost`,
@@ -48,7 +48,7 @@ HTTPS and send `X-Forwarded-Proto`.
 | Variable                                                   | Meaning                                                                          |
 | ---------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | `DAVLOOM_SECRET`                                           | Required. At least 32 bytes. Signs sessions and encrypts S3 secret keys.         |
-| `DAVLOOM_SETUP_TOKEN`                                      | The token the first-run setup asks for. Without it, setup is closed.             |
+| `DAVLOOM_CHECK_LEAKED_PASSWORDS`                           | `off` skips the Have I Been Pwned check of new passwords (see below).            |
 | `DAVLOOM_URL`                                              | The public address, for sign-in cookies and redirects.                           |
 | `DAVLOOM_DATA_DIR`                                         | Where SQLite keeps `davloom.sqlite`; `/data` in the image, a volume.             |
 | `DAVLOOM_S3_ENDPOINT`                                      | The S3-compatible endpoint of the default backend, such as `http://rustfs:9000`. |
@@ -63,17 +63,23 @@ HTTPS and send `X-Forwarded-Proto`.
 More S3-compatible backends can be added later through the API (`POST /api/backends` with `kind:
 "s3"`); their secret keys are stored encrypted with `DAVLOOM_SECRET`.
 
+Davloom refuses passwords shorter than 12 characters and passwords that appear in known breaches,
+which it checks with the Have I Been Pwned range API (`api.pwnedpasswords.com`; only the first five
+characters of the password's SHA-1 hash leave the server). When that API cannot be reached, Davloom
+refuses the new password with `password_check_failed` (503) rather than accept it unchecked. On a
+network without internet access, set `DAVLOOM_CHECK_LEAKED_PASSWORDS=off`.
+
 ## Without Docker
 
 ```bash
 bun install --frozen-lockfile
 bun run --filter @davloom/web build
-DAVLOOM_SECRET=… DAVLOOM_SETUP_TOKEN=… DAVLOOM_S3_ENDPOINT=… bun apps/api/src/entry.bun.ts
+DAVLOOM_SECRET=… DAVLOOM_S3_ENDPOINT=… bun apps/api/src/entry.bun.ts
 ```
 
 ## Smoke test
 
-Once setup is done and a Read/Write API Key exists, check the stack end to end from a checkout
+Once the account exists and a Read/Write API Key exists, check the stack end to end from a checkout
 of this repository:
 
 ```bash

@@ -24,7 +24,8 @@ S3-compatible storage such as RustFS.
 
 ## Use
 
-1. Open the Dashboard and finish the first-run setup with the setup token you configured.
+1. Open the Dashboard right after deploying and create your account. The first account becomes
+   the owner, and registration closes for everyone once it exists.
 2. On **Credentials**, create an API Key. Davloom shows the whole key once.
 3. Mount `https://<your host>/dav/` in your client. The username can be anything; the password is
    the key.

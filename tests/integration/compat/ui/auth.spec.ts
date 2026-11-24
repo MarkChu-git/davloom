@@ -1,15 +1,25 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import { levelOne, navigationLinks, onScreen, shown } from "./helpers";
 import { ADMIN } from "./instances";
 
-// Signing in, signing out and first-run setup. These tests start without the shared session, and
+// Signing in, signing out and registration. These tests start without the shared session, and
 // sign in with sessions of their own, since signing out ends the session that signs it out.
 test.use({ storageState: { cookies: [], origins: [] } });
 
-const signIn = async (page: Page, email = ADMIN.email, password = ADMIN.password) => {
-  await page.getByRole("textbox", { name: "Email" }).fill(email);
+const identifierField = (page: Page) => page.getByRole("textbox", { name: "Username or email" });
+
+const signIn = async (page: Page, identifier = ADMIN.username, password = ADMIN.password) => {
+  await identifierField(page).fill(identifier);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+};
+
+/** Answers the confirmation that every Sign out asks for. */
+const confirmSignOut = async (page: Page) => {
+  const dialog = page.getByRole("alertdialog", { name: "Sign out?" });
+  await shown(dialog);
+  await dialog.getByRole("button", { name: "Sign out" }).click();
 };
 
 test("No session: a Dashboard page opens the sign-in page, and signing in returns to it", async ({
@@ -25,36 +35,50 @@ test("No session: a Dashboard page opens the sign-in page, and signing in return
   await expect(page).toHaveURL(/\/credentials$/);
 });
 
-test("A wrong password: the form stays and says the email or the password is wrong", async ({
+test("An owner exists: the sign-in page offers no way to create an account", async ({ page }) => {
+  await page.goto("/sign-in");
+  await shown(identifierField(page));
+  await expect(page.getByRole("link", { name: /create account|register/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /create account|register/i })).toHaveCount(0);
+});
+
+test("Signing in with the email: the email the owner gave works as well as the username", async ({
   page,
 }) => {
   await page.goto("/sign-in");
-  await signIn(page, ADMIN.email, "not the password at all");
-  await shown(onScreen(page, "The email or the password is wrong."));
+  await signIn(page, ADMIN.email);
+  await expect(levelOne(page)).toHaveText("Overview");
+});
+
+test("A wrong password: the form stays and says the username or the password is wrong", async ({
+  page,
+}) => {
+  await page.goto("/sign-in");
+  await signIn(page, ADMIN.username, "not the password at all");
+  await shown(onScreen(page, "The username or the password is wrong."));
   await expect(levelOne(page)).toHaveText("Sign in");
 });
 
 test("Empty fields: each says what it needs, and nothing is sent", async ({ page }) => {
   const sent: string[] = [];
   page.on("request", (request) => {
-    if (request.url().includes("/api/auth/")) sent.push(request.url());
+    if (request.method() === "POST" && request.url().includes("/api/auth/")) {
+      sent.push(request.url());
+    }
   });
   await page.goto("/sign-in");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await shown(onScreen(page, "Enter the email you set up Davloom with."));
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await shown(onScreen(page, "Enter your username or email."));
   await shown(onScreen(page, "Enter your password."));
   expect(sent).toEqual([]);
 });
 
-test("Autofill purposes: the email field declares username and the password current-password", async ({
+test("Autofill purposes: the identifier field declares username and the password current-password", async ({
   page,
 }) => {
   await page.goto("/sign-in");
-  await expect(page.getByRole("textbox", { name: "Email" })).toHaveAttribute(
-    "autocomplete",
-    "username",
-  );
-  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "current-password");
+  await expect(identifierField(page)).toHaveAttribute("autocomplete", /username/);
+  await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", /current-password/);
 });
 
 test("A return address on another site: signing in opens the Overview instead", async ({
@@ -67,7 +91,7 @@ test("A return address on another site: signing in opens the Overview instead", 
 });
 
 // On a phone the side navigation's Sign out is in the dropdown of the Menu button.
-test("Signing out: the side navigation's Sign out ends the session, and the Dashboard asks to sign in again", async ({
+test("Signing out: the side navigation's Sign out asks first, ends the session, and the Dashboard asks to sign in again", async ({
   page,
 }) => {
   await page.goto("/sign-in");
@@ -75,6 +99,7 @@ test("Signing out: the side navigation's Sign out ends the session, and the Dash
   await expect(levelOne(page)).toHaveText("Overview");
 
   await (await navigationLinks(page)).getByRole("button", { name: "Sign out" }).click();
+  await confirmSignOut(page);
   await expect(levelOne(page)).toHaveText("Sign in");
   const me = await page.request.get("/api/me");
   expect(me.status()).toBe(401);
@@ -82,64 +107,89 @@ test("Signing out: the side navigation's Sign out ends the session, and the Dash
   await expect(levelOne(page)).toHaveText("Sign in");
 });
 
+test("Cancelling a sign-out: the session stays", async ({ page }) => {
+  await page.goto("/sign-in");
+  await signIn(page);
+  await expect(levelOne(page)).toHaveText("Overview");
+  await (await navigationLinks(page)).getByRole("button", { name: "Sign out" }).click();
+  const dialog = page.getByRole("alertdialog", { name: "Sign out?" });
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(levelOne(page)).toHaveText("Overview");
+  expect((await page.request.get("/api/me")).status()).toBe(200);
+});
+
 test("Signing out from Settings: Sign-in and security signs this browser out", async ({ page }) => {
   await page.goto("/sign-in?redirect=%2Fsettings%3Fsection%3Dsecurity");
   await signIn(page);
   await shown(page.getByRole("heading", { level: 2, name: "Sign-in and security" }));
-  await page.getByRole("main").getByRole("button", { name: "Sign out" }).click();
+  await page.getByRole("main").getByRole("button", { name: "Sign out", exact: true }).click();
+  await confirmSignOut(page);
   await expect(levelOne(page)).toHaveText("Sign in");
 });
 
-test("Setup after setup: the setup page sends a person to sign in", async ({ page }) => {
-  await page.goto("/setup");
+test("Registration after an owner exists: the register page sends a person to sign in", async ({
+  page,
+}) => {
+  await page.goto("/register");
   await expect(levelOne(page)).toHaveText("Sign in");
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 
-/** Answers GET /api/setup as an instance that has no administrator yet. */
-const freshInstance = (page: Page, { open = true, refusal = "" } = {}) =>
-  page.route("**/api/setup", (route) =>
+/** Answers GET /api/registration as an instance that has no owner yet. */
+const freshInstance = (page: Page, refusal?: { status: number; json: unknown }) =>
+  page.route("**/api/registration", (route) =>
     route.request().method() === "GET"
-      ? route.fulfill({ json: { needed: true, open } })
-      : route.fulfill({ status: 403, json: { error: { code: refusal } } }),
+      ? route.fulfill({ json: { open: true } })
+      : route.fulfill(refusal ?? { status: 500, json: {} }),
   );
 
-test("A fresh instance: sign-in sends a person to setup, which asks for name, email, a password of 12 characters and the token", async ({
+const newPassword = (page: Page) => page.locator('input[autocomplete="new-password"]');
+
+test("A fresh instance: sign-in sends a person to Create account, which asks for a username and a password of 12 characters and shows the server's reason", async ({
   page,
 }) => {
-  await freshInstance(page, { refusal: "setup_token_invalid" });
+  await freshInstance(page, {
+    status: 400,
+    json: {
+      error: {
+        code: "password_refused",
+        message: "This password appears in known data breaches. Choose another.",
+      },
+    },
+  });
   await page.goto("/sign-in");
-  await expect(levelOne(page)).toHaveText("Set up Davloom");
-  await expect(page).toHaveURL(/\/setup$/);
+  await expect(levelOne(page)).toHaveText("Create account");
+  await expect(page).toHaveURL(/\/register$/);
 
-  await page.getByRole("textbox", { name: "Name" }).fill("Owner");
-  await page.getByRole("textbox", { name: "Email" }).fill("owner@example.com");
-  await page.getByLabel("Password", { exact: true }).fill("short");
-  await page.getByLabel("Setup token").fill("token");
-  await page.getByRole("button", { name: "Create administrator" }).click();
+  await page.getByRole("textbox", { name: "Username" }).fill("owner");
+  await newPassword(page).fill("short");
+  await page.getByRole("button", { name: "Create account" }).click();
   await shown(onScreen(page, "Use at least 12 characters."));
 
-  await page.getByLabel("Password", { exact: true }).fill("a long enough password");
-  await page.getByRole("button", { name: "Create administrator" }).click();
-  await shown(
-    onScreen(page, "The setup token is wrong. It is the DAVLOOM_SETUP_TOKEN of this deployment."),
-  );
+  await newPassword(page).fill("a long enough password");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await shown(onScreen(page, "This password appears in known data breaches. Choose another."));
 });
 
-test("Setup without a token on the deployment: the page says setup is closed and how to open it", async ({
-  page,
-}) => {
-  await freshInstance(page, { open: false });
-  await page.goto("/setup");
-  await shown(onScreen(page, "Setup is closed"));
-  await shown(onScreen(page, "Set DAVLOOM_SETUP_TOKEN on this deployment, then reload this page."));
-  await expect(page.getByRole("button", { name: "Create administrator" })).toHaveCount(0);
-});
-
-test("Setup from an export: the form asks for the file, its key and the token, shows why an import is refused, and sends a person to sign in once it is done", async ({
+test("Generate: Create account fills in a random password and offers to copy it", async ({
   page,
 }) => {
   await freshInstance(page);
+  await page.goto("/register");
+  await page.getByRole("button", { name: "Generate" }).click();
+  const first = await newPassword(page).inputValue();
+  expect(first).toMatch(/^[A-Za-z0-9_-]{24}$/);
+  await shown(page.getByRole("button", { name: "Copy" }));
+  await page.getByRole("button", { name: "Generate" }).click();
+  expect(await newPassword(page).inputValue()).not.toBe(first);
+});
+
+test("Create account from an export: the form asks for the file and its key, shows why an import is refused, and sends a person to sign in once it is done", async ({
+  page,
+}) => {
+  let open = true;
+  await page.route("**/api/registration", (route) => route.fulfill({ json: { open } }));
   let answer: { status: number; json: unknown } = {
     status: 422,
     json: {
@@ -150,16 +200,15 @@ test("Setup from an export: the form asks for the file, its key and the token, s
     },
   };
   const sent: unknown[] = [];
-  await page.route("**/api/setup/import", (route) => {
+  await page.route("**/api/registration/import", (route) => {
     sent.push(route.request().postDataJSON());
     return route.fulfill(answer);
   });
-  await page.goto("/setup");
+  await page.goto("/register");
   await page.getByRole("radio", { name: "From an export" }).click();
   await page.getByRole("button", { name: "Import" }).click();
   await shown(onScreen(page, "Choose the export file."));
-  await shown(onScreen(page, "Enter the key shown with the export."));
-  await shown(onScreen(page, "Enter the setup token."));
+  await shown(onScreen(page, "Enter the export key."));
 
   await page.locator('input[type="file"]').setInputFiles({
     name: "davloom-export.json",
@@ -167,30 +216,26 @@ test("Setup from an export: the form asks for the file, its key and the token, s
     buffer: Buffer.from(JSON.stringify({ format: "davloom-export", version: 1 })),
   });
   await page.getByLabel("Export key").fill("dvx_key");
-  await page.getByLabel("Setup token").fill("token");
   await page.getByRole("button", { name: "Import" }).click();
   await shown(onScreen(page, "The key does not open this file, or the file is damaged."));
-  expect(sent).toEqual([
-    { token: "token", key: "dvx_key", file: { format: "davloom-export", version: 1 } },
-  ]);
+  expect(sent).toEqual([{ key: "dvx_key", file: { format: "davloom-export", version: 1 } }]);
 
   answer = { status: 201, json: { user: 1 } };
-  await page.unroute("**/api/setup");
-  await page.route("**/api/setup", (route) =>
-    route.fulfill({ json: { needed: false, open: false } }),
-  );
+  open = false;
   await page.getByRole("button", { name: "Import" }).click();
   await expect(levelOne(page)).toHaveText("Sign in");
 });
 
-test("Setup from a file that is not JSON: the form says so and sends nothing", async ({ page }) => {
+test("Create account from a file that is not JSON: the form says so and sends nothing", async ({
+  page,
+}) => {
   await freshInstance(page);
   let calls = 0;
-  await page.route("**/api/setup/import", (route) => {
+  await page.route("**/api/registration/import", (route) => {
     calls += 1;
     return route.fulfill({ status: 201, json: {} });
   });
-  await page.goto("/setup");
+  await page.goto("/register");
   await page.getByRole("radio", { name: "From an export" }).click();
   await page.locator('input[type="file"]').setInputFiles({
     name: "notes.json",
@@ -198,7 +243,6 @@ test("Setup from a file that is not JSON: the form says so and sends nothing", a
     buffer: Buffer.from("not json"),
   });
   await page.getByLabel("Export key").fill("dvx_key");
-  await page.getByLabel("Setup token").fill("token");
   await page.getByRole("button", { name: "Import" }).click();
   await shown(onScreen(page, "That file is not a Davloom export."));
   expect(calls).toBe(0);

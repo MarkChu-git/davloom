@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ADMIN, basic, SETUP_TOKEN, startDavloom, stringField, type Davloom } from "./davloom";
+import { ADMIN, basic, startDavloom, stringField, type Davloom } from "./davloom";
 
 let davloom: Davloom;
 
@@ -8,15 +8,31 @@ beforeAll(async () => {
 });
 afterAll(() => davloom?.server.stop());
 
-describe("setup and sign-in", () => {
-  it("setup closes once the administrator exists", async () => {
-    const status = await davloom.server.fetch("/api/setup");
-    expect(await status.json()).toEqual({ needed: false, open: false });
-    const again = await davloom.server.fetch("/api/setup", {
+describe("registration and sign-in", () => {
+  it("registration closes once the owner exists", async () => {
+    const status = await davloom.server.fetch("/api/registration");
+    expect(await status.json()).toEqual({ open: false });
+    const again = await davloom.server.fetch("/api/registration", {
       method: "POST",
-      body: JSON.stringify({ ...ADMIN, email: "other@example.com", token: SETUP_TOKEN }),
+      body: JSON.stringify({ ...ADMIN, username: "mallory", email: "other@example.com" }),
     });
     expect(again.status).toBe(409);
+  });
+
+  it("signs in with the email as well as the username", async () => {
+    const response = await davloom.server.fetch("/api/auth/sign-in/email", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: davloom.server.url },
+      body: JSON.stringify({ email: ADMIN.email, password: ADMIN.password }),
+    });
+    expect(response.ok).toBe(true);
+  });
+
+  it("refuses Better Auth paths Davloom does not classify", async () => {
+    for (const path of ["/api/auth/api-key/create", "/api/auth/api-key/list"]) {
+      const response = await davloom.api(path, { method: "POST", body: "{}" });
+      expect(response.status, path).toBe(404);
+    }
   });
 
   it("the management API needs a session", async () => {
@@ -25,7 +41,9 @@ describe("setup and sign-in", () => {
     }
     const me = await davloom.api("/api/me");
     expect(me.status).toBe(200);
-    expect(stringField(await me.json(), "email")).toBe(ADMIN.email);
+    const owner: unknown = await me.json();
+    expect(stringField(owner, "email")).toBe(ADMIN.email);
+    expect(stringField(owner, "username")).toBe(ADMIN.username);
   });
 
   it("a wrong password does not sign in", async () => {
@@ -50,7 +68,7 @@ describe("setup and sign-in", () => {
     expect(response.ok).toBe(false);
   });
 
-  it("setup created the default Mount on a Durable Objects backend", async () => {
+  it("registration created the default Mount on a Durable Objects backend", async () => {
     expect(await (await davloom.api("/api/mounts")).json()).toEqual([
       expect.objectContaining({ name: "files", backendKind: "durable-object" }),
     ]);

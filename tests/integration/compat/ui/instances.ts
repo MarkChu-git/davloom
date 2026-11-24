@@ -1,12 +1,14 @@
 import { resolve } from "node:path";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 // The instances the browser tests run against, and the files they start with. The secrets are
 // those of `../http/davloom.ts`, written out so that Playwright's config loads no Miniflare.
 
-export const SETUP_TOKEN = "local-setup-token-for-tests";
 export const SECRET = "local-instance-secret-for-tests-only-0123456789";
+/** The test Workers run offline, so they leave out the leaked-password check (`../http/davloom.ts`). */
+export const OFFLINE_VARS = { DAVLOOM_CHECK_LEAKED_PASSWORDS: "off" } as const;
 export const ADMIN = {
+  username: "admin",
   name: "Admin",
   email: "admin@example.com",
   password: "correct horse battery staple",
@@ -29,7 +31,7 @@ export const STATE = {
   dev: resolve(AUTH_DIRECTORY, "dev.json"),
 };
 
-/** The Mount that first-run setup creates. */
+/** The Mount that registration creates. */
 export const MOUNT = "files";
 
 /** A name no other test uses, so tests that run at once never meet. */
@@ -42,6 +44,50 @@ const DASHBOARD = { "x-davloom-dashboard": "1" };
 export const davPath = (path: string, isFolder = false): string => {
   const names = path.split("/").filter((name) => name !== "");
   return `/dav/${names.map((name) => encodeURIComponent(name)).join("/")}${isFolder ? "/" : ""}`;
+};
+
+/** Whether an answer asks the session to prove presence again (apps/api/src/verification.ts). */
+const needsStepUp = async (response: APIResponse): Promise<boolean> =>
+  response.status() === 403 && (await response.text()).includes("verification_required");
+
+/**
+ * Proves presence again with the owner's password, as the Dashboard's step-up dialog does, for
+ * a session that signed in longer ago than the step-up window.
+ */
+export const reverify = async (request: APIRequestContext): Promise<void> => {
+  const response = await request.post("/api/verify", {
+    headers: { "content-type": "application/json" },
+    data: JSON.stringify({ password: ADMIN.password }),
+  });
+  if (!response.ok()) {
+    throw new Error(`verify: ${response.status()} ${await response.text()}`);
+  }
+};
+
+/** Sends a request, and once more after a step-up when the server asks for one. */
+const withStepUp = async (
+  request: APIRequestContext,
+  send: () => Promise<APIResponse>,
+): Promise<APIResponse> => {
+  const response = await send();
+  if (!(await needsStepUp(response))) {
+    return response;
+  }
+  await reverify(request);
+  return await send();
+};
+
+/**
+ * Answers the Dashboard's step-up dialog with the owner's password whenever it opens, so that a
+ * spec that deletes, replaces or changes credentials through the page carries on.
+ */
+export const answerStepUp = async (page: Page): Promise<void> => {
+  const dialog = page.getByRole("dialog", { name: "Verify it is you" });
+  await page.addLocatorHandler(dialog, async () => {
+    await dialog.getByLabel("Password").fill(ADMIN.password);
+    await dialog.getByRole("button", { name: "Verify" }).click();
+    await dialog.waitFor({ state: "hidden" });
+  });
 };
 
 /** Sends a WebDAV request as the Dashboard does, with the context's session. */
@@ -59,11 +105,13 @@ export const dav = async (
     headers?: Record<string, string>;
   } = {},
 ) => {
-  const response = await request.fetch(davPath(path, isFolder), {
-    method,
-    headers: { ...DASHBOARD, ...headers },
-    data: body,
-  });
+  const response = await withStepUp(request, () =>
+    request.fetch(davPath(path, isFolder), {
+      method,
+      headers: { ...DASHBOARD, ...headers },
+      data: body,
+    }),
+  );
   if (response.status() >= 300) {
     throw new Error(`${method} ${path}: ${response.status()}`);
   }
@@ -152,11 +200,13 @@ export const api = async (
   path: string,
   body?: unknown,
 ) => {
-  const response = await request.fetch(path, {
-    method,
-    headers: { "content-type": "application/json" },
-    data: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const response = await withStepUp(request, () =>
+    request.fetch(path, {
+      method,
+      headers: { "content-type": "application/json" },
+      data: body === undefined ? undefined : JSON.stringify(body),
+    }),
+  );
   if (!response.ok()) {
     throw new Error(`${method} ${path}: ${response.status()} ${await response.text()}`);
   }

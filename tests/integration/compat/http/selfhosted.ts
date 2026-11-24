@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SECRET, SETUP_TOKEN } from "./davloom";
+import { OFFLINE_VARS, SECRET } from "./davloom";
 import { startBunServer, type Server } from "./servers";
 
 // The self-hosted deployment: the Bun entry with SQLite, and RustFS in Docker as its S3-compatible
@@ -65,7 +65,7 @@ export const startSelfHostedServer = async ({
     await waitFor(endpoint, 30_000);
     const server = await startBunServer("apps/api/src/entry.bun.ts", {
       DAVLOOM_SECRET: SECRET,
-      DAVLOOM_SETUP_TOKEN: SETUP_TOKEN,
+      ...OFFLINE_VARS,
       DAVLOOM_DATA_DIR: dataDir,
       DAVLOOM_S3_ENDPOINT: endpointFor(endpoint),
       DAVLOOM_S3_ACCESS_KEY_ID: ACCESS_KEY,

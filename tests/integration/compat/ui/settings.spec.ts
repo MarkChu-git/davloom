@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import { boxOf, isNarrow, openList, shown, sidewaysOverflow } from "./helpers";
 import { ADMIN, WORKERS_ORIGIN } from "./instances";
 
@@ -72,18 +73,16 @@ test("The sections on offer: only those the instance can fill, with no storage s
   ]);
 });
 
-test("An unknown section: billing opens the Profile section, which names the administrator", async ({
+test("An unknown section: billing opens the Profile section, which holds the owner's display name, username and email", async ({
   page,
 }) => {
   await page.goto("/settings?section=billing");
   await shown(page.getByRole("heading", { level: 2, name: "Profile" }));
-  await expect
-    .poll(() => factsOf(page))
-    .toEqual([
-      { label: "Name", value: ADMIN.name },
-      { label: "Email", value: ADMIN.email },
-      { label: "Role", value: "Administrator" },
-    ]);
+  const main = page.getByRole("main");
+  await expect(main.getByRole("textbox", { name: "Display name" })).toHaveValue(ADMIN.name);
+  await expect(main.getByRole("textbox", { name: "Username" })).toHaveValue(ADMIN.username);
+  await expect(main.getByRole("textbox", { name: /^Email/ })).toHaveValue(ADMIN.email);
+  await shown(main.getByRole("button", { name: "Save profile" }));
   await expectCurrent(page, "Profile");
 });
 

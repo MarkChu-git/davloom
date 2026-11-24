@@ -1,4 +1,5 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import {
   api,
   createKey,
@@ -392,12 +393,13 @@ const STATES: readonly PageState[] = [
   {
     name: "Profile settings",
     path: "/settings?section=profile",
-    show: (page) => shown(page.getByText("Administrator")),
+    show: (page) => shown(page.getByRole("button", { name: "Save profile" })),
   },
   {
     name: "Sign-in and security settings",
     path: "/settings?section=security",
-    show: (page) => shown(page.getByRole("main").getByRole("button", { name: "Sign out" })),
+    show: (page) =>
+      shown(page.getByRole("main").getByRole("button", { name: "Sign out", exact: true })),
   },
   {
     name: "WebDAV settings",

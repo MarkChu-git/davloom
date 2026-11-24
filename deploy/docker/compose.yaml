@@ -1,5 +1,5 @@
 # Davloom with RustFS as its S3-compatible storage: `docker compose -f deploy/docker/compose.yaml up`.
-# Set DAVLOOM_SECRET (32+ bytes) and DAVLOOM_SETUP_TOKEN in an .env file beside this one first.
+# Set DAVLOOM_SECRET (32+ bytes) in an .env file beside this one first.
 services:
   davloom:
     build:
@@ -8,7 +8,8 @@ services:
     ports: ["3000:3000"]
     environment:
       DAVLOOM_SECRET: ${DAVLOOM_SECRET:?set DAVLOOM_SECRET}
-      DAVLOOM_SETUP_TOKEN: ${DAVLOOM_SETUP_TOKEN:-}
+      # off skips the Have I Been Pwned check of new passwords, for a network without internet.
+      DAVLOOM_CHECK_LEAKED_PASSWORDS: ${DAVLOOM_CHECK_LEAKED_PASSWORDS:-}
       DAVLOOM_URL: ${DAVLOOM_URL:-http://localhost:3000}
       # Plain HTTP reaches WebDAV only from this machine; set 1 for a trusted LAN without TLS.
       DAVLOOM_ALLOW_HTTP: ${DAVLOOM_ALLOW_HTTP:-}

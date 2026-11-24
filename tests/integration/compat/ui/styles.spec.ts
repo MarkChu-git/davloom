@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures";
 import { brandTokens } from "@davloom/ui/tokens/brand";
 import { BRAND_DARK, BRAND_LIGHT, backgroundOf, rgb } from "./colors";
 

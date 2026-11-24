@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures";
 
 // This Bun server runs without DAVLOOM_SECRET, so its API answers that it is not configured. The
 // Dashboard says so rather than showing an empty page.

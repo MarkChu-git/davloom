@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import { DEV_SERVER_ORIGIN } from "./devServer";
 
 // The owner reviews pages on `vite dev`, so the dev server has to draw them as the build does.

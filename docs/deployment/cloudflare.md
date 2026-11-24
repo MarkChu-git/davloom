@@ -48,17 +48,24 @@ bunx --bun wrangler d1 migrations apply davloom --remote
 bunx --bun wrangler deploy
 ```
 
-Set the two secrets. `DAVLOOM_SECRET` signs sessions and encrypts S3 secret keys; use at least 32
+Set the secret. `DAVLOOM_SECRET` signs sessions and encrypts S3 secret keys; use at least 32
 random bytes and keep it: changing it signs everyone out and makes stored S3 secret keys unreadable.
-`DAVLOOM_SETUP_TOKEN` is what the first-run setup asks for.
 
 ```bash
 openssl rand -base64 48 | bunx --bun wrangler secret put DAVLOOM_SECRET
-openssl rand -hex 16 | tee /dev/stderr | bunx --bun wrangler secret put DAVLOOM_SETUP_TOKEN
 ```
 
-Open the Worker's address, finish the setup with the token, create an API Key on Credentials, and
-mount `https://<worker>/dav/`. The setup creates a Durable Objects backend and the Mount `files`.
+Open the Worker's address right after deploying and create your account: registration is open
+only while the instance has no account, so the first visitor becomes the owner, and it closes for
+everyone once the owner exists. Then create an API Key on Credentials and mount
+`https://<worker>/dav/`. Registration creates a Durable Objects backend and the Mount `files`.
+
+Davloom refuses passwords shorter than 12 characters and passwords that appear in known breaches,
+which it checks with the Have I Been Pwned range API (`api.pwnedpasswords.com`; only the first
+five characters of the password's SHA-1 hash leave the server). When that API cannot be reached,
+Davloom refuses the new password with `password_check_failed` (503) rather than accept it
+unchecked. `DAVLOOM_CHECK_LEAKED_PASSWORDS=off` (a plain variable) turns the check off, for an
+instance without internet access.
 
 `DAVLOOM_URL` (a plain variable) names the public address when the Worker answers on several, such
 as a custom domain and `workers.dev`.

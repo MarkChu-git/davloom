@@ -82,12 +82,12 @@ export const runSmoke = async (options: SmokeOptions): Promise<SmokeResult> => {
     if (!(await response.text()).includes("<html")) throw new CheckFailed("no HTML page");
   });
 
-  await check("setup is complete", async () => {
-    const response = await send("/api/setup", { anonymous: true });
+  await check("registration is closed", async () => {
+    const response = await send("/api/registration", { anonymous: true });
     await expectStatus(response, 200);
     const body: unknown = await response.json();
-    if (JSON.stringify(body) !== '{"needed":false,"open":false}') {
-      throw new CheckFailed(`setup state ${JSON.stringify(body)}`);
+    if (JSON.stringify(body) !== '{"open":false}') {
+      throw new CheckFailed(`registration state ${JSON.stringify(body)}`);
     }
   });
 

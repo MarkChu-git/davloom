@@ -6,8 +6,8 @@ import {
   BUN_PORT,
   DEV_WORKER_ORIGIN,
   DEV_WORKER_PORT,
+  OFFLINE_VARS,
   SECRET,
-  SETUP_TOKEN,
   STATE,
   WORKERS_ORIGIN,
   WORKERS_PORT,
@@ -84,7 +84,7 @@ const OTHER_BROWSERS: {
 const worker = (port: number) => ({
   command: `bun tests/integration/compat/scripts/serve-workers.ts apps/api/wrangler.jsonc ${port}`,
   cwd: REPO_ROOT,
-  env: { DAVLOOM_SECRET: SECRET, DAVLOOM_SETUP_TOKEN: SETUP_TOKEN },
+  env: { DAVLOOM_SECRET: SECRET, ...OFFLINE_VARS },
   url: `http://127.0.0.1:${port}/api/health`,
   // Longer than the 60 s that `servers.ts` gives bundling, so that a bundle step that hangs
   // fails with the harness's message rather than with Playwright's timeout.

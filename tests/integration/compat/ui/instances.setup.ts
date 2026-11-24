@@ -1,32 +1,22 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { expect, request as playwrightRequest, test as setup } from "@playwright/test";
-import {
-  ADMIN,
-  DEV_WORKER_PORT,
-  MOUNT,
-  SETUP_TOKEN,
-  STATE,
-  WORKERS_PORT,
-  seedSample,
-} from "./instances";
+import { ADMIN, DEV_WORKER_PORT, MOUNT, STATE, WORKERS_PORT, seedSample } from "./instances";
 
-// Gives each Worker its administrator through first-run setup, the sample files in the Mount
+// Gives each Worker its owner through registration, the sample files in the Mount
 // "files", and a signed-in browser state that the `workers` and `dev` projects start from.
 
 const prepare = async (port: number, stateFile: string, cookieHost: string) => {
   const origin = `http://127.0.0.1:${port}`;
   const context = await playwrightRequest.newContext({ baseURL: origin });
-  const status: unknown = await (await context.get("/api/setup")).json();
-  if (typeof status === "object" && status !== null && Reflect.get(status, "needed") === true) {
-    const created = await context.post("/api/setup", {
-      data: { ...ADMIN, token: SETUP_TOKEN },
-    });
+  const status: unknown = await (await context.get("/api/registration")).json();
+  if (typeof status === "object" && status !== null && Reflect.get(status, "open") === true) {
+    const created = await context.post("/api/registration", { data: ADMIN });
     expect(created.status()).toBe(201);
   }
-  const signIn = await context.post("/api/auth/sign-in/email", {
+  const signIn = await context.post("/api/auth/sign-in/username", {
     headers: { origin },
-    data: { email: ADMIN.email, password: ADMIN.password },
+    data: { username: ADMIN.username, password: ADMIN.password },
   });
   expect(signIn.ok()).toBe(true);
   // A Worker that a reused server keeps already holds the sample.
@@ -45,7 +35,7 @@ const prepare = async (port: number, stateFile: string, cookieHost: string) => {
   await context.dispose();
 };
 
-setup("Signed-in administrators with sample files on both Workers", async () => {
+setup("Signed-in owners with sample files on both Workers", async () => {
   setup.setTimeout(120_000);
   await Promise.all([
     prepare(WORKERS_PORT, STATE.workers, "127.0.0.1"),
