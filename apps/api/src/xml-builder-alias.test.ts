@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 
 // The Worker bundle takes the AWS SDK's XML utilities from the module that wrangler.jsonc aliases,
 // so that S3 answers parse without DOMParser, which workerd lacks (tests/integration/compat/http/
-// s3-workers.test.ts runs it end to end). The alias names a path in Bun's store; these tests fail
-// when an update of the lockfile moves the package, or the module stops parsing on its own.
+// s3-workers.test.ts runs it end to end). The alias names this app's copy of the package; these
+// tests fail when that copy is not the one the SDK uses, or stops parsing on its own.
 
 const API = resolve(import.meta.dirname, "..");
 const REPO = resolve(API, "../..");
@@ -41,6 +41,8 @@ describe("the Worker's alias of @aws-sdk/xml-builder", () => {
       readFileSync(resolve(dirname(target), "../package.json"), "utf8"),
     );
     expect(manifest).toMatchObject({ name: "@aws-sdk/xml-builder", version: lockedVersion() });
+    const app: unknown = JSON.parse(readFileSync(resolve(API, "package.json"), "utf8"));
+    expect(app).toMatchObject({ dependencies: { "@aws-sdk/xml-builder": lockedVersion() } });
   });
 
   it("parses XML without DOMParser", async () => {
