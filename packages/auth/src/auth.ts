@@ -28,6 +28,8 @@ export const createAuth = ({ database, secret, baseURL }: AuthOptions) =>
         enableMetadata: true,
         // Davloom shows a key's first characters so the admin can tell keys apart.
         startingCharactersConfig: { shouldStore: true, charactersLength: 10 },
+        // The services take names of up to 64 characters; Better Auth's default stops at 32.
+        maximumNameLength: 64,
       }),
     ],
   });

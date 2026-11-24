@@ -202,6 +202,11 @@ describe("the management API", () => {
     await w.setup();
     const { id } = await w.key("read-only");
     expect((await w.api("/api/keys", "POST", { name: "", access: "read-only" })).status).toBe(400);
+    // Names up to 64 characters, the services' limit, reach Better Auth and are stored.
+    const long = await w.api("/api/keys", "POST", { name: "n".repeat(64), access: "read-only" });
+    expect(long.status).toBe(201);
+    const tooLong = await w.api("/api/keys", "POST", { name: "n".repeat(65), access: "read-only" });
+    expect(tooLong.status).toBe(400);
     expect(
       (
         await w.api("/api/keys", "POST", {
