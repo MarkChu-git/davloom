@@ -98,6 +98,16 @@ describe("planImport", () => {
     );
   });
 
+  it("plans an export of 50,000 entries without running out of stack", () => {
+    const entries = [
+      e(["user:u", "backend:b"]),
+      ...Array.from({ length: 2000 }, (_, i) => e([`apikey:${i}`], ["user:u"])),
+      ...Array.from({ length: 48_000 }, () => e([], ["backend:b"])),
+    ];
+    expect(planImport(entries, [])).toBe("apply");
+    expect(planImport([...entries, e(["apikey:7"])], [])).toBe("reject");
+  });
+
   it("handles an export of thousands of entries", () => {
     const entries = Array.from({ length: 3000 }, (_, i) =>
       i % 2 === 0 ? e([`backend:${i}`]) : e([`mount:${i}`], [`backend:${i - 1}`]),

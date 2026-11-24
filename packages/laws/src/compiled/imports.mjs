@@ -180,16 +180,29 @@ function io_eff(k, run) {
 // Program
 // =======
 
-function $member(_xs_0, _n_0) {
-  if (_xs_0.$ === "Nil") {
-    return false;
-  } else {
-    const _h_0 = _xs_0["head"];
-    const _t_0 = _xs_0["tail"];
-    const _x_0 = $$Nat_is_eq(_h_0, _n_0);
-    const _x_1 = $$member(_t_0, _n_0);
-    return (_x_0 || _x_1);
+function $member_go($0, $1, $2) {
+  for (;;) {
+    {
+      const _xs_0 = $0;
+      const _n_0 = $1;
+      const _found_0 = $2;
+      if (_xs_0.$ === "Nil") {
+        return _found_0;
+      } else {
+        const _h_0 = _xs_0["head"];
+        const _t_0 = _xs_0["tail"];
+        const _x_0 = $$Nat_is_eq(_h_0, _n_0);
+        $0 = _t_0;
+        $1 = _n_0;
+        $2 = (_found_0 || _x_0);
+        continue;
+      }
+    }
   }
+}
+
+function $member(_xs_0, _n_0) {
+  return $member_go(_xs_0, _n_0, false);
 }
 
 function $all_known(_xs_0, _known_0) {
@@ -222,16 +235,30 @@ function $all_new(_xs_0, _known_0) {
   }
 }
 
-function $valid(_entries_0, _known_0) {
-  if (_entries_0.$ === "Nil") {
-    return true;
-  } else {
-    const _t_0 = _entries_0["head"];
-    const _defines_0 = _t_0["defines"];
-    const _needs_0 = _t_0["needs"];
-    const _t_1 = _entries_0["tail"];
-    return $Bool_and($$Bool_and($$all_known(_needs_0, _known_0), $$all_new(_defines_0, _known_0)), $$valid(_t_1, $$prepend(_defines_0, _known_0)));
+function $valid_go($0, $1, $2) {
+  for (;;) {
+    {
+      const _entries_0 = $0;
+      const _known_0 = $1;
+      const _ok_0 = $2;
+      if (_entries_0.$ === "Nil") {
+        return _ok_0;
+      } else {
+        const _t_0 = _entries_0["head"];
+        const _defines_0 = _t_0["defines"];
+        const _needs_0 = _t_0["needs"];
+        const _t_1 = _entries_0["tail"];
+        $0 = _t_1;
+        $1 = $$prepend(_defines_0, _known_0);
+        $2 = $$Bool_and(_ok_0, $$Bool_and($$all_known(_needs_0, _known_0), $$all_new(_defines_0, _known_0)));
+        continue;
+      }
+    }
   }
+}
+
+function $valid(_entries_0, _known_0) {
+  return $valid_go(_entries_0, _known_0, true);
 }
 
 function $decide(_ok_0, _entries_0) {
@@ -282,10 +309,12 @@ const $$Bool_not = $Bool_not;
 const $$all_new = $all_new;
 const $$Bool_and = $Bool_and;
 const $$valid = $valid;export default {
+  "member_go": run_lib((a0,a1,a2) => run_loop($member_go(a0,nat_in(a1),a2)), 3),
   "member": run_lib((a0,a1) => run_loop($member(a0,nat_in(a1))), 2),
   "all_known": run_lib((a0,a1) => run_loop($all_known(a0,a1)), 2),
   "prepend": run_lib((a0,a1) => run_loop($prepend(a0,a1)), 2),
   "all_new": run_lib((a0,a1) => run_loop($all_new(a0,a1)), 2),
+  "valid_go": run_lib((a0,a1,a2) => run_loop($valid_go(a0,a1,a2)), 3),
   "valid": run_lib((a0,a1) => run_loop($valid(a0,a1)), 2),
   "decide": run_lib((a0,a1) => run_loop($decide(a0,a1)), 2),
   "plan": run_lib((a0,a1) => run_loop($plan(a0,a1)), 2),

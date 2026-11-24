@@ -14,12 +14,16 @@ type Plan is Data:
   Apply{entries: +List<Entry>}
   Reject{}
 
-def member(xs: +List<Nat>, +n: Nat) -> Bool:
+# Whether `n` is one of `xs`, or `found` already. A tail call per key, so long lists run as a loop.
+def member_go(xs: +List<Nat>, +n: Nat, found: Bool) -> Bool:
   match xs:
     case Nil{}:
-      False{}
+      found
     case Con{h, t}:
-      Bool.or(Nat.is_eq(h, n), member(t, n))
+      member_go(t, n, Bool.or(found, Nat.is_eq(h, n)))
+
+def member(xs: +List<Nat>, +n: Nat) -> Bool:
+  member_go(xs, n, False{})
 
 # Every key of `xs` is one of `known`.
 def all_known(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
@@ -44,17 +48,20 @@ def all_new(xs: +List<Nat>, +known: +List<Nat>) -> Bool:
     case Con{+h, t}:
       Bool.and(Bool.not(member(known, h)), all_new(t, Con{h, known}))
 
-# Whether the entries can be imported, in order, into a target that holds the keys `known`.
-def valid(+entries: +List<Entry>, +known: +List<Nat>) -> Bool:
+# Whether the entries can be imported, in order, into a target that holds the keys `known`, and
+# `ok` holds. A tail call per entry, so an export of any size runs as a loop.
+def valid_go(+entries: +List<Entry>, +known: +List<Nat>, ok: Bool) -> Bool:
   match entries:
     case Nil{}:
-      True{}
+      ok
     case Con{h, t}:
       match h:
         case Entry{+defines, +needs}:
-          Bool.and(
-            Bool.and(all_known(needs, known), all_new(defines, known)),
-            valid(t, prepend(defines, known)))
+          valid_go(t, prepend(defines, known),
+            Bool.and(ok, Bool.and(all_known(needs, known), all_new(defines, known))))
+
+def valid(+entries: +List<Entry>, +known: +List<Nat>) -> Bool:
+  valid_go(entries, known, True{})
 
 def decide(ok: Bool, entries: +List<Entry>) -> Plan:
   match ok:
