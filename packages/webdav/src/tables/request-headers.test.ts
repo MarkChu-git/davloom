@@ -1,53 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { BASE, hrefs, ORIGIN, setup } from "../test/harness";
+import {
+  DEPTHS,
+  destinationsOf,
+  LOCK_BODY,
+  OVERWRITES,
+  readDepth,
+  readOverwrite,
+  TIMEOUTS,
+  WORLD,
+} from "./request-headers-cases";
 
-// Depth, Overwrite, Timeout and Destination (RFC 4918 §10.2, §10.6, §10.7, §10.3). The grammars
-// are written here: Depth = "0" / "1" / "infinity", Overwrite = "T" / "F", both compared
-// case-insensitively as ABNF strings are (RFC 5234 §2.3); TimeType = "Second-" 1*DIGIT /
-// "Infinite"; Destination = a URI reference resolved against the request URL. Each method accepts
-// the Depth values RFC 4918 gives it, and the namespace answers as the model below predicts.
+// Depth, Overwrite, Timeout and Destination (RFC 4918 §10.2, §10.6, §10.7, §10.3): the tables and
+// grammars of request-headers-cases.ts, against the handler.
 
-const LOCK_BODY =
-  '<?xml version="1.0" encoding="utf-8"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>';
-
-/** The world: /c holds x.txt and d/y.txt; /f.txt and /g.txt are files. */
+/** The world of request-headers-cases.ts, built with PUT and MKCOL. */
 const world = async () => {
   const w = setup({ maxLockTimeout: 3600 });
-  await w.mkcol("/c");
-  await w.put("/c/x.txt", "x");
-  await w.mkcol("/c/d");
-  await w.put("/c/d/y.txt", "y");
-  await w.put("/f.txt", "f-content");
-  await w.put("/g.txt", "g-content");
+  for (const [path, content] of Object.entries(WORLD)) {
+    if (path.endsWith("/")) await w.mkcol(path.slice(0, -1));
+    else await w.put(path, content);
+  }
   return w;
 };
-
-type DepthValue = "0" | "1" | "infinity" | null;
-
-/** RFC 4918 §10.2: null when the field is absent, "bad" when it is not one of the three values. */
-const readDepth = (value: string | undefined): DepthValue | "bad" => {
-  if (value === undefined) return null;
-  const v = value.trim().toLowerCase();
-  return v === "0" || v === "1" || v === "infinity" ? v : "bad";
-};
-
-const DEPTHS: readonly (string | undefined)[] = [
-  undefined,
-  "0",
-  "1",
-  "infinity",
-  "Infinity",
-  "INFINITY",
-  " 1 ",
-  "2",
-  "-1",
-  "01",
-  "1.0",
-  "one",
-  "0, 1",
-  "",
-  "infinite",
-];
 
 const withDepth = (depth: string | undefined, headers: Record<string, string> = {}) =>
   depth === undefined ? headers : { ...headers, depth };
@@ -135,28 +110,6 @@ describe("Depth", () => {
   });
 });
 
-const OVERWRITES: readonly (string | undefined)[] = [
-  undefined,
-  "T",
-  "F",
-  "t",
-  "f",
-  " F ",
-  "X",
-  "TRUE",
-  "false",
-  "",
-  "T, F",
-  "0",
-];
-
-/** RFC 4918 §10.6: true by default, "bad" when not T or F. */
-const readOverwrite = (value: string | undefined): boolean | "bad" => {
-  if (value === undefined) return true;
-  const v = value.trim().toUpperCase();
-  return v === "T" ? true : v === "F" ? false : "bad";
-};
-
 describe("Overwrite", () => {
   it.each(
     (["COPY", "MOVE"] as const).flatMap((method) =>
@@ -186,29 +139,6 @@ describe("Overwrite", () => {
   });
 });
 
-const TIMEOUTS: readonly (readonly [value: string | undefined, requested: number | null])[] = [
-  [undefined, null],
-  ["Second-60", 60],
-  ["Second-1", 1],
-  ["second-60", 60],
-  ["SECOND-120", 120],
-  ["Second-3600", 3600],
-  ["Second-3601", 3601],
-  ["Second-4100000000", 4100000000],
-  ["Infinite", null],
-  ["infinite", null],
-  ["Infinite, Second-60", null],
-  ["Second-60, Infinite", 60],
-  ["Second-0", 0],
-  // Not a TimeType: the server chooses.
-  ["Second--5", null],
-  ["Second-abc", null],
-  ["Minutes-5", null],
-  ["", null],
-  ["Second- 60", null],
-  ["60", null],
-];
-
 describe("Timeout", () => {
   // §10.7: the server need not honor the request, but never grants more than it allows (here
   // 3600 seconds), never a lock that is already expired, and never more than a finite request.
@@ -228,48 +158,10 @@ describe("Timeout", () => {
   });
 });
 
-const DESTINATIONS: readonly (readonly [
-  label: string,
-  value: string | undefined,
-  statuses: number[],
-  created: string | null,
-])[] = [
-  ["an absolute URL", `${ORIGIN}${BASE}/new.txt`, [201], "new.txt"],
-  ["an absolute path", `${BASE}/new.txt`, [201], "new.txt"],
-  ["a relative reference", "new.txt", [201], "new.txt"],
-  ["a network-path reference", `//dav.example${BASE}/new.txt`, [201], "new.txt"],
-  ["an upper-case host", `https://DAV.EXAMPLE${BASE}/new.txt`, [201], "new.txt"],
-  ["dot segments", `${ORIGIN}${BASE}/c/../new.txt`, [201], "new.txt"],
-  ["a query", `${ORIGIN}${BASE}/new.txt?x=1`, [201], "new.txt"],
-  ["a fragment", `${ORIGIN}${BASE}/new.txt#top`, [201], "new.txt"],
-  ["an encoded space", `${ORIGIN}${BASE}/new%20name.txt`, [201], "new name.txt"],
-  ["encoded UTF-8", `${ORIGIN}${BASE}/%C3%A9t%C3%A9.txt`, [201], "été.txt"],
-  ["a collection to replace", `${ORIGIN}${BASE}/c/`, [204], "c"],
-  ["a file to replace", `${ORIGIN}${BASE}/g.txt`, [204], "g.txt"],
-  // §9.8.5: another server is 502; outside the namespace is not this server's to write.
-  ["another host", `https://other.example${BASE}/new.txt`, [502], null],
-  ["another port", `https://dav.example:8443${BASE}/new.txt`, [502], null],
-  ["another host by network path", `//other.example${BASE}/new.txt`, [502], null],
-  ["another scheme", `http://dav.example${BASE}/new.txt`, [201, 502], null],
-  ["a path outside the namespace", `${ORIGIN}/other/new.txt`, [502, 403], null],
-  ["a path that only starts like the namespace", `${ORIGIN}${BASE}x/new.txt`, [502, 403], null],
-  ["the source itself", `${ORIGIN}${BASE}/f.txt`, [403], null],
-  ["the namespace root", `${ORIGIN}${BASE}/`, [403], null],
-  // Below the source is inside it (403), and its parent is a file (409): either refuses it.
-  ["below the source file", `${ORIGIN}${BASE}/f.txt/new.txt`, [403, 409], null],
-  ["a missing parent", `${ORIGIN}${BASE}/missing/new.txt`, [409], null],
-  ["an invalid escape", `${ORIGIN}${BASE}/%zz`, [400], null],
-  ["an encoded NUL", `${ORIGIN}${BASE}/a%00b`, [400], null],
-  ["an encoded slash in a name", `${ORIGIN}${BASE}/a%2Fb`, [400], null],
-  ["an unparsable URL", "http://[", [400], null],
-  ["a URN", "urn:example:x", [400, 502], null],
-  ["no Destination", undefined, [400], null],
-];
-
 describe("Destination", () => {
   it.each(
     (["COPY", "MOVE"] as const).flatMap((method) =>
-      DESTINATIONS.map(
+      destinationsOf({ origin: ORIGIN, namespace: BASE, root: BASE }).map(
         ([label, value, statuses, created]) => [method, label, value, statuses, created] as const,
       ),
     ),
