@@ -189,10 +189,15 @@ jobs:
         if: matrix.suite == 'brand'
         working-directory: tests/integration/compat
         run: bunx --bun playwright install chromium
-      # The real WebDAV clients that http/clients.test.ts drives against the Worker.
-      - name: Install litmus and rclone
+      # The real WebDAV clients that http/clients.test.ts, http/cadaver.test.ts and
+      # http/davfs2.test.ts drive against both deployments. davfs2 mounts through the runner's
+      # /dev/fuse with passwordless sudo; noninteractive keeps its package from asking whether
+      # unprivileged users may mount.
+      - name: Install litmus, rclone, cadaver and davfs2
         if: startsWith(matrix.suite, 'http-')
-        run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo -E apt-get update -q && sudo -E apt-get install -y -q litmus rclone cadaver davfs2
       # From the repository root, where bunfig.toml starts on Bun the tools whose launchers name
       # Node; `bun run` inside a package directory does not.
       - name: Run the ${{ matrix.suite }} suite
