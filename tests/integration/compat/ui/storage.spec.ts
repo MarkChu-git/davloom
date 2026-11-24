@@ -1,5 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
-import { cardWith, filesAt, listed, onScreen, shown, withUnavailableBackend } from "./helpers";
+import {
+  cardWith,
+  filesAt,
+  listed,
+  onScreen,
+  openList,
+  shown,
+  withUnavailableBackend,
+} from "./helpers";
 import { createMount, dav, scratchFolder, unique } from "./instances";
 
 // The Storage & Mounts scenarios about the backends, adding, renaming and removing a mount, on the
@@ -220,6 +228,9 @@ test("Moving a mount: the dialog offers the other backends and a folder, says to
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText(`Move /${name}`);
   await expect(dialog).toContainText("Copy the files first");
+  // Other tests may have added backends to the shared instance, so pick ours by name.
+  await openList(page, "combobox", "Backend");
+  await page.getByRole("option", { name: /Second/ }).click();
   await dialog.getByLabel("Folder in the backend").fill("archive/2026");
   await dialog.getByRole("button", { name: "Move mount" }).click();
   await shown(onScreen(page, "No folder of this name is in the backend."));
