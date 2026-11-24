@@ -152,3 +152,19 @@ def decide_move(
       Root{}
     case False{}:
       decide_copy(source, inside, dest_is_root, dest, dest_parent, overwrite)
+
+# Whether a copy or move of `count` entries stays within the `limit` that a backend handles in
+# one request. A request over the limit executes nothing.
+def within_limit(+count: Nat, +limit: Nat) -> Bool:
+  Nat.is_le(count, limit)
+
+# Whether a move resumes rather than starts: an earlier move of the same source to the same
+# destination stopped while it removed the source, after copying everything, so the destination
+# is kept and only the rest of the source is copied over it and removed. `journal_matches` holds
+# when the source records that move.
+def resume_move(journal_matches: Bool, dest: Node) -> Bool:
+  match journal_matches:
+    case True{}:
+      is_folder(dest)
+    case False{}:
+      False{}

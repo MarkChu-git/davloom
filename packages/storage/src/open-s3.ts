@@ -18,6 +18,8 @@ export const openS3Backend = (
   record: BackendRecord,
   unseal: (backendId: string, sealed: string) => Promise<string | null>,
   properties: PropertyStore,
+  /** The most objects one copy or move may touch; see ObjectStoreOptions.maxEntries. */
+  maxEntries?: number,
 ): StorageBackend => {
   let opened: Promise<StorageBackend | null> | undefined;
   const open = () => {
@@ -31,6 +33,7 @@ export const openS3Backend = (
         driver: createS3Driver({ client, bucket: checked.config.bucket }),
         prefix: checked.config.prefix,
         properties,
+        ...(maxEntries === undefined ? {} : { maxEntries }),
       });
     })();
     return opened;

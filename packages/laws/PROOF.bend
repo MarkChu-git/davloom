@@ -3240,6 +3240,55 @@ def L.move_decides_in_order(source_root, source, inside, dest_root, dest, parent
                             case True{}:
                               {==}
 
+def L.limit_exact(count, limit):
+  match count limit:
+    case 0n 0n:
+      {==}
+    case 0n 1n+l:
+      {==}
+    case 1n+c 0n:
+      {==}
+    case 1n+c 1n+l:
+      L.limit_exact(c, l)
+
+def L.resume_into_collection(journal, dest):
+  match journal:
+    case False{}:
+      match dest:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+    case True{}:
+      match dest:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+
+def L.resume_needs_journal(journal, dest):
+  match journal:
+    case False{}:
+      match dest:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+    case True{}:
+      match dest:
+        case T.Absent{}:
+          {==}
+        case T.File{}:
+          {==}
+        case T.Folder{}:
+          {==}
+
 def L.authorize_matches_spec(a, m, target, dest):
   match a:
     case P.ReadOnly{}:

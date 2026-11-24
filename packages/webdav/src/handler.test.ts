@@ -586,3 +586,28 @@ describe("other methods", () => {
     ).toBe(403);
   });
 });
+
+describe("the synchronous limit", () => {
+  it.each(["COPY", "MOVE"])(
+    "answers 403 with an explanation when %s is over the limit",
+    async (method) => {
+      const base = setup();
+      await base.mkcol("/big");
+      const storage = {
+        ...base.storage,
+        copy: () => Promise.resolve({ ok: false as const, failure: "too-many" as const }),
+        move: () => Promise.resolve({ ok: false as const, failure: "too-many" as const }),
+      };
+      const { dav } = setup({ storage });
+      await dav("MKCOL", "/big");
+      const response = await dav(method, "/big", {
+        headers: { destination: `${ORIGIN}${BASE}/copy` },
+      });
+      expect(response.status).toBe(403);
+      expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+      expect(await response.text()).toMatch(
+        /Nothing was changed\. Copy or move the folder in parts\./,
+      );
+    },
+  );
+});

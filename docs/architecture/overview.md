@@ -46,6 +46,19 @@ with scenario tables and random sequences of operations.
   without a marker is still a collection. Moves copy first and delete after, so a failure never loses
   a file. Dead properties live in the `dav_properties` table.
 
+A copy or move touches at most a fixed number of entries in one request: 1,000 for a Durable Objects
+copy (a move there renames one row, so it has none), 400 for R2, 40 for S3 on Workers, whose
+requests count toward the Free plan's 50 subrequests, and 1,000 for S3 on Bun. A request over the
+limit changes nothing and answers 403 with a short explanation (the law `limit_exact`).
+
+An object-store move records its destination on the source path, as a property in Davloom's own
+namespace that clients neither see nor set, before it removes the source, and drops the record
+once the source is gone. If the removal stops part-way, every file is in the destination and some
+are still in the source. A client's retry of the move, with `Overwrite: T` as clients send by
+default, finds the record and resumes: it copies what is left over the destination and removes the
+source, instead of replacing the destination and the files already moved (the laws
+`resume_into_collection` and `resume_needs_journal`).
+
 ## Proven decisions
 
 `packages/laws` holds the Bend 2 modules, `LAWS.bend` with the laws, and `PROOF.bend` with their

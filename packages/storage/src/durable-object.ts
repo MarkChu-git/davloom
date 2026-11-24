@@ -22,6 +22,7 @@ import {
   decideCopy,
   decideMkcol,
   decideMove,
+  withinLimit,
   decideRemove,
   decideWrite,
   type Node,
@@ -485,6 +486,12 @@ export class StorageObject extends DurableObject {
     });
   }
 
+  /**
+   * The most entries one copy may write (PRD §5): 1,000 entries write about 7,000 rows, 7% of the
+   * Free plan's daily quota. A move only renames one row, so it has no limit.
+   */
+  static readonly MAX_COPY_ENTRIES = 1000;
+
   private transfer(
     from: Path,
     to: Path,
@@ -510,6 +517,12 @@ export class StorageObject extends DurableObject {
       const outcome = move ? decideMove(facts) : decideCopy(facts);
       if (outcome.kind !== "proceed" || !source.row)
         return fail(failureOf(outcome.kind === "proceed" ? "root" : outcome.kind));
+      const rows = move
+        ? []
+        : shallow
+          ? [{ ...source.row, depth: 0 }]
+          : this.subtree(source.row.id);
+      if (!withinLimit(rows.length, StorageObject.MAX_COPY_ENTRIES)) return fail("too-many");
       if (destination.row) this.deleteTree(destination.row.id);
       const parentId = this.idOf(destinationParent);
       const name = to.at(-1) ?? "";
@@ -523,7 +536,6 @@ export class StorageObject extends DurableObject {
         );
         this.touch(source.row.parent, time);
       } else {
-        const rows = shallow ? [{ ...source.row, depth: 0 }] : this.subtree(source.row.id);
         const ids = new Map<number, number>();
         for (const row of rows) {
           const newParent = row.depth === 0 ? parentId : (ids.get(row.parent) ?? parentId);

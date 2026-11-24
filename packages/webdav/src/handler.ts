@@ -99,6 +99,7 @@ const FAILURE_STATUS: Record<StorageFailure, number> = {
   unavailable: 503,
   "hidden-objects": 409,
   "cross-backend": 502,
+  "too-many": 403,
 };
 
 const statusLine = (status: number) => `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? ""}`.trim();
@@ -294,7 +295,17 @@ const preconditionResponse = (verdict: "failed" | "not-modified", entry: Entry |
           : undefined,
       );
 
-const failure = (reason: StorageFailure) => empty(FAILURE_STATUS[reason]);
+/** Why a copy or move over the synchronous limit was refused, for the person behind the client. */
+const TOO_MANY =
+  "This copy or move involves more entries than this storage handles in one request. Nothing was changed. Copy or move the folder in parts.";
+
+const failure = (reason: StorageFailure) =>
+  reason === "too-many"
+    ? new Response(TOO_MANY, {
+        status: FAILURE_STATUS[reason],
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      })
+    : empty(FAILURE_STATUS[reason]);
 
 export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   const { basePath, storage, locks } = options;

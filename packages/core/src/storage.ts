@@ -45,7 +45,12 @@ export type StorageFailure =
    */
   | "hidden-objects"
   /** A copy or move between two backends, which the server does not perform. */
-  | "cross-backend";
+  | "cross-backend"
+  /**
+   * A copy or move of more entries than the backend handles in one request (PRD §5). It changed
+   * nothing; the client can copy or move the collection in parts.
+   */
+  | "too-many";
 
 export type StorageResult<T> =
   | { readonly ok: true; readonly value: T }

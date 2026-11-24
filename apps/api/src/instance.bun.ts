@@ -28,6 +28,12 @@ import { createSqlLockStore } from "./locks";
 
 const MIN_SECRET_BYTES = 32;
 
+/**
+ * The most objects one copy or move touches (PRD §5). Bun has no subrequest limit; 1,000 keeps a
+ * move's removal of its source to one batch delete.
+ */
+const S3_MAX_ENTRIES = 1000;
+
 export type BunEnv = Readonly<Record<string, string | undefined>>;
 
 /** The S3-compatible backend the first-run setup creates, from DAVLOOM_S3_* variables, or null. */
@@ -75,7 +81,7 @@ export const bunInstance =
       Layer.succeed(StorageOpener, {
         open: (backend) =>
           backend.kind === "s3"
-            ? openS3Backend(backend, unseal, createSqlPropertyStore(db, backend.id))
+            ? openS3Backend(backend, unseal, createSqlPropertyStore(db, backend.id), S3_MAX_ENTRIES)
             : null,
       }),
       Layer.succeed(InstanceConfig, {
