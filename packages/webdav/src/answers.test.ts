@@ -299,7 +299,8 @@ describe("PROPFIND values", () => {
   });
 
   it("includes only DAV: quota properties, once each, on collections", async () => {
-    const w = await world();
+    // A capacity, so that quota-available-bytes has a value too.
+    const w = await world({ storageOptions: { capacity: 1000 } });
     const response = await w.dav("PROPFIND", "/c", {
       headers: { depth: "1" },
       body: propfindBody(
@@ -378,6 +379,38 @@ describe("bodies past the limits", () => {
     const w = await world();
     const response = await w.dav(method, "/c/f.txt", { headers: { depth: "0" }, body });
     expect(response.status).toBe(413);
+  });
+});
+
+describe("what a lock does not change", () => {
+  it.each([
+    // RFC 4918 §9.7.2 and §9.3.1: the collection exists, whatever is locked inside it.
+    ["PUT onto a collection with a locked member", "PUT", "/c", "/c/f.txt", 405],
+    ["PUT onto the namespace root while it is locked", "PUT", "/", "/", 405],
+  ] as const)("%s is 405 with Allow", async (_label, method, path, locked, status) => {
+    const w = await world();
+    expect((await lock(w, locked, "0")).status).toBe(200);
+    const response = await w.dav(method, path, { body: method === "PUT" ? "x" : undefined });
+    expect(response.status).toBe(status);
+    expect(response.headers.get("allow")).toContain("PROPFIND");
+  });
+
+  it("refuses a PUT past the size limit with 413 before it looks at locks", async () => {
+    const w = await world({ maxFileSize: 4 });
+    await lock(w, "/out/h.txt", "0");
+    const response = await w.dav("PUT", "/out/h.txt", {
+      headers: { "content-length": "10" },
+      body: "0123456789",
+    });
+    expect(response.status).toBe(413);
+  });
+
+  it("fails a GET whose If header is false with 412", async () => {
+    const w = await world();
+    const response = await w.dav("GET", "/c/f.txt", {
+      headers: { if: "(<urn:uuid:00000000-0000-4000-8000-000000000000>)" },
+    });
+    expect(response.status).toBe(412);
   });
 });
 
