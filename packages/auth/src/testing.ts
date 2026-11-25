@@ -4,8 +4,10 @@
 const BASE32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 const fromBase32 = (text: string): Uint8Array<ArrayBuffer> => {
+  let end = text.length;
+  while (end > 0 && text[end - 1] === "=") end -= 1;
   const bits = text
-    .replace(/=+$/, "")
+    .slice(0, end)
     .toUpperCase()
     .split("")
     .map((c) => BASE32.indexOf(c).toString(2).padStart(5, "0"))

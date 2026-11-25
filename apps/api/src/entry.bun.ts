@@ -15,8 +15,9 @@ const serveDashboard = createDashboardHandler(
 
 const trusted = parseTrustedProxies(process.env.DAVLOOM_TRUSTED_PROXIES);
 if (!trusted.ok) {
+  // The count, not the entries: a value read from the environment stays out of the log.
   console.error(
-    `DAVLOOM_TRUSTED_PROXIES holds entries that are no IP address or CIDR range: ${trusted.invalid.join(", ")}`,
+    `DAVLOOM_TRUSTED_PROXIES holds ${trusted.invalid.length} entries that are no IP address or CIDR range.`,
   );
   process.exit(1);
 }
