@@ -147,4 +147,5 @@ it.
 
 ## License
 
-Not yet chosen.
+[GNU Affero General Public License, version 3 only](LICENSE) (`AGPL-3.0-only`). If you change
+Davloom and let other people use it over a network, you must offer them the source of your version.
