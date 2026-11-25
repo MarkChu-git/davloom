@@ -165,6 +165,13 @@ describe("answers", () => {
     expect((await fetch(`${base}/fails`)).status).toBe(500);
   });
 
+  it("answers 500 to a file that is not there and keeps serving", async () => {
+    handle = () => new Response(Bun.file(`/nonexistent-${crypto.randomUUID()}/index.html`));
+    expect((await fetch(`${base}/missing-file`)).status).toBe(500);
+    handle = () => new Response("still here");
+    expect(await (await fetch(`${base}/after`)).text()).toBe("still here");
+  });
+
   it("breaks the connection when the body fails after the status line", async () => {
     let sent = 0;
     handle = () =>

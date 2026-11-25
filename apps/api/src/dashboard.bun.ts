@@ -58,14 +58,32 @@ const serveFile = async (request: Request, path: string, cacheControl: string) =
   return new Response(await gzipOf(path, file), { headers });
 };
 
+/** The answer to a Dashboard path while the Dashboard has not been built. */
+const notBuilt = () =>
+  new Response(
+    '<!doctype html><html lang="en"><meta charset="utf-8"><title>Davloom</title>' +
+      "<h1>The Dashboard has not been built</h1>" +
+      "<p>WebDAV at /dav/ and the API at /api/ work. Build the Dashboard with " +
+      "<code>bun run --filter @davloom/web build</code>, or point DASHBOARD_DIRECTORY at a build.</p>",
+    {
+      status: 503,
+      headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+    },
+  );
+
 /**
  * Serves the Dashboard's production build from disk, the way Workers static assets do: a file if one
  * exists, a page's prerendered HTML file (`/files` from files.html), and otherwise index.html so
  * that the client-side router can handle the path.
  */
-export const createDashboardHandler = (directory: string) => {
+export const createDashboardHandler = (
+  directory: string,
+  warn: (message: string) => void = console.warn,
+) => {
   const root = resolve(directory);
   const indexFile = join(root, "index.html");
+  // Said once, not on every request: the API and WebDAV run without the Dashboard.
+  let warned = false;
 
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
@@ -74,6 +92,17 @@ export const createDashboardHandler = (directory: string) => {
     }
     if (!READ_METHODS.has(request.method)) {
       return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+    }
+    // Without index.html there is no build to serve, and a file that is not there fails only once
+    // its answer is on the way.
+    if (!(await Bun.file(indexFile).exists())) {
+      if (!warned) {
+        warned = true;
+        warn(
+          `The Dashboard has not been built: ${indexFile} is missing, so its pages answer 503. WebDAV and the API work.`,
+        );
+      }
+      return notBuilt();
     }
 
     let decodedPath: string;
