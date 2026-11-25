@@ -13,12 +13,13 @@ const API_CONFIG = resolve(ROOT, "apps/api/wrangler.jsonc");
 
 type Config = Record<string, unknown>;
 
-const read = (path: string): Config => {
-  const parsed: unknown = Bun.JSONC.parse(readFileSync(path, "utf8"));
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`${path} holds no object`);
-  }
-  return parsed as Config;
+/** An object or an array, whose members are read by key or index. */
+const isRecord = (value: unknown): value is Config => typeof value === "object" && value !== null;
+
+const read = (path: string, parse: (text: string) => unknown = Bun.JSONC.parse): Config => {
+  const parsed = parse(readFileSync(path, "utf8"));
+  if (!isRecord(parsed)) throw new Error(`${path} holds no object`);
+  return parsed;
 };
 
 const root = read(ROOT_CONFIG);
@@ -26,13 +27,13 @@ const api = read(API_CONFIG);
 
 /** The value at a path of keys and array indexes. */
 const at = (config: Config, path: readonly (string | number)[]): unknown =>
-  path.reduce<unknown>(
-    (value, key) =>
-      typeof value === "object" && value !== null
-        ? (value as Record<string | number, unknown>)[key]
-        : undefined,
-    config,
-  );
+  path.reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), config);
+
+/** The keys of the object at a path, sorted. */
+const keysAt = (config: Config, path: readonly (string | number)[]) => {
+  const value = at(config, path);
+  return isRecord(value) ? Object.keys(value).toSorted() : [];
+};
 
 /** Drops the keys allowed to differ, or that hold paths, so that what is left must be equal. */
 const without = (value: unknown, keys: readonly string[]): unknown => {
@@ -84,9 +85,8 @@ describe("the root wrangler.jsonc", () => {
   });
 
   it("aliases the same modules", () => {
-    expect(Object.keys(root.alias as object).toSorted()).toEqual(
-      Object.keys(api.alias as object).toSorted(),
-    );
+    expect(keysAt(root, ["alias"])).toEqual(keysAt(api, ["alias"]));
+    expect(keysAt(root, ["alias"])).not.toEqual([]);
   });
 
   it.each(PATHS)("points its %s at the same file", (_name, path, mustExist) => {
@@ -103,10 +103,7 @@ describe("the root wrangler.jsonc", () => {
 });
 
 describe("the button's package.json and secrets", () => {
-  const manifest = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")) as {
-    scripts: Record<string, string>;
-    cloudflare?: { bindings?: Record<string, { description?: string }> };
-  };
+  const manifest = read(resolve(ROOT, "package.json"), JSON.parse);
   const examples = new Map(
     readFileSync(resolve(ROOT, ".dev.vars.example"), "utf8")
       .split("\n")
@@ -126,13 +123,13 @@ describe("the button's package.json and secrets", () => {
     ["migrates before it deploys", "deploy", "bun run db:migrations:apply && "],
     ["deploys with the root config", "deploy", "wrangler deploy --config wrangler.jsonc"],
   ])("deploy %s", (_name, script, text) => {
-    expect(manifest.scripts[script]).toContain(text);
+    expect(at(manifest, ["scripts", script])).toContain(text);
   });
 
   it("asks for the instance secret and describes every secret it asks for", () => {
     expect(secrets).toContain("DAVLOOM_SECRET");
     for (const name of secrets) {
-      expect(manifest.cloudflare?.bindings?.[name]?.description).toBeTruthy();
+      expect(at(manifest, ["cloudflare", "bindings", name, "description"])).toBeTruthy();
     }
   });
 

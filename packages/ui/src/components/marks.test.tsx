@@ -7,6 +7,10 @@ import { davloomTheme } from "../themes/davloom.js";
 
 afterEach(cleanup);
 
+/** The class of the element that sizes a mark: Icon's box, hidden from assistive technology. */
+const box = (svg: Element | undefined) =>
+  svg?.closest("[aria-hidden='true']")?.getAttribute("class");
+
 const themed = (mode: "light" | "dark", ui: ReactNode) =>
   render(
     <Theme theme={davloomTheme} mode={mode}>
@@ -42,8 +46,6 @@ describe("LoomMark", () => {
     );
     const [small, large] = [...container.querySelectorAll("svg")];
     expect(large?.getAttribute("viewBox")).toBe("0 0 32 32");
-    const box = (svg: Element | undefined) =>
-      svg?.closest("[aria-hidden='true']")?.getAttribute("class");
     expect(box(large)).toBeTruthy();
     expect(box(large)).not.toBe(box(small));
   });
