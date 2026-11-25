@@ -27,7 +27,7 @@ bun -e 'import { openApiDocument } from "./src/index.ts"; console.log(JSON.strin
 
 ## Errors
 
-Every refusal answers JSON of the shape `{ "error": { "code": "…", "message": "…", "issues": [ … ] } }`, where only `code` is always present. The code is machine-readable and stable.
+Every refusal answers JSON of the shape `{ "error": { "code": "…", "message": "…", "reason": "…", "issues": [ … ] } }`, where only `code` is always present. The code is machine-readable and stable. `message` explains the refusal in English where the server has words for it. `reason`, also machine-readable and stable, says why `username_refused`, `password_refused` or `email_refused` refused the field: `too_short`, `too_long`, `compromised` (the password appears in known breaches), `taken`, `invalid_characters` (a username with characters other than letters, digits, `_` and `.`) or `invalid`. A client translates the code and the reason, and falls back to `message` or its own words for a reason it does not know.
 
 | Status | Code                    | When                                                                                                                                                                                                  |
 | ------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

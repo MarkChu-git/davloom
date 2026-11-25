@@ -1,19 +1,10 @@
-import { CloudflareAdapter } from "elysia/adapter/cloudflare-worker";
 import { env } from "cloudflare:workers";
-import { configuredOrigin } from "@davloom/auth";
-import { createApp } from "./app";
-import { withFixedLength } from "./fixed-length.workers";
-import { workersInstance } from "./instance.workers";
+import { createWorker } from "./worker.workers";
 
 export { StorageObject } from "@davloom/storage/durable-object";
 
-// compile() has to run at global scope: Workers forbid generating code while handling a request.
-const app = createApp({
-  adapter: CloudflareAdapter,
-  instance: workersInstance,
-  publicOrigin: configuredOrigin(env.DAVLOOM_URL),
-}).compile();
-
-export default {
-  fetch: async (request: Request) => withFixedLength(request, await app.fetch(request)),
-};
+// Workers static assets serve the Dashboard. The Worker runs first for /api, /dav and the root
+// path (wrangler.jsonc), and hands GET and HEAD of the root back to the assets.
+export default createWorker((request) =>
+  env.ASSETS ? env.ASSETS.fetch(request) : new Response(null, { status: 404 }),
+);

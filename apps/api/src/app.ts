@@ -69,7 +69,7 @@ import {
 } from "@davloom/core";
 import { buildInfo } from "./build-info";
 import { crossSiteRefusal } from "./same-origin";
-import { authorizeScoped, verificationLevel, type ActionEffect } from "@davloom/laws";
+import { authorizeScoped, rootAnswer, verificationLevel, type ActionEffect } from "@davloom/laws";
 import { createWebDavHandler, type LockStore, type WebDavHandler } from "@davloom/webdav";
 import { Cause, Effect, Redacted, type Exit, type Layer, type Schema } from "effect";
 import { Elysia, type ElysiaAdapter } from "elysia";
@@ -149,6 +149,11 @@ export interface AppOptions {
    * that carry their own credential rather than a session cookie.
    */
   readonly sameOriginExempt?: (pathname: string) => boolean;
+  /**
+   * Serves the Dashboard's page at the root path `/` to GET and HEAD: Workers static assets or
+   * the Bun entry's files. Without it, GET / answers 404.
+   */
+  readonly dashboard?: (request: Request) => Response | Promise<Response>;
 }
 
 // PRD §12: WebDAV is exposed over HTTPS only. API Keys and session cookies travel with every
@@ -169,6 +174,17 @@ export const isInsecure = (request: Request): boolean => {
   }
   if (url.protocol !== "http:" || LOOPBACK.test(url.hostname)) return false;
   return request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() !== "https";
+};
+
+/**
+ * The origin WebDAV clients are sent to: the configured public origin (DAVLOOM_URL), or else the
+ * one the request was sent to, on HTTPS when a proxy in front says the client used it.
+ */
+export const davOrigin = (request: Request, publicOrigin: string | undefined): string => {
+  if (publicOrigin !== undefined) return publicOrigin;
+  const url = new URL(request.url);
+  const forwarded = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  return forwarded === "https" && url.protocol === "http:" ? `https://${url.host}` : url.origin;
 };
 
 const HTTPS_ONLY = () =>
@@ -310,6 +326,7 @@ export const createApp = ({
   publicOrigin,
   classify = () => undefined,
   sameOriginExempt = () => false,
+  dashboard,
 }: AppOptions = {}) => {
   let built:
     | {
@@ -526,6 +543,40 @@ export const createApp = ({
       await Effect.runPromise(Effect.provide(audit(request, entry), current.instance.layer));
     }
     return response;
+  };
+
+  /**
+   * The root path `/`: the Dashboard to GET and HEAD, and a 308 to /dav/ for every other WebDAV
+   * method (laws root_dashboard_exact, root_to_dav_exact). Finder's Connect to Server, given the
+   * instance's bare address, sends OPTIONS and then PROPFIND to `/` and follows any 3xx of either
+   * to the absolute URL its Location names, which becomes its base. 308 also keeps the method and
+   * body for clients that follow by RFC 9110, as fetch and curl -L do. /dav/ asks for credentials
+   * as it always does.
+   */
+  const root = async ({ request }: { request: Request }) => {
+    switch (rootAnswer(request.method)) {
+      case "dashboard": {
+        if (!dashboard) return new Response(null, { status: 404 });
+        const page = await dashboard(request);
+        if (request.method !== "HEAD") return page;
+        // HEAD has a route of its own: Elysia would answer it by setting the length of the GET
+        // answer on that answer's headers, which Workers static assets keep immutable. The
+        // headers GET would send, measured here when the Dashboard names no length.
+        const headers = new Headers(page.headers);
+        if (page.body !== null && !headers.has("content-length")) {
+          headers.set("content-length", String((await page.arrayBuffer()).byteLength));
+        }
+        return new Response(null, { status: page.status, headers });
+      }
+      case "to-dav":
+        // Finder takes only an absolute Location, and over HTTPS only an https:// one.
+        return new Response(null, {
+          status: 308,
+          headers: { location: new URL("/dav/", davOrigin(request, publicOrigin)).href },
+        });
+      default:
+        return new Response(null, { status: 405, headers: { allow: "GET, HEAD" } });
+    }
   };
 
   // --- Operations for the Overview ----------------------------------------------------------
@@ -876,6 +927,8 @@ export const createApp = ({
           })),
         ),
       )
+      .head("/", root, { parse: "none" })
+      .all("/", root, { parse: "none" })
       // Elysia must leave the body unread and the path undecoded: the handler gets the raw request.
       .all("/dav", countedWebdav, { parse: "none" })
       .all("/dav/*", countedWebdav, { parse: "none" })

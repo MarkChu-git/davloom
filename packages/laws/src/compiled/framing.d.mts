@@ -14,6 +14,9 @@ export type BendUrl = Ctor<
   }
 >;
 
+export type BendRootMethod = Ctor<"RRead"> | Ctor<"RDav"> | Ctor<"ROther">;
+export type BendRootAnswer = Ctor<"ADashboard"> | Ctor<"AToDav"> | Ctor<"ARefuse">;
+
 declare const module: {
   measured_length(given: boolean, ended: boolean, kind: BendStatusKind): boolean;
   fixed_length(
@@ -24,5 +27,6 @@ declare const module: {
     numeric: boolean,
   ): boolean;
   url_of(form: BendForm, hostOk: boolean): BendUrl;
+  root_answer(method: BendRootMethod): BendRootAnswer;
 };
 export default module;

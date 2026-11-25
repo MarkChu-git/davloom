@@ -269,13 +269,23 @@ describe("registration", () => {
     expect(await body(again)).toEqual({ error: { code: "registration_closed" } });
   });
 
-  it("gives the reason Better Auth refused a password", async () => {
-    const w = world();
-    const response = await w.api("/api/registration", "POST", { ...OWNER, password: "short" });
-    expect(await body(response)).toEqual({
-      error: { code: "password_refused", message: expect.stringMatching(/short/i) },
-    });
-  });
+  it.each([
+    [{ password: "short" }, "password_refused", "too_short", /short/i],
+    [{ password: "x".repeat(129) }, "password_refused", "too_long", /long/i],
+    [{ username: "a" }, "username_refused", "too_short", /short/i],
+    [{ username: "u".repeat(31) }, "username_refused", "too_long", /long/i],
+    [{ username: "with space" }, "username_refused", "invalid_characters", /invalid/i],
+  ])(
+    "gives the reason Better Auth refused %j as %s, %s",
+    async (overrides, code, reason, message) => {
+      const w = world();
+      const response = await w.api("/api/registration", "POST", { ...OWNER, ...overrides });
+      expect(response.status).toBe(400);
+      expect(await body(response)).toEqual({
+        error: { code, message: expect.stringMatching(message), reason },
+      });
+    },
+  );
 
   it("lets one of two registrations at once win", async () => {
     const w = world();
@@ -362,7 +372,12 @@ describe("step-up verification", () => {
   });
 
   it("leaves the Dashboard's pages outside /api/ to the route that serves them", async () => {
-    const app = createApp().all("/*", () => new Response("<html>"), { parse: "none" });
+    // The root is the app's own route, which hands GET to the Dashboard it is given.
+    const app = createApp({ dashboard: () => new Response("<html>") }).all(
+      "/*",
+      () => new Response("<html>"),
+      { parse: "none" },
+    );
     for (const path of ["/", "/settings", "/sign-in"]) {
       const response = await app.handle(new Request(`http://localhost${path}`));
       expect(response.status, path).toBe(200);

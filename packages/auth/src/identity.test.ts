@@ -119,18 +119,22 @@ describe("registerOwner", () => {
   });
 
   it.each([
-    ["password", { password: "short" }, /short/i],
-    ["password", { password: "x".repeat(129) }, /long/i],
-    ["username", { username: "a" }, /short/i],
-    ["username", { username: "no spaces here" }, /invalid/i],
-    ["email", { email: "not an email" }, /email/i],
-  ] as const)("refuses a bad %s with Better Auth's reason", async (field, overrides, reason) => {
-    const result = await register(overrides);
+    ["password", { password: "short" }, "too_short", /short/i],
+    ["password", { password: "x".repeat(129) }, "too_long", /long/i],
+    ["username", { username: "a" }, "too_short", /short/i],
+    ["username", { username: "x".repeat(31) }, "too_long", /long/i],
+    ["username", { username: "no spaces here" }, "invalid_characters", /invalid/i],
+    ["email", { email: "not an email" }, "invalid", /email/i],
+  ] as const)(
+    "refuses a bad %s as %s with Better Auth's reason",
+    async (field, overrides, code, reason) => {
+      const result = await register(overrides);
 
-    expect(result).toMatchObject({ ok: false, refusal: "field", field });
-    expect(result.ok ? "" : "reason" in result ? result.reason : "").toMatch(reason);
-    expect(await db.select().from(schema.user)).toHaveLength(0);
-  });
+      expect(result).toMatchObject({ ok: false, refusal: "field", field, code });
+      expect(result.ok ? "" : "reason" in result ? result.reason : "").toMatch(reason);
+      expect(await db.select().from(schema.user)).toHaveLength(0);
+    },
+  );
 
   it("refuses a password Have I Been Pwned knows", async () => {
     setUp(true);
@@ -143,7 +147,12 @@ describe("registerOwner", () => {
 
     const result = await register();
 
-    expect(result).toMatchObject({ ok: false, refusal: "field", field: "password" });
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: "field",
+      field: "password",
+      code: "compromised",
+    });
     expect(result.ok ? "" : "reason" in result ? result.reason : "").toMatch(/breach/);
     // Only the first five characters of the hash leave the instance.
     expect(fetch.mock.calls[0]?.[0].href).toBe(

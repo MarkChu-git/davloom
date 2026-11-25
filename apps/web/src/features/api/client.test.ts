@@ -3,6 +3,7 @@ import {
   ApiError,
   api,
   apiCall,
+  apiCallOnce,
   authFetch,
   describeError,
   errorCodeOf,
@@ -68,11 +69,72 @@ describe("error codes", () => {
     "password_refused",
     "email_refused",
     "password_compromised",
-    "invalid_username",
+    "invalid_display_username",
   ])("%s gives the API's own explanation in English, and its own words otherwise", (code) => {
     expect(describeError(en, new ApiError(400, code, "Because."))).toBe("Because.");
     expect(describeError(zh, new ApiError(400, code, "Because."))).not.toContain("Because");
     expect(describeError(en, new ApiError(400, code))).not.toBe("");
+  });
+
+  it.each([
+    ["username_refused", "too_short", "too short", "用户名太短"],
+    ["username_refused", "too_long", "too long", "用户名太长"],
+    ["username_refused", "invalid_characters", "letters, digits", "只能包含字母"],
+    ["username_refused", "taken", "already taken", "已被占用"],
+    ["password_refused", "too_short", "at least 12", "至少使用 12 个字符"],
+    ["password_refused", "too_long", "at most 128", "最多可用 128 个字符"],
+    ["password_refused", "compromised", "data breaches", "数据泄露"],
+    ["email_refused", "invalid", "not a valid email", "不是有效的电子邮件地址"],
+    ["email_refused", "taken", "Another account", "其他账户"],
+  ])("%s for %s says why in English and Chinese", (code, reason, english, chinese) => {
+    const error = new ApiError(400, code, "Better Auth's words.", reason);
+    expect(describeError(en, error)).toContain(english);
+    expect(describeError(zh, error)).toContain(chinese);
+    expect(describeError(zh, error)).not.toContain("Better Auth");
+  });
+
+  it.each([
+    ["username_refused", "invalid", "Check the username", "请检查用户名"],
+    ["password_refused", "something_new", "Check the password", "请检查密码"],
+    ["email_refused", "toString", "Check the email", "请检查电子邮件地址"],
+    ["password_refused", "invalid", "Check the password", "请检查密码"],
+  ])("%s for %s falls back to the general message", (code, reason, english, chinese) => {
+    expect(describeError(en, new ApiError(400, code, undefined, reason))).toContain(english);
+    expect(describeError(zh, new ApiError(400, code, "Words.", reason))).toContain(chinese);
+  });
+
+  it.each([
+    ["password_too_short", "at least 12", "至少使用 12 个字符"],
+    ["password_too_long", "at most 128", "最多可用 128 个字符"],
+    ["username_too_short", "too short", "用户名太短"],
+    ["username_too_long", "too long", "用户名太长"],
+    ["invalid_username", "letters, digits", "只能包含字母"],
+    ["username_is_already_taken", "already taken", "已被占用"],
+    ["invalid_email", "not a valid email", "不是有效的电子邮件地址"],
+    ["user_already_exists", "Another account", "其他账户"],
+    ["user_already_exists_use_another_email", "Another account", "其他账户"],
+  ])("Better Auth's %s says why in both languages", (code, english, chinese) => {
+    expect(describeError(en, new ApiError(400, code, "Better Auth's words."))).toContain(english);
+    expect(describeError(zh, new ApiError(400, code, "Better Auth's words."))).toContain(chinese);
+  });
+
+  it("reads the reason of a refusal from the API's answer", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json(
+          {
+            error: { code: "password_refused", message: "Password too short", reason: "too_short" },
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    const error: unknown = await apiCallOnce(() =>
+      api.registration.post({ email: "a@example.com", name: "A", password: "short" }),
+    ).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "password_refused", reason: "too_short" });
+    expect(describeError(zh, error)).toBe("密码太短，请至少使用 12 个字符。");
   });
 
   it("keeps the API's own English explanation out of a Chinese message", () => {

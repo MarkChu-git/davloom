@@ -29,6 +29,7 @@ const app = createApp({
   instance: bunInstance(process.env),
   allowHttp: process.env.DAVLOOM_ALLOW_HTTP === "1",
   publicOrigin: configuredOrigin(process.env.DAVLOOM_URL),
+  dashboard: serveDashboard,
 })
   // Not `.get`: Elysia prefers a method's own routes over `.all`, so `.get("/*")` would take GET and
   // HEAD away from the WebDAV routes.

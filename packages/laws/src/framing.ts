@@ -1,4 +1,8 @@
-import bend, { type BendForm, type BendStatusKind } from "./compiled/framing.mjs";
+import bend, {
+  type BendForm,
+  type BendRootMethod,
+  type BendStatusKind,
+} from "./compiled/framing.mjs";
 
 /** The form of a request target (RFC 9112 §3.2); `invalid` names no resource. */
 export type TargetForm = "origin" | "absolute" | "asterisk" | "invalid";
@@ -46,3 +50,31 @@ export const planUrl = (form: TargetForm, hostOk: boolean): UrlPlan => {
   const url = bend.url_of(FORMS[form], hostOk);
   return { path: PATHS[url.path.$], host: HOSTS[url.host.$] };
 };
+
+/** What the root path `/` answers to a request: the Dashboard, a redirect to /dav/, or 405. */
+export type RootAnswer = "dashboard" | "to-dav" | "refuse";
+
+/** The WebDAV methods other than GET and HEAD, which the root sends on to /dav/. */
+export const ROOT_DAV_METHODS: ReadonlySet<string> = new Set([
+  "OPTIONS",
+  "PROPFIND",
+  "PROPPATCH",
+  "MKCOL",
+  "PUT",
+  "DELETE",
+  "COPY",
+  "MOVE",
+  "LOCK",
+  "UNLOCK",
+]);
+
+const rootMethodOf = (method: string): BendRootMethod => {
+  const name = method.toUpperCase();
+  if (name === "GET" || name === "HEAD") return { $: "RRead" };
+  return ROOT_DAV_METHODS.has(name) ? { $: "RDav" } : { $: "ROther" };
+};
+const ROOT_ANSWERS = { ADashboard: "dashboard", AToDav: "to-dav", ARefuse: "refuse" } as const;
+
+/** How the root path answers a method (laws root_dashboard_exact, root_to_dav_exact). */
+export const rootAnswer = (method: string): RootAnswer =>
+  ROOT_ANSWERS[bend.root_answer(rootMethodOf(method)).$];

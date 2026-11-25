@@ -28,11 +28,13 @@ S3-compatible storage such as RustFS.
    the owner, and registration closes for everyone once it exists.
 2. On **Credentials**, create an API Key. Davloom shows the whole key once.
 3. Mount `https://<your host>/dav/` in your client. The username can be anything; the password is
-   the key.
+   the key. Finder also takes the bare address, `https://<your host>`: the root answers WebDAV's
+   OPTIONS and PROPFIND with a redirect to `/dav/`, which Finder follows, while a browser opening
+   it still gets the Dashboard. Other clients, rclone among them, need the `/dav/` address.
 
 | Client       | How                                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| macOS Finder | Go, Connect to Server (⌘K), `https://<host>/dav/`                                                                   |
+| macOS Finder | Go, Connect to Server (⌘K), `https://<host>` or `https://<host>/dav/`                                               |
 | Windows      | Map network drive, `https://<host>/dav/`                                                                            |
 | rclone       | `rclone config create davloom webdav url=https://<host>/dav vendor=other user=davloom pass=$(rclone obscure <key>)` |
 | Linux        | davfs2 or a file manager's "Connect to server" with `davs://<host>/dav/`                                            |

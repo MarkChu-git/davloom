@@ -5,6 +5,9 @@
   "compatibility_date": "2026-11-04",
   // Better Auth needs node:async_hooks.
   "compatibility_flags": ["nodejs_compat"],
+  // Plain variables set on the deployed Worker, such as DAVLOOM_URL, survive each deploy; this
+  // file names none, so that local runs answer on their own address.
+  "keep_vars": true,
   // The AWS SDK's XML utilities, without the browser parser that their package.json `browser`
   // field picks for a Worker: it needs DOMParser, which workerd lacks, so every S3 answer failed.
   // Their CommonJS build holds the parser written in JavaScript. The package is a direct
@@ -14,10 +17,14 @@
   },
 
   // The API and WebDAV share an origin with the Dashboard. Everything else is a static asset.
+  // The root path runs the Worker too: static assets answer every method but GET and HEAD with
+  // 405, and a WebDAV client given the bare address, as Finder is, sends OPTIONS and PROPFIND to
+  // `/`. The Worker redirects those to /dav/ and serves GET and HEAD from ASSETS.
   "assets": {
     "directory": "../web/dist/client",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api", "/api/*", "/dav", "/dav/*"],
+    "run_worker_first": ["/", "/api", "/api/*", "/dav", "/dav/*"],
   },
   "d1_databases": [
     {

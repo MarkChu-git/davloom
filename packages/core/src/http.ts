@@ -28,12 +28,14 @@ const errorResponse = (
   { status, code }: ErrorResponse,
   message?: string,
   issues?: readonly unknown[],
+  reason?: string,
 ): Response =>
   Response.json(
     {
       error: {
         code,
         ...(message === undefined ? {} : { message }),
+        ...(reason === undefined ? {} : { reason }),
         ...(issues === undefined ? {} : { issues }),
       },
     },
@@ -43,6 +45,10 @@ const errorResponse = (
 /** The `reason` of an error that explains itself to the client, such as a rejected import. */
 const reasonOf = (error: TaggedError): string | undefined =>
   "reason" in error && typeof error.reason === "string" ? error.reason : undefined;
+
+/** The machine-readable `reasonCode` of an error that has one, such as a refused password's. */
+const reasonCodeOf = (error: TaggedError): string | undefined =>
+  "reasonCode" in error && typeof error.reasonCode === "string" ? error.reasonCode : undefined;
 
 /** Where a refused body went wrong, for an error that says so, such as a body of the wrong shape. */
 const issuesOf = (error: TaggedError): readonly unknown[] | undefined =>
@@ -64,7 +70,12 @@ export const responseFromExit = <A, E extends TaggedError>(
     ? (errors as Record<string, ErrorResponse | undefined>)[failure.value._tag]
     : undefined;
   if (declared && Option.isSome(failure)) {
-    return errorResponse(declared, reasonOf(failure.value), issuesOf(failure.value));
+    return errorResponse(
+      declared,
+      reasonOf(failure.value),
+      issuesOf(failure.value),
+      reasonCodeOf(failure.value),
+    );
   }
 
   onDefect?.(exit.cause);

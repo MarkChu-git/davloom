@@ -383,16 +383,16 @@ describe("registerOwner", () => {
   it.each([
     [{ ok: false, refusal: "closed" }, { _tag: "RegistrationClosed" }],
     [
-      { ok: false, refusal: "field", field: "username", reason: "Taken" },
-      { _tag: "UsernameRefused", reason: "Taken" },
+      { ok: false, refusal: "field", field: "username", code: "taken", reason: "Taken" },
+      { _tag: "UsernameRefused", reason: "Taken", reasonCode: "taken" },
     ],
     [
-      { ok: false, refusal: "field", field: "password", reason: "Leaked" },
-      { _tag: "PasswordRefused", reason: "Leaked" },
+      { ok: false, refusal: "field", field: "password", code: "compromised", reason: "Leaked" },
+      { _tag: "PasswordRefused", reason: "Leaked", reasonCode: "compromised" },
     ],
     [
-      { ok: false, refusal: "field", field: "email", reason: "Bad" },
-      { _tag: "EmailRefused", reason: "Bad" },
+      { ok: false, refusal: "field", field: "email", code: "invalid", reason: "Bad" },
+      { _tag: "EmailRefused", reason: "Bad", reasonCode: "invalid" },
     ],
     [
       { ok: false, refusal: "check-failed", reason: "Offline" },
