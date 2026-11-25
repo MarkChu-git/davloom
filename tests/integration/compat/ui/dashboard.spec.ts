@@ -2425,7 +2425,8 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   // The default backend holds the sample, more than any backend the other tests add.
   const description = (await imageDescriptions(page)).get("Bytes stored on each backend") ?? "";
   expect(description.endsWith(".")).toBe(true);
-  const [first = "", ...others] = description.slice(0, -1).split(", ");
+  // The parts read as an English list: "A", "A and B", or "A, B, and C".
+  const [first = "", ...others] = description.slice(0, -1).split(/, and |, | and /);
   expect(first).toMatch(/^Default stores [\d.]+ (bytes|kB|MB)$/);
   for (const other of others) expect(other).toMatch(/^[^,]+ stores 0 bytes$/);
 });

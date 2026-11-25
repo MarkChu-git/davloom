@@ -312,6 +312,8 @@ jobs:
       # file prints, in a collapsed group, because each failed test can have its own cause.
       - name: Print the Playwright failure context
         if: failure()
+        # The job runs in a container whose default shell is sh, which has no process substitution.
+        shell: bash
         run: |
           dir=tests/integration/compat/test-results
           total=0
