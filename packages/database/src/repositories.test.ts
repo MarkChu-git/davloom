@@ -518,3 +518,32 @@ describe("locks on a path of 450 names", () => {
     );
   });
 });
+
+// Up to 80 keys bind one parameter each, and more go in as one JSON parameter: both sides of that
+// switch answer the same.
+describe.each([78, 79, 80, 81])("locks on a path of %i names", (length) => {
+  const path = Array.from({ length }, () => "x").join("/");
+
+  it("finds the locks rooted at any of its ancestors, and no others", async () => {
+    const roots = ["", ...prefixes(path)];
+    await createLocks(["x", path, "y", `${path}/z`]);
+    expect(await foundRoots(roots, null)).toEqual(sorted(["x", path]));
+    expect(await foundRoots(roots, path)).toEqual(sorted(["x", path, `${path}/z`]));
+  });
+
+  it("stores a lock unless an infinity lock on an ancestor holds it", async () => {
+    const below = `${path}/y`;
+    expect(
+      await repositories.locks.createIfFree(
+        record("free", below, "0", "exclusive"),
+        ancestorsOf(below),
+        1_000,
+      ),
+    ).toBe(true);
+    await repositories.locks.create(record("held", "x", "infinity", "exclusive"));
+    const blocked = record("blocked", `${path}/w`, "0", "exclusive");
+    expect(await repositories.locks.createIfFree(blocked, ancestorsOf(blocked.root), 1_000)).toBe(
+      false,
+    );
+  });
+});
