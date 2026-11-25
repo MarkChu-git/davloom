@@ -7,9 +7,10 @@ import { BASE, FILES, under } from "./world";
 // URL parser that every client and runtime shares removes dot segments (including %2e forms and
 // backslashes in an https URL), then each segment is percent-decoded as UTF-8, and the names are
 // checked against the namespace's rules (storage-namespace spec: 1 to 255 bytes of well-formed
-// UTF-8, not `.` or `..`, no `/` or NUL, a path of at most 900 bytes). Whatever a payload resolves
-// to, nothing outside the scope may be read or change. traversal.test.ts runs the table in process,
-// and tests/integration/compat/http/traversal.test.ts over HTTP against real servers.
+// UTF-8, not `.` or `..`, no `/` or NUL, a path of at most 900 bytes with a `/` before each name).
+// Whatever a payload resolves to, nothing outside the scope may be read or change.
+// traversal.test.ts runs the table in process, and tests/integration/compat/http/traversal.test.ts
+// over HTTP against real servers.
 
 export const SCOPE = ["files", "photos"];
 export const SCOPE_KEY = SCOPE.join("/");
@@ -101,6 +102,8 @@ export const PAYLOADS: readonly (readonly [label: string, payload: string])[] = 
   ["a name of 256 bytes", "a".repeat(256)],
   ["a name of 254 bytes in two-byte characters", "%C3%A9".repeat(127)],
   ["a name of 256 bytes in two-byte characters", "%C3%A9".repeat(128)],
+  ["a path of exactly 900 bytes", `${"abcd/".repeat(177)}a`],
+  ["a path of 901 bytes", `${"abcd/".repeat(177)}ab`],
   ["a path of more than 900 bytes", "abcd/".repeat(200)],
   ["a path of more than 450 names", "a/".repeat(460)],
   ["a deep path under a missing folder", "x/".repeat(30)],
@@ -135,7 +138,8 @@ export const resolve = (url: string): Resolved => {
       return { kind: "invalid" };
     }
   }
-  if (!names.every(validName) || bytes(names.join("/")) > 900) return { kind: "invalid" };
+  // The 900 bytes count a `/` before each name, as the law path_bounded does.
+  if (!names.every(validName) || bytes(`/${names.join("/")}`) > 900) return { kind: "invalid" };
   return { kind: "path", names };
 };
 
