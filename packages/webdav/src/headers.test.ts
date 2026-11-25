@@ -56,6 +56,10 @@ describe("parseRange (RFC 9110 §14.1.2)", () => {
     // Range units are case-insensitive (RFC 9110 §14.1).
     ["Bytes=1-2", { kind: "from-to", first: 1, last: 2 }],
     [" bytes=1-2 ", { kind: "from-to", first: 1, last: 2 }],
+    // White space around the dash is read leniently, which RFC 9110 §14.2 allows a server.
+    ["bytes=0 - 9", { kind: "from-to", first: 0, last: 9 }],
+    ["bytes=5 -", { kind: "from", first: 5 }],
+    ["bytes=- 7", { kind: "suffix", length: 7 }],
   ])("Range: %j is %j", (header, range) => {
     expect(parseRange(header)).toEqual(range);
   });

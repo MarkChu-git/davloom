@@ -339,6 +339,13 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
   const maxFileSize = options.maxFileSize ?? Number.MAX_SAFE_INTEGER;
   const methods = locks ? `${CLASS_1_METHODS}, LOCK, UNLOCK` : CLASS_1_METHODS;
 
+  /** A storage failure as a response; a 405 names the allowed methods (RFC 9110 §15.5.6). */
+  const failed = (reason: StorageFailure) => {
+    const response = failure(reason);
+    if (response.status === 405) response.headers.set("allow", methods);
+    return response;
+  };
+
   /** The entry at a path, or null when there is none; a backend that cannot answer ends the request with 503. */
   const stat = async (path: Path): Promise<Entry | null> => {
     const result = await storage.stat(path);
@@ -492,7 +499,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     headers["content-length"] = String(byteRange ? byteRange.stop - byteRange.start : entry.size);
     if (head) return empty(status, headers);
     const read = await storage.read(path, byteRange);
-    if (!read.ok) return failure(read.failure);
+    if (!read.ok) return failed(read.failure);
     return new Response(read.value.body, { status, headers });
   };
 
@@ -523,7 +530,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       contentType: request.headers.get("content-type"),
     });
     if (limited.exceeded()) return empty(413);
-    if (!written.ok) return failure(written.failure);
+    if (!written.ok) return failed(written.failure);
     return empty(written.value.created ? 201 : 204, {
       etag: quoteTag(written.value.entry.etag),
       "last-modified": httpDate(written.value.entry.modified),
@@ -544,7 +551,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     );
     if (blocked) return blocked;
     const created = await storage.createCollection(path);
-    if (!created.ok) return failure(created.failure);
+    if (!created.ok) return failed(created.failure);
     return empty(201);
   };
 
@@ -569,7 +576,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
       if (blocked) return blocked;
     }
     const removed = await storage.remove(path);
-    if (!removed.ok) return failure(removed.failure);
+    if (!removed.ok) return failed(removed.failure);
     await locks?.removeTree(path);
     return empty(204);
   };
@@ -611,7 +618,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     if (!result.ok) {
       if (result.failure === "exists") return empty(412);
       if (result.failure === "root" || result.failure === "into-itself") return empty(403);
-      return failure(result.failure);
+      return failed(result.failure);
     }
     if (move) await locks?.removeTree(path);
     return empty(result.value.replaced ? 204 : 201);
@@ -635,7 +642,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     const entries: Entry[] = [entry];
     if (depth === "1" && entry.kind === "collection") {
       const children = await storage.list(path);
-      if (!children.ok) return failure(children.failure);
+      if (!children.ok) return failed(children.failure);
       entries.push(...children.value);
     }
     // No dead property lives in the DAV: namespace (PROPPATCH refuses it), so a request that names
@@ -654,7 +661,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
     // Dead properties that cannot be read fail the request: a 207 without them would tell the
     // client the entries have none, and allprop or propname cannot name what is missing to give it
     // a status of its own in a propstat.
-    if (deadResult && !deadResult.ok) return failure(deadResult.failure);
+    if (deadResult && !deadResult.ok) return failed(deadResult.failure);
     const dead: Record<string, readonly DeadProperty[]> = deadResult?.value ?? {};
 
     const responses: string[] = [];
@@ -779,7 +786,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         else removed.push(name);
       }
       const patched = await storage.patchProperties(path, set, removed);
-      if (!patched.ok) return failure(patched.failure);
+      if (!patched.ok) return failed(patched.failure);
       results.push(
         propstat(
           200,
@@ -864,7 +871,7 @@ export const createWebDavHandler = (options: WebDavOptions): WebDavHandler => {
         ifAbsent: true,
       });
       // Another client created the resource meanwhile: lock it as it now is, with its own locks checked.
-      if (!created.ok && created.failure !== "exists") return failure(created.failure);
+      if (!created.ok && created.failure !== "exists") return failed(created.failure);
       if (created.ok) status = 201;
     }
     const granted: Lock = {

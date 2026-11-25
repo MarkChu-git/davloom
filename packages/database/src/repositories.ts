@@ -82,6 +82,22 @@ export const isUniqueViolation = (error: unknown): boolean => {
 };
 
 /**
+ * The most keys bound one parameter each. D1 binds at most 100 parameters to a statement, and a
+ * lock query binds a few more of its own.
+ */
+const BOUND_KEYS = 80;
+
+/**
+ * Whether a lock's root is one of `keys`. Up to `BOUND_KEYS` keys bind one parameter each, which
+ * reads only the matching rows. A deeper path, of up to 450 names, sends its keys as one JSON
+ * parameter instead: D1 counts every row `json_each` yields as read, so only those paths pay that.
+ */
+const rootIn = (keys: readonly string[]) =>
+  keys.length <= BOUND_KEYS
+    ? inArray(schema.davLocks.root, [...keys])
+    : sql`${schema.davLocks.root} IN (SELECT value FROM json_each(${JSON.stringify(keys)}))`;
+
+/**
  * Roots strictly under `key`: SQLite compares text as UTF-8 bytes, and every key that starts with
  * `key/` sorts from `key/` up to, not including, `key0`, since "0" follows "/".
  */
@@ -213,7 +229,7 @@ export const createRepositories = (db: Database) => ({
       under: string | null,
       now: number,
     ): Promise<LockRecord[]> => {
-      const rooted = inArray(schema.davLocks.root, [...roots]);
+      const rooted = rootIn(roots);
       const match =
         under === null ? rooted : or(rooted, under === "" ? sql`1 = 1` : strictlyUnder(under));
       return await db
@@ -237,9 +253,7 @@ export const createRepositories = (db: Database) => ({
       const t = schema.davLocks;
       const covered = or(
         eq(t.root, lock.root),
-        ancestors.length > 0
-          ? and(eq(t.depth, "infinity"), inArray(t.root, [...ancestors]))
-          : sql`0`,
+        ancestors.length > 0 ? and(eq(t.depth, "infinity"), rootIn(ancestors)) : sql`0`,
         lock.depth === "infinity" ? (lock.root === "" ? sql`1` : strictlyUnder(lock.root)) : sql`0`,
       );
       const scopes = lock.scope === "exclusive" ? sql`1` : eq(t.scope, "exclusive");

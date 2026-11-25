@@ -1,15 +1,16 @@
 import { REFUSED, type Refuses } from "./names-cases";
 import { BASE, FILES, under } from "./world";
 
-// Path traversal and encoding (PRD §11, §12): 80 payloads at each entry point that takes a path,
+// Path traversal and encoding (PRD §11, §12): 93 payloads at each entry point that takes a path,
 // for a Read / Write key limited to /files/photos. Each payload follows /dav/files/photos/ in a
 // URL. The oracle resolves it the way the standards do, independently of the handler: the WHATWG
 // URL parser that every client and runtime shares removes dot segments (including %2e forms and
 // backslashes in an https URL), then each segment is percent-decoded as UTF-8, and the names are
 // checked against the namespace's rules (storage-namespace spec: 1 to 255 bytes of well-formed
-// UTF-8, not `.` or `..`, no `/` or NUL, a path of at most 900 bytes). Whatever a payload resolves
-// to, nothing outside the scope may be read or change. traversal.test.ts runs the table in process,
-// and tests/integration/compat/http/traversal.test.ts over HTTP against real servers.
+// UTF-8, not `.` or `..`, no `/` or NUL, a path of at most 900 bytes with a `/` before each name).
+// Whatever a payload resolves to, nothing outside the scope may be read or change.
+// traversal.test.ts runs the table in process, and tests/integration/compat/http/traversal.test.ts
+// over HTTP against real servers.
 
 export const SCOPE = ["files", "photos"];
 export const SCOPE_KEY = SCOPE.join("/");
@@ -97,10 +98,16 @@ export const PAYLOADS: readonly (readonly [label: string, payload: string])[] = 
   ["empty segments", "//sub//b.jpg"],
   ["empty segments around a parent", "/../docs/secret.txt"],
   ["the scope root again", "photos"],
+  ["parents back to the bare base path", "../../../dav"],
+  ["a collection inside the scope", "sub"],
+  ["a new file in a collection inside the scope", "sub/new.txt"],
+  ["a name below a file", "a.jpg/below.txt"],
   ["a name of 255 bytes", "a".repeat(255)],
   ["a name of 256 bytes", "a".repeat(256)],
   ["a name of 254 bytes in two-byte characters", "%C3%A9".repeat(127)],
   ["a name of 256 bytes in two-byte characters", "%C3%A9".repeat(128)],
+  ["a path of exactly 900 bytes", `${"abcd/".repeat(177)}a`],
+  ["a path of 901 bytes", `${"abcd/".repeat(177)}ab`],
   ["a path of more than 900 bytes", "abcd/".repeat(200)],
   ["a path of more than 450 names", "a/".repeat(460)],
   ["a deep path under a missing folder", "x/".repeat(30)],
@@ -135,7 +142,8 @@ export const resolve = (url: string): Resolved => {
       return { kind: "invalid" };
     }
   }
-  if (!names.every(validName) || bytes(names.join("/")) > 900) return { kind: "invalid" };
+  // The 900 bytes count a `/` before each name, as the law path_bounded does.
+  if (!names.every(validName) || bytes(`/${names.join("/")}`) > 900) return { kind: "invalid" };
   return { kind: "path", names };
 };
 
@@ -145,11 +153,11 @@ const startsWith = (path: readonly string[], prefix: readonly string[]) =>
 const relationOf = (names: readonly string[]) =>
   startsWith(names, SCOPE) ? "inside" : startsWith(SCOPE, names) ? "above" : "outside";
 
+/** What is at `names`, for a path inside the scope or the parent of one. */
 const kindOf = (names: readonly string[]): "file" | "collection" | "missing" => {
   const key = names.join("/");
   if (Object.hasOwn(FILES, key)) return "file";
   if (names.length <= 1 || key === SCOPE_KEY || key === `${SCOPE_KEY}/sub`) return "collection";
-  if (["files/docs", "files/photos2", "media/music"].includes(key)) return "collection";
   return "missing";
 };
 

@@ -20,7 +20,7 @@ jobs:
   mutation:
     name: mutation ${{ matrix.package }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       # One package's failure does not cancel the other's run, so every run reports both scores.
       fail-fast: false

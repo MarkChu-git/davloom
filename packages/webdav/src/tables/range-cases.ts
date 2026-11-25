@@ -109,6 +109,8 @@ export const FORMS: readonly string[] = [
   "0-1",
   "bytes=\u00ad1",
   "bytes=1e2-",
+  "@bytes=0-9",
+  "x bytes=0-9",
   // Several ranges: ignored, satisfiable or not.
   "bytes=0-1,2-3",
   "bytes=0-1, 2-3",
