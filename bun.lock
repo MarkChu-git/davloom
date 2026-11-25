@@ -57,6 +57,7 @@
         "@astryxdesign/core": "0.7.16",
         "@astryxdesign/theme-neutral": "0.7.16",
         "@better-auth/passkey": "1.7.28",
+        "@davloom/client": "workspace:*",
         "@davloom/ui": "workspace:*",
         "@lucide/icons": "1.74.0",
         "@stylexjs/stylex": "0.19.2",
@@ -95,6 +96,19 @@
         "@davloom/database": "workspace:*",
         "better-auth": "1.7.28",
         "drizzle-orm": "0.45.4",
+      },
+    },
+    "packages/client": {
+      "name": "@davloom/client",
+      "version": "0.0.0",
+      "dependencies": {
+        "@elysiajs/eden": "1.4.9",
+      },
+      "devDependencies": {
+        "@davloom/api": "workspace:*",
+        "@davloom/schema": "workspace:*",
+        "effect": "4.1.4",
+        "elysia": "1.4.32",
       },
     },
     "packages/core": {
@@ -388,6 +402,8 @@
 
     "@davloom/auth": ["@davloom/auth@workspace:packages/auth"],
 
+    "@davloom/client": ["@davloom/client@workspace:packages/client"],
+
     "@davloom/compat-tests": ["@davloom/compat-tests@workspace:tests/integration/compat"],
 
     "@davloom/core": ["@davloom/core@workspace:packages/core"],
@@ -411,6 +427,8 @@
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
 
     "@dual-bundle/import-meta-resolve": ["@dual-bundle/import-meta-resolve@4.2.1", "", {}, "sha512-id+7YRUgoUX6CgV0DtuhirQWodeeA7Lf4i2x71JS/vtA5pRb/hIGWlw+G6MeXvsM+MXrz0VAydTGElX1rAfgPg=="],
+
+    "@elysiajs/eden": ["@elysiajs/eden@1.4.9", "", { "peerDependencies": { "elysia": ">=1.4.19" } }, "sha512-3CKVD4ycVjB8nCNssfmhnUuq3SzSHkUES3v5PNCFr9LxIrx39/HVRAZ8z2sLxrFqzUs48dCBZaxoZzJ5UUVHDA=="],
 
     "@emnapi/core": ["@emnapi/core@2.0.0-beta.2", "", { "dependencies": { "@emnapi/wasi-threads": "2.2.0", "tslib": "^2.4.0" } }, "sha512-MzCVoWtcg4Pm2B3je5mMvYMvj3MmBKw+fU7vbsJc9/iT8ip6/eYIHo/Dsm/mr+wsHB6SEyJDuxB09Yy6r/8+4A=="],
 

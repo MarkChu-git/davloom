@@ -1,8 +1,9 @@
 // Step-up verification on the Dashboard's side (PRD §6). The server refuses a sensitive action
 // from a session that has not proved presence lately with 403 `verification_required`
 // (apps/api/src/verification.ts). Every request of the Dashboard goes through `withStepUp`, through
-// apiFetch and the WebDAV client, so on that answer the step-up dialog (auth/StepUpDialog.tsx) asks
-// for the password, the authenticator code or a passkey, and the request then runs once more.
+// `apiCall`, `authFetch` and the WebDAV client, so on that answer the step-up dialog
+// (auth/StepUpDialog.tsx) asks for the password, the authenticator code or a passkey, and the
+// request then runs once more.
 // A page needs nothing of its own: a mutation that hits a step-up action just takes longer.
 
 /** The code the server answers a step-up action with when the session needs to verify again. */

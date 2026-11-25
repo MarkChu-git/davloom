@@ -19,6 +19,7 @@ export const thresholds = {
   "apps/api/src/**": { lines: 94, branches: 87 },
   "apps/web/src/**": { lines: 98, branches: 93 },
   "packages/auth/src/**": { lines: 100, branches: 100 },
+  "packages/client/src/**": { lines: 100, branches: 100, functions: 100 },
   "packages/core/src/**": { lines: 100, branches: 98, functions: 100 },
   "packages/database/src/**": { lines: 93, branches: 95 },
   "packages/laws/src/**": { lines: 100, branches: 97 },

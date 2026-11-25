@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { json, renderPage, type Handler } from "../../test/render";
-import { apiFetch } from "../api/client";
+import { api, apiCall } from "../api/client";
 import { passkeyApi, stubPasskeys } from "../../test/webauthn";
 import { StepUpDialog } from "./StepUpDialog";
 
@@ -25,7 +25,7 @@ const ME = (twoFactorEnabled: boolean) => () =>
   });
 
 /** POST /api/keys answers verification_required until /api/verify accepts the person. */
-const world = (api: Record<string, Handler> = {}, twoFactorEnabled = false) => {
+const world = (extra: Record<string, Handler> = {}, twoFactorEnabled = false) => {
   let verified = false;
   const handlers: Record<string, Handler> = {
     "GET /api/me": ME(twoFactorEnabled),
@@ -45,7 +45,7 @@ const world = (api: Record<string, Handler> = {}, twoFactorEnabled = false) => {
       verified = true;
       return json({ verified: true });
     },
-    ...api,
+    ...extra,
   };
   return handlers;
 };
@@ -59,7 +59,7 @@ const show = async (handlers: Record<string, Handler>) => {
 describe("StepUpDialog", () => {
   it("asks for the password, then runs the refused request again", async () => {
     const { calls } = await show(world());
-    const created = apiFetch<{ key: string }>("/api/keys", { method: "POST", body: {} });
+    const created = apiCall(() => api.keys.post({}));
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     expect(within(dialog).queryByLabelText("Authenticator code")).toBeNull();
     await userEvent.type(within(dialog).getByLabelText("Password"), "wrong password{Enter}");
@@ -74,7 +74,7 @@ describe("StepUpDialog", () => {
 
   it("asks for the authenticator code too when two-step verification is on", async () => {
     await show(world({}, true));
-    const created = apiFetch("/api/keys", { method: "POST", body: {} });
+    const created = apiCall(() => api.keys.post({}));
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.type(within(dialog).getByLabelText("Password"), "my password{Enter}");
     expect(
@@ -89,9 +89,7 @@ describe("StepUpDialog", () => {
 
   it("lets the refusal stand when the person cancels", async () => {
     const { calls } = await show(world());
-    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
-      (error: unknown) => error,
-    );
+    const refused = apiCall(() => api.keys.post({})).catch((error: unknown) => error);
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(await refused).toMatchObject({ status: 403, code: "verification_required" });
@@ -115,7 +113,7 @@ describe("StepUpDialog", () => {
             : json({ error: { code: "verification_required" } }, 403),
       }),
     );
-    const created = apiFetch<{ key: string }>("/api/keys", { method: "POST", body: {} });
+    const created = apiCall(() => api.keys.post({}));
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Use a passkey" }));
     expect(await created).toEqual({ id: "k", key: "dav_x" });
@@ -138,9 +136,7 @@ describe("StepUpDialog", () => {
   ])("says so when %s, and keeps the dialog open", async (_, browser, server, shown) => {
     stubPasskeys(browser);
     await show(world(passkeyApi(server)));
-    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
-      (error: unknown) => error,
-    );
+    const refused = apiCall(() => api.keys.post({})).catch((error: unknown) => error);
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Use a passkey" }));
     expect(await within(dialog).findByText(shown)).toBeTruthy();
@@ -158,9 +154,7 @@ describe("StepUpDialog", () => {
     ["verification_locked", "Too many wrong attempts. Wait 15 minutes, then try again."],
   ])("explains the refusal %s", async (code, message) => {
     await show(world({ "POST /api/verify": () => json({ error: { code } }, 400) }));
-    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
-      (error: unknown) => error,
-    );
+    const refused = apiCall(() => api.keys.post({})).catch((error: unknown) => error);
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.type(within(dialog).getByLabelText("Password"), "my password{Enter}");
     expect(await within(dialog).findByText(message)).toBeTruthy();
@@ -170,9 +164,7 @@ describe("StepUpDialog", () => {
 
   it("lets the refusal stand when the person closes the dialog with Escape", async () => {
     await show(world());
-    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
-      (error: unknown) => error,
-    );
+    const refused = apiCall(() => api.keys.post({})).catch((error: unknown) => error);
     await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.keyboard("{Escape}");
     expect(await refused).toMatchObject({ status: 403, code: "verification_required" });
@@ -181,7 +173,7 @@ describe("StepUpDialog", () => {
 
   it("refuses an empty password before sending", async () => {
     const { calls } = await show(world());
-    void apiFetch("/api/keys", { method: "POST", body: {} }).catch(() => undefined);
+    void apiCall(() => api.keys.post({})).catch(() => undefined);
     const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Verify" }));
     expect(await within(dialog).findByText("Enter your password.")).toBeTruthy();

@@ -7,90 +7,48 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { Translator } from "../i18n/translate";
-import { apiFetch, isApiError, isUnauthorized } from "./client";
+import type { Answer } from "@davloom/client";
+import { api, apiCall, authFetch, isApiError, isUnauthorized } from "./client";
 
 // Server state of the Dashboard, read and changed through TanStack Query. The shapes are the JSON
 // answers of apps/api/src/app.ts.
 
-export interface User {
-  id: string;
-  /** The display name. */
-  name: string;
-  /** The username the owner signs in with; null for an owner from an export without one. */
-  username: string | null;
-  /** The owner's email, or null when they gave none. */
-  email: string | null;
-  twoFactorEnabled: boolean;
-  /** When this session last proved presence, in milliseconds since the epoch. */
-  verifiedAt: number;
-}
+// Every answer's type is the server's (packages/client): the contracts of packages/schema, which
+// the API encodes its answers through.
 
-export interface Usage {
-  files: number;
-  collections: number;
-  bytes: number;
-  /** When an object store's counts were measured (ms since the epoch); absent when current. */
-  measuredAt?: number;
-}
+/** The signed-in owner: `verifiedAt` is when this session last proved presence, in ms. */
+export type User = Answer<"GET /api/me">;
 
-export interface Backend {
-  id: string;
-  name: string;
-  kind: string;
-  createdAt: string;
-  /** Whether the backend answered when the list was read. */
-  available: boolean;
-  usage: Usage | null;
-  /** How the backend answered then; absent from an older server. */
-  status?: BackendStatus;
-  /** The bytes the backend may hold in all, where it knows its limit. */
-  capacity?: number | null;
-  /** The kind's configuration without secrets, such as an S3 endpoint and bucket. */
-  config?: BackendConfig;
-  /** Whether a secret key is stored; the API never returns it. */
-  hasSecretKey?: boolean;
-}
+/** What the Overview reads: usage, Mounts and backends. */
+export type Overview = Answer<"GET /api/overview">;
+
+/** Files, collections and bytes; `measuredAt` says when an object store's were measured. */
+export type Usage = Overview["usage"];
+
+/**
+ * A storage backend: whether it answered when the list was read and how (`status`), the bytes it
+ * may hold where it knows its limit, its kind's configuration without secrets, and whether a
+ * secret key is stored, which the API never returns.
+ */
+export type Backend = Answer<"GET /api/backends">[number];
 
 /** How a backend answered when the list was read (packages/core listBackends). */
-export type BackendStatus =
-  | { state: "answered"; ms: number }
-  | { state: "failed"; failure: string; ms: number }
-  | { state: "not-opened" };
+export type BackendStatus = Backend["status"];
 
+/** A kind's configuration as the Dashboard sends it, such as an S3 endpoint and bucket. */
 export type BackendConfig = Partial<Record<string, string | boolean>>;
 
-export interface Mount {
-  id: string;
-  name: string;
-  backendId: string;
-  backendKind: string;
-  /** The folder of the backend the Mount shows, "" for the whole backend. */
-  root: string;
-  createdAt: string;
-}
+/** A Mount; `root` is the folder of the backend it shows, "" for the whole backend. */
+export type Mount = Answer<"GET /api/mounts">[number];
 
-export interface Overview {
-  usage: Usage;
-  mounts: Mount[];
-  backends: Backend[];
-}
+/**
+ * An API Key: `start` is its first characters, which Better Auth keeps to tell keys apart; `paths`
+ * the folders it is limited to, null for every mount; `lastUsedAt` when a WebDAV client last
+ * signed in with it, to within a few minutes.
+ */
+export type ApiKey = Answer<"GET /api/keys">[number];
 
-export type Access = "read-only" | "read-write";
-
-export interface ApiKey {
-  id: string;
-  name: string;
-  /** The key's first characters, which Better Auth keeps to tell keys apart. */
-  start: string | null;
-  access: Access;
-  /** The folders the key is limited to, such as /files/photos; null for every mount. */
-  paths: string[] | null;
-  enabled: boolean;
-  expiresAt: string | null;
-  createdAt: string;
-  /** When a WebDAV client last signed in with it, to within a few minutes; null for never. */
-  lastUsedAt: string | null;
-}
+export type Access = ApiKey["access"];
 
 /** The storage kinds this Dashboard can name; the API decides which a deployment offers. */
 export const kindLabel = (t: Translator, kind: string): string => {
@@ -166,7 +124,7 @@ export const forgetBrowserQueryClient = (): void => {
 
 export const meQuery = queryOptions({
   queryKey: keys.me,
-  queryFn: () => apiFetch<User>("/api/me"),
+  queryFn: () => apiCall(() => api.me.get()),
   retry: (count, error) => count < 2 && !isApiError(error),
   staleTime: 60_000,
 });
@@ -178,7 +136,7 @@ export const meQuery = queryOptions({
  */
 export const sessionQuery = queryOptions({
   queryKey: keys.session,
-  queryFn: () => apiFetch<{ user: User } | null>("/api/auth/get-session"),
+  queryFn: () => authFetch<{ user: User } | null>("/api/auth/get-session"),
   retry: false,
 });
 
@@ -186,22 +144,22 @@ export const useMe = () => useQuery(meQuery);
 
 export const overviewQuery = queryOptions({
   queryKey: keys.overview,
-  queryFn: () => apiFetch<Overview>("/api/overview"),
+  queryFn: () => apiCall(() => api.overview.get()),
 });
 
 export const apiKeysQuery = queryOptions({
   queryKey: keys.apiKeys,
-  queryFn: () => apiFetch<ApiKey[]>("/api/keys"),
+  queryFn: () => apiCall(() => api.keys.get()),
 });
 
 export const backendsQuery = queryOptions({
   queryKey: keys.backends,
-  queryFn: () => apiFetch<Backend[]>("/api/backends"),
+  queryFn: () => apiCall(() => api.backends.get()),
 });
 
 export const mountsQuery = queryOptions({
   queryKey: keys.mounts,
-  queryFn: () => apiFetch<Mount[]>("/api/mounts"),
+  queryFn: () => apiCall(() => api.mounts.get()),
 });
 
 export const useOverview = () => useQuery(overviewQuery);
@@ -232,7 +190,7 @@ export const useCreateKey = () => {
       access: Access;
       expiresInDays: number | null;
       paths?: string[];
-    }) => apiFetch<{ id: string; key: string }>("/api/keys", { method: "POST", body: input }),
+    }) => apiCall(() => api.keys.post(input)),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 };
@@ -241,10 +199,7 @@ export const useRenameKey = () => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) =>
-      apiFetch<{ id: string; name: string }>(`/api/keys/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: { name },
-      }),
+      apiCall(() => api.keys({ id }).patch({ name })),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 };
@@ -252,8 +207,7 @@ export const useRenameKey = () => {
 export const useRevokeKey = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string }>(`/api/keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiCall(() => api.keys({ id }).delete()),
     onSettled: () => client.invalidateQueries({ queryKey: keys.apiKeys }),
   });
 };
@@ -266,7 +220,7 @@ export const useCreateBackend = () => {
       kind: string;
       config?: BackendConfig;
       secretKey?: string;
-    }) => apiFetch<{ id: string }>("/api/backends", { method: "POST", body: input }),
+    }) => apiCall(() => api.backends.post(input)),
     onSuccess: invalidate,
   });
 };
@@ -275,7 +229,7 @@ export const useCreateMount = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
     mutationFn: (input: { name: string; backendId: string; root: string }) =>
-      apiFetch<{ id: string }>("/api/mounts", { method: "POST", body: input }),
+      apiCall(() => api.mounts.post(input)),
     onSuccess: invalidate,
   });
 };
@@ -284,10 +238,7 @@ export const useRenameMount = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
     mutationFn: ({ id, name }: { id: string; name: string }) =>
-      apiFetch<{ id: string }>(`/api/mounts/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: { name },
-      }),
+      apiCall(() => api.mounts({ id }).patch({ name })),
     onSuccess: invalidate,
   });
 };
@@ -297,10 +248,7 @@ export const useMoveMount = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
     mutationFn: ({ id, backendId, root }: { id: string; backendId: string; root: string }) =>
-      apiFetch<{ id: string }>(`/api/mounts/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: { backendId, root },
-      }),
+      apiCall(() => api.mounts({ id }).patch({ backendId, root })),
     onSuccess: invalidate,
   });
 };
@@ -308,66 +256,31 @@ export const useMoveMount = () => {
 export const useRemoveMount = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string }>(`/api/mounts/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiCall(() => api.mounts({ id }).delete()),
     onSettled: invalidate,
   });
 };
 
 /** An export of this instance: the encrypted file and the key that opens it, shown once. */
-export const exportInstance = () =>
-  apiFetch<{ key: string; file: unknown }>("/api/export", { method: "POST" });
+export const exportInstance = () => apiCall(() => api.export.post());
 
 // --- Overview operations, backend changes and checks, storage settings, about ---------------
 
-export interface OperationHour {
-  /** The hour's start, as ISO 8601. */
-  start: string;
-  operations: number;
-  failed: number;
-}
+/** The last 24 hours of WebDAV operations, oldest first, and the latest failed ones, newest first. */
+export type Operations = Answer<"GET /api/operations">;
 
-export interface OperationError {
-  id: string;
-  at: string;
-  method: string;
-  /** The path under /dav, such as /files/report.pdf. */
-  path: string;
-  /** Where a COPY or MOVE was to go, under /dav. */
-  destination: string | null;
-  status: number;
-}
+/** One hour of operations, starting at `start` (ISO 8601). */
+export type OperationHour = Operations["hours"][number];
 
-export interface Operations {
-  /** The last 24 hours, oldest first. */
-  hours: OperationHour[];
-  /** The latest failed operations among them, newest first. */
-  errors: OperationError[];
-}
+/** A failed operation: its path under /dav, and where a COPY or MOVE was to go. */
+export type OperationError = Operations["errors"][number];
 
-export interface BackendCheck {
-  id: string;
-  name: string;
-  available: boolean;
-  latencyMs: number | null;
-  reason: string | null;
-  checkedAt: string;
-}
+export type BackendCheck = Answer<"POST /api/backends/:id/verify">;
 
-export interface StorageSettings {
-  defaultBackendId: string | null;
-}
+export type StorageSettings = Answer<"GET /api/settings/storage">;
 
-export interface InstanceInfo {
-  version: string;
-  commit: string | null;
-  runtime: string;
-  deployment: string;
-  region: string | null;
-  database: string;
-  /** The storage kinds a new backend may take on this instance. */
-  storageKinds: string[];
-}
+/** Where this instance runs, and the storage kinds a new backend may take on it. */
+export type InstanceInfo = Answer<"GET /api/instance">;
 
 export const instanceKeys = {
   operations: ["operations"] as const,
@@ -377,18 +290,18 @@ export const instanceKeys = {
 
 export const operationsQuery = queryOptions({
   queryKey: instanceKeys.operations,
-  queryFn: () => apiFetch<Operations>("/api/operations"),
+  queryFn: () => apiCall(() => api.operations.get()),
   refetchInterval: 60_000,
 });
 
 export const storageSettingsQuery = queryOptions({
   queryKey: instanceKeys.storageSettings,
-  queryFn: () => apiFetch<StorageSettings>("/api/settings/storage"),
+  queryFn: () => apiCall(() => api.settings.storage.get()),
 });
 
 export const instanceInfoQuery = queryOptions({
   queryKey: instanceKeys.instance,
-  queryFn: () => apiFetch<InstanceInfo>("/api/instance"),
+  queryFn: () => apiCall(() => api.instance.get()),
   staleTime: 5 * 60_000,
 });
 
@@ -402,7 +315,7 @@ export const useSaveStorageSettings = () => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: { defaultBackendId: string }) =>
-      apiFetch<StorageSettings>("/api/settings/storage", { method: "PUT", body: input }),
+      apiCall(() => api.settings.storage.put(input)),
     onSuccess: (saved) => client.setQueryData(instanceKeys.storageSettings, saved),
   });
 };
@@ -418,11 +331,7 @@ export const useUpdateBackend = () => {
       name: string;
       config?: BackendConfig;
       secretKey?: string;
-    }) =>
-      apiFetch<{ id: string }>(`/api/backends/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        body: input,
-      }),
+    }) => apiCall(() => api.backends({ id }).patch(input)),
     onSuccess: invalidate,
   });
 };
@@ -431,10 +340,7 @@ export const useRemoveBackend = () => {
   const client = useQueryClient();
   const invalidate = useInvalidateStorage();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<{ id: string; filesKept: boolean }>(`/api/backends/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      }),
+    mutationFn: (id: string) => apiCall(() => api.backends({ id }).delete()),
     onSettled: () =>
       Promise.all([
         invalidate(),
@@ -447,10 +353,7 @@ export const useRemoveBackend = () => {
 export const useVerifyBackend = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
-    mutationFn: (id: string) =>
-      apiFetch<BackendCheck>(`/api/backends/${encodeURIComponent(id)}/verify`, {
-        method: "POST",
-      }),
+    mutationFn: (id: string) => apiCall(() => api.backends({ id }).verify.post()),
     onSettled: invalidate,
   });
 };
@@ -459,7 +362,7 @@ export const useVerifyBackend = () => {
 export const useCheckBackends = () => {
   const invalidate = useInvalidateStorage();
   return useMutation({
-    mutationFn: () => apiFetch<BackendCheck[]>("/api/backends/check", { method: "POST" }),
+    mutationFn: () => apiCall(() => api.backends.check.post()),
     onSettled: invalidate,
   });
 };

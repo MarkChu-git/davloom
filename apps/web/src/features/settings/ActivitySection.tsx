@@ -5,7 +5,8 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { ScrollableArea } from "@astryxdesign/core/ScrollableArea";
 import * as stylex from "@stylexjs/stylex";
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { apiFetch } from "../api/client";
+import type { Answer } from "@davloom/client";
+import { api, apiCall } from "../api/client";
 import { useT } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages/en";
 import type { Translator } from "../i18n/translate";
@@ -14,20 +15,11 @@ import { StatusLabel } from "../shell/StatusLabel";
 
 // The Activity section of Settings: the audit trail (GET /api/audit), newest first, a page at a time.
 
-export interface AuditEvent {
-  id: string;
-  at: string;
-  action: string;
-  outcome: "success" | "failure" | "locked";
-  address: string | null;
-  target: string | null;
-  count: number;
-}
+/** One page of the audit trail, and the `next` to pass as `before` for the page after it. */
+export type AuditPage = Answer<"GET /api/audit">;
 
-export interface AuditPage {
-  events: AuditEvent[];
-  next: string | null;
-}
+/** An event of the audit trail; `count` says how often it happened within the minute. */
+export type AuditEvent = AuditPage["events"][number];
 
 export const activityKey = ["audit"] as const;
 
@@ -45,11 +37,10 @@ export const useActivity = () =>
   useInfiniteQuery({
     queryKey: activityKey,
     queryFn: ({ pageParam }) =>
-      apiFetch<AuditPage>(
-        `/api/audit?${new URLSearchParams({
-          limit: String(PAGE),
-          ...(pageParam === null ? {} : { before: pageParam }),
-        }).toString()}`,
+      apiCall(() =>
+        api.audit.get({
+          query: { limit: String(PAGE), ...(pageParam === null ? {} : { before: pageParam }) },
+        }),
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next,

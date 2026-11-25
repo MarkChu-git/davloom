@@ -36,7 +36,7 @@ changing a credential and disclosing records. A route without an entry answers 4
 requests are classified by method in `davEffect`: a PUT is `destroy` unless it sends
 `If-None-Match: *`, which only creates a file, and the Dashboard's upload sends it first.
 
-The Dashboard needs nothing extra for a new step-up route: `apiFetch` and the WebDAV requests in
+The Dashboard needs nothing extra for a new step-up route: `apiCall`, `authFetch` and the WebDAV requests in
 `apps/web/src/features/api/` catch 403 `verification_required`, open the shared "Verify it is
 you" dialog, and send the request again once the person verified. A `confirm` action asks with
 an `AlertDialog` before it sends, as `useSignOut` does.

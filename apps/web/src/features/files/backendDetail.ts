@@ -18,11 +18,6 @@ export const backendDetail = (
   backend: Pick<Backend, "name" | "available" | "status">,
 ): string => {
   const { name, status } = backend;
-  if (status === undefined) {
-    return backend.available
-      ? t("backendDetail.answered", { name })
-      : t("backendDetail.noAnswer", { name });
-  }
   switch (status.state) {
     case "answered":
       return t("backendDetail.answeredIn", { name, duration: durationOf(t, status.ms) });

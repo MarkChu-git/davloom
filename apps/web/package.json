@@ -12,6 +12,7 @@
     "@astryxdesign/core": "0.7.16",
     "@astryxdesign/theme-neutral": "0.7.16",
     "@better-auth/passkey": "1.7.28",
+    "@davloom/client": "workspace:*",
     "@davloom/ui": "workspace:*",
     "@lucide/icons": "1.74.0",
     "@stylexjs/stylex": "0.19.2",

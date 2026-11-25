@@ -59,6 +59,7 @@ import {
   encodeWith,
   openApiDocument,
   ROUTES,
+  type RouteContract,
   type RouteName,
 } from "@davloom/schema";
 import {
@@ -358,7 +359,7 @@ export const createApp = ({
       const current = get(request);
       if (current === undefined) return new Response(null, { status: 501 });
       if (current === null) return NOT_CONFIGURED();
-      const contract = ROUTES[name];
+      const contract: RouteContract = ROUTES[name];
       return await current.run(Effect.flatMap(program(request), encodeWith(contract.response)), {
         errors,
         successStatus: contract.status,

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetchOnce } from "./client";
+import type { Outcome } from "@davloom/client";
+import { ApiError, api, apiCallOnce, authFetchOnce } from "./client";
 import {
   createFolder,
   DavError,
@@ -242,21 +243,30 @@ describe("management requests", () => {
     ]);
   });
 
-  it.each(["POST", "PATCH", "PUT", "DELETE"])(
-    "sends JSON with every %s, which the API takes only as JSON",
-    async (method) => {
-      answer = () => Response.json({ ok: true });
-      await apiFetchOnce("/api/keys/k1", { method });
-      expect(headersOf(calls[0])["content-type"]).toBe("application/json");
-      expect(calls[0]?.[1].body).toBe("{}");
-    },
-  );
+  it.each<[string, string, () => Promise<Outcome<unknown>>]>([
+    ["POST", "/api/backends/check", () => api.backends.check.post()],
+    ["PATCH", "/api/keys/k1", () => api.keys({ id: "k1" }).patch({})],
+    ["PUT", "/api/settings/storage", () => api.settings.storage.put({})],
+    ["DELETE", "/api/keys/k1", () => api.keys({ id: "k1" }).delete()],
+  ])("sends JSON with every %s, which the API takes only as JSON", async (method, path, call) => {
+    answer = () => Response.json({ ok: true });
+    await apiCallOnce(call);
+    expect(calls[0]?.[0]).toBe(path);
+    expect(calls[0]?.[1].method).toBe(method);
+    expect(headersOf(calls[0])["content-type"]).toBe("application/json");
+    expect(calls[0]?.[1].body).toBe("{}");
+  });
 
   it("sends a GET without a body or a type", async () => {
     answer = () => Response.json({ ok: true });
-    await apiFetchOnce("/api/keys");
-    expect(headersOf(calls[0])["content-type"]).toBeUndefined();
-    expect(calls[0]?.[1].body).toBeUndefined();
+    await apiCallOnce(() => api.keys.get());
+    await authFetchOnce("/api/auth/list-sessions");
+    for (const call of calls) {
+      expect(call[1].method).toBe("GET");
+      expect(headersOf(call)["content-type"]).toBeUndefined();
+      expect(call[1].body).toBeUndefined();
+    }
+    expect(calls).toHaveLength(2);
   });
 
   it("retries a dropped connection or a server error, but not a refusal", () => {

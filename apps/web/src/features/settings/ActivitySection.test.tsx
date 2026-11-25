@@ -81,9 +81,14 @@ describe("describeEvent", () => {
     [{ action: "mount.remove", target: "id" }, "Removed a mount"],
     [{ action: "settings", target: "default backend" }, "Changed the default backend"],
     [{ action: "webdav.auth", outcome: "failure" }, "Refused a WebDAV key"],
-    [{ action: "later.action" }, "later.action"],
   ] as const)("describes %j as %s", (extra, text) => {
     expect(describeEvent(en, event("e", extra))).toBe(text);
+  });
+
+  it("names an action that a later server records by the action itself", () => {
+    // As the API would send it: JSON that the Dashboard's types do not know yet.
+    const later: AuditEvent = JSON.parse(JSON.stringify({ ...event("e"), action: "later.action" }));
+    expect(describeEvent(en, later)).toBe("later.action");
   });
 });
 

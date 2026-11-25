@@ -20,6 +20,10 @@ const backend = (fields: Partial<Backend> & Pick<Backend, "id" | "name">): Backe
   createdAt: "2026-03-01T12:00:00Z",
   available: true,
   usage: { files: 1, collections: 0, bytes: 100 },
+  status: { state: "answered", ms: 5 },
+  capacity: null,
+  config: {},
+  hasSecretKey: false,
   ...fields,
 });
 const mount = (fields: Pick<Mount, "id" | "name" | "backendId" | "root">): Mount => ({
