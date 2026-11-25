@@ -183,6 +183,18 @@ describe("If header", () => {
         { resource: "http://x/a", conditions: [{ not: false, kind: "token", value: "urn:b" }] },
       ],
     ],
+    [
+      '  ([ "e" ] Not <urn:a>)  ',
+      [
+        {
+          resource: null,
+          conditions: [
+            { not: false, kind: "etag", value: '"e"' },
+            { not: true, kind: "token", value: "urn:a" },
+          ],
+        },
+      ],
+    ],
   ])("parses %s", (header, expected) => {
     expect(parseIfHeader(header)).toEqual(expected);
   });
@@ -195,6 +207,9 @@ describe("If header", () => {
     "(<urn:a)",
     "([x)",
     "(x)",
+    "(x])",
+    "(<a> x])",
+    "<http://x/a> <http://x/b> (<urn:c>)",
     "(<a>) <http://x> (<b>)",
     "<http://x>",
   ])("refuses %j", (header) => {
