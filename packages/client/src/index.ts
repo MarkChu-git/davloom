@@ -75,13 +75,11 @@ type Node = (...args: unknown[]) => unknown;
  */
 const encodingParams = (node: Node, last: string): Node =>
   new Proxy(node, {
-    get: (target, key) => {
-      const next: unknown = Reflect.get(target, key);
-      return typeof key === "string" && typeof next === "function"
-        ? // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every node of Eden's tree is a function
-          encodingParams(next as Node, key)
-        : next;
-    },
+    get: (target, key) =>
+      typeof key === "symbol"
+        ? Reflect.get(target, key)
+        : // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Eden answers every name with the next node, a function
+          encodingParams(Reflect.get(target, key) as Node, key),
     apply: (target, self, args: unknown[]) => {
       const [first] = args;
       const entries =

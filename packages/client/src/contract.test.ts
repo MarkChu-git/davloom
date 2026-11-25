@@ -204,6 +204,27 @@ describe("the typed client's refusals", () => {
     },
   );
 
+  it("hands a symbol of the client to Eden as it is, as inspecting the client reads one", () => {
+    const client = createApiClient({ fetcher: async () => new Response("{}") });
+    expect(() => Reflect.get(client, Symbol.iterator)).not.toThrow();
+    expect(() => Reflect.get(client.keys, Symbol.toStringTag)).not.toThrow();
+  });
+
+  it.each([
+    [{}, { method: "GET", headers: {}, body: undefined }],
+    [{ method: "HEAD" }, { method: "HEAD", headers: {}, body: undefined }],
+    [
+      { method: "POST" },
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+    ],
+    [
+      { method: "PATCH", body: '{"name":"a"}' },
+      { method: "PATCH", headers: { "content-type": "application/json" }, body: '{"name":"a"}' },
+    ],
+  ] as const)("sends %j as %j", (init, sent) => {
+    expect(jsonRequest(init)).toEqual(sent);
+  });
+
   it("refuses a body of the wrong type with the contract's invalid_body", async () => {
     const { client, signIn } = await world();
     await client.registration.post({ ...OWNER });
