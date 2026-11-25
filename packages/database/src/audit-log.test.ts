@@ -42,8 +42,11 @@ describe("createAuditLog", () => {
       const atomic = bunSqliteAtomic(db);
       const log = createAuditLog(db, (statements) => {
         for (const statement of statements) {
-          const query = (statement as { toSQL?: () => { params: unknown[] } }).toSQL?.();
-          if (query) bound.push(query.params.length);
+          const toSQL: unknown = Reflect.get(statement, "toSQL");
+          if (typeof toSQL !== "function") continue;
+          const query: unknown = Reflect.apply(toSQL, statement, []);
+          const params: unknown = Reflect.get(Object(query), "params");
+          if (Array.isArray(params)) bound.push(params.length);
         }
         return atomic(statements);
       });

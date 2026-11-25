@@ -31,13 +31,10 @@ export const totpCode = async (secret: string, now = Date.now()): Promise<string
     false,
     ["sign"],
   );
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, counter.buffer));
-  const offset = (mac[mac.length - 1] ?? 0) & 0x0f;
-  const value =
-    (((mac[offset] ?? 0) & 0x7f) << 24) |
-    ((mac[offset + 1] ?? 0) << 16) |
-    ((mac[offset + 2] ?? 0) << 8) |
-    (mac[offset + 3] ?? 0);
+  const mac = new DataView(await crypto.subtle.sign("HMAC", key, counter.buffer));
+  // Dynamic truncation (RFC 4226 §5.3): 31 bits from the offset the last byte's low nibble names.
+  const offset = mac.getUint8(mac.byteLength - 1) & 0x0f;
+  const value = mac.getUint32(offset) & 0x7fffffff;
   return String(value % 1_000_000).padStart(6, "0");
 };
 

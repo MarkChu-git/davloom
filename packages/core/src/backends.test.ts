@@ -72,6 +72,7 @@ const world = (
             new Error("update failed", { cause: new Error("UNIQUE constraint failed: name") }),
           );
         if (options.broken) return Promise.reject(new Error("disk I/O error"));
+        if (options.vanishing) return Promise.resolve(false);
         const index = backends.findIndex((b) => b.id === id);
         const current = backends[index];
         if (current === undefined) return Promise.resolve(false);
@@ -201,6 +202,14 @@ describe("updateBackend", () => {
     );
   });
 
+  it("keeps an R2 backend's configuration when the change names none", async () => {
+    const { run, backends } = world({
+      backends: [record("r2", "r2", { config: { binding: "R2", prefix: "p/" } })],
+    });
+    valueOf(await run(updateBackend("r2", { name: "Renamed" })));
+    expect(backends[0]).toMatchObject({ name: "Renamed", config: { binding: "R2", prefix: "p/" } });
+  });
+
   it.each([
     ["an unknown backend", "nope", { name: "x" }, "NotFound"],
     ["an empty name", "s3", { name: " " }, "InvalidInput"],
@@ -240,16 +249,21 @@ const clock = () => {
 describe("listBackends, quota", () => {
   it("knows no capacity for a backend without a quota, or whose quota fails", async () => {
     const { run } = world({
-      backends: [record("a"), record("b")],
+      backends: [record("a"), record("b"), record("c")],
       storages: {
         a: { ...createMemoryStorage({ capacity: 10 }), quota: undefined },
         b: {
           ...createMemoryStorage({ capacity: 10 }),
           quota: () => Promise.resolve(fail("unavailable")),
         },
+        c: {
+          ...createMemoryStorage({ capacity: 10 }),
+          quota: () => Promise.reject(new Error("connection reset")),
+        },
       },
     });
     expect(valueOf(await run(listBackends)).map((backend) => backend.capacity)).toEqual([
+      null,
       null,
       null,
     ]);
@@ -260,6 +274,11 @@ describe("failures of the records", () => {
   it("dies on an update that fails for another reason", async () => {
     const { run } = world({ backends: [record("do")], broken: true });
     expect(tagOf(await run(updateBackend("do", { name: "x" })))).toBe("defect");
+  });
+
+  it("names a backend gone before its record could be updated as not found", async () => {
+    const { run } = world({ backends: [record("do")], vanishing: true });
+    expect(tagOf(await run(updateBackend("do", { name: "x" })))).toBe("NotFound");
   });
 
   it("names a backend gone before its record could be removed as not found", async () => {
@@ -364,6 +383,16 @@ describe("removeBackend", () => {
     expect(tagOf(await run(removeBackend("s")))).toBe("BackendInUse");
     expect(backends).toHaveLength(1);
     expect(released).toBe(0);
+  });
+
+  it("removes an S3 backend even when releasing its properties fails afterwards", async () => {
+    const storage: StorageBackend = {
+      ...createMemoryStorage(),
+      release: () => Promise.reject(new Error("bucket unreachable")),
+    };
+    const { run, backends } = world({ backends: [record("s", "s3")], storages: { s: storage } });
+    expect(valueOf(await run(removeBackend("s")))).toEqual({ id: "s", filesKept: true });
+    expect(backends).toEqual([]);
   });
 
   it("releases an S3 backend only once its record is gone", async () => {

@@ -30,6 +30,20 @@ const passwordInput = (): HTMLInputElement => {
 const sentBody = async (calls: Request[], path: string): Promise<unknown> =>
   await calls.find((call) => call.method === "POST" && call.url.endsWith(path))?.json();
 
+/** Chooses an export file with this text. */
+const upload = async (text: string) => {
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  if (input === null) throw new Error("no file input");
+  await userEvent.upload(input, new File([text], "export.json", { type: "application/json" }));
+};
+
+/** The form that imports an export. */
+const importForm = async (api: Record<string, Handler> = {}) => {
+  const page = await showForm(api);
+  await userEvent.click(screen.getByRole("radio", { name: "From an export" }));
+  return page;
+};
+
 describe("RegisterPage", () => {
   it("waits while it asks whether the instance has an owner", async () => {
     await renderPage(<RegisterPage />, {
@@ -248,5 +262,77 @@ describe("RegisterPage", () => {
       file: { format: "davloom-export" },
       setupToken: "the-token",
     });
+  });
+
+  describe("importing", () => {
+    it("refuses a file that is not JSON, without sending it", async () => {
+      const { calls } = await importForm();
+      await upload("not json at all");
+      await userEvent.type(screen.getByLabelText("Export key"), "the-key{Enter}");
+      expect(await screen.findByText("That file is not a Davloom export.")).toBeTruthy();
+      expect(calls.some((call) => call.url.endsWith("/api/registration/import"))).toBe(false);
+      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Import" }).disabled).toBe(
+        false,
+      );
+    });
+
+    it.each([
+      [
+        "the server's explanation",
+        () =>
+          json({ error: { code: "archive_invalid", message: "The key does not open it." } }, 400),
+        "The key does not open it.",
+      ],
+      [
+        "that the server could not be reached",
+        () => Promise.reject(new TypeError("Failed to fetch")),
+        "Davloom could not be reached. Check the connection and try again.",
+      ],
+    ])("shows %s when an import fails", async (_case, answer, message) => {
+      const { router } = await importForm({ "POST /api/registration/import": answer });
+      await upload(JSON.stringify({ format: "davloom-export" }));
+      await userEvent.type(screen.getByLabelText("Export key"), "the-key");
+      await userEvent.click(screen.getByRole("button", { name: "Import" }));
+      expect(await screen.findByText(message)).toBeTruthy();
+      expect(router.state.location.pathname).toBe("/register");
+    });
+
+    it("shows a refused setup token under its field, and forgets it once the token changes", async () => {
+      await importForm({
+        "GET /api/registration": () => json({ open: true, tokenRequired: true, passkeys: false }),
+        "POST /api/registration/import": () =>
+          json({ error: { code: "setup_token_invalid" } }, 403),
+      });
+      await upload(JSON.stringify({ format: "davloom-export" }));
+      await userEvent.type(screen.getByLabelText("Export key"), "the-key");
+      await userEvent.type(screen.getByLabelText("Setup token"), "wrong{Enter}");
+      expect(
+        (await screen.findAllByText("That is not this instance's setup token.")).length,
+      ).toBeGreaterThan(0);
+      expect(screen.getByLabelText("Setup token").getAttribute("aria-invalid")).toBe("true");
+      await userEvent.type(screen.getByLabelText("Setup token"), "x");
+      expect(screen.getByLabelText("Setup token").getAttribute("aria-invalid")).not.toBe("true");
+    });
+
+    it("forgets a missing file's problem once a file is chosen", async () => {
+      await importForm();
+      await userEvent.click(screen.getByRole("button", { name: "Import" }));
+      expect((await screen.findAllByText("Choose the export file.")).length).toBeGreaterThan(0);
+      await upload("{}");
+      await waitFor(() => expect(screen.queryByText("Choose the export file.")).toBeNull());
+    });
+  });
+
+  it("sends the form with Enter in any field, and forgets the setup token's problem", async () => {
+    const { calls } = await showForm({
+      "GET /api/registration": () => json({ open: true, tokenRequired: true, passkeys: false }),
+    });
+    await userEvent.type(screen.getByLabelText("Username"), "owner{Enter}");
+    expect((await screen.findAllByText("Enter the setup token.")).length).toBeGreaterThan(0);
+    await userEvent.type(passwordInput(), "short{Enter}");
+    await userEvent.type(screen.getByLabelText("Setup token"), "t");
+    expect(screen.queryByText("Enter the setup token.")).toBeNull();
+    await userEvent.type(screen.getByLabelText("Setup token"), "{Enter}");
+    expect(calls.some((call) => call.method === "POST")).toBe(false);
   });
 });

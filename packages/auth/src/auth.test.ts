@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { createBunSqliteDatabase, migrateBunSqliteDatabase } from "@davloom/database/bun-sqlite";
+import { APIError } from "better-auth/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAuth, logRedacted } from "./auth";
 import { createIdentity } from "./identity";
@@ -46,6 +47,18 @@ describe("logRedacted", () => {
       "[Better Auth] error: (message withheld) DrizzleQueryError",
     ],
     ["error", "Failed", [SECRET_VALUE], "[Better Auth] error: Failed string"],
+    ["info", "Started", [], "[Better Auth] info: Started"],
+    ["debug", "Checked", [], "[Better Auth] debug: Checked"],
+    [
+      "error",
+      "Failed",
+      [
+        Object.assign(new APIError("INTERNAL_SERVER_ERROR", { message: SECRET_VALUE }), {
+          cause: Object.assign(new Error(SECRET_VALUE), { name: "D1_ERROR" }),
+        }),
+      ],
+      "[Better Auth] error: Failed D1_ERROR",
+    ],
   ] as const)("%s %j", (level, message, args, line) => {
     const lines = captured();
     logRedacted(level, message, ...args);
@@ -86,5 +99,49 @@ describe("the handler of Better Auth's routes", () => {
     expect(response.status).toBe(500);
     expect(lines.join("\n")).not.toContain(SECRET_VALUE);
     expect(lines.join("\n")).toContain("SQLITE_CONSTRAINT_TRIGGER");
+  });
+});
+
+// Better Auth skips its origin check under NODE_ENV=test, so the rule is read from its options.
+const trusted = async (request: Request | undefined) => {
+  const db = createBunSqliteDatabase(new Database(":memory:"));
+  migrateBunSqliteDatabase(db);
+  const auth = createAuth({
+    database: db,
+    secret: "a-test-secret-that-is-at-least-32-characters",
+    baseURL: "http://localhost",
+    checkLeakedPasswords: false,
+    rateLimit: false,
+  });
+  const rule = (await auth.$context).options.trustedOrigins;
+  if (typeof rule !== "function") throw new Error("trustedOrigins is not a function");
+  return rule(request);
+};
+
+describe("the origins Better Auth trusts", () => {
+  it.each([
+    ["no request", undefined, {}, []],
+    ["the origin a request was sent to", "http://files.example/x", {}, ["http://files.example"]],
+    [
+      "https too behind a proxy that says so",
+      "http://files.example:8080/x",
+      { "x-forwarded-proto": "https" },
+      ["http://files.example:8080", "https://files.example:8080"],
+    ],
+    [
+      "the first protocol a chain of proxies names",
+      "http://files.example/x",
+      { "x-forwarded-proto": " HTTPS , http" },
+      ["http://files.example", "https://files.example"],
+    ],
+    [
+      "only the origin when the first proxy saw http",
+      "http://files.example/x",
+      { "x-forwarded-proto": "http, https" },
+      ["http://files.example"],
+    ],
+  ] as const)("trusts %s", async (_case, url, headers, origins) => {
+    const request = url === undefined ? undefined : new Request(url, { headers });
+    expect(await trusted(request)).toEqual(origins);
   });
 });

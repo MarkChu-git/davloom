@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { json, renderPage, type Handler } from "../../test/render";
 import { apiFetch } from "../api/client";
+import { passkeyApi, stubPasskeys } from "../../test/webauthn";
 import { StepUpDialog } from "./StepUpDialog";
 
 // The step-up dialog as a page meets it: a request refused with verification_required opens it,
@@ -95,6 +96,87 @@ describe("StepUpDialog", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(await refused).toMatchObject({ status: 403, code: "verification_required" });
     expect(calls.some((call) => call.url.endsWith("/api/verify"))).toBe(false);
+  });
+
+  it("verifies with a passkey, then runs the refused request again", async () => {
+    const credentials = stubPasskeys();
+    let verified = false;
+    const { calls } = await show(
+      world({
+        ...passkeyApi({
+          authentication: () => {
+            verified = true;
+            return json({ session: { token: "new" }, user: { id: "u" } });
+          },
+        }),
+        "POST /api/keys": () =>
+          verified
+            ? json({ id: "k", key: "dav_x" }, 201)
+            : json({ error: { code: "verification_required" } }, 403),
+      }),
+    );
+    const created = apiFetch<{ key: string }>("/api/keys", { method: "POST", body: {} });
+    const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use a passkey" }));
+    expect(await created).toEqual({ id: "k", key: "dav_x" });
+    expect(credentials.get).toHaveBeenCalledTimes(1);
+    expect(calls.some((call) => call.url.endsWith("/passkey/verify-authentication"))).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it.each([
+    ["the person cancels the passkey prompt", { cancel: true }, {}, "Auth cancelled"],
+    [
+      "the server refuses the passkey",
+      {},
+      {
+        authentication: () =>
+          json({ code: "PASSKEY_NOT_FOUND", message: "Passkey not found" }, 401),
+      },
+      "Passkey not found",
+    ],
+  ])("says so when %s, and keeps the dialog open", async (_, browser, server, shown) => {
+    stubPasskeys(browser);
+    await show(world(passkeyApi(server)));
+    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
+      (error: unknown) => error,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Use a passkey" }));
+    expect(await within(dialog).findByText(shown)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await refused).toMatchObject({ code: "verification_required" });
+  });
+
+  it.each([
+    ["code_required", "Enter the code from your authenticator app."],
+    [
+      "too_many_attempts_request_new_code",
+      "Too many wrong codes. Wait a few minutes and try again.",
+    ],
+    ["account_temporarily_locked", "Too many wrong codes. Wait a few minutes and try again."],
+    ["verification_locked", "Too many wrong attempts. Wait 15 minutes, then try again."],
+  ])("explains the refusal %s", async (code, message) => {
+    await show(world({ "POST /api/verify": () => json({ error: { code } }, 400) }));
+    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
+      (error: unknown) => error,
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Verify it is you" });
+    await userEvent.type(within(dialog).getByLabelText("Password"), "my password{Enter}");
+    expect(await within(dialog).findByText(message)).toBeTruthy();
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await refused).toMatchObject({ code: "verification_required" });
+  });
+
+  it("lets the refusal stand when the person closes the dialog with Escape", async () => {
+    await show(world());
+    const refused = apiFetch("/api/keys", { method: "POST", body: {} }).catch(
+      (error: unknown) => error,
+    );
+    await screen.findByRole("dialog", { name: "Verify it is you" });
+    await userEvent.keyboard("{Escape}");
+    expect(await refused).toMatchObject({ status: 403, code: "verification_required" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("refuses an empty password before sending", async () => {

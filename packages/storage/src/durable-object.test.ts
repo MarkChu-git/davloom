@@ -282,4 +282,15 @@ describe("the Durable Objects adapter on its SQLite rows", () => {
     expect((await again.stat(["f"])).ok).toBe(true);
     expect((await durableObjectStorage(storage, "other").stat(["f"])).ok).toBe(false);
   });
+
+  it("reports the quota and releases only an empty object through the namespace", async () => {
+    const backend = durableObjectStorage(storage, crypto.randomUUID());
+    await backend.write(["f"], streamOf("12345"), {});
+    const quota = await backend.quota?.([]);
+    expect(quota?.ok && quota.value.used).toBe(5);
+    expect(await backend.release?.()).toEqual({ ok: false, failure: "exists" });
+    expect((await backend.stat(["f"])).ok).toBe(true);
+    await backend.remove(["f"]);
+    expect(await backend.release?.()).toEqual({ ok: true, value: null });
+  });
 });

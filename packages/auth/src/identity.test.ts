@@ -3,6 +3,7 @@
 import { Database } from "bun:sqlite";
 import { createBunSqliteDatabase, migrateBunSqliteDatabase } from "@davloom/database/bun-sqlite";
 import * as schema from "@davloom/database/schema";
+import { APIError } from "better-auth/api";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LOCK_MS, MAX_ATTEMPTS } from "./attempts";
@@ -607,5 +608,81 @@ describe("createApiKey", () => {
 
     expect(first.key).not.toBe(second.key);
     expect(first.id).not.toBe(second.id);
+  });
+});
+
+describe("failures Better Auth reports", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["an error that is not Better Auth's", new Error("")],
+    ["a refusal that names no field", new APIError("BAD_REQUEST", { message: "Nope" })],
+  ])("passes on %s at registration", async (_case, error) => {
+    vi.spyOn(auth.api, "signUpEmail").mockRejectedValue(error);
+    await expect(register()).rejects.toBe(error);
+  });
+
+  it.each([
+    ["verifyPassword", new APIError("INTERNAL_SERVER_ERROR", { message: "down" })],
+    ["verifyPassword", new Error("disk I/O error")],
+    ["verifyTOTP", new APIError("INTERNAL_SERVER_ERROR", { message: "down" })],
+    ["verifyTOTP", new Error("disk I/O error")],
+  ] as const)("passes on a failure of %s at re-verification: %s", async (route, error) => {
+    await register();
+    const { headers } = await enableTwoFactor(await sessionOf());
+    vi.spyOn(auth.api, route).mockRejectedValue(error);
+    await expect(
+      identity.reverify(headers, { password: OWNER.password, code: "123456" }),
+    ).rejects.toBe(error);
+  });
+
+  it.each([
+    ["a number", 1_700_000_000_000, 1_700_000_000_000],
+    ["an ISO string", "2023-11-14T22:13:20.000Z", 1_700_000_000_000],
+  ])("reads a session's times stored as %s", async (_case, stored, expected) => {
+    await register();
+    const headers = await sessionOf();
+    const real = auth.api.getSession.bind(auth.api);
+    vi.spyOn(auth.api, "getSession").mockImplementation(async (context) => {
+      const found = await real(context);
+      if (found) Object.assign(found.session, { createdAt: stored, verifiedAt: "not a time" });
+      return found;
+    });
+    expect((await identity.sessionUser(headers))?.verifiedAt).toBe(expected);
+  });
+});
+
+describe("authenticator codes sent over HTTP", () => {
+  it("lets a code finish the two-step sign-in, without counting it towards a lock", async () => {
+    await register();
+    const { secret } = await enableTwoFactor(await sessionOf());
+    const first = await http("/sign-in/username", {
+      username: OWNER.username,
+      password: OWNER.password,
+    });
+    expect(await first.clone().json()).toMatchObject({ twoFactorRedirect: true });
+    const pending = new Headers({ cookie: cookieHeader(first) });
+    const second = await http("/two-factor/verify-totp", { code: await totpCode(secret) }, pending);
+    expect(second.status).toBe(200);
+    const user = await identity.sessionUser(new Headers({ cookie: cookieHeader(second) }));
+    expect(user?.username).toBe("Ada");
+    expect(await db.select().from(schema.verificationAttempts)).toEqual([]);
+  });
+
+  it("clears a signed-in session's wrong attempts once its code is right", async () => {
+    await register();
+    const { secret, headers } = await enableTwoFactor(await sessionOf());
+    const wrongCode = (await totpCode(secret)) === "000000" ? "111111" : "000000";
+    for (let attempt = 0; attempt < MAX_ATTEMPTS - 1; attempt += 1) {
+      expect((await http("/two-factor/verify-totp", { code: wrongCode }, headers)).status).toBe(
+        401,
+      );
+    }
+    expect(await db.select().from(schema.verificationAttempts)).toHaveLength(1);
+    const right = await http("/two-factor/verify-totp", { code: await totpCode(secret) }, headers);
+    expect(right.status).toBe(200);
+    expect(await db.select().from(schema.verificationAttempts)).toEqual([]);
   });
 });

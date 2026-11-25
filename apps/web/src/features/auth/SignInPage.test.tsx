@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { json, renderPage, type Handler } from "../../test/render";
+import { passkeyApi, stubPasskeys } from "../../test/webauthn";
 import { SignInPage } from "./SignInPage";
 
 afterEach(() => {
@@ -19,6 +20,7 @@ const ME = {
 };
 const SIGNED_OUT = () => json({ error: { code: "unauthorized" } }, 401);
 const CLOSED: Handler = () => json({ open: false });
+const PASSKEYS_ON: Handler = () => json({ open: false, passkeys: true });
 
 const showForm = async (api: Record<string, Handler> = {}, redirect?: string) => {
   const page = await renderPage(<SignInPage redirect={redirect} />, {
@@ -227,6 +229,62 @@ describe("SignInPage", () => {
       ).toBeGreaterThan(0);
       await userEvent.click(screen.getByRole("button", { name: "Start again" }));
       expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
+    });
+  });
+
+  it("sends the form with Enter in the identifier field too", async () => {
+    const { calls } = await showForm({
+      "POST /api/auth/sign-in/username": () => json({ error: { code: "unauthorized" } }, 401),
+    });
+    await fill("", "correct horse");
+    await userEvent.type(screen.getByLabelText("Username or email"), "owner{Enter}");
+    expect(await screen.findByText("The username or the password is wrong.")).toBeTruthy();
+    expect(calls.some((call) => call.url.endsWith("/api/auth/sign-in/username"))).toBe(true);
+  });
+
+  describe("with two-step verification on, more", () => {
+    it("refuses an empty backup code before sending", async () => {
+      const { calls } = await secondStep({});
+      await userEvent.click(screen.getByRole("button", { name: "Use a backup code" }));
+      await userEvent.click(screen.getByRole("button", { name: "Verify" }));
+      expect((await screen.findAllByText("Enter a backup code.")).length).toBeGreaterThan(0);
+      expect(calls.some((call) => call.url.includes("/two-factor/verify-"))).toBe(false);
+    });
+
+    it("says what went wrong with a code the server could not check", async () => {
+      await secondStep({
+        "POST /api/auth/two-factor/verify-totp": () => json({ error: { code: "boom" } }, 500),
+      });
+      await userEvent.type(screen.getByLabelText("Authenticator code"), "123456{Enter}");
+      expect(await screen.findByText("The server refused the request (500).")).toBeTruthy();
+    });
+  });
+
+  describe("with a passkey", () => {
+    it("signs in and opens the Dashboard", async () => {
+      const credentials = stubPasskeys();
+      let signedIn = false;
+      const { router } = await showForm({
+        "GET /api/me": () => (signedIn ? json(ME) : SIGNED_OUT()),
+        "GET /api/registration": PASSKEYS_ON,
+        ...passkeyApi({
+          authentication: () => {
+            signedIn = true;
+            return json({ session: { token: "t" }, user: { id: "u" } });
+          },
+        }),
+      });
+      await userEvent.click(await screen.findByRole("button", { name: "Sign in with a passkey" }));
+      await waitFor(() => expect(router.state.location.href).toBe("/"));
+      expect(credentials.get).toHaveBeenCalledTimes(1);
+    });
+
+    it("says so when the person cancels, and keeps the form", async () => {
+      stubPasskeys({ cancel: true });
+      await showForm({ "GET /api/registration": PASSKEYS_ON, ...passkeyApi() });
+      await userEvent.click(await screen.findByRole("button", { name: "Sign in with a passkey" }));
+      expect(await screen.findByText("Auth cancelled")).toBeTruthy();
+      expect(screen.getByLabelText("Username or email")).toBeTruthy();
     });
   });
 
