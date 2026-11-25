@@ -209,6 +209,21 @@ describe("carryFrameInput", () => {
     expect(state()).toEqual(["", "", ""]);
   });
 
+  it("carries nothing into a page that a redirect at startup led to", async () => {
+    const start = window.location.pathname;
+    stop = carryFrameInput();
+    typeIntoFrame('[autocomplete="username"]', "admin");
+    document.body.replaceChildren();
+    window.history.replaceState(null, "", "/elsewhere");
+    try {
+      render(<SignIn />);
+      await settle();
+      expect(state()).toEqual(["", "", ""]);
+    } finally {
+      window.history.replaceState(null, "", start);
+    }
+  });
+
   it("watches nothing on a page whose frame has no field to type into", () => {
     document.body.innerHTML = '<main><input type="text" readonly value="/dav/"></main>';
     const observe = vi.spyOn(MutationObserver.prototype, "observe");

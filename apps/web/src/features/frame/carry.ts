@@ -116,6 +116,8 @@ export const carryFrameInput = (root: Document = document, carryMs = CARRY_MS): 
   // What the frame is made of. The page's own elements take focus as React puts them in, while the
   // frame is still there, and they are none of these.
   const frameParts = [...root.body.children];
+  // A redirect at startup leads to another page, whose fields were never typed into.
+  const path = root.location.pathname;
 
   const onFocusIn = (event: FocusEvent) => {
     const { target } = event;
@@ -142,6 +144,10 @@ export const carryFrameInput = (root: Document = document, carryMs = CARRY_MS): 
       root.removeEventListener("focusin", onFocusIn, true);
       root.removeEventListener("focusout", onFocusOut, true);
       timer = setTimeout(stop, carryMs);
+    }
+    if (root.location.pathname !== path) {
+      stop();
+      return;
     }
     pending = writeInto(typableFields(root), pending);
     if (pending.length === 0) stop();
