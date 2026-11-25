@@ -190,10 +190,10 @@ const runScript = isInstrumented
   : () => compile(FILL_SCRIPT)();
 
 /** Runs the frame's script at `path` over the frame `html`. */
-const run = (path: string, html: string, { inert = true } = {}) => {
+const run = (path: string, html: string, { isFrame = true } = {}) => {
   window.history.replaceState(null, "", path);
   document.body.innerHTML = html;
-  document.body.toggleAttribute("inert", inert);
+  document.body.toggleAttribute("data-frame", isFrame);
   runScript();
   return window.davloomFrameReads ?? {};
 };
@@ -213,7 +213,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   document.documentElement.removeAttribute("lang");
-  document.body.removeAttribute("inert");
+  document.body.removeAttribute("data-frame");
   window.history.replaceState(null, "", "/");
 });
 
@@ -315,7 +315,7 @@ describe("the frame's script", () => {
 
   it("writes nothing over a page React has already rendered", async () => {
     answer({ "/api/overview": OVERVIEW });
-    const reads = run("/", TILES, { inert: false });
+    const reads = run("/", TILES, { isFrame: false });
     await settle(reads);
     expect(text("stored")?.textContent).toBe("");
   });

@@ -65,9 +65,9 @@ const FramePreloads = () => {
 // page's Chinese title and description. React writes the stylesheet first in <head>, so the scripts
 // run once the stylesheet has loaded, still before <body> is parsed. A stylesheet in <head> holds
 // back rendering, so the first paint already shows the stored mode and the language. The
-// prerendered frame is `inert`: it is only a picture of the page until client.tsx renders the page
-// in its place, so nothing in it takes focus, a click or typing that the render would then throw
-// away.
+// prerendered frame's <body> carries `data-frame` until client.tsx renders the page in its place.
+// A person can type into the frame's fields meanwhile, and the page takes what they typed
+// (features/frame/carry.ts).
 const Document = ({ children }: { children: ReactNode }) => {
   const locale = useActiveLocale();
   const page = usePage();
@@ -82,7 +82,7 @@ const Document = ({ children }: { children: ReactNode }) => {
         {/* Starts the reads whose values the frame shows first, and writes them into it. */}
         <script dangerouslySetInnerHTML={{ __html: FILL_SCRIPT }} />
       </head>
-      <body inert={import.meta.env.SSR ? true : undefined}>
+      <body data-frame={import.meta.env.SSR ? "" : undefined}>
         {children}
         {/* The frame is parsed: the script in <head> may write into it before the code below runs. */}
         {import.meta.env.SSR ? (
