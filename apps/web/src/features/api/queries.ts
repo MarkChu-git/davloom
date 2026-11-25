@@ -112,14 +112,19 @@ export const keys = {
 };
 
 /**
- * One client for the visit. A call refused with 401 everywhere but /api/me means the session
- * ended, so the session is read again and the Dashboard sends the person to sign in.
+ * One client for the visit. A call refused with 401 means the session ended: the session the
+ * sign-in page reads becomes null, and /api/me is read again so the Dashboard sends the person to
+ * sign in.
  */
 export const createQueryClient = (): QueryClient => {
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({
       onError: (error, query) => {
-        if (isUnauthorized(error) && query.queryKey[0] !== keys.me[0]) {
+        if (!isUnauthorized(error)) return;
+        // The session is over whatever the sign-in page last read, so it shows the form instead
+        // of sending the person back to the page that was just refused.
+        client.setQueryData(keys.session, null);
+        if (query.queryKey[0] !== keys.me[0]) {
           void client.invalidateQueries({ queryKey: keys.me });
         }
       },
