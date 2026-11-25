@@ -50,11 +50,20 @@ jobs:
         if: steps.secrets.outputs.present == 'true'
         working-directory: apps/api
         run: bunx --bun wrangler d1 migrations apply davloom --remote
-      # The commit goes into the build, for About this instance on the Dashboard.
+      # The commit goes into the build, for About this instance on the Dashboard. The Dashboard's
+      # build, its prerendered pages, _headers and robots.txt included, goes up as the Worker's
+      # static assets (apps/api/wrangler.jsonc). The repository variable DAVLOOM_URL, when set,
+      # becomes the Worker's DAVLOOM_URL; without it the Worker keeps the one it has
+      # (`keep_vars`).
       - name: Deploy the Worker
         if: steps.secrets.outputs.present == 'true'
         working-directory: apps/api
-        run: bunx --bun wrangler deploy --define "DAVLOOM_BUILD_COMMIT:\"$GITHUB_SHA\""
+        env:
+          DAVLOOM_URL: ${{ vars.DAVLOOM_URL }}
+        run: |
+          set -- --define "DAVLOOM_BUILD_COMMIT:\"$GITHUB_SHA\""
+          if [ -n "$DAVLOOM_URL" ]; then set -- "$@" --var "DAVLOOM_URL:$DAVLOOM_URL"; fi
+          bunx --bun wrangler deploy "$@"
       # PRD §15: the release smoke test against the deployment, when the repository names one.
       - name: Smoke-test the deployment
         if: steps.secrets.outputs.present == 'true' && env.DAVLOOM_SMOKE_KEY != '' && env.DAVLOOM_SMOKE_URL != ''

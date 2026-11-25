@@ -5,6 +5,9 @@
   "compatibility_date": "2026-11-04",
   // Better Auth needs node:async_hooks.
   "compatibility_flags": ["nodejs_compat"],
+  // Plain variables set on the deployed Worker, such as DAVLOOM_URL, survive each deploy; this
+  // file names none, so that local runs answer on their own address.
+  "keep_vars": true,
   // The AWS SDK's XML utilities, without the browser parser that their package.json `browser`
   // field picks for a Worker: it needs DOMParser, which workerd lacks, so every S3 answer failed.
   // Their CommonJS build holds the parser written in JavaScript. The package is a direct
