@@ -5,8 +5,8 @@ import { createFileRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import { useState } from "react";
 import { describeError, isUnauthorized } from "../../features/api/client";
 import { useMe } from "../../features/api/queries";
-import { Waiting } from "../../features/auth/AuthFrame";
 import { GoTo, signInHref } from "../../features/auth/GoTo";
+import { StepUpDialog } from "../../features/auth/StepUpDialog";
 import { DashboardShell } from "../../features/shell/DashboardShell";
 
 /** The Dashboard's pages need a session: without one, the browser goes to sign in and back. */
@@ -16,9 +16,8 @@ const DashboardLayout = () => {
   // The page to return to, read once: while the router moves to the sign-in page, the location
   // already names that page, and a return address made from it would never stop growing.
   const [returnTo] = useState(href);
-  if (me.isPending) {
-    return <Waiting label="Opening Davloom" />;
-  }
+  // The shell and the page's own placeholders show while the session is read, so the prerendered
+  // HTML already holds the page's frame and nothing moves once the answer comes.
   if (me.isError) {
     if (isUnauthorized(me.error)) {
       return <GoTo href={signInHref(returnTo)} />;
@@ -45,6 +44,7 @@ const DashboardLayout = () => {
   return (
     <DashboardShell>
       <Outlet />
+      <StepUpDialog />
     </DashboardShell>
   );
 };

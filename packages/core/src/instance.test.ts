@@ -1,8 +1,7 @@
 import { Cause, Context, Effect, Exit, Layer, Option, Redacted } from "effect";
 import { CredentialCipher } from "./credentials";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  completeSetup,
   createBackend,
   createKey,
   createMount,
@@ -11,22 +10,32 @@ import {
   Identity,
   InstanceConfig,
   instanceUsage,
+  isFresh,
   listBackends,
   listKeys,
   listMounts,
   openNamespace,
   Records,
+  registerOwner,
+  registrationStatus,
   removeMount,
   renameMount,
   retargetMount,
   requireUser,
+  requireVerified,
+  reverify,
   revokeKey,
-  setupStatus,
+  renameKey,
+  STEP_UP_WINDOW_MS,
   StorageOpener,
   verifyApiKey,
+  shouldRecordUse,
+  USE_RECORD_INTERVAL_MS,
   type ApiKeyRecord,
   type BackendRecord,
   type MountRecord,
+  type RegistrationResult,
+  type SessionUser,
 } from "./instance";
 import { createMemoryStorage } from "./memory-storage";
 import { fail, type StorageBackend, type Usage } from "./storage";
@@ -40,12 +49,23 @@ type Services = Records | Identity | StorageOpener | InstanceConfig | Credential
 
 const CREATED = new Date("2026-01-02T03:04:05.000Z");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const TOKEN = "setup-token-0123456789";
-const ADMIN = { name: "Admin", email: "admin@davloom.test", password: "a".repeat(12) };
+const OWNER = { username: "Owner", name: "Owner", email: "", password: "a".repeat(12) };
+const AT = Date.parse("2026-11-24T12:00:00.000Z");
+
+const sessionUser = (overrides: Partial<SessionUser> = {}): SessionUser => ({
+  id: "user-1",
+  name: "Owner",
+  username: "Owner",
+  email: null,
+  twoFactorEnabled: false,
+  verifiedAt: AT,
+  ...overrides,
+});
 
 interface WorldOptions {
   readonly users?: number;
-  readonly setupToken?: string | null;
+  readonly registration?: RegistrationResult;
+  readonly reverification?: Awaited<ReturnType<IdentityShape["reverify"]>>;
   readonly storageKinds?: readonly string[];
   readonly defaultBackend?: {
     kind: string;
@@ -57,7 +77,9 @@ interface WorldOptions {
   readonly keys?: ApiKeyRecord[];
   readonly keysByHash?: Record<string, ApiKeyRecord>;
   readonly storages?: Record<string, StorageBackend | null>;
-  readonly sessionUser?: { id: string; name: string; email: string } | null;
+  readonly sessionUser?: SessionUser | null;
+  readonly setupToken?: string;
+  readonly passkeys?: boolean;
   readonly records?: Partial<{
     backends: Partial<RecordsShape["backends"]>;
     mounts: Partial<RecordsShape["mounts"]>;
@@ -74,8 +96,13 @@ const makeWorld = (options: WorldOptions = {}) => {
     renames: [] as [string, string][],
     retargets: [] as [string, string, string][],
     keyRemoves: [] as string[],
+    backendRemoves: [] as string[],
+    mountRemoves: [] as string[],
+    uses: [] as [string, number][],
+    keyRenames: [] as [string, string][],
     hashLookups: [] as string[],
-    admins: [] as Parameters<IdentityShape["createAdmin"]>[0][],
+    owners: [] as Parameters<IdentityShape["registerOwner"]>[0][],
+    reverifies: [] as Parameters<IdentityShape["reverify"]>[1][],
     apiKeys: [] as Parameters<IdentityShape["createApiKey"]>[0][],
     sessionHeaders: [] as Headers[],
   };
@@ -95,6 +122,20 @@ const makeWorld = (options: WorldOptions = {}) => {
         });
         return Promise.resolve();
       },
+      update: (id, change) => {
+        const index = backends.findIndex((backend) => backend.id === id);
+        const current = backends[index];
+        if (current === undefined) return Promise.resolve(false);
+        backends[index] = { ...current, ...change };
+        return Promise.resolve(true);
+      },
+      remove: (id) => {
+        calls.backendRemoves.push(id);
+        const index = backends.findIndex((backend) => backend.id === id);
+        if (index === -1) return Promise.resolve(false);
+        backends.splice(index, 1);
+        return Promise.resolve(true);
+      },
       ...options.records?.backends,
     },
     mounts: {
@@ -111,7 +152,10 @@ const makeWorld = (options: WorldOptions = {}) => {
         calls.retargets.push([id, backendId, root]);
         return Promise.resolve(mounts.some((mount) => mount.id === id));
       },
-      remove: (id) => Promise.resolve(mounts.some((mount) => mount.id === id)),
+      remove: (id) => {
+        calls.mountRemoves.push(id);
+        return Promise.resolve(mounts.some((mount) => mount.id === id));
+      },
       ...options.records?.mounts,
     },
     apiKeys: {
@@ -124,13 +168,25 @@ const makeWorld = (options: WorldOptions = {}) => {
         calls.keyRemoves.push(id);
         return Promise.resolve((options.keys ?? []).some((key) => key.id === id));
       },
+      rename: (id, name) => {
+        calls.keyRenames.push([id, name]);
+        return Promise.resolve((options.keys ?? []).some((key) => key.id === id));
+      },
+      recordUse: (id, at) => {
+        calls.uses.push([id, at.getTime()]);
+        return Promise.resolve();
+      },
       ...options.records?.apiKeys,
     },
   };
   const identity: IdentityShape = {
-    createAdmin: (details) => {
-      calls.admins.push(details);
-      return Promise.resolve({ id: "user-1" });
+    registerOwner: (details) => {
+      calls.owners.push(details);
+      return Promise.resolve(options.registration ?? { ok: true, id: "user-1" });
+    },
+    reverify: (_headers, input) => {
+      calls.reverifies.push(input);
+      return Promise.resolve(options.reverification ?? "verified");
     },
     sessionUser: (headers) => {
       calls.sessionHeaders.push(headers);
@@ -153,9 +209,10 @@ const makeWorld = (options: WorldOptions = {}) => {
       open: (_id: string, sealed: string) => Effect.succeed(Redacted.make(sealed)),
     }),
     Layer.succeed(InstanceConfig, {
-      setupToken: options.setupToken === undefined ? TOKEN : options.setupToken,
       storageKinds: options.storageKinds ?? ["durable-object", "s3"],
       defaultBackend: options.defaultBackend ?? null,
+      setupToken: options.setupToken === undefined ? null : Redacted.make(options.setupToken),
+      passkeys: options.passkeys ?? false,
     }),
   );
   const run = <A, E>(program: Effect.Effect<A, E, Services>) =>
@@ -204,6 +261,7 @@ const apiKey = (overrides: Partial<ApiKeyRecord> = {}): ApiKeyRecord => ({
   expiresAt: null,
   createdAt: CREATED,
   metadata: { access: "read-write" },
+  lastUsedAt: null,
   ...overrides,
 });
 
@@ -219,84 +277,147 @@ const seededStorage = async () => {
 const uniqueError = new Error("UNIQUE constraint failed: mounts.name");
 const nestedUniqueError = new Error("D1_ERROR: query failed", { cause: uniqueError });
 
-describe("setupStatus", () => {
+describe("registrationStatus", () => {
   it.each([
-    [0, TOKEN, { needed: true, open: true }],
-    [0, null, { needed: true, open: false }],
-    [1, TOKEN, { needed: false, open: false }],
-    [2, null, { needed: false, open: false }],
-  ])("with %i users and token %j is %j", async (users, setupToken, expected) => {
-    const { run } = makeWorld({ users, setupToken });
+    [0, { open: true }],
+    [1, { open: false }],
+    [2, { open: false }],
+  ])("with %i users is %j", async (users, expected) => {
+    const { run } = makeWorld({ users });
 
-    expect(valueOf(await run(setupStatus))).toEqual(expected);
+    expect(valueOf(await run(registrationStatus))).toMatchObject(expected);
+  });
+
+  it.each([
+    [{}, { tokenRequired: false, passkeys: false }],
+    [{ setupToken: "s3cret-token" }, { tokenRequired: true, passkeys: false }],
+    [{ passkeys: true }, { tokenRequired: false, passkeys: true }],
+  ])("with %j says %j", async (options, expected) => {
+    const { run } = makeWorld(options);
+
+    expect(valueOf(await run(registrationStatus))).toEqual({ open: true, ...expected });
   });
 });
 
-describe("completeSetup", () => {
-  const input = { ...ADMIN, token: TOKEN };
-
+describe("the setup token", () => {
   it.each([
-    ["no setup token is configured", { setupToken: null }, input],
-    ["a user already exists", { users: 1 }, input],
-    ["a user exists, even with a wrong token", { users: 1 }, { ...input, token: "wrong" }],
-  ])("is closed when %s", async (_case, options: WorldOptions, details) => {
-    const { run, calls } = makeWorld(options);
+    ["no token", undefined, undefined, true],
+    ["no token, whatever is sent", undefined, "anything", true],
+    ["the token", "s3cret-token", "s3cret-token", true],
+    ["no answer", "s3cret-token", undefined, false],
+    ["an empty answer", "s3cret-token", "", false],
+    ["a prefix", "s3cret-token", "s3cret", false],
+    ["a longer one", "s3cret-token", "s3cret-token!", false],
+    ["another case", "s3cret-token", "S3CRET-TOKEN", false],
+  ])("with %s lets registration through: %s", async (_case, token, sent, passes) => {
+    const { run, calls } = makeWorld(token === undefined ? {} : { setupToken: token });
+    const exit = await run(
+      registerOwner({ ...OWNER, ...(sent === undefined ? {} : { setupToken: sent }) }),
+    );
 
-    expect(errorOf(await run(completeSetup(details)))?._tag).toBe("SetupClosed");
-    expect(calls.admins).toEqual([]);
+    if (passes) {
+      expect(valueOf(exit)).toEqual({ userId: "user-1" });
+    } else {
+      expect(errorOf(exit)?._tag).toBe("SetupTokenInvalid");
+      expect(calls.owners).toEqual([]);
+      expect(calls.backendCreates).toEqual([]);
+    }
+  });
+
+  it("is not asked for once the owner exists", async () => {
+    const { run } = makeWorld({ users: 1, setupToken: "s3cret-token" });
+
+    expect(errorOf(await run(registerOwner(OWNER)))?._tag).toBe("RegistrationClosed");
+  });
+});
+
+describe("registerOwner", () => {
+  const input = OWNER;
+
+  it("is closed once a user exists, without asking the identity provider", async () => {
+    const { run, calls } = makeWorld({ users: 1 });
+
+    expect(errorOf(await run(registerOwner(input)))?._tag).toBe("RegistrationClosed");
+    expect(calls.owners).toEqual([]);
   });
 
   it.each([
-    ["a different token of the same length", TOKEN.replace("0", "1")],
-    ["a shorter token", TOKEN.slice(0, -1)],
-    ["a longer token", `${TOKEN}x`],
-    ["an empty token", ""],
-  ])("rejects %s", async (_case, token) => {
-    const { run, calls } = makeWorld();
-
-    expect(errorOf(await run(completeSetup({ ...input, token })))?._tag).toBe("SetupTokenInvalid");
-    expect(calls.admins).toEqual([]);
-  });
-
-  it.each([
-    ["name", { name: "" }],
-    ["name", { name: "   " }],
+    ["username", { username: "" }],
+    ["username", { username: "   " }],
     ["name", { name: "n".repeat(101) }],
-    ["email", { email: "admin" }],
-    ["email", { email: "admin@" }],
+    ["email", { email: "owner" }],
+    ["email", { email: "owner@" }],
     ["email", { email: "@davloom.test" }],
-    ["email", { email: "ad min@davloom.test" }],
+    ["email", { email: "ow ner@davloom.test" }],
     ["email", { email: `${"a".repeat(242)}@davloom.test` }],
-    ["password", { password: "a".repeat(11) }],
-    ["password", { password: "a".repeat(129) }],
   ])("rejects an invalid %s (%j)", async (field, change) => {
     const { run, calls } = makeWorld();
-    const error = errorOf(await run(completeSetup({ ...input, ...change })));
+    const error = errorOf(await run(registerOwner({ ...input, ...change })));
 
     expect(error).toMatchObject({ _tag: "InvalidInput", field });
-    expect(calls.admins).toEqual([]);
+    expect(calls.owners).toEqual([]);
   });
 
   it.each([
     ["a 100 character name", { name: "n".repeat(100) }],
     ["a 254 character email", { email: `${"a".repeat(241)}@davloom.test` }],
-    ["a 12 character password", { password: "p".repeat(12) }],
-    ["a 128 character password", { password: "p".repeat(128) }],
+    ["no email", { email: "" }],
   ])("accepts %s", async (_case, change) => {
     const { run } = makeWorld();
 
-    expect(valueOf(await run(completeSetup({ ...input, ...change })))).toEqual({
+    expect(valueOf(await run(registerOwner({ ...input, ...change })))).toEqual({
       userId: "user-1",
     });
   });
 
-  it("creates the administrator with a trimmed name, a default backend and its Mount", async () => {
+  it("names the owner by the username without a name, and passes a missing email as null", async () => {
+    const { run, calls } = makeWorld();
+
+    valueOf(await run(registerOwner({ ...input, username: " Ada ", name: " " })));
+
+    expect(calls.owners).toEqual([
+      { username: "Ada", name: "Ada", email: null, password: input.password },
+    ]);
+  });
+
+  it.each([
+    [{ ok: false, refusal: "closed" }, { _tag: "RegistrationClosed" }],
+    [
+      { ok: false, refusal: "field", field: "username", reason: "Taken" },
+      { _tag: "UsernameRefused", reason: "Taken" },
+    ],
+    [
+      { ok: false, refusal: "field", field: "password", reason: "Leaked" },
+      { _tag: "PasswordRefused", reason: "Leaked" },
+    ],
+    [
+      { ok: false, refusal: "field", field: "email", reason: "Bad" },
+      { _tag: "EmailRefused", reason: "Bad" },
+    ],
+    [
+      { ok: false, refusal: "check-failed", reason: "Offline" },
+      { _tag: "PasswordCheckFailed", reason: "Offline" },
+    ],
+  ] as const)(
+    "turns the identity provider's %j into %j, creating no storage",
+    async (registration, expected) => {
+      const { run, calls } = makeWorld({ registration });
+
+      expect(errorOf(await run(registerOwner(input)))).toMatchObject(expected);
+      expect(calls.backendCreates).toEqual([]);
+      expect(calls.mountCreates).toEqual([]);
+    },
+  );
+
+  it("creates the owner, a default backend and its Mount", async () => {
     const { run, calls } = makeWorld({ storageKinds: ["s3", "durable-object"] });
 
-    const result = valueOf(await run(completeSetup({ ...input, name: "  Admin  " })));
+    const result = valueOf(await run(registerOwner({ ...input, name: "  Owner  " })));
 
     expect(result).toEqual({ userId: "user-1" });
-    expect(calls.admins).toEqual([{ name: "Admin", email: ADMIN.email, password: ADMIN.password }]);
+    expect(calls.owners).toEqual([
+      { username: "Owner", name: "Owner", email: null, password: OWNER.password },
+    ]);
     expect(calls.backendCreates).toEqual([
       { id: expect.stringMatching(UUID), name: "Default", kind: "s3", config: {} },
     ]);
@@ -314,31 +435,31 @@ describe("completeSetup", () => {
   it("falls back to durable-object storage when the runtime names no storage kind", async () => {
     const { run, calls } = makeWorld({ storageKinds: [] });
 
-    valueOf(await run(completeSetup(input)));
+    valueOf(await run(registerOwner(input)));
 
     expect(calls.backendCreates.map((record) => record.kind)).toEqual(["durable-object"]);
   });
 
-  it("mounts the first existing backend instead of creating one", async () => {
-    const { run, calls } = makeWorld({ backends: [backend("b-1"), backend("b-2")] });
+  it.each([
+    ["a backend", [backend("b-1", "s3")], []],
+    ["two backends", [backend("b-1"), backend("b-2")], []],
+    ["a backend and its Mount", [backend("b-1", "s3")], [mount("m-1", "files", "b-1")]],
+  ])(
+    "drops %s that nobody owns, and mounts a backend of its own",
+    async (_case, backends, mounts) => {
+      const { run, calls } = makeWorld({ backends, mounts });
 
-    valueOf(await run(completeSetup(input)));
+      valueOf(await run(registerOwner(input)));
 
-    expect(calls.backendCreates).toEqual([]);
-    expect(calls.mountCreates.map((record) => record.backendId)).toEqual(["b-1"]);
-  });
-
-  it("creates no Mount when one already exists", async () => {
-    const { run, calls } = makeWorld({
-      backends: [backend("b-1")],
-      mounts: [mount("m-1", "files", "b-1")],
-    });
-
-    valueOf(await run(completeSetup(input)));
-
-    expect(calls.backendCreates).toEqual([]);
-    expect(calls.mountCreates).toEqual([]);
-  });
+      expect(calls.mountRemoves).toEqual(mounts.map((record) => record.id));
+      expect(calls.backendRemoves).toEqual(backends.map((record) => record.id));
+      expect(calls.backendCreates).toHaveLength(1);
+      expect(calls.mountCreates.map((record) => record.backendId)).toEqual([
+        calls.backendCreates[0]?.id,
+      ]);
+      expect(backends.map((record) => record.id)).not.toContain(calls.backendCreates[0]?.id);
+    },
+  );
 
   it.each([
     ["a unique violation", uniqueError],
@@ -346,7 +467,7 @@ describe("completeSetup", () => {
   ])("turns %s on the default backend into NameTaken", async (_case, error) => {
     const { run } = makeWorld({ records: { backends: { create: () => Promise.reject(error) } } });
 
-    expect(errorOf(await run(completeSetup(input)))?._tag).toBe("NameTaken");
+    expect(errorOf(await run(registerOwner(input)))?._tag).toBe("NameTaken");
   });
 
   it.each([
@@ -355,7 +476,7 @@ describe("completeSetup", () => {
   ])("turns %s on the default Mount into NameTaken", async (_case, error) => {
     const { run } = makeWorld({ records: { mounts: { create: () => Promise.reject(error) } } });
 
-    expect(errorOf(await run(completeSetup(input)))?._tag).toBe("NameTaken");
+    expect(errorOf(await run(registerOwner(input)))?._tag).toBe("NameTaken");
   });
 
   it("lets any other insert failure through as a defect", async () => {
@@ -363,13 +484,77 @@ describe("completeSetup", () => {
       records: { mounts: { create: () => Promise.reject(new Error("disk I/O error")) } },
     });
 
-    expect(isDefect(await run(completeSetup(input)))).toBe(true);
+    expect(isDefect(await run(registerOwner(input)))).toBe(true);
+  });
+});
+
+describe("isFresh", () => {
+  it.each([
+    ["now", AT, true],
+    ["a moment ago", AT - 1000, true],
+    ["just inside the window", AT - STEP_UP_WINDOW_MS + 1, true],
+    ["exactly the window ago", AT - STEP_UP_WINDOW_MS, false],
+    ["long ago", AT - 86_400_000, false],
+    ["in the future", AT + 1000, false],
+    ["never", Number.NaN, false],
+  ])("a verification %s is fresh: %s", (_case, verifiedAt, expected) => {
+    expect(isFresh(verifiedAt, AT)).toBe(expected);
+  });
+});
+
+describe("requireVerified", () => {
+  const stale = sessionUser({ verifiedAt: AT - STEP_UP_WINDOW_MS });
+  const cases = [
+    ["read", stale, "user"],
+    ["change", stale, "user"],
+    ["end-self", stale, "user"],
+    ["destroy", stale, "VerificationRequired"],
+    ["credential", stale, "VerificationRequired"],
+    ["disclose", stale, "VerificationRequired"],
+    ["destroy", sessionUser(), "user"],
+    ["credential", sessionUser(), "user"],
+    ["disclose", sessionUser(), "user"],
+  ] as const;
+
+  it.each(cases)("a %s action with %j gives %s", async (effect, user, expected) => {
+    const { run } = makeWorld({ sessionUser: user });
+    const exit = await run(requireVerified(new Headers(), effect, AT));
+
+    if (expected === "user") expect(valueOf(exit)).toEqual(user);
+    else expect(errorOf(exit)?._tag).toBe(expected);
+  });
+
+  it("fails with Unauthorized without a session, for every effect", async () => {
+    const { run } = makeWorld({ sessionUser: null });
+
+    for (const effect of ["read", "destroy"] as const) {
+      expect(errorOf(await run(requireVerified(new Headers(), effect, AT)))?._tag).toBe(
+        "Unauthorized",
+      );
+    }
+  });
+});
+
+describe("reverify", () => {
+  it.each([
+    ["verified", undefined],
+    ["no-session", "Unauthorized"],
+    ["wrong-password", "WrongPassword"],
+    ["code-required", "CodeRequired"],
+    ["wrong-code", "WrongCode"],
+  ] as const)("turns %s into %s", async (reverification, tag) => {
+    const { run, calls } = makeWorld({ reverification });
+    const exit = await run(reverify(new Headers(), { password: "p", code: "1" }));
+
+    if (tag === undefined) expect(valueOf(exit)).toEqual({ verified: true });
+    else expect(errorOf(exit)?._tag).toBe(tag);
+    expect(calls.reverifies).toEqual([{ password: "p", code: "1" }]);
   });
 });
 
 describe("requireUser", () => {
   it("returns the signed-in user of the request", async () => {
-    const user = { id: "user-1", name: "Admin", email: ADMIN.email };
+    const user = sessionUser();
     const { run, calls } = makeWorld({ sessionUser: user });
     const headers = new Headers({ cookie: "session=1" });
 
@@ -389,7 +574,7 @@ describe("listKeys", () => {
     const expiresAt = new Date("2027-05-06T07:08:09.000Z");
     const { run } = makeWorld({
       keys: [
-        apiKey({ expiresAt }),
+        apiKey({ expiresAt, lastUsedAt: new Date("2026-11-20T10:00:00.000Z") }),
         apiKey({ id: "key-2", name: null, start: null, enabled: false, metadata: null }),
       ],
     });
@@ -404,6 +589,7 @@ describe("listKeys", () => {
         enabled: true,
         expiresAt: "2027-05-06T07:08:09.000Z",
         createdAt: "2026-01-02T03:04:05.000Z",
+        lastUsedAt: "2026-11-20T10:00:00.000Z",
       },
       {
         id: "key-2",
@@ -414,6 +600,7 @@ describe("listKeys", () => {
         enabled: false,
         expiresAt: null,
         createdAt: "2026-01-02T03:04:05.000Z",
+        lastUsedAt: null,
       },
     ]);
   });
@@ -510,6 +697,34 @@ describe("revokeKey", () => {
   });
 });
 
+describe("renameKey", () => {
+  it.each([
+    ["Phone", "Phone"],
+    ["  Work phone ", "Work phone"],
+    ["k".repeat(64), "k".repeat(64)],
+    ["中文 📱", "中文 📱"],
+  ])("renames a key to %j as %j", async (name, stored) => {
+    const { run, calls } = makeWorld({ keys: [apiKey()] });
+
+    expect(valueOf(await run(renameKey("key-1", { name })))).toEqual({ id: "key-1", name: stored });
+    expect(calls.keyRenames).toEqual([["key-1", stored]]);
+  });
+
+  it.each(["", "   ", "k".repeat(65)])("refuses the name %j without a write", async (name) => {
+    const { run, calls } = makeWorld({ keys: [apiKey()] });
+
+    const error = errorOf(await run(renameKey("key-1", { name })));
+    expect(error?._tag).toBe("InvalidInput");
+    expect(calls.keyRenames).toEqual([]);
+  });
+
+  it("fails with NotFound for an unknown key", async () => {
+    const { run } = makeWorld({ keys: [apiKey()] });
+
+    expect(errorOf(await run(renameKey("key-9", { name: "X" })))?._tag).toBe("NotFound");
+  });
+});
+
 describe("listBackends", () => {
   it("reports each backend's availability and usage", async () => {
     const storage = await seededStorage();
@@ -530,6 +745,10 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: true,
         usage: { files: 2, collections: 1, bytes: 8 },
+        status: { state: "answered", ms: expect.any(Number) },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "closed",
@@ -538,6 +757,10 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        status: { state: "not-opened" },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
       {
         id: "down",
@@ -546,8 +769,43 @@ describe("listBackends", () => {
         createdAt: "2026-01-02T03:04:05.000Z",
         available: false,
         usage: null,
+        status: { state: "failed", failure: "unavailable", ms: expect.any(Number) },
+        capacity: null,
+        config: {},
+        hasSecretKey: false,
       },
     ]);
+  });
+
+  it("times a slow backend and reports one that throws as unavailable", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const start = Date.parse("2026-06-01T00:00:00Z");
+    vi.setSystemTime(start);
+    const slow: StorageBackend = {
+      ...createMemoryStorage(),
+      usage: () => {
+        vi.setSystemTime(start + 1234);
+        return Promise.resolve({ ok: true, value: { files: 0, collections: 0, bytes: 0 } });
+      },
+    };
+    const throwing: StorageBackend = {
+      ...createMemoryStorage(),
+      usage: () => Promise.reject(new Error("the Durable Object reset")),
+    };
+    const { run } = makeWorld({
+      backends: [backend("slow"), backend("throwing")],
+      storages: { slow, throwing },
+    });
+    try {
+      const listed = valueOf(await run(listBackends));
+      expect(listed.map((item) => item.status)).toEqual([
+        { state: "answered", ms: 1234 },
+        { state: "failed", failure: "unavailable", ms: 0 },
+      ]);
+      expect(listed.map((item) => item.available)).toEqual([true, false]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -966,7 +1224,7 @@ describe("key scopes", () => {
 
 describe("verifyApiKey", () => {
   const KEY = "dav_0123456789abcdef"; // gitleaks:allow (a made-up test key)
-  const NOW = Date.parse("2026-06-01T00:00:00.000Z");
+  const KEY_NOW = Date.parse("2026-06-01T00:00:00.000Z");
 
   const worldWith = async (record: ApiKeyRecord) =>
     makeWorld({ keysByHash: { [await hashApiKey(KEY)]: record } });
@@ -978,7 +1236,7 @@ describe("verifyApiKey", () => {
   ])("rejects a key of %s without a lookup", async (_case, key) => {
     const { run, calls } = makeWorld();
 
-    expect(valueOf(await run(verifyApiKey(key, NOW)))).toBeNull();
+    expect(valueOf(await run(verifyApiKey(key, KEY_NOW)))).toBeNull();
     expect(calls.hashLookups).toEqual([]);
   });
 
@@ -988,7 +1246,7 @@ describe("verifyApiKey", () => {
   ])("looks up a key of %s by its hash", async (_case, key, hash) => {
     const { run, calls } = makeWorld();
 
-    expect(valueOf(await run(verifyApiKey(key, NOW)))).toBeNull();
+    expect(valueOf(await run(verifyApiKey(key, KEY_NOW)))).toBeNull();
     expect(calls.hashLookups).toEqual([hash]);
   });
 
@@ -1002,22 +1260,75 @@ describe("verifyApiKey", () => {
     ["no metadata", { metadata: null }, { keyId: "key-1", access: "read-only", scope: null }],
     [
       "an expiry after now",
-      { expiresAt: new Date(NOW + 1) },
+      { expiresAt: new Date(KEY_NOW + 1) },
       { keyId: "key-1", access: "read-write", scope: null },
     ],
-    ["an expiry at now", { expiresAt: new Date(NOW) }, null],
-    ["an expiry before now", { expiresAt: new Date(NOW - 1) }, null],
+    ["an expiry at now", { expiresAt: new Date(KEY_NOW) }, null],
+    ["an expiry before now", { expiresAt: new Date(KEY_NOW - 1) }, null],
     ["a disabled key", { enabled: false }, null],
   ])("with %s returns %j", async (_case, overrides: Partial<ApiKeyRecord>, expected) => {
     const { run } = await worldWith(apiKey(overrides));
 
-    expect(valueOf(await run(verifyApiKey(KEY, NOW)))).toEqual(expected);
+    expect(valueOf(await run(verifyApiKey(KEY, KEY_NOW)))).toEqual(expected);
+  });
+
+  const MINUTE = 60_000;
+  it.each([
+    ["never used", null, true],
+    ["used just now", new Date(KEY_NOW), false],
+    ["used 4 minutes 59 seconds ago", new Date(KEY_NOW - 5 * MINUTE + 1000), false],
+    ["used exactly 5 minutes ago", new Date(KEY_NOW - 5 * MINUTE), true],
+    ["used a day ago", new Date(KEY_NOW - 1440 * MINUTE), true],
+    // A clock that went back leaves a time ahead of now, which needs no new record.
+    ["used in the future", new Date(KEY_NOW + MINUTE), false],
+  ])("records the use of a key %s: %s", async (_case, lastUsedAt, records) => {
+    const { run, calls } = await worldWith(apiKey({ lastUsedAt }));
+
+    expect(valueOf(await run(verifyApiKey(KEY, KEY_NOW)))).not.toBeNull();
+    expect(calls.uses).toEqual(records ? [["key-1", KEY_NOW]] : []);
+  });
+
+  it.each([
+    ["an expired key", { expiresAt: new Date(KEY_NOW - 1) }],
+    ["a disabled key", { enabled: false }],
+    ["a key with a broken scope", { metadata: { access: "read-write", paths: "files" } }],
+  ])("records no use of %s", async (_case, overrides: Partial<ApiKeyRecord>) => {
+    const { run, calls } = await worldWith(apiKey(overrides));
+
+    expect(valueOf(await run(verifyApiKey(KEY, KEY_NOW)))).toBeNull();
+    expect(calls.uses).toEqual([]);
+  });
+
+  it("signs in even when the use cannot be recorded", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { run } = makeWorld({
+      keysByHash: { [await hashApiKey(KEY)]: apiKey() },
+      records: { apiKeys: { recordUse: () => Promise.reject(new Error("D1 is read-only")) } },
+    });
+
+    expect(valueOf(await run(verifyApiKey(KEY, KEY_NOW)))).toEqual({
+      keyId: "key-1",
+      access: "read-write",
+      scope: null,
+    });
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it.each(
+    Array.from({ length: 40 }, (_, index) => {
+      const gap = (index - 10) * 17_000 + (index % 3) * 999;
+      return [gap] as const;
+    }),
+  )("shouldRecordUse agrees with the interval for a gap of %i ms", (gap) => {
+    expect(shouldRecordUse(new Date(KEY_NOW - gap), KEY_NOW)).toBe(gap >= USE_RECORD_INTERVAL_MS);
+    expect(shouldRecordUse(null, KEY_NOW)).toBe(true);
   });
 
   it("returns null for an unknown key", async () => {
     const { run } = await worldWith(apiKey());
 
-    expect(valueOf(await run(verifyApiKey(`${KEY}0`, NOW)))).toBeNull();
+    expect(valueOf(await run(verifyApiKey(`${KEY}0`, KEY_NOW)))).toBeNull();
   });
 });
 
@@ -1050,7 +1361,7 @@ describe("S3-compatible backends", () => {
 
   it("creates one with its configuration and a sealed secret key", async () => {
     const { run, calls } = makeWorld({
-      sessionUser: { id: "u", name: "A", email: "a@example.com" },
+      sessionUser: sessionUser({ id: "u" }),
     });
     const created = valueOf(
       await run(createBackend({ name: "Bucket", kind: "s3", config: s3, secretKey: "secret" })),
@@ -1086,52 +1397,25 @@ describe("S3-compatible backends", () => {
     expect(calls.backendCreates).toEqual([]);
   });
 
-  it("setup stores the deployment's default S3 configuration normalized, or as it is when invalid", async () => {
+  it("registration stores the deployment's default S3 configuration normalized, or as it is when invalid", async () => {
     const valid = makeWorld({
       defaultBackend: { kind: "s3", config: { ...s3, prefix: "p" }, secretKey: null },
     });
-    valueOf(
-      await valid.run(
-        completeSetup({
-          name: "A",
-          email: "a@example.com",
-          password: "long enough pass",
-          token: TOKEN,
-        }),
-      ),
-    );
+    valueOf(await valid.run(registerOwner(OWNER)));
     expect(valid.calls.backendCreates[0]?.config).toMatchObject({ prefix: "p/" });
     expect(valid.calls.backendCreates[0]?.secretKey).toBeUndefined();
     const invalid = makeWorld({
       defaultBackend: { kind: "s3", config: { endpoint: "nope" }, secretKey: null },
     });
-    valueOf(
-      await invalid.run(
-        completeSetup({
-          name: "A",
-          email: "a@example.com",
-          password: "long enough pass",
-          token: TOKEN,
-        }),
-      ),
-    );
+    valueOf(await invalid.run(registerOwner(OWNER)));
     expect(invalid.calls.backendCreates[0]?.config).toEqual({ endpoint: "nope" });
   });
 
-  it("setup creates the deployment's default backend with its secret sealed", async () => {
+  it("registration creates the deployment's default backend with its secret sealed", async () => {
     const { run, calls } = makeWorld({
       defaultBackend: { kind: "s3", config: s3, secretKey: Redacted.make("env-secret") },
     });
-    valueOf(
-      await run(
-        completeSetup({
-          name: "A",
-          email: "a@example.com",
-          password: "long enough pass",
-          token: TOKEN,
-        }),
-      ),
-    );
+    valueOf(await run(registerOwner(OWNER)));
     const record = calls.backendCreates[0];
     expect(record?.kind).toBe("s3");
     expect(record?.secretKey).toBe(`sealed:${record?.id}:env-secret`);

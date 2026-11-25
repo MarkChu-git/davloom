@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures";
 import { BRAND_DARK, BRAND_LIGHT, backgroundOf } from "./colors";
 
 const markColor = (page: import("@playwright/test").Page) =>
@@ -44,7 +45,7 @@ test("the first paint after a reload is already dark, before any app code runs",
 
   // With the bundles blocked, only what the HTML itself carries can affect the page.
   await page.route("**/assets/*.js", (route) => route.abort());
-  await page.reload();
+  await page.reload({ waitUntil: "load" });
 
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("dark");
   expect(await bodyColor(page)).toBe(darkBody);
@@ -137,7 +138,7 @@ test("First paint: the root carries the stored mode and scheme before the body i
   });
   // With the bundles blocked, only what the HTML itself carries can affect the page.
   await page.route("**/assets/*.js", (route) => route.abort());
-  await page.reload();
+  await page.reload({ waitUntil: "load" });
 
   expect(await page.evaluate(() => document.documentElement.dataset.whenBodyBegan)).toBe(
     "dark dark",

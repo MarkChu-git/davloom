@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "./client";
+import { ApiError, apiFetchOnce } from "./client";
 import {
   createFolder,
   DavError,
@@ -10,7 +10,9 @@ import {
   uploadFile,
   webdavAddress,
 } from "./dav";
-import { completeSetup, createQueryClient, keys, signIn, signOut } from "./queries";
+import { register, signInWithPassword, signOut } from "./account";
+import { createQueryClient, keys } from "./queries";
+import { setStepUpHandler } from "./stepUp";
 
 // The requests the Dashboard sends, read off a stand-in for fetch and XMLHttpRequest.
 
@@ -115,12 +117,20 @@ describe("WebDAV requests", () => {
   });
 });
 
-/** A stand-in for XMLHttpRequest that answers with `status` once the body is sent. */
-const fakeRequest = (status: number, outcome: "load" | "error" = "load") => {
+/**
+ * A stand-in for XMLHttpRequest that answers each request with the next of `statuses` once the
+ * body is sent, the last one again when they run out.
+ */
+const fakeRequest = (
+  statuses: number | readonly (readonly [number, string?])[],
+  outcome: "load" | "error" = "load",
+) => {
+  const answers = typeof statuses === "number" ? [[statuses] as const] : [...statuses];
   const sent: { method: string; url: string; headers: Record<string, string>; body: unknown }[] =
     [];
   class FakeRequest {
     status = 0;
+    responseText = "";
     private method = "";
     private url = "";
     private readonly headers: Record<string, string> = {};
@@ -144,7 +154,9 @@ const fakeRequest = (status: number, outcome: "load" | "error" = "load") => {
     send(body: Blob) {
       sent.push({ method: this.method, url: this.url, headers: this.headers, body });
       for (const listener of this.upload.listeners) listener({ loaded: Math.floor(body.size / 2) });
+      const [status, text = ""] = (answers.length > 1 ? answers.shift() : answers[0]) ?? [0];
       this.status = status;
+      this.responseText = text;
       queueMicrotask(() => this.listeners.get(outcome)?.());
     }
   }
@@ -161,9 +173,42 @@ describe("uploads", () => {
     expect(sent[0]).toMatchObject({
       method: "PUT",
       url: "/dav/files/a%20b.txt",
-      headers: { "x-davloom-dashboard": "1", "content-type": file.type },
+      headers: { "x-davloom-dashboard": "1", "if-none-match": "*", "content-type": file.type },
     });
+    expect(sent).toHaveLength(1);
     expect(progress).toEqual([5, 10]);
+  });
+
+  it("replaces a file that is there with a second PUT, after step-up verification", async () => {
+    const refused = JSON.stringify({ error: { code: "verification_required" } });
+    const sent = fakeRequest([[412], [403, refused], [204]]);
+    const handler = vi.fn(async () => true);
+    const remove = setStepUpHandler(handler);
+    try {
+      await uploadFile(["files", "a.txt"], new Blob(["0123"]), () => undefined);
+    } finally {
+      remove();
+    }
+    expect(sent.map(({ headers }) => headers["if-none-match"] ?? "none")).toEqual([
+      "*",
+      "none",
+      "none",
+    ]);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a file that is there when the person does not verify", async () => {
+    const refused = JSON.stringify({ error: { code: "verification_required" } });
+    const sent = fakeRequest([[412], [403, refused]]);
+    const remove = setStepUpHandler(async () => false);
+    try {
+      await expect(
+        uploadFile(["files", "a.txt"], new Blob(["0123"]), () => undefined),
+      ).rejects.toEqual(new DavError(403, "verification_required"));
+    } finally {
+      remove();
+    }
+    expect(sent).toHaveLength(2);
   });
 
   it("a refused upload throws its status, and a failed one status 0", async () => {
@@ -179,20 +224,39 @@ describe("uploads", () => {
 });
 
 describe("management requests", () => {
-  it("signs in, signs out and completes setup with JSON", async () => {
+  it("signs in, signs out and registers with JSON", async () => {
     answer = () => Response.json({ ok: true });
-    await signIn("a@example.com", "pw");
+    expect(await signInWithPassword("a@example.com", "pw")).toBe("signed-in");
+    expect(await signInWithPassword("owner", "pw")).toBe("signed-in");
     await signOut();
-    await completeSetup({ name: "A", email: "a@example.com", password: "p", token: "t" });
+    await register({ username: "owner", name: "", email: "", password: "p" });
     expect(
       calls.map(
         ([url, init]) => `${init.method} ${url} ${typeof init.body === "string" ? init.body : ""}`,
       ),
     ).toEqual([
       'POST /api/auth/sign-in/email {"email":"a@example.com","password":"pw"}',
+      'POST /api/auth/sign-in/username {"username":"owner","password":"pw"}',
       "POST /api/auth/sign-out {}",
-      'POST /api/setup {"name":"A","email":"a@example.com","password":"p","token":"t"}',
+      'POST /api/registration {"username":"owner","name":"","email":"","password":"p"}',
     ]);
+  });
+
+  it.each(["POST", "PATCH", "PUT", "DELETE"])(
+    "sends JSON with every %s, which the API takes only as JSON",
+    async (method) => {
+      answer = () => Response.json({ ok: true });
+      await apiFetchOnce("/api/keys/k1", { method });
+      expect(headersOf(calls[0])["content-type"]).toBe("application/json");
+      expect(calls[0]?.[1].body).toBe("{}");
+    },
+  );
+
+  it("sends a GET without a body or a type", async () => {
+    answer = () => Response.json({ ok: true });
+    await apiFetchOnce("/api/keys");
+    expect(headersOf(calls[0])["content-type"]).toBeUndefined();
+    expect(calls[0]?.[1].body).toBeUndefined();
   });
 
   it("retries a dropped connection or a server error, but not a refusal", () => {
@@ -226,5 +290,34 @@ describe("management requests", () => {
       })
       .catch(() => undefined);
     expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it.each([{ queryKey: keys.me }, { queryKey: keys.apiKeys }, { queryKey: keys.overview }])(
+    "a 401 on $queryKey forgets a session the sign-in page read, so it shows the form",
+    async ({ queryKey }) => {
+      const client = createQueryClient();
+      client.setQueryData(keys.session, { user: { id: "u" } });
+      await client
+        .fetchQuery({
+          queryKey,
+          queryFn: () => Promise.reject(new ApiError(401, "unauthorized")),
+          retry: false,
+        })
+        .catch(() => undefined);
+      expect(client.getQueryData(keys.session)).toBeNull();
+    },
+  );
+
+  it("a refusal other than 401 keeps the session", async () => {
+    const client = createQueryClient();
+    client.setQueryData(keys.session, { user: { id: "u" } });
+    await client
+      .fetchQuery({
+        queryKey: keys.apiKeys,
+        queryFn: () => Promise.reject(new ApiError(403, "forbidden")),
+        retry: false,
+      })
+      .catch(() => undefined);
+    expect(client.getQueryData(keys.session)).toEqual({ user: { id: "u" } });
   });
 });

@@ -3,10 +3,12 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  IMAGES,
   PLATFORMS,
   TOOLS,
   type Tool,
   ensureTool,
+  imageReference,
   platformOf,
   sha256Of,
   toolCacheDir,
@@ -45,6 +47,19 @@ const serving = (bytes: Uint8Array, status = 200) => {
   };
   return { requests, fetchAsset };
 };
+
+describe("the pinned images", () => {
+  it.each(Object.entries(IMAGES))(
+    "%s names a release tag and the digest of its index",
+    (_, image) => {
+      expect(image.version).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(image.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(imageReference(image)).toBe(
+        `docker.io/${image.repository}:${image.version}@${image.digest}`,
+      );
+    },
+  );
+});
 
 describe("the pinned tools", () => {
   it("pin a release download of their version, with a SHA-256, for every platform", () => {

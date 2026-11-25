@@ -8,6 +8,14 @@ export const Route = createFileRoute("/_app/sign-in")({
   validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
     redirect: typeof search.redirect === "string" ? search.redirect : undefined,
   }),
-  head: () => ({ meta: [{ title: "Sign in | Davloom" }] }),
+  head: () => ({
+    meta: [
+      { title: "Sign in | Davloom" },
+      {
+        name: "description",
+        content: "Sign in to Davloom to manage your files, keys and storage.",
+      },
+    ],
+  }),
   component: SignInRoute,
 });

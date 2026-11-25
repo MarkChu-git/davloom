@@ -5,8 +5,9 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   ADMIN,
   basic,
+  OFFLINE_VARS,
   SECRET,
-  SETUP_TOKEN,
+  signInOwner,
   startDavloom,
   startWorkersServer,
   stringField,
@@ -26,7 +27,7 @@ const startBun = async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "davloom-migration-"));
   const server = await startBunServer("apps/api/src/entry.bun.ts", {
     DAVLOOM_SECRET: `${SECRET}-bun`,
-    DAVLOOM_SETUP_TOKEN: SETUP_TOKEN,
+    ...OFFLINE_VARS,
     DAVLOOM_DATA_DIR: dataDir,
   });
   return {
@@ -41,16 +42,7 @@ const startBun = async () => {
 const json = { "content-type": "application/json" };
 
 const signIn = async (server: Server) => {
-  const response = await server.fetch("/api/auth/sign-in/email", {
-    method: "POST",
-    headers: { ...json, origin: server.url },
-    body: JSON.stringify({ email: ADMIN.email, password: ADMIN.password }),
-  });
-  expect(response.ok).toBe(true);
-  const cookie = response.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
+  const cookie = await signInOwner(server);
   return (path: string, init: RequestInit = {}) =>
     server.fetch(path, { ...init, headers: { ...json, origin: server.url, cookie } });
 };
@@ -64,11 +56,11 @@ const exportOf = async (api: (path: string, init?: RequestInit) => Promise<Respo
   return { key: stringField(body, "key"), file };
 };
 
-const importInto = (server: Server, body: { key: string; file: unknown }, token = SETUP_TOKEN) =>
-  server.fetch("/api/setup/import", {
+const importInto = (server: Server, body: { key: string; file: unknown }) =>
+  server.fetch("/api/registration/import", {
     method: "POST",
     headers: json,
-    body: JSON.stringify({ ...body, token }),
+    body: JSON.stringify(body),
   });
 
 const keysOf = async (api: (path: string) => Promise<Response>) => {
@@ -94,10 +86,13 @@ describe("moving an instance", () => {
     expect(JSON.stringify(exported.file)).not.toContain(ADMIN.email);
     const bun = await startBun();
     servers.push(bun);
-    expect((await importInto(bun, exported, "wrong token")).status).toBe(403);
     const imported = await importInto(bun, exported);
     expect(imported.status).toBe(201);
-    expect(await (await bun.fetch("/api/setup")).json()).toEqual({ needed: false, open: false });
+    expect(await (await bun.fetch("/api/registration")).json()).toEqual({
+      open: false,
+      tokenRequired: false,
+      passkeys: false,
+    });
     const bunApi = await signIn(bun);
     expect(await keysOf(bunApi)).toEqual(sourceKeys);
     expect(await (await bunApi("/api/mounts")).json()).toEqual(sourceMounts);
@@ -117,13 +112,15 @@ describe("moving an instance", () => {
     // A second import is refused, and changes nothing.
     expect((await importInto(bun, exported)).status).toBe(409);
 
-    // Bun (SQLite) to a new Workers instance (D1).
+    // Bun (SQLite) to a new Workers instance (D1). The keys were used on Bun, and their last use
+    // moves with them.
+    const bunKeys = await keysOf(bunApi);
     const again = await exportOf(bunApi);
     const workers = await startWorkersServer();
     servers.push(workers);
     expect((await importInto(workers, again)).status).toBe(201);
     const workersApi = await signIn(workers);
-    expect(await keysOf(workersApi)).toEqual(sourceKeys);
+    expect(await keysOf(workersApi)).toEqual(bunKeys);
     const put = await workers.fetch("/dav/files/moved.txt", {
       method: "PUT",
       headers: { authorization: basic(source.readWriteKey) },
@@ -138,7 +135,7 @@ describe("moving an instance", () => {
     expect(outside.status).toBe(403);
   });
 
-  it("refuses a file whose key does not open it, and stays open for setup", async () => {
+  it("refuses a file whose key does not open it, and stays open for registration", async () => {
     const source = await startDavloom();
     servers.push(source.server);
     const { file } = await exportOf(source.api);
@@ -152,7 +149,11 @@ describe("moving an instance", () => {
         message: "The key does not open this file, or the file is damaged.",
       },
     });
-    expect(await (await bun.fetch("/api/setup")).json()).toEqual({ needed: true, open: true });
+    expect(await (await bun.fetch("/api/registration")).json()).toEqual({
+      open: true,
+      tokenRequired: false,
+      passkeys: false,
+    });
   });
 
   it("exports only for a signed-in administrator", async () => {

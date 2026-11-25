@@ -1,6 +1,7 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DavError } from "../api/dav";
 import { renderPage } from "../../test/render";
 import { NameForm, TransferForm } from "./dialogs";
 
@@ -87,47 +88,95 @@ describe("NameForm", () => {
   });
 });
 
+const folderButton = (name: string) => screen.findByRole("button", { name });
+
 describe("TransferForm", () => {
+  /** A namespace of two mounts: /files with Archive, Drafts and Drafts/Old, and an empty /photos. */
+  const FOLDERS: Record<string, string[]> = {
+    "/files": ["Drafts", "Archive"],
+    "/files/Drafts": ["Old"],
+    "/files/Drafts/Old": [],
+    "/files/Archive": [],
+    "/photos": [],
+  };
+  const listFolders = vi.fn(async (parts: readonly string[]) => {
+    const found = FOLDERS[`/${parts.join("/")}`];
+    if (found === undefined) {
+      throw new DavError(404);
+    }
+    return found;
+  });
+
+  const form = (props: Partial<Parameters<typeof TransferForm>[0]> = {}) => (
+    <TransferForm
+      transfer="move"
+      names={["a.txt"]}
+      from="/files"
+      mounts={["files", "photos"]}
+      listFolders={listFolders}
+      onCancel={() => undefined}
+      onSubmit={async () => undefined}
+      {...props}
+    />
+  );
+
   it.each([
-    ["move", ["a.txt"], "Move “a.txt”", "Move"],
-    ["copy", ["a.txt"], "Copy “a.txt”", "Copy"],
-    ["move", ["a.txt", "b.txt", "Drafts"], "Move 3 items", "Move"],
-    ["copy", ["a.txt", "b.txt"], "Copy 2 items", "Copy"],
+    ["move", ["a.txt"], "Move “a.txt”", "Move here"],
+    ["copy", ["a.txt"], "Copy “a.txt”", "Copy here"],
+    ["move", ["a.txt", "b.txt", "Drafts"], "Move 3 items", "Move here"],
+    ["copy", ["a.txt", "b.txt"], "Copy 2 items", "Copy here"],
   ] as const)("%s of %j is titled %s", async (transfer, names, title, verb) => {
     const onSubmit = vi.fn<Submit>(async () => undefined);
-    await renderPage(
-      <TransferForm
-        transfer={transfer}
-        names={names}
-        initialDestination="/files"
-        onCancel={() => undefined}
-        onSubmit={onSubmit}
-      />,
-    );
+    await renderPage(form({ transfer, names, onSubmit }));
     expect(screen.getByText(title)).toBeTruthy();
-    expect(field("Destination folder").value).toBe("/files");
+    expect(await folderButton("Archive")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: verb }));
     expect(onSubmit).toHaveBeenCalledWith("/files");
   });
 
-  it("submits on Enter, and clears the reason it refused once the path changes", async () => {
+  it("opens a folder, goes back up by the path, and submits the folder shown", async () => {
+    const onSubmit = vi.fn<Submit>(async () => undefined);
+    await renderPage(form({ onSubmit }));
+    const destination = screen.getByRole("navigation", { name: "Destination" });
+    await userEvent.click(await folderButton("Drafts"));
+    await userEvent.click(await folderButton("Old"));
+    expect(await screen.findByText("No folders inside")).toBeTruthy();
+    expect(destination.textContent).toContain("Old");
+    await userEvent.click(within(destination).getByText("Files"));
+    expect(await folderButton("photos")).toBeTruthy();
+    await userEvent.click(await folderButton("photos"));
+    await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+    expect(onSubmit).toHaveBeenCalledWith("/photos");
+  });
+
+  it("keeps a folder that is moved, and what is inside it, from being opened", async () => {
+    await renderPage(form({ names: ["Drafts", "a.txt"] }));
+    const drafts = await folderButton("Drafts");
+    expect(drafts.getAttribute("aria-disabled")).toBe("true");
+    expect((await folderButton("Archive")).getAttribute("aria-disabled")).not.toBe("true");
+  });
+
+  it("offers only the mounts it is given at the top", async () => {
+    await renderPage(form({ from: "/", mounts: ["files"] }));
+    expect(await folderButton("files")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "photos" })).toBeNull();
+  });
+
+  it("says why a folder cannot be listed", async () => {
+    await renderPage(form({ from: "/gone" }));
+    expect(await screen.findByText("/gone is no longer there.")).toBeTruthy();
+  });
+
+  it("shows the reason it refused, and clears it on a move to another folder", async () => {
     const { onSubmit, answer } = deferred();
-    await renderPage(
-      <TransferForm
-        transfer="move"
-        names={["a.txt"]}
-        initialDestination="/files"
-        onCancel={() => undefined}
-        onSubmit={onSubmit}
-      />,
-    );
-    await userEvent.type(field("Destination folder"), "/Nowhere{Enter}");
-    expect(onSubmit).toHaveBeenCalledWith("/files/Nowhere");
-    answer("The destination folder does not exist.");
-    expect(await screen.findByText("The destination folder does not exist.")).toBeTruthy();
-    await userEvent.type(field("Destination folder"), "x");
+    await renderPage(form({ onSubmit }));
+    await folderButton("Archive");
+    await userEvent.click(screen.getByRole("button", { name: "Move here" }));
+    answer("Choose another folder than the one they are in.");
+    expect(await screen.findByText("Choose another folder than the one they are in.")).toBeTruthy();
+    await userEvent.click(await folderButton("Archive"));
     await waitFor(() =>
-      expect(field("Destination folder").getAttribute("aria-invalid")).not.toBe("true"),
+      expect(screen.queryByText("Choose another folder than the one they are in.")).toBeNull(),
     );
   });
 });

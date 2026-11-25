@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import {
   cardWith,
   filesAt,
@@ -35,7 +36,7 @@ const openAddForm = async (page: Page) => {
   return page.getByRole("dialog");
 };
 
-test("The default backend: its card names Durable Objects, says it is available, and counts what it holds", async ({
+test("The default backend: its card names Durable Objects, says it is available, counts what it holds, and meters its capacity", async ({
   page,
 }) => {
   await page.goto("/storage");
@@ -43,13 +44,44 @@ test("The default backend: its card names Durable Objects, says it is available,
   await shown(card);
   await expect(card).toContainText("Cloudflare Durable Objects");
   await expect(card).toContainText("Available");
-  await expect(card).toContainText(/Stored\s*[\d.]+ (bytes|kB|MB)/);
-  await expect(card).toContainText(/Files\s*\d+/);
-  await expect(card).toContainText(/Folders\s*\d+/);
-  // No capacity is known, so no bar pretends to show one.
-  await expect(card.getByRole("progressbar")).toHaveCount(0);
-  // Connections are checked when the list is read, so there is no button for it.
-  await expect(card.getByRole("button", { name: "Verify connection" })).toHaveCount(0);
+  await expect(card).toContainText(/Endpoint\s*Built in/);
+  await expect(card).toContainText(/Objects\s*[\d,]+/);
+  // A Durable Object's storage has a known limit, which the bar measures what it stores against.
+  await expect(card).toContainText(/Stored\s*[\d.,]+ (bytes?|kB|MB|GB) of [\d.,]+ (kB|MB|GB)/);
+  await expect(card).toContainText(/Mounts\s*\d+/);
+  await shown(card.getByRole("progressbar", { name: "Default capacity used" }));
+  await expect(card).toContainText(/Last checked/);
+});
+
+test("Verifying a connection: the backend is asked again, and its card says how fast it answered", async ({
+  page,
+}) => {
+  await page.goto("/storage");
+  const card = backendCard(page, "Default");
+  await card.getByRole("button", { name: "Verify connection" }).click();
+  await shown(card.getByText(/^Answered just now, in [\d,]+ ms$/));
+  await expect(card.getByText(/^Last checked/)).toHaveCount(0);
+});
+
+test("A connection that still fails: the card says the backend is still unavailable, and why", async ({
+  page,
+}) => {
+  await page.route("**/api/backends/*/verify", (route) =>
+    route.fulfill({
+      json: {
+        id: "default",
+        name: "Default",
+        available: false,
+        latencyMs: null,
+        reason: "timed out",
+        checkedAt: new Date().toISOString(),
+      },
+    }),
+  );
+  await page.goto("/storage");
+  const card = backendCard(page, "Default");
+  await card.getByRole("button", { name: "Verify connection" }).click();
+  await shown(card.getByText("Still unavailable: timed out"));
 });
 
 test("A backend that does not answer: its card says Unavailable, its counts are unknown, and the navigation names it on every page", async ({
@@ -78,8 +110,113 @@ test("Adding a backend: a Durable Objects backend with its own name joins the li
 
   await shown(onScreen(page, `Added backend “${name}”.`));
   const card = backendCard(page, name);
-  await expect(card).toContainText(/Files\s*0/);
+  await expect(card).toContainText(/Objects\s*0/);
   await expect(card).toContainText(/Mounts\s*0/);
+});
+
+test("Editing and removing a backend: Edit renames it, and Remove deletes it with its storage", async ({
+  page,
+}) => {
+  const name = unique("Scratch");
+  const renamed = unique("Renamed");
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Add backend" }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("button", { name: "Add backend" }).click();
+  await shown(backendCard(page, name));
+
+  await page.getByRole("button", { name: `Actions for backend ${name}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  dialog = page.getByRole("dialog");
+  await shown(dialog.getByRole("heading", { name: `Edit ${name}` }));
+  // A backend keeps its kind.
+  await expect(dialog).toContainText(/Kind\s*Cloudflare Durable Objects/);
+  await expect(dialog.getByLabel("Name")).toHaveValue(name);
+  // Another backend's name is refused before anything is sent.
+  await dialog.getByLabel("Name").fill("Default");
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await shown(onScreen(page, "Another backend already has this name."));
+  await dialog.getByLabel("Name").fill(renamed);
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await shown(onScreen(page, `Saved “${renamed}”.`));
+  await shown(backendCard(page, renamed));
+  await expect(backendCard(page, name)).toHaveCount(0);
+
+  await page.getByRole("button", { name: `Actions for backend ${renamed}`, exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toContainText(`Remove ${renamed}?`);
+  await expect(confirmation).toContainText("Its storage is deleted with it.");
+  await confirmation.getByRole("button", { name: "Remove backend" }).click();
+  await shown(onScreen(page, `Removed “${renamed}” and its storage.`));
+  await expect(backendCard(page, renamed)).toHaveCount(0);
+});
+
+test("A backend a mount uses: Remove says to move or remove the mount first", async ({ page }) => {
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Actions for backend Default", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Remove" }).click();
+  const confirmation = page.getByRole("alertdialog");
+  await expect(confirmation).toContainText("Remove Default?");
+  await expect(confirmation).toContainText(
+    /\/files.* this backend\. Move or remove (it|them) first\./,
+  );
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(confirmation).toHaveCount(0);
+  await shown(backendCard(page, "Default"));
+});
+
+test("An S3-compatible backend: the form asks for its endpoint, bucket and keys, checks them, and sends them", async ({
+  page,
+}) => {
+  const name = unique("Bucket");
+  // The test instance reaches no S3 service, so the page's own answer stands in for the server's.
+  let sent: unknown;
+  await page.route("**/api/backends", (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { id: "b-s3" } });
+  });
+  await page.goto("/storage");
+  await page.getByRole("button", { name: "Add backend" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill(name);
+  await openList(page, "combobox", "Kind");
+  await page.getByRole("option", { name: "S3 compatible" }).click();
+  // A field's name ends in whether it is required or optional.
+  const field = (label: string) =>
+    dialog.getByRole("textbox", { name: new RegExp(`^${label} (Required|Optional)$`) });
+  await field("Endpoint").fill("ftp://s3.example.com");
+  await field("Bucket").fill("No");
+  await dialog.getByRole("button", { name: "Add backend" }).click();
+  await shown(onScreen(page, "Enter the endpoint's URL, such as https://s3.example.com."));
+  await shown(onScreen(page, "Use 3 to 63 lowercase letters, digits, dots and hyphens."));
+  await shown(onScreen(page, "Enter the access key ID."));
+  await shown(onScreen(page, "Enter the secret access key."));
+  expect(sent).toBeUndefined();
+
+  await field("Endpoint").fill(" https://s3.example.com ");
+  await field("Bucket").fill("family-photos");
+  await field("Prefix").fill("davloom");
+  await field("Region").fill("eu-west-1");
+  await field("Access key ID").fill("AKIAEXAMPLE");
+  await field("Secret access key").fill("not-a-real-secret");
+  await dialog.getByRole("button", { name: "Add backend" }).click();
+  await shown(onScreen(page, `Added backend “${name}”.`));
+  expect(sent).toEqual({
+    name,
+    kind: "s3",
+    config: {
+      endpoint: "https://s3.example.com",
+      region: "eu-west-1",
+      bucket: "family-photos",
+      prefix: "davloom",
+      forcePathStyle: true,
+      accessKeyId: "AKIAEXAMPLE",
+    },
+    secretKey: "not-a-real-secret",
+  });
 });
 
 test("Adding a mount: the new mount shows a folder of the backend, and Files lists what that folder holds", async ({

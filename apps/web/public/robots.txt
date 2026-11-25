@@ -1,0 +1,5 @@
+# The Dashboard shows nothing but its sign-in page to a crawler, so its pages stay crawlable;
+# the API and WebDAV are never meant for one.
+User-agent: *
+Disallow: /api/
+Disallow: /dav/

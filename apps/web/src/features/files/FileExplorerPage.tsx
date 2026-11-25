@@ -41,31 +41,37 @@ import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlus, HardDrive, Upload as UploadIcon } from "lucide-react";
+import { FolderPlus, HardDrive, Lock, Upload as UploadIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   createFolder,
+  DavError,
   davProblem,
   downloadFile,
   isDavError,
   listFolder,
+  lockEntry,
   readText,
   removeEntry,
   transferEntry,
+  unlockEntry,
   type Entry,
   type EntryKind,
+  type EntryLock,
   type Transfer,
 } from "../api/dav";
 import { keys, useBackends, useMounts } from "../api/queries";
 import { buttonLabelled, inMain, linkTo, refocusIfLost } from "../shell/focus";
 import { formatBytes, formatDateTime, formatRelative } from "../shell/format";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { PageHeader, TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
 import { LoadingRows } from "../shell/QueryState";
 import { TitleAction } from "../shell/TitleRow";
 import { nextFormKey, useFormDialog } from "../shell/useFormDialog";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
-import { NameForm, TransferForm } from "./dialogs";
+import { backendDetail } from "./backendDetail";
+import { NameForm, TransferForm, type ListFolders } from "./dialogs";
 import { isPreviewable } from "./preview";
 import { FileName, splitExtension } from "./FileName";
 import {
@@ -78,6 +84,7 @@ import {
 } from "./paths";
 import { SortMenu, type SortKey } from "./SortMenu";
 import { UploadPanel } from "./UploadPanel";
+import { useRowWindow } from "./useRowWindow";
 import type { Upload } from "./uploadStore";
 
 const styles = stylex.create({
@@ -85,7 +92,13 @@ const styles = stylex.create({
   nameLink: { display: "block", maxWidth: "100%" },
   // Under the name, past its small icon and the gap after it, so the two lines start together.
   detail: { paddingInlineStart: spacingVars["--spacing-6"] },
+  nameCell: { minWidth: 0 },
 });
+
+/** A compact row's height, in pixels, until the window measures one (useRowWindow). */
+const ROW_ESTIMATE = 41;
+/** A narrow listing's row, with its size and age under the name. */
+const NARROW_ROW_ESTIMATE = 57;
 
 /** The narrowest listing, in rem, with room for its Size and Modified columns. */
 const WIDE_FILE_TABLE = 37;
@@ -99,7 +112,22 @@ interface Row extends Record<string, unknown> {
   kind: EntryKind;
   sizeBytes: number;
   modifiedAt: string;
+  lock: EntryLock | null;
+  /** The height of the rows a windowed listing leaves out here; such a row shows nothing else. */
+  spacer?: number;
 }
+
+const isSpacer = (row: Row): boolean => row.spacer !== undefined;
+
+/** The folders inside a folder, for the destination of a move or copy. */
+const listFolderNames: ListFolders = async (parts) =>
+  (await listFolder(parts)).filter((entry) => entry.kind === "folder").map((entry) => entry.name);
+
+/** "Locked by Finder, until 5:30 PM", or who holds a lock without a timeout. */
+const lockText = (lock: EntryLock): string => {
+  const by = lock.owner === "" ? "Locked" : `Locked by ${lock.owner}`;
+  return lock.expiresAt === "" ? by : `${by}, ${formatRelative(lock.expiresAt)}`;
+};
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
@@ -166,10 +194,12 @@ export const FileExplorerPage = ({
   const mounts = mountsQuery.data;
   const mount = mounts?.find((candidate) => candidate.name === parts[0]);
   const backend = backendsQuery.data?.find((candidate) => candidate.id === mount?.backendId);
+  // A backend that did not answer when the backends were read is not asked for the folder.
+  const isUnreachable = backend !== undefined && !backend.available;
   const listing = useQuery({
     queryKey: [...keys.dav, "list", path],
     queryFn: () => listFolder(parts),
-    enabled: mount !== undefined,
+    enabled: mount !== undefined && !isUnreachable,
     // A refusal says at once why the folder cannot be listed; a dropped connection gets one more try.
     retry: (count, error) => count < 1 && isDavError(error) && error.status === 0,
   });
@@ -182,6 +212,7 @@ export const FileExplorerPage = ({
         sizeBytes: 0,
         modifiedAt: item.createdAt,
         contentType: "",
+        lock: null,
       }));
     }
     return listing.data;
@@ -190,9 +221,20 @@ export const FileExplorerPage = ({
     !isRoot &&
     ((mounts !== undefined && mount === undefined) ||
       (isDavError(listing.error) && listing.error.status === 404));
-  const isLoading = entries === undefined && !isMissing && !listing.isError && !mountsQuery.isError;
+  const isLoading =
+    entries === undefined &&
+    !isMissing &&
+    !isUnreachable &&
+    !listing.isError &&
+    !mountsQuery.isError;
   const loadError = isRoot ? mountsQuery.error : (mountsQuery.error ?? listing.error);
   const failedToLoad = entries === undefined && !isMissing && loadError !== null;
+  // What the backend said of itself, which a refusal of the listing alone cannot tell.
+  const backendProblem =
+    backend !== undefined && isUnreachable
+      ? `${backend.name} ${backendDetail(backend)}.`
+      : undefined;
+  const blockedReason = isUnreachable ? backendProblem : undefined;
   // Changes need a folder that exists inside a mount. The top level lists the mounts themselves,
   // which Storage & Mounts manages.
   const canChange = !isRoot && entries !== undefined;
@@ -207,6 +249,7 @@ export const FileExplorerPage = ({
         kind: entry.kind,
         sizeBytes: entry.sizeBytes,
         modifiedAt: entry.modifiedAt,
+        lock: entry.lock,
       }));
   }, [entries, query]);
   const folderNames = useMemo(
@@ -247,7 +290,7 @@ export const FileExplorerPage = ({
     idKey: "id",
     selectedKeys: selected,
     setSelectedKeys,
-    getIsItemSelectable: () => canChange,
+    getIsItemSelectable: (row) => canChange && !isSpacer(row),
   });
   // Named rows let a screen reader say "Select Contracts" rather than "Select row" for each one.
   const selection = useTableSelection<Row>(
@@ -262,9 +305,12 @@ export const FileExplorerPage = ({
 
   // A listing that fails is announced as an error, since moving between pages announces nothing.
   // A missing folder needs no announcement here: its EmptyState announces itself.
-  const pageProblem = failedToLoad
-    ? `Cannot list ${path}. ${davProblem(loadError, path)}`
-    : undefined;
+  const pageProblem =
+    isUnreachable && backendProblem !== undefined
+      ? `Cannot list ${path}. ${backendProblem}`
+      : failedToLoad
+        ? `Cannot list ${path}. ${backendProblem ?? davProblem(loadError, path)}`
+        : undefined;
   useEffect(() => {
     if (pageProblem !== undefined) {
       announce(pageProblem, "assertive");
@@ -429,13 +475,24 @@ export const FileExplorerPage = ({
       () => buttonLabelled(`Actions for ${entry.name}`),
     );
 
+  // A mount whose backend did not answer cannot take anything either.
+  const reachableMounts = (mounts ?? [])
+    .filter(
+      (item) =>
+        backendsQuery.data?.find((candidate) => candidate.id === item.backendId)?.available !==
+        false,
+    )
+    .map((item) => item.name);
+
   const openTransfer = (transfer: Transfer, names: readonly string[]) =>
     transferDialog.show(
       <TransferForm
         key={nextFormKey()}
         transfer={transfer}
         names={names}
-        initialDestination={path}
+        from={path}
+        mounts={reachableMounts}
+        listFolders={listFolderNames}
         onCancel={() => transferDialog.hide()}
         onSubmit={async (destination) => {
           const problem = destinationProblem(path, names, destination);
@@ -497,6 +554,24 @@ export const FileExplorerPage = ({
       },
     });
 
+  const toggleLock = (entry: { name: string; kind: EntryKind; lock: EntryLock | null }) => {
+    const target = [...parts, entry.name];
+    const token = entry.lock?.token ?? null;
+    const change =
+      entry.lock === null
+        ? lockEntry(target, entry.kind)
+        : token === null
+          ? Promise.reject(new DavError(403))
+          : unlockEntry(target, entry.kind, token);
+    change.then(
+      async () => {
+        await refresh();
+        toast({ body: `${entry.lock === null ? "Locked" : "Unlocked"} “${entry.name}”.` });
+      },
+      (error: unknown) => toast({ type: "error", body: davProblem(error, path) }),
+    );
+  };
+
   const download = (name: string) => {
     toast({ body: `Downloading “${name}”.`, uniqueID: "download" });
     downloadFile([...parts, name]).catch((error: unknown) =>
@@ -512,11 +587,25 @@ export const FileExplorerPage = ({
       sortable: !isNarrowListing,
       width: proportional(3, { minWidth: isNarrowListing ? 160 : 220 }),
       renderCell: (row) => {
-        const name = (
+        if (row.spacer !== undefined) {
+          return <VStack height={row.spacer} />;
+        }
+        const link = (
           <Link xstyle={styles.nameLink} href={rowHref(row)}>
             <FileName name={row.name} kind={row.kind} />
           </Link>
         );
+        const name =
+          row.lock === null ? (
+            link
+          ) : (
+            <HStack gap={2} vAlign="center">
+              <StackItem size="fill" xstyle={styles.nameCell}>
+                {link}
+              </StackItem>
+              <Icon icon={Lock} size="sm" color="secondary" label={lockText(row.lock)} />
+            </HStack>
+          );
         return isNarrowListing ? (
           <VStack gap={0.5}>
             {name}
@@ -542,18 +631,20 @@ export const FileExplorerPage = ({
             sortable: true,
             width: pixel(112),
             align: "end",
-            renderCell: (row: Row) => (
-              <Text color="secondary" hasTabularNumbers>
-                {row.kind === "folder" ? "—" : formatBytes(row.sizeBytes)}
-              </Text>
-            ),
+            renderCell: (row: Row) =>
+              isSpacer(row) ? null : (
+                <Text color="secondary" hasTabularNumbers>
+                  {row.kind === "folder" ? "—" : formatBytes(row.sizeBytes)}
+                </Text>
+              ),
           },
           {
             key: "modifiedAt",
             header: isRoot ? "Added" : "Modified",
             sortable: true,
             width: pixel(160),
-            renderCell: (row: Row) => <Text color="secondary">{ageOf(row.modifiedAt)}</Text>,
+            renderCell: (row: Row) =>
+              isSpacer(row) ? null : <Text color="secondary">{ageOf(row.modifiedAt)}</Text>,
           },
         ] satisfies TableColumn<Row>[])),
     ...(canChange
@@ -563,31 +654,59 @@ export const FileExplorerPage = ({
             header: <VisuallyHidden>Actions</VisuallyHidden>,
             width: pixel(64),
             align: "end",
-            renderCell: (row: Row) => (
-              <MoreMenu
-                label={`Actions for ${row.name}`}
-                size="sm"
-                alignment="end"
-                items={[
-                  row.kind === "folder"
-                    ? { label: "Open", onClick: () => void navigate({ href: rowHref(row) }) }
-                    : { label: "Download", onClick: () => download(row.name) },
-                  { label: "Rename", onClick: () => openRename(row) },
-                  { label: "Move", onClick: () => openTransfer("move", [row.name]) },
-                  { label: "Copy", onClick: () => openTransfer("copy", [row.name]) },
-                  { type: "divider" },
-                  {
-                    label: "Delete",
-                    variant: "destructive",
-                    onClick: () => openDelete([row.name]),
-                  },
-                ]}
-              />
-            ),
+            renderCell: (row: Row) =>
+              isSpacer(row) ? null : (
+                <MoreMenu
+                  label={`Actions for ${row.name}`}
+                  size="sm"
+                  alignment="end"
+                  items={[
+                    row.kind === "folder"
+                      ? { label: "Open", onClick: () => void navigate({ href: rowHref(row) }) }
+                      : { label: "Download", onClick: () => download(row.name) },
+                    { label: "Rename", onClick: () => openRename(row) },
+                    { label: "Move", onClick: () => openTransfer("move", [row.name]) },
+                    { label: "Copy", onClick: () => openTransfer("copy", [row.name]) },
+                    row.lock === null
+                      ? { label: "Lock", onClick: () => toggleLock(row) }
+                      : {
+                          label: "Unlock",
+                          isDisabled: row.lock.token === null,
+                          onClick: () => toggleLock(row),
+                        },
+                    { type: "divider" },
+                    {
+                      label: "Delete",
+                      variant: "destructive",
+                      onClick: () => openDelete([row.name]),
+                    },
+                  ]}
+                />
+              ),
           } satisfies TableColumn<Row>,
         ]
       : []),
   ];
+
+  const { wrapperRef, ...rowWindow } = useRowWindow(
+    ordered,
+    isNarrowListing ? NARROW_ROW_ESTIMATE : ROW_ESTIMATE,
+  );
+  const windowed = useMemo<Row[]>(() => {
+    if (!rowWindow.isWindowed) {
+      return [...rowWindow.rows];
+    }
+    const spacer = (id: string, height: number): Row[] =>
+      height > 0
+        ? [{ id, name: "", kind: "file", sizeBytes: 0, modifiedAt: "", lock: null, spacer: height }]
+        : [];
+    // Slashes never appear in a name, so these ids are no entry's.
+    return [
+      ...spacer("/before", rowWindow.before),
+      ...rowWindow.rows,
+      ...spacer("/after", rowWindow.after),
+    ];
+  }, [rowWindow.isWindowed, rowWindow.rows, rowWindow.before, rowWindow.after]);
 
   const content = (() => {
     if (isLoading) {
@@ -596,26 +715,28 @@ export const FileExplorerPage = ({
     if (isMissing) {
       return (
         <EmptyState
+          headingLevel={2}
           title="This folder does not exist"
           actions={<Button label="Go to Files" variant="secondary" href="/files" />}
         />
       );
     }
-    if (failedToLoad) {
+    if (failedToLoad || isUnreachable) {
       return (
         <Banner
           status="error"
           title={`Cannot list ${path}`}
-          description={davProblem(loadError, path)}
+          description={backendProblem ?? davProblem(loadError, path)}
           endContent={
             <Button
               label="Try again"
               variant="secondary"
               size="sm"
-              isLoading={listing.isFetching || mountsQuery.isFetching}
+              isLoading={listing.isFetching || mountsQuery.isFetching || backendsQuery.isFetching}
               onClick={() => {
                 void mountsQuery.refetch();
-                if (!isRoot) {
+                void backendsQuery.refetch();
+                if (!isRoot && !isUnreachable) {
                   void listing.refetch();
                 }
               }}
@@ -627,6 +748,7 @@ export const FileExplorerPage = ({
     if (rows.length === 0 && query.trim() !== "") {
       return (
         <EmptyState
+          headingLevel={2}
           title={`Nothing here matches “${query.trim()}”`}
           actions={
             <Button
@@ -644,6 +766,7 @@ export const FileExplorerPage = ({
     if (rows.length === 0) {
       return (
         <EmptyState
+          headingLevel={2}
           title={isRoot ? "No mounts yet" : "This folder is empty"}
           actions={
             isRoot ? (
@@ -684,16 +807,19 @@ export const FileExplorerPage = ({
             }
           />
         ) : null}
-        <Table<Row>
-          data={ordered}
-          columns={columns}
-          idKey="id"
-          density="compact"
-          textOverflow="truncate"
-          hasHover
-          // Mounts are not items to select, so the top level has no checkbox column at all.
-          plugins={canChange ? { sortable, selection } : { sortable }}
-        />
+        <VStack ref={wrapperRef}>
+          <Table<Row>
+            data={windowed}
+            columns={columns}
+            idKey="id"
+            density="compact"
+            textOverflow="truncate"
+            hasHover
+            // Mounts are not items to select, so the top level has no checkbox column at all.
+            plugins={canChange ? { sortable, selection } : { sortable }}
+            {...(rowWindow.isWindowed ? { rowIndexStart: 1, rowCount: ordered.length } : {})}
+          />
+        </VStack>
       </VStack>
     );
   })();
@@ -723,6 +849,7 @@ export const FileExplorerPage = ({
         }
         onDownload={() => download(selectedEntry.name)}
         onRename={() => openRename(selectedEntry)}
+        onToggleLock={() => toggleLock(selectedEntry)}
         onDelete={() => openDelete([selectedEntry.name])}
       />
     );
@@ -735,7 +862,7 @@ export const FileExplorerPage = ({
           <VStack gap={6}>
             <PageHeader
               // Each set of actions has its own key, so the header measures the new set.
-              key={isRoot ? "mounts" : canChange ? "folder" : "none"}
+              key={isRoot ? "mounts" : canChange ? "folder" : isUnreachable ? "blocked" : "none"}
               title="Files"
               actions={
                 isRoot ? (
@@ -757,6 +884,25 @@ export const FileExplorerPage = ({
                       label="Upload"
                       variant="primary"
                       icon={<Icon icon={UploadIcon} size="sm" />}
+                      onClick={() => setIsUploadOpen((isOpen) => !isOpen)}
+                    />
+                  </>
+                ) : isUnreachable ? (
+                  <>
+                    <TitleAction
+                      label="New folder"
+                      variant="secondary"
+                      icon={<Icon icon={FolderPlus} size="sm" />}
+                      isDisabled
+                      tooltip={blockedReason}
+                      onClick={openNewFolder}
+                    />
+                    <TitleAction
+                      label="Upload"
+                      variant="primary"
+                      icon={<Icon icon={UploadIcon} size="sm" />}
+                      isDisabled
+                      tooltip={blockedReason}
                       onClick={() => setIsUploadOpen((isOpen) => !isOpen)}
                     />
                   </>
@@ -805,7 +951,8 @@ export const FileExplorerPage = ({
               <UploadPanel path={path} folders={folderNames} onSettled={showUploadResult} />
             ) : null}
 
-            {content}
+            {/* Built once the header and the toolbar are on screen, in a render of its own. */}
+            <AfterFirstPaint>{content}</AfterFirstPaint>
           </VStack>
           {/* The dialog mounts open, with its header, once the file is known: one that opened
               later than it mounted took no name from its header. */}
@@ -874,6 +1021,7 @@ const EntryDetails = ({
   preview,
   onDownload,
   onRename,
+  onToggleLock,
   onDelete,
 }: {
   path: string;
@@ -882,6 +1030,7 @@ const EntryDetails = ({
   preview: Preview;
   onDownload: () => void;
   onRename: () => void;
+  onToggleLock: () => void;
   onDelete: () => void;
 }) => {
   const extension = splitExtension(entry.name)[1].slice(1).toUpperCase();
@@ -890,6 +1039,13 @@ const EntryDetails = ({
       <HStack gap={2} wrap="wrap">
         <Button label="Download" variant="secondary" size="sm" onClick={onDownload} />
         <Button label="Rename" variant="ghost" size="sm" onClick={onRename} />
+        <Button
+          label={entry.lock === null ? "Lock" : "Unlock"}
+          variant="ghost"
+          size="sm"
+          isDisabled={entry.lock !== null && entry.lock.token === null}
+          onClick={onToggleLock}
+        />
         <Button label="Delete" variant="destructive" size="sm" onClick={onDelete} />
       </HStack>
       <MetadataList>
@@ -906,6 +1062,9 @@ const EntryDetails = ({
               : `${extension} file`}
         </MetadataListItem>
         <MetadataListItem label="Stored on">{backendName ?? "Unknown"}</MetadataListItem>
+        <MetadataListItem label="Lock">
+          {entry.lock === null ? "Not locked" : lockText(entry.lock)}
+        </MetadataListItem>
       </MetadataList>
       <VStack gap={2}>
         <Heading level={3}>Preview</Heading>

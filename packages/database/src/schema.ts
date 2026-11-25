@@ -13,6 +13,11 @@ export const user = sqliteTable("user", {
   image: text("image"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
+  // The username plugin: the name the owner signs in with, normalized to lower case, and as typed.
+  username: text("username").unique(),
+  displayUsername: text("display_username"),
+  // The two-factor plugin: whether sign-in asks for a second step.
+  twoFactorEnabled: flag("two_factor_enabled").default(false),
 });
 
 export const session = sqliteTable(
@@ -25,6 +30,8 @@ export const session = sqliteTable(
     updatedAt: timestamp("updated_at").notNull(),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    // When the session last proved presence again for a step-up action; null until it does.
+    verifiedAt: timestamp("verified_at"),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
@@ -66,6 +73,70 @@ export const verification = sqliteTable(
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
+
+// The two-factor plugin's TOTP secret and backup codes, both encrypted with the instance secret.
+export const twoFactor = sqliteTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: flag("verified").default(true),
+    failedVerificationCount: integer("failed_verification_count").default(0),
+    lockedUntil: timestamp("locked_until"),
+  },
+  (table) => [
+    index("two_factor_secret_idx").on(table.secret),
+    index("two_factor_user_id_idx").on(table.userId),
+  ],
+);
+
+// The passkey plugin's WebAuthn credentials.
+export const passkey = sqliteTable(
+  "passkey",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    publicKey: text("public_key").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    credentialID: text("credential_id").notNull(),
+    counter: integer("counter").notNull(),
+    deviceType: text("device_type").notNull(),
+    backedUp: flag("backed_up").notNull(),
+    transports: text("transports"),
+    createdAt: timestamp("created_at"),
+    aaguid: text("aaguid"),
+  },
+  (table) => [
+    index("passkey_user_id_idx").on(table.userId),
+    index("passkey_credential_id_idx").on(table.credentialID),
+  ],
+);
+
+// Better Auth's rate limiter, in the database so that every Worker isolate and Bun process counts
+// the same requests. Better Auth prunes it as it likes, so Davloom's own counts live in
+// `verification_attempts` below. `last_request` is milliseconds since the epoch.
+export const rateLimit = sqliteTable("rate_limit", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  count: integer("count").notNull(),
+  lastRequest: integer("last_request").notNull(),
+});
+
+// Each user's failed proofs of presence: wrong passwords and authenticator codes at step-up
+// verification and for a signed-in session (packages/auth/src/attempts.ts). Davloom's own
+// table, so no pruning of Better Auth's rate limit can lift a lock early. `last_attempt` is
+// milliseconds since the epoch of the last attempt that counted.
+export const verificationAttempts = sqliteTable("verification_attempts", {
+  userId: text("user_id").primaryKey(),
+  count: integer("count").notNull(),
+  lastAttempt: integer("last_attempt").notNull(),
+});
 
 export const apikey = sqliteTable(
   "apikey",
@@ -156,4 +227,54 @@ export const davProperties = sqliteTable(
     xml: text("xml").notNull(),
   },
   (table) => [primaryKey({ columns: [table.backendId, table.path, table.name] })],
+);
+
+// Instance settings (PRD §7, `settings`) the administrator changes on the Dashboard, such as the
+// default backend for new Mounts.
+// `value` holds each setting as JSON.
+export const settings = sqliteTable("settings", {
+  key: text("key").primaryKey(),
+  value: text("value", { mode: "json" }).notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+// WebDAV operations per hour (PRD §8.1). `hour` is the hour's start in milliseconds since the
+// epoch. Each isolate adds its counts in one statement every few seconds, never one per request.
+export const operationHours = sqliteTable("operation_hours", {
+  hour: integer("hour").primaryKey(),
+  operations: integer("operations").notNull(),
+  failed: integer("failed").notNull(),
+});
+
+// The latest failed WebDAV operations, kept for two days. `at` is in milliseconds since the epoch;
+// `path` and `destination` are paths under /dav.
+export const operationErrors = sqliteTable(
+  "operation_errors",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    method: text("method").notNull(),
+    path: text("path").notNull(),
+    destination: text("destination"),
+    status: integer("status").notNull(),
+  },
+  (table) => [index("operation_errors_at_idx").on(table.at)],
+);
+
+// The audit trail (PRD §7 `audit_events`), kept for 90 days. `at` is in milliseconds since the
+// epoch. `target` names what an action acted on, such as a key's name, and never holds a secret;
+// `count` is how many times a counted event, such as a refused WebDAV credential, happened in its
+// minute, whose id it shares in every isolate.
+export const auditEvents = sqliteTable(
+  "audit_events",
+  {
+    id: text("id").primaryKey(),
+    at: integer("at").notNull(),
+    action: text("action").notNull(),
+    outcome: text("outcome").notNull(),
+    address: text("address"),
+    target: text("target"),
+    count: integer("count").notNull().default(1),
+  },
+  (table) => [index("audit_events_at_idx").on(table.at, table.id)],
 );

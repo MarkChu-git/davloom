@@ -15,8 +15,7 @@ import {
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import { LoomMark } from "@davloom/ui";
 import * as stylex from "@stylexjs/stylex";
-import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useRouterState } from "@tanstack/react-router";
 import {
   Folder,
   HardDrive,
@@ -28,8 +27,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useState, type ReactNode, type SVGProps } from "react";
-import { signOut, useBackends } from "../api/queries";
+import { useBackends } from "../api/queries";
+import { useSignOut } from "../auth/useSignOut";
 import { storageAlert } from "../storage/backendStatus";
+import { Frame, FRAME_WINDOWS } from "./frame";
 import { NAV_WIDTH } from "./pageWidth";
 import type { Tone } from "./StatusLabel";
 
@@ -74,24 +75,6 @@ const manageItems = (alert: NavEntry["alert"]): NavEntry[] => [
 ];
 
 const SIGN_OUT_ICONS = navIcons(LogOut);
-
-/** Ends the session, forgets what the Dashboard read with it, and opens the sign-in page. */
-const useSignOut = () => {
-  const client = useQueryClient();
-  const navigate = useNavigate();
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const run = async () => {
-    setIsSigningOut(true);
-    try {
-      await signOut();
-    } catch {
-      // A session the server no longer knows is signed out already.
-    }
-    client.clear();
-    await navigate({ to: "/sign-in" });
-  };
-  return { isSigningOut, signOut: () => void run() };
-};
 
 interface NavOptions {
   alert: NavEntry["alert"];
@@ -302,18 +285,46 @@ const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOption
  */
 const NO_DRAWER = <></>;
 
-/** The Dashboard frame (PRD §13, Phase 4 deliverable 1): a side navigation around each page. */
-export const DashboardShell = ({ children }: { children: ReactNode }) => {
+/**
+ * The prerender has no window to measure, so AppShell takes the layout of the frame being drawn
+ * (frame.tsx): the bar across the top on a phone, the side navigation in a wider window.
+ */
+const PHONE_FRAME_NAV = { content: NO_DRAWER, defaultIsMobile: true };
+const WIDE_FRAME_NAV = { content: NO_DRAWER, defaultIsMobile: false };
+
+/**
+ * The Dashboard frame (PRD §13, Phase 4 deliverable 1): a side navigation around each page. The
+ * prerendered HTML holds it once for each layout (frame.tsx), and the browser shows the one that
+ * fits its window before any script has run.
+ */
+export const DashboardShell = ({ children }: { children: ReactNode }) =>
+  import.meta.env.SSR ? (
+    FRAME_WINDOWS.map((layout) => (
+      <Frame key={layout} layout={layout}>
+        <Shell nav={layout === "phone" ? PHONE_FRAME_NAV : WIDE_FRAME_NAV}>{children}</Shell>
+      </Frame>
+    ))
+  ) : (
+    <Shell nav={NO_DRAWER}>{children}</Shell>
+  );
+
+const Shell = ({
+  nav,
+  children,
+}: {
+  nav: typeof NO_DRAWER | typeof PHONE_FRAME_NAV;
+  children: ReactNode;
+}) => {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const backends = useBackends();
-  const { isSigningOut, signOut: onSignOut } = useSignOut();
+  const { isSigningOut, signOut: onSignOut, element: signOutDialog } = useSignOut();
   const options: NavOptions = { alert: storageAlert(backends.data), onSignOut, isSigningOut };
   const groups = navGroups(pathname, options);
 
   return (
     <AppShell
       contentPadding={0}
-      mobileNav={NO_DRAWER}
+      mobileNav={nav}
       sideNav={
         <SideNav
           // The footer draws its own collapse button, at the size of the rows above it, so its
@@ -336,6 +347,7 @@ export const DashboardShell = ({ children }: { children: ReactNode }) => {
       }
     >
       {children}
+      {signOutDialog}
     </AppShell>
   );
 };

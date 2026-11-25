@@ -1,8 +1,10 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import {
   api,
   createKey,
   createMount,
+  keepStepUpOpen,
   LONG_LOG_NAME,
   SAMPLE_NAMES,
   scratchFolder,
@@ -27,6 +29,7 @@ import {
   engine,
   onlyInChromium,
 } from "./helpers";
+import { axeViolations } from "./axe";
 
 // The Dashboard: its pages, how they are reached, the colors they render, and how they lay out,
 // against the Worker's real API. Tests that change data change their own: a folder, a key or a
@@ -38,6 +41,13 @@ const PAGES = [
   { path: "/storage", name: "Storage & Mounts" },
   { path: "/settings", name: "Settings" },
 ] as const;
+
+/**
+ * Waits until the Overview has read its figures. Check connections is off until then, and turns on
+ * with a transition of its colors, which a scan must not catch halfway.
+ */
+const overviewRead = (page: Page) =>
+  expect(page.getByRole("button", { name: "Check connections" })).toBeEnabled();
 
 interface PageState {
   name: string;
@@ -105,6 +115,7 @@ const STATES: readonly PageState[] = [
     name: "Overview with copying blocked",
     path: "/",
     show: async (page) => {
+      await overviewRead(page);
       await blockClipboard(page);
       await page.getByRole("button", { name: "Copy address" }).click();
       await shown(onScreen(page, /This browser blocked copying here/));
@@ -114,7 +125,7 @@ const STATES: readonly PageState[] = [
     name: "Overview with keyboard focus",
     path: "/",
     show: async (page) => {
-      await shown(page.getByRole("heading", { name: "Connections" }));
+      await overviewRead(page);
       await page.keyboard.press("Tab");
       await expect(page.locator(":focus-visible")).toHaveCount(1);
     },
@@ -392,12 +403,73 @@ const STATES: readonly PageState[] = [
   {
     name: "Profile settings",
     path: "/settings?section=profile",
-    show: (page) => shown(page.getByText("Administrator")),
+    show: (page) => shown(page.getByRole("button", { name: "Save profile" })),
   },
   {
     name: "Sign-in and security settings",
     path: "/settings?section=security",
-    show: (page) => shown(page.getByRole("main").getByRole("button", { name: "Sign out" })),
+    show: (page) =>
+      shown(page.getByRole("main").getByRole("button", { name: "Sign out", exact: true })),
+  },
+  {
+    name: "Activity settings",
+    path: "/settings?section=activity",
+    show: (page) => shown(page.getByRole("main").getByRole("listitem").first()),
+  },
+  {
+    name: "the Change password dialog with a field error",
+    path: "/settings?section=security",
+    show: async (page) => {
+      await page.getByRole("button", { name: "Change password" }).click();
+      const dialog = page.getByRole("dialog", { name: "Change password" });
+      await dialog.getByRole("button", { name: "Change password" }).click();
+      await shown(dialog.getByText("Enter your current password.", { exact: true }));
+    },
+  },
+  {
+    name: "the two-step setup with its QR code",
+    path: "/settings?section=security",
+    // The answer of Better Auth, so that the scan leaves two-step verification off.
+    before: async (page) => {
+      await page.route("**/api/auth/two-factor/enable", (route) =>
+        route.fulfill({
+          json: {
+            totpURI: "otpauth://totp/Davloom:admin?secret=JBSWY3DPEHPK3PXP&issuer=Davloom",
+            backupCodes: ["aaaaa-bbbbb", "ccccc-ddddd"],
+          },
+        }),
+      );
+    },
+    show: async (page) => {
+      await page.getByRole("button", { name: "Set up" }).click();
+      const asked = page.getByRole("dialog", { name: "Set up two-step verification" });
+      await asked.getByLabel("Password").fill("any password");
+      await asked.getByRole("button", { name: "Continue" }).click();
+      await shown(page.getByRole("button", { name: "Copy key" }));
+    },
+  },
+  {
+    name: "the sign-out confirmation",
+    path: "/settings?section=security",
+    show: async (page) => {
+      await page.getByRole("main").getByRole("button", { name: "Sign out", exact: true }).click();
+      await shown(page.getByRole("alertdialog", { name: "Sign out?" }));
+    },
+  },
+  {
+    name: "the step-up dialog",
+    path: "/settings?section=export",
+    // A refusal as a session signed in long ago meets it.
+    before: async (page) => {
+      await keepStepUpOpen(page);
+      await page.route("**/api/export", (route) =>
+        route.fulfill({ status: 403, json: { error: { code: "verification_required" } } }),
+      );
+    },
+    show: async (page) => {
+      await page.getByRole("button", { name: "Export" }).click();
+      await shown(page.getByRole("dialog", { name: "Verify it is you" }));
+    },
   },
   {
     name: "WebDAV settings",
@@ -729,6 +801,31 @@ for (const scheme of ["light", "dark"] as const) {
       );
       const allowed = await page.evaluate(statusColorsOnPage);
       expect(await page.evaluate(huesOnPage, allowed)).toEqual([]);
+      await still?.(page);
+    });
+
+    // The same states through axe-core, in desktop Chromium as PRD §11 places the audit.
+    test(`Accessibility: ${name} has no axe-core violation in ${scheme} mode`, async ({ page }) => {
+      onlyInChromium("The accessibility audit runs in desktop Chromium.");
+      await page.emulateMedia({ colorScheme: scheme });
+      if (width !== undefined) {
+        await page.setViewportSize({ width, height: 900 });
+      }
+      await before?.(page);
+      await page.goto(typeof path === "string" ? path : await path(page));
+      await show(page);
+      expect(await page.evaluate(bodyIsDark)).toBe(scheme === "dark");
+      // Colors in the middle of a transition are neither the old nor the new contrast.
+      await page.evaluate(() =>
+        Promise.all(
+          document
+            .getAnimations()
+            .filter((animation) => animation instanceof CSSTransition)
+            .map((animation) => animation.finished.catch(() => undefined)),
+        ),
+      );
+
+      expect(await axeViolations(page)).toEqual([]);
       await still?.(page);
     });
   }
@@ -1133,7 +1230,7 @@ test("Figures at two widths: the three headline figures sit side by side at 900 
   const main = page.getByRole("main");
   const figures = async () =>
     Promise.all(
-      ["Stored", "Mounts", "Backends"].map(async (label) => {
+      ["Stored", "Known capacity", "Mounts"].map(async (label) => {
         const box = await main
           .getByText(label, { exact: true })
           .and(page.locator('[data-type="label"]'))
@@ -1183,7 +1280,7 @@ const baselineOf = (element: Element): number => {
 test("Figures on one grid: side by side, the tiles' labels, figures and captions each share a line", async ({
   page,
 }) => {
-  const labels = ["Stored", "Mounts", "Backends"];
+  const labels = ["Stored", "Known capacity", "Mounts"];
   // The default width, and the narrowest that still sets the three side by side.
   for (const width of [1280, 900]) {
     await page.setViewportSize({ width, height: 900 });
@@ -1191,7 +1288,10 @@ test("Figures on one grid: side by side, the tiles' labels, figures and captions
     await shown(page.getByRole("img", { name: "Bytes stored on each backend" }));
     const lines = await Promise.all(
       labels.map(async (label) => {
-        const tile = cardWith(page, page.getByText(label, { exact: true }));
+        // The Mounts panel below the tiles has a heading where a tile has a label.
+        const tile = cardWith(page, page.getByText(label, { exact: true })).filter({
+          hasNot: page.getByRole("heading"),
+        });
         const [labelPart, figure, caption] = await tile.locator(":scope > *").all();
         if (labelPart === undefined || figure === undefined || caption === undefined) {
           throw new Error(`The ${label} tile lacks a part.`);
@@ -1800,7 +1900,11 @@ test.describe("on a touch screen", () => {
     await key(writer).tap();
     const writerDetails = await detailsOf(key(writer));
     await expect(writerDetails.getByText("Read and write", { exact: true })).toBeVisible();
-    await expect(writerDetails.getByText("Never", { exact: true })).toBeVisible();
+    // A new key reaches every mount, has not been used, and this one never expires.
+    await expect(writerDetails).toContainText(/Scope\s*All mounts/);
+    await expect(writerDetails).toContainText(/Last used\s*Never/);
+    await expect(writerDetails).toContainText(/Expires\s*Never/);
+    await expect(writerDetails.getByRole("button", { name: "Rename" })).toBeVisible();
     await expect(key(reader)).toHaveAttribute("aria-expanded", "true");
     await page.setViewportSize({ width: 320, height: 812 });
     expect(await page.evaluate(sidewaysOverflow)).toEqual([]);
@@ -2321,7 +2425,8 @@ test("The storage chart in words: it names the bytes on each backend", async ({ 
   // The default backend holds the sample, more than any backend the other tests add.
   const description = (await imageDescriptions(page)).get("Bytes stored on each backend") ?? "";
   expect(description.endsWith(".")).toBe(true);
-  const [first = "", ...others] = description.slice(0, -1).split(", ");
+  // The parts read as an English list: "A", "A and B", or "A, B, and C".
+  const [first = "", ...others] = description.slice(0, -1).split(/, and |, | and /);
   expect(first).toMatch(/^Default stores [\d.]+ (bytes|kB|MB)$/);
   for (const other of others) expect(other).toMatch(/^[^,]+ stores 0 bytes$/);
 });

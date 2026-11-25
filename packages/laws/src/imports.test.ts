@@ -2,7 +2,7 @@ import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { toList } from "./bend";
 import bend from "./compiled/imports.mjs";
-import { planImport, type ImportEntry } from "./imports";
+import { exportHasOwner, planImport, type ImportEntry } from "./imports";
 
 // The oracle replays an import with a Set of the keys defined so far: an entry fails when it needs
 // a key the set lacks or defines one the set holds, or one twice.
@@ -114,5 +114,30 @@ describe("planImport", () => {
     );
     expect(planImport(entries, [])).toBe("apply");
     expect(planImport([...entries, e(["backend:0"])], [])).toBe("reject");
+  });
+});
+
+describe("exportHasOwner", () => {
+  it.each([
+    [0, 0, false],
+    [0, 1, false],
+    [0, 3, false],
+    [1, 0, false],
+    [1, 1, true],
+    [1, 2, true],
+    [2, 0, false],
+    [2, 1, false],
+    [2, 2, false],
+    [-1, 1, false],
+  ])("%i users with %i logins of the owner: %s", (users, logins, expected) => {
+    expect(exportHasOwner(users, logins)).toBe(expected);
+  });
+
+  it("holds exactly when there is one user with a login", () => {
+    fc.assert(
+      fc.property(fc.nat(5), fc.nat(5), (users, logins) => {
+        expect(exportHasOwner(users, logins)).toBe(users === 1 && logins > 0);
+      }),
+    );
   });
 });

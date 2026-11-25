@@ -1,9 +1,21 @@
 import { Button } from "@astryxdesign/core/Button";
 import { DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Banner } from "@astryxdesign/core/Banner";
+import { BreadcrumbItem, Breadcrumbs } from "@astryxdesign/core/Breadcrumbs";
+import { Icon } from "@astryxdesign/core/Icon";
+import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { List, ListItem } from "@astryxdesign/core/List";
+import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
+import { ChevronRight, Folder } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
-import type { Transfer } from "../api/dav";
+import { davProblem, type Transfer } from "../api/dav";
+import { keys } from "../api/queries";
+import { isWithin, joinPath, splitPath } from "./paths";
+
+const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
 const DialogFrame = ({
   title,
@@ -101,49 +113,111 @@ export const NameForm = ({
   );
 };
 
-/** Moves or copies items to another folder, named by its path. */
+/** The folders inside a folder of the namespace, by name. */
+export type ListFolders = (parts: readonly string[]) => Promise<string[]>;
+
+/**
+ * Moves or copies items to another folder, picked by browsing from the folder they are in: the
+ * path to the folder shown leads back up, and each folder inside it leads down. A folder being
+ * moved or copied, and everything inside it, cannot be opened as a destination.
+ */
 export const TransferForm = ({
   transfer,
   names,
-  initialDestination,
+  from,
+  mounts,
+  listFolders,
   onCancel,
   onSubmit,
 }: {
   transfer: Transfer;
   names: readonly string[];
-  initialDestination: string;
+  /** The folder the items are in, such as /files/Drafts. */
+  from: string;
+  /** The mounts that can take them. */
+  mounts: readonly string[];
+  listFolders: ListFolders;
   onCancel: () => void;
   onSubmit: Submit<string>;
 }) => {
-  const [destination, setDestination] = useState(initialDestination);
+  const [at, setAt] = useState<readonly string[]>(() => splitPath(from));
   const { problem, setProblem, isSaving, submit } = useSubmit(onSubmit);
   const what = names.length === 1 ? `“${names[0]}”` : `${names.length} items`;
   const verb = transfer === "move" ? "Move" : "Copy";
+  const here = joinPath(at);
+  const sources = names.map((name) => joinPath([...splitPath(from), name]));
+
+  const listed = useQuery({
+    queryKey: [...keys.dav, "folders", here],
+    queryFn: () => listFolders(at),
+    enabled: at.length > 0,
+    retry: false,
+  });
+  // The top lists the mounts that can take the items; below it, the folders the server lists.
+  const shown =
+    at.length === 0
+      ? { state: "ready" as const, names: mounts }
+      : listed.data !== undefined
+        ? { state: "ready" as const, names: listed.data }
+        : listed.isError
+          ? { state: "error" as const, problem: davProblem(listed.error, here) }
+          : { state: "loading" as const };
+
+  const go = (parts: readonly string[]) => {
+    setAt(parts);
+    setProblem(undefined);
+  };
 
   return (
     <DialogFrame
       title={`${verb} ${what}`}
-      submitLabel={verb}
+      submitLabel={`${verb} here`}
       isSaving={isSaving}
       onCancel={onCancel}
-      onSubmit={() => submit(destination)}
+      onSubmit={() => submit(here)}
     >
-      <TextInput
-        label="Destination folder"
-        description="A folder's path, starting with its mount, such as /files/Archive."
-        value={destination}
-        onChange={(value) => {
-          setDestination(value);
-          setProblem(undefined);
-        }}
-        onEnter={() => submit(destination)}
-        hasAutoFocus
-        isRequired
-        autoCapitalize="none"
-        hasAutoCorrect={false}
-        hasSpellCheck={false}
-        status={problem === undefined ? undefined : { type: "error", message: problem }}
-      />
+      <VStack gap={3}>
+        <Breadcrumbs label="Destination">
+          <BreadcrumbItem onClick={() => go([])} isCurrent={at.length === 0}>
+            Files
+          </BreadcrumbItem>
+          {at.map((part, index) => (
+            <BreadcrumbItem
+              key={joinPath(at.slice(0, index + 1))}
+              onClick={() => go(at.slice(0, index + 1))}
+              isCurrent={index === at.length - 1}
+            >
+              {part}
+            </BreadcrumbItem>
+          ))}
+        </Breadcrumbs>
+        {problem === undefined ? null : <Banner status="error" title={problem} container="card" />}
+        {shown.state === "loading" ? (
+          <Skeleton width="100%" height={88} />
+        ) : shown.state === "error" ? (
+          <Banner status="error" title={shown.problem} container="card" />
+        ) : shown.names.length === 0 ? (
+          <Text color="secondary">No folders inside</Text>
+        ) : (
+          <List density="compact">
+            {shown.names
+              .toSorted((a, b) => collator.compare(a, b))
+              .map((name) => {
+                const path = joinPath([...at, name]);
+                return (
+                  <ListItem
+                    key={name}
+                    label={name}
+                    startContent={<Icon icon={Folder} size="sm" />}
+                    endContent={<Icon icon={ChevronRight} size="sm" color="secondary" />}
+                    isDisabled={sources.some((source) => isWithin(path, source))}
+                    onClick={() => go([...at, name])}
+                  />
+                );
+              })}
+          </List>
+        )}
+      </VStack>
     </DialogFrame>
   );
 };

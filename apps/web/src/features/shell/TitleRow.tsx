@@ -53,31 +53,33 @@ export const TitleRow = ({
   actions?: ReactNode;
   gap?: 3 | 4 | 6;
 }) => {
-  const [row, setRow] = useState<HTMLElement | null>(null);
+  // The row is a ref, not state: the page renders once as it is put on screen, not again once the
+  // row exists.
+  const row = useRef<HTMLDivElement>(null);
   const [isCompact, setIsCompact] = useState(false);
   // The width of the title, the gap and the actions with their words shown.
   const needed = useRef(0);
   useLayoutEffect(() => {
+    const element = row.current;
+    if (element === null) {
+      return undefined;
+    }
     const measure = () => {
-      if (row !== null) {
-        const [heading, group] = row.children;
-        if (!isCompact && heading !== undefined && group !== undefined) {
-          const space = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
-          needed.current = heading.getBoundingClientRect().width + space + group.scrollWidth;
-        }
-        setIsCompact(needed.current > row.clientWidth);
+      const [heading, group] = element.children;
+      if (!isCompact && heading !== undefined && group !== undefined) {
+        const space = Number.parseFloat(getComputedStyle(element).columnGap) || 0;
+        needed.current = heading.getBoundingClientRect().width + space + group.scrollWidth;
       }
+      setIsCompact(needed.current > element.clientWidth);
     };
     const observer = new ResizeObserver(measure);
-    if (row !== null) {
-      measure();
-      observer.observe(row);
-    }
+    measure();
+    observer.observe(element);
     return () => observer.disconnect();
-  }, [row, isCompact]);
+  }, [isCompact]);
 
   return (
-    <HStack ref={setRow} hAlign="between" vAlign="center" gap={gap} wrap="wrap">
+    <HStack ref={row} hAlign="between" vAlign="center" gap={gap} wrap="wrap">
       {title}
       {actions === undefined ? null : (
         <HStack gap={2} vAlign="center" wrap="wrap" xstyle={styles.actions}>

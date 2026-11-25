@@ -9,10 +9,12 @@ import { defineConfig } from "vitest/config";
 // lowers it (PRD §11). Functions are gated where PRD §11 gates them. The branch thresholds of
 // core, database, laws and webdav were 100% of packages that held almost no branches; with the
 // storage, protocol and instance code they start again at the coverage measured on 2026-11-23.
-// packages/storage holds the object-store adapter and its S3 driver, which these unit tests cover,
-// and the Durable Objects adapter, which runs in workerd (tests/integration/compat, test:storage)
-// outside this report; its entry started at the coverage measured on 2026-11-23 with the first.
-// scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here.
+// packages/storage started at the coverage measured on 2026-11-23, while its Durable Objects adapter
+// and R2 driver ran only in workerd; since 2026-11-24 the unit tests also run them on Bun, on
+// bun:sqlite and an R2 bucket in memory (packages/storage/test), and its entry is that coverage.
+// Every package is at or above the V1 targets of PRD §11 (V1 gates, 2026-11-24).
+// scripts/coverage-thresholds.test.ts fails when a package has no src directory or no entry here,
+// or when an entry is below its V1 target.
 export const thresholds = {
   "apps/api/src/**": { lines: 94, branches: 87 },
   "apps/web/src/**": { lines: 98, branches: 93 },
@@ -21,10 +23,10 @@ export const thresholds = {
   "packages/database/src/**": { lines: 93, branches: 95 },
   "packages/laws/src/**": { lines: 100, branches: 97 },
   "packages/migrate/src/**": { lines: 100, branches: 89 },
-  // r2.ts and durable-object.ts run only in workerd (test:storage), outside this report.
-  "packages/storage/src/**": { lines: 58.5, branches: 61 },
+  "packages/schema/src/**": { lines: 100, branches: 86, functions: 100 },
+  "packages/storage/src/**": { lines: 99, branches: 92, functions: 98 },
   "packages/ui/src/**": { lines: 100, branches: 100 },
-  "packages/webdav/src/**": { lines: 97, branches: 88.9, functions: 96 },
+  "packages/webdav/src/**": { lines: 97, branches: 90, functions: 96 },
 };
 
 // Unit tests only. Runtime compatibility tests have their own configs in tests/integration/compat.

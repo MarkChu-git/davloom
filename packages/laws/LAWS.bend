@@ -12,6 +12,8 @@ import ./src/properties.bend as F
 import ./src/objects.bend as O
 import ./src/mounts.bend as W
 import ./src/framing.bend as H
+import ./src/verification.bend as U
+import ./src/forwarding.bend as X
 
 # The laws of Davloom's decision logic (PRD §4, Proven Domain Logic). Each law compares a shipped
 # module with a specification written here, independently of the module, from the RFC text or the
@@ -654,6 +656,38 @@ law import_all_or_nothing:
   for +entries: +List<I.Entry>
   for +known: +List<Nat>
   {I.plan(entries, known) == Bool.pick(I.Plan, spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
+
+def count_one(c: I.Count) -> Bool:
+  match c:
+    case I.CNone{}:
+      False{}
+    case I.COne{}:
+      True{}
+    case I.CMany{}:
+      False{}
+
+def count_none(c: I.Count) -> Bool:
+  match c:
+    case I.CNone{}:
+      True{}
+    case I.COne{}:
+      False{}
+    case I.CMany{}:
+      False{}
+
+# An export starts an instance only with exactly one user who can sign in with a password, so an
+# import always closes registration: an export without a user, with two, or with a user who has no
+# password is refused before anything is written.
+law import_needs_one_owner:
+  for users: I.Count
+  for logins: I.Count
+  {I.owned(users, logins) == Bool.and(count_one(users), Bool.not(count_none(logins))) : Bool}
+
+# No count of logins makes an export without exactly one user acceptable.
+law import_refuses_ownerless:
+  for users: I.Count
+  for logins: I.Count
+  {implies(Bool.not(count_one(users)), Bool.not(I.owned(users, logins))) == True{} : Bool}
 
 # --- Copying files between instances (PRD §7 Data Migration) ---------------------------------
 
@@ -1422,3 +1456,137 @@ law url_path_exact:
   for f: H.Form
   for host_ok: Bool
   {Bool.and(Bool.and(implies(as_target(url_path(H.url_of(f, host_ok))), keeps_target(f)), implies(keeps_target(f), as_target(url_path(H.url_of(f, host_ok))))), Bool.and(implies(at_slash(url_path(H.url_of(f, host_ok))), Bool.not(names_resource(f))), implies(Bool.not(names_resource(f)), at_slash(url_path(H.url_of(f, host_ok)))))) == True{} : Bool}
+
+# --- Step-up verification of management actions (PRD §6) -------------------------------------
+
+# Whether an action deletes, overwrites or discloses data, or touches a credential.
+def sensitive(e: U.Effect) -> Bool:
+  match e:
+    case U.EffRead{}:
+      False{}
+    case U.EffChange{}:
+      False{}
+    case U.EffEndSelf{}:
+      False{}
+    case U.EffDestroy{}:
+      True{}
+    case U.EffCredential{}:
+      True{}
+    case U.EffDisclose{}:
+      True{}
+
+def is_step_up(l: U.Level) -> Bool:
+  match l:
+    case U.LNone{}:
+      False{}
+    case U.LConfirm{}:
+      False{}
+    case U.LStepUp{}:
+      True{}
+
+def is_none(l: U.Level) -> Bool:
+  match l:
+    case U.LNone{}:
+      True{}
+    case U.LConfirm{}:
+      False{}
+    case U.LStepUp{}:
+      False{}
+
+def reads_only(e: U.Effect) -> Bool:
+  match e:
+    case U.EffRead{}:
+      True{}
+    case U.EffChange{}:
+      False{}
+    case U.EffEndSelf{}:
+      False{}
+    case U.EffDestroy{}:
+      False{}
+    case U.EffCredential{}:
+      False{}
+    case U.EffDisclose{}:
+      False{}
+
+# Destructive, credential-changing and disclosing actions always ask for step-up verification,
+# and exactly those do.
+law step_up_exactly_sensitive:
+  for e: U.Effect
+  {is_step_up(U.level(e)) == sensitive(e) : Bool}
+
+# No step-up action runs without a fresh verification.
+law step_up_needs_fresh:
+  for e: U.Effect
+  for fresh: Bool
+  {implies(Bool.and(is_step_up(U.level(e)), Bool.not(fresh)), Bool.not(U.permits(e, fresh))) == True{} : Bool}
+
+# A fresh verification permits every action, so verifying again always unblocks the person.
+law fresh_permits:
+  for e: U.Effect
+  {U.permits(e, True{}) == True{} : Bool}
+
+# Only step-up actions are ever refused: freshness never matters to the others.
+law only_step_up_refused:
+  for e: U.Effect
+  for fresh: Bool
+  {implies(Bool.not(is_step_up(U.level(e))), U.permits(e, fresh)) == True{} : Bool}
+
+# Reading asks for nothing.
+law reads_ask_nothing:
+  for e: U.Effect
+  {implies(reads_only(e), is_none(U.level(e))) == True{} : Bool}
+
+# Signing this browser out asks for a confirmation and never for step-up.
+law end_self_confirms:
+  {is_step_up(U.level(U.EffEndSelf{})) == False{} : Bool}
+
+# --- The client's address behind trusted proxies (PRD §12) ------------------------------------
+
+def takes(p: X.Pick) -> Bool:
+  match p:
+    case X.PThis{}:
+      True{}
+    case X.PNext{}:
+      False{}
+    case X.PPrevious{}:
+      False{}
+
+def passes(p: X.Pick) -> Bool:
+  match p:
+    case X.PThis{}:
+      False{}
+    case X.PNext{}:
+      True{}
+    case X.PPrevious{}:
+      False{}
+
+def is_trusted(h: X.Hop) -> Bool:
+  match h:
+    case X.HTrusted{}:
+      True{}
+    case X.HUntrusted{}:
+      False{}
+    case X.HInvalid{}:
+      False{}
+
+# The walk goes past a hop exactly when it is a trusted proxy with a hop before it: a client can
+# never send the walk past itself, whatever it writes into X-Forwarded-For.
+law forwarding_passes_only_trusted:
+  for h: X.Hop
+  for more: Bool
+  {passes(X.step(h, more)) == Bool.and(is_trusted(h), more) : Bool}
+
+# A hop that is no trusted proxy is the client, as soon as the walk reaches it.
+law forwarding_takes_untrusted:
+  for more: Bool
+  {takes(X.step(X.HUntrusted{}, more)) == True{} : Bool}
+
+# An address that is no address is never taken as the client.
+law forwarding_never_takes_invalid:
+  for more: Bool
+  {takes(X.step(X.HInvalid{}, more)) == False{} : Bool}
+
+# The walk always ends at the last hop: it never asks for a hop the chain does not name.
+law forwarding_ends:
+  for h: X.Hop
+  {passes(X.step(h, False{})) == False{} : Bool}

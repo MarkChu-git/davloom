@@ -5,8 +5,10 @@
 export const SETTINGS_SECTIONS = [
   { id: "profile", label: "Profile" },
   { id: "security", label: "Sign-in and security" },
+  { id: "activity", label: "Activity" },
   { id: "appearance", label: "Appearance" },
   { id: "webdav", label: "WebDAV" },
+  { id: "storage", label: "Storage" },
   { id: "export", label: "Data export" },
   { id: "about", label: "About this instance" },
 ] as const;

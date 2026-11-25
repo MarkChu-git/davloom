@@ -1,11 +1,12 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Backend, Mount } from "../api/queries";
 import { FakeDav } from "../../test/fakeDav";
 import { json, renderPage, type Handler } from "../../test/render";
 import { FileExplorerPage } from "./FileExplorerPage";
 import { clearFinished } from "./uploadStore";
+import { scrollParentOf } from "./useRowWindow";
 
 afterEach(() => {
   cleanup();
@@ -422,6 +423,21 @@ const submitDialog = async (value: string, submit: string) => {
   return form;
 };
 
+/**
+ * Browses the open move or copy dialog to `destination` from the top, as a person does from its
+ * path, and presses `${action} here`.
+ */
+const pickDestination = async (destination: string, action: string) => {
+  const form = await dialog();
+  const path = within(form).getByRole("navigation", { name: "Destination" });
+  await userEvent.click(within(path).getByText("Files"));
+  for (const name of destination.split("/").filter((part) => part !== "")) {
+    await userEvent.click(await within(form).findByRole("button", { name }));
+  }
+  await userEvent.click(within(form).getByRole("button", { name: `${action} here` }));
+  return form;
+};
+
 describe("a new folder", () => {
   it("is made on the server, and the list shows it", async () => {
     const { dav } = await open("/files");
@@ -507,7 +523,7 @@ describe("renaming", () => {
   it.each([
     ["Drafts", undefined, "Something with this name is already here."],
     ["  ", undefined, "Enter a name."],
-    ["Locked.txt", 423, "Another client has locked it."],
+    ["Locked.txt", 423, "It is locked. Unlock it, then try again."],
   ])("to %j is refused: %s", async (name, refusal, problem) => {
     const dav = seeded();
     if (refusal !== undefined) {
@@ -539,9 +555,12 @@ describe("moving and copying", () => {
     const { dav } = await open("/files");
     await chooseAction("README.txt", action);
     const form = await dialog();
-    // The form starts from the folder that is open.
-    expect(within(form).getByRole<HTMLInputElement>("textbox").value).toBe("/files");
-    await submitDialog("/files/Drafts", action);
+    // The form starts from the folder that is open, and lists the folders in it.
+    expect(within(form).getByRole("navigation", { name: "Destination" }).textContent).toContain(
+      "files",
+    );
+    expect(await within(form).findByRole("button", { name: "Archive" })).toBeTruthy();
+    await pickDestination("/files/Drafts", action);
     expect(await said(`${past} “README.txt” to /files/Drafts.`)).toBeTruthy();
     expect(dav.nodes.get("/files/Drafts/README.txt")?.body).toBe(README);
     expect(dav.nodes.has("/files/README.txt")).toBe(isKept);
@@ -553,9 +572,7 @@ describe("moving and copying", () => {
   it.each([
     ["README.txt", "/", "Choose a folder inside a mount, such as /files."],
     ["README.txt", "/files", "Choose another folder than the one they are in."],
-    ["README.txt", "/files/../photos", "Name the folder without . or .. in its path."],
-    ["Drafts", "/files/Drafts/Old", "A folder cannot go inside itself."],
-    ["README.txt", "/files/Nowhere", "The destination folder does not exist."],
+    ["README.txt", "/files/Archive", "The destination folder does not exist."],
     ["blog", "/photos", "/photos is no longer there."],
   ])("moving %s to %s is refused: %s", async (name, destination, problem) => {
     const dav = seeded().file("/files/blog");
@@ -566,15 +583,50 @@ describe("moving and copying", () => {
       dav.nodes.delete("/files/blog");
     }
     await chooseAction(name, "Move");
-    const form = await submitDialog(destination, "Move");
+    const form = await dialog();
+    const path = within(form).getByRole("navigation", { name: "Destination" });
+    await userEvent.click(within(path).getByText("Files"));
+    for (const part of destination.split("/").filter((item) => item !== "")) {
+      await userEvent.click(await within(form).findByRole("button", { name: part }));
+    }
+    // The folder goes away once the dialog has shown it.
+    if (destination === "/files/Archive") {
+      dav.nodes.delete("/files/Archive");
+    }
+    await userEvent.click(within(form).getByRole("button", { name: "Move here" }));
     expect(await within(form).findByText(problem)).toBeTruthy();
+  });
+
+  it("does not open a folder that is moved as a destination", async () => {
+    await open("/files");
+    await chooseAction("Drafts", "Move");
+    const form = await dialog();
+    expect(
+      (await within(form).findByRole("button", { name: "Drafts" })).getAttribute("aria-disabled"),
+    ).toBe("true");
+  });
+
+  it("offers no mount whose backend does not answer", async () => {
+    await open("/files", {
+      api: {
+        "GET /api/backends": () =>
+          json(BACKENDS.map((item) => (item.id === "b2" ? { ...item, available: false } : item))),
+      },
+    });
+    await chooseAction("README.txt", "Copy");
+    const form = await dialog();
+    await userEvent.click(
+      within(within(form).getByRole("navigation", { name: "Destination" })).getByText("Files"),
+    );
+    expect(await within(form).findByRole("button", { name: "files" })).toBeTruthy();
+    expect(within(form).queryByRole("button", { name: "photos" })).toBeNull();
   });
 
   it("copying a name already at the destination copies nothing", async () => {
     const dav = seeded().file("/files/Drafts/README.txt", { body: "older" });
     await open("/files", { dav });
     await chooseAction("README.txt", "Copy");
-    const form = await submitDialog("/files/Drafts", "Copy");
+    const form = await pickDestination("/files/Drafts", "Copy");
     expect(
       await within(form).findByText("Something named “README.txt” is already in /files/Drafts."),
     ).toBeTruthy();
@@ -587,7 +639,7 @@ describe("moving and copying", () => {
     await userEvent.click(await screen.findByRole("checkbox", { name: "Select budget.xlsx" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "Select README.txt" }));
     await userEvent.click(screen.getByRole("button", { name: "Move" }));
-    const form = await submitDialog("/files/Drafts", "Move");
+    const form = await pickDestination("/files/Drafts", "Move");
     expect(
       await within(form).findByText(
         "Moved “budget.xlsx”, then: Something named “README.txt” is already in /files/Drafts.",
@@ -603,7 +655,7 @@ describe("moving and copying", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Select README.txt" }));
     await userEvent.click(screen.getByRole("button", { name: "Copy" }));
     expect((await dialog()).textContent).toContain("Copy 2 items");
-    await submitDialog("/files/Archive", "Copy");
+    await pickDestination("/files/Archive", "Copy");
     expect(await said("Copied 2 items to /files/Archive.")).toBeTruthy();
     expect(dav.paths()).toContain("/files/Archive/budget.xlsx");
     expect(dav.paths()).toContain("/files/README.txt");
@@ -613,7 +665,7 @@ describe("moving and copying", () => {
     const { router, calls } = await open("/files", { selectedName: "README.txt" });
     await screen.findByText(README.trim());
     await chooseAction("README.txt", "Move");
-    await submitDialog("/files/Drafts", "Move");
+    await pickDestination("/files/Drafts", "Move");
     await said("Moved “README.txt” to /files/Drafts.");
     await waitFor(() => expect(router.state.location.search).toEqual({ path: "/files" }));
     expect(calls.filter((call) => call.method === "MOVE")).toHaveLength(1);
@@ -656,7 +708,7 @@ describe("deleting", () => {
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }),
     );
-    expect(await said("Another client has locked it.")).toBeTruthy();
+    expect(await said("It is locked. Unlock it, then try again.")).toBeTruthy();
     expect(dav.nodes.has("/files/budget.xlsx")).toBe(false);
     expect(dav.nodes.has("/files/README.txt")).toBe(true);
   });
@@ -806,4 +858,180 @@ describe("uploading", () => {
     await userEvent.click(screen.getByRole("button", { name: "Upload" }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Upload" })).toBeNull());
   });
+});
+
+describe("locks", () => {
+  it("locks a file through WebDAV for an hour, shows it, and unlocks it", async () => {
+    const { dav } = await open("/files", { selectedName: "README.txt" });
+    expect(await screen.findByText("Not locked")).toBeTruthy();
+    await chooseAction("README.txt", "Lock");
+    expect(await said("Locked “README.txt”.")).toBeTruthy();
+    const lock = dav.lockRequests[0];
+    expect(lock?.method).toBe("LOCK");
+    expect(lock?.headers.get("depth")).toBe("0");
+    expect(lock?.headers.get("timeout")).toBe("Second-3600");
+    expect(await lock?.text()).toContain("<D:owner><D:href>Davloom Dashboard</D:href></D:owner>");
+    expect(dav.locks.get("/files/README.txt")?.owner).toBe("Davloom Dashboard");
+    await waitFor(() => expect(detail("Lock")).toBe("Locked by Davloom Dashboard, in 60 minutes"));
+    expect(
+      screen.getAllByRole("img", { name: "Locked by Davloom Dashboard, in 60 minutes" }),
+    ).not.toHaveLength(0);
+    await userEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    expect(await said("Unlocked “README.txt”.")).toBeTruthy();
+    expect(dav.lockRequests[1]?.headers.get("lock-token")).toMatch(/^<urn:uuid:lock-\d+>$/);
+    expect(dav.locks.size).toBe(0);
+    await waitFor(() => expect(detail("Lock")).toBe("Not locked"));
+  });
+
+  it("locks a folder with everything inside it", async () => {
+    const { dav } = await open("/files");
+    await chooseAction("Drafts", "Lock");
+    expect(await said("Locked “Drafts”.")).toBeTruthy();
+    expect(dav.lockRequests[0]?.headers.get("depth")).toBe("infinity");
+    expect(dav.lockRequests[0]?.url).toMatch(/\/dav\/files\/Drafts\/$/);
+  });
+
+  it.each([
+    [{ owner: "Finder", seconds: 600 }, "Locked by Finder, in 10 minutes"],
+    [{ owner: "", seconds: null }, "Locked"],
+    [{ owner: "Cyberduck", seconds: null }, "Locked by Cyberduck"],
+  ])("shows a lock another client holds %j as %s, and unlocks it", async (lock, text) => {
+    const dav = seeded().lock("/files/README.txt", lock);
+    await open("/files", { dav, selectedName: "README.txt" });
+    await waitFor(() => expect(detail("Lock")).toBe(text));
+    await chooseAction("README.txt", "Unlock");
+    expect(await said("Unlocked “README.txt”.")).toBeTruthy();
+    expect(dav.locks.size).toBe(0);
+  });
+
+  it("shows a folder's lock on what it holds", async () => {
+    const dav = seeded().lock("/files/Drafts", { depth: "infinity", owner: "Finder" });
+    await open("/files/Drafts", { dav, selectedName: "blog-post.md" });
+    await waitFor(() => expect(detail("Lock")).toBe("Locked by Finder, in 10 minutes"));
+  });
+
+  it("cannot unlock a lock whose token the server keeps back", async () => {
+    const dav = seeded().lock("/files/README.txt", { showsToken: false });
+    await open("/files", { dav, selectedName: "README.txt" });
+    await waitFor(() => expect(detail("Lock")).toContain("Locked by Finder"));
+    expect(
+      screen.getByRole("button", { name: "Unlock" }).matches(":disabled, [aria-disabled=true]"),
+    ).toBe(true);
+  });
+
+  it("says why a lock was refused", async () => {
+    const dav = seeded();
+    dav.refusals.set("LOCK /files/README.txt", 423);
+    await open("/files", { dav });
+    await chooseAction("README.txt", "Lock");
+    expect(await said("It is locked. Unlock it, then try again.")).toBeTruthy();
+  });
+});
+
+const down = (status: Backend["status"]) =>
+  BACKENDS.map((item) => (item.id === "b1" ? { ...item, available: false, status } : item));
+
+describe("a backend that does not answer", () => {
+  it.each([
+    [
+      { state: "failed", failure: "unavailable", ms: 30_000 } as const,
+      /^Main storage gave no answer after 30.s\.$/,
+    ],
+    [{ state: "not-opened" } as const, "Main storage cannot be opened with its saved settings."],
+  ])(
+    "is not asked for the folder, and the page says what it reported: %j",
+    async (status, text) => {
+      let backends = down(status);
+      const { calls } = await open("/files", {
+        api: { "GET /api/backends": () => json(backends) },
+      });
+      expect(await said("Cannot list /files")).toBeTruthy();
+      expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+      expect(calls.some((call) => call.method === "PROPFIND")).toBe(false);
+      for (const name of ["New folder", "Upload"]) {
+        expect(
+          screen.getByRole("button", { name }).matches(":disabled, [aria-disabled=true]"),
+        ).toBe(true);
+      }
+      backends = BACKENDS;
+      await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+      expect(await link("README.txt")).toBeTruthy();
+    },
+  );
+
+  it("leaves the folders of other mounts listed", async () => {
+    await open("/photos", {
+      api: { "GET /api/backends": () => json(down({ state: "not-opened" })) },
+    });
+    expect(await screen.findByText("This folder is empty")).toBeTruthy();
+  });
+});
+
+const rendered = () => document.querySelectorAll("tbody tr").length;
+
+/** happy-dom lays nothing out: the page scrolls a viewport 600 px high, as a browser reports. */
+const viewport = () => {
+  const page = document.documentElement;
+  Object.defineProperty(page, "clientHeight", { configurable: true, get: () => 600 });
+  onTestFinished(() => {
+    Reflect.deleteProperty(page, "clientHeight");
+  });
+};
+
+describe("a large folder", () => {
+  const COUNT = 50_000;
+  const large = () => {
+    const dav = new FakeDav().folder("/files").folder("/photos");
+    for (let index = 0; index < COUNT; index += 1) {
+      dav.file(`/files/file-${String(index).padStart(5, "0")}.txt`, { body: "x" });
+    }
+    return dav;
+  };
+
+  it(
+    `renders a window of ${COUNT} entries, and follows a scroll`,
+    { timeout: 60_000 },
+    async () => {
+      viewport();
+      const started = performance.now();
+      await open("/files", { dav: large() });
+      expect(
+        await screen.findByRole("link", { name: "file-00000.txt" }, { timeout: 30_000 }),
+      ).toBeTruthy();
+      // Only the rows near the viewport are in the document, with a spacer for the rest.
+      expect(rendered()).toBeLessThan(200);
+      expect(screen.getByRole("table").getAttribute("aria-rowcount")).toBe(String(COUNT));
+      const scroller = scrollParentOf(screen.getByRole("table"));
+      let offset = 41 * 25_000;
+      Object.defineProperty(scroller, "scrollTop", {
+        configurable: true,
+        get: () => offset,
+        set: (value: number) => {
+          offset = value;
+        },
+      });
+      onTestFinished(() => {
+        Reflect.deleteProperty(scroller, "scrollTop");
+      });
+      fireEvent.scroll(scroller);
+      expect(await link("file-25000.txt")).toBeTruthy();
+      expect(screen.queryByRole("link", { name: "file-00000.txt" })).toBeNull();
+      expect(rendered()).toBeLessThan(200);
+      // Search still reaches every entry, not only those on screen.
+      await userEvent.type(search(), "49999");
+      expect(await link("file-49999.txt")).toBeTruthy();
+      expect(performance.now() - started).toBeLessThan(30_000);
+    },
+  );
+
+  it(
+    "selects every entry from the header, not only those on screen",
+    { timeout: 60_000 },
+    async () => {
+      await open("/files", { dav: large() });
+      await screen.findByRole("link", { name: "file-00000.txt" }, { timeout: 30_000 });
+      await userEvent.click(screen.getByRole("checkbox", { name: "Select all rows" }));
+      expect(await screen.findAllByText(/50,000 selected/)).not.toHaveLength(0);
+    },
+  );
 });

@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./fixtures";
 import { DEV_SERVER_ORIGIN } from "./devServer";
 
 // The owner reviews pages on `vite dev`, so the dev server has to draw them as the build does.
@@ -151,6 +152,9 @@ test.beforeAll(async ({ browser }) => {
 
 for (const path of PAGES) {
   test(`The same page on both servers: ${path}`, async ({ page, baseURL }) => {
+    // Both loads read one clock, so a relative time such as "1 minute ago" cannot tick over
+    // between them and change a text's width.
+    await page.clock.setFixedTime(Date.now());
     for (const { width, height, colorScheme } of VIEWS) {
       await page.setViewportSize({ width, height });
       await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });

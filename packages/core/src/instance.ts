@@ -1,12 +1,20 @@
 import { Context, Data, Effect, Redacted } from "effect";
 import { checkR2Config, checkS3Config } from "./backend-config";
 import { CredentialCipher } from "./credentials";
-import { isValidName, isValidPath, type Access } from "@davloom/laws";
+import {
+  isValidName,
+  isValidPath,
+  verificationPermits,
+  type Access,
+  type ActionEffect,
+} from "@davloom/laws";
 import { createMountedStorage, type Mount } from "./mounts";
+import { redactedError } from "./redact";
+import { setupTokenMatches } from "./setup-token";
 import { formatRoot, parseScope, type Scope } from "./scope";
-import type { Path, StorageBackend, Usage } from "./storage";
+import type { Path, StorageBackend, StorageFailure, StorageResult, Usage } from "./storage";
 
-// The application services of one Davloom instance: first-run setup, API Keys, storage backends and
+// The application services of one Davloom instance: registration of its owner, API Keys, storage backends and
 // Mounts, and the credential check of WebDAV requests. They reach the database, the identity
 // provider and the storage backends only through the Ports below.
 
@@ -38,6 +46,8 @@ export interface ApiKeyRecord {
   readonly expiresAt: Date | null;
   readonly createdAt: Date;
   readonly metadata: unknown;
+  /** When a WebDAV client last signed in with the key, to within USE_RECORD_INTERVAL_MS. */
+  readonly lastUsedAt: Date | null;
 }
 
 /** The Port to the instance database. */
@@ -54,6 +64,13 @@ export class Records extends Context.Service<
         config: unknown;
         secretKey?: string | null;
       }) => Promise<void>;
+      /** Changes a backend's name and configuration; false when no backend has the id. */
+      readonly update: (
+        id: string,
+        change: { name: string; config: unknown; secretKey: string | null },
+      ) => Promise<boolean>;
+      /** Removes a backend's record; false when no backend has the id. */
+      readonly remove: (id: string) => Promise<boolean>;
     };
     readonly mounts: {
       readonly list: () => Promise<MountRecord[]>;
@@ -72,23 +89,60 @@ export class Records extends Context.Service<
       readonly findByHash: (hash: string) => Promise<ApiKeyRecord | null>;
       readonly list: () => Promise<ApiKeyRecord[]>;
       readonly remove: (id: string) => Promise<boolean>;
+      /** Renames a key; false when no key has the id. */
+      readonly rename: (id: string, name: string) => Promise<boolean>;
+      /** Records that a WebDAV client signed in with the key at `at`. */
+      readonly recordUse: (id: string, at: Date) => Promise<void>;
     };
   }
 >()("@davloom/core/Records") {}
+
+/** The signed-in owner, as the identity provider describes them. */
+export interface SessionUser {
+  readonly id: string;
+  /** The display name. */
+  readonly name: string;
+  /** The username they sign in with, as they typed it; null for an owner from an old export. */
+  readonly username: string | null;
+  /** Their email, or null when they gave none. */
+  readonly email: string | null;
+  readonly twoFactorEnabled: boolean;
+  /** When this session last proved presence, as milliseconds since the epoch. */
+  readonly verifiedAt: number;
+}
+
+/** What the identity provider made of a registration. */
+export type RegistrationResult =
+  | { readonly ok: true; readonly id: string }
+  | { readonly ok: false; readonly refusal: "closed" }
+  | {
+      readonly ok: false;
+      readonly refusal: "field";
+      readonly field: "username" | "password" | "email";
+      readonly reason: string;
+    }
+  | { readonly ok: false; readonly refusal: "check-failed"; readonly reason: string };
 
 /** The Port to the identity provider (Better Auth). */
 export class Identity extends Context.Service<
   Identity,
   {
-    readonly createAdmin: (details: {
+    /** Creates the owner, unless a user exists already; atomic in the database. */
+    readonly registerOwner: (details: {
+      username: string;
       name: string;
-      email: string;
+      email: string | null;
       password: string;
-    }) => Promise<{ id: string }>;
+    }) => Promise<RegistrationResult>;
     /** The signed-in user of a request, or null. */
-    readonly sessionUser: (
+    readonly sessionUser: (headers: Headers) => Promise<SessionUser | null>;
+    /** Checks the password, and the authenticator code when two-step verification is on. */
+    readonly reverify: (
       headers: Headers,
-    ) => Promise<{ id: string; name: string; email: string } | null>;
+      input: { password: string; code: string },
+    ) => Promise<
+      "verified" | "no-session" | "wrong-password" | "code-required" | "wrong-code" | "locked"
+    >;
     readonly createApiKey: (details: {
       userId: string;
       name: string;
@@ -108,21 +162,48 @@ export class StorageOpener extends Context.Service<
 export class InstanceConfig extends Context.Service<
   InstanceConfig,
   {
-    /** The token the first-run setup asks for; setup is closed without one. */
-    readonly setupToken: string | null;
     /** The storage kinds this runtime can open; the first is the default for new backends. */
     readonly storageKinds: readonly string[];
-    /** The backend the first-run setup creates, when the deployment names one (self-hosted). */
+    /** The backend registration creates, when the deployment names one (self-hosted). */
     readonly defaultBackend?: {
       readonly kind: string;
       readonly config: unknown;
       readonly secretKey: Redacted.Redacted | null;
     } | null;
+    /**
+     * The token that registering the owner, or importing in its place, has to name
+     * (DAVLOOM_SETUP_TOKEN). Without one the first visitor may register.
+     */
+    readonly setupToken?: Redacted.Redacted | null;
+    /** Whether passkeys are on, which needs the instance's configured public URL. */
+    readonly passkeys?: boolean;
   }
 >()("@davloom/core/InstanceConfig") {}
 
-export class SetupClosed extends Data.TaggedError("SetupClosed")<{}> {}
+/** The instance has its owner, so registration and imports are closed. */
+export class RegistrationClosed extends Data.TaggedError("RegistrationClosed")<{}> {}
+/** The deployment sets a setup token, and the registration or import did not name it. */
 export class SetupTokenInvalid extends Data.TaggedError("SetupTokenInvalid")<{}> {}
+/** The identity provider refused a field of a registration, for the reason it gives. */
+export class UsernameRefused extends Data.TaggedError("UsernameRefused")<{
+  readonly reason: string;
+}> {}
+export class PasswordRefused extends Data.TaggedError("PasswordRefused")<{
+  readonly reason: string;
+}> {}
+export class EmailRefused extends Data.TaggedError("EmailRefused")<{ readonly reason: string }> {}
+/** The leaked-password check could not reach its service, so the password was not accepted. */
+export class PasswordCheckFailed extends Data.TaggedError("PasswordCheckFailed")<{
+  readonly reason: string;
+}> {}
+/** A step-up action needs the session to prove presence again first. */
+export class VerificationRequired extends Data.TaggedError("VerificationRequired")<{}> {}
+export class WrongPassword extends Data.TaggedError("WrongPassword")<{}> {}
+/** Two-step verification is on, so a re-verification needs the authenticator's code too. */
+export class CodeRequired extends Data.TaggedError("CodeRequired")<{}> {}
+export class WrongCode extends Data.TaggedError("WrongCode")<{}> {}
+/** Too many wrong attempts at re-verification; the lock lifts after a quarter of an hour. */
+export class VerificationLocked extends Data.TaggedError("VerificationLocked")<{}> {}
 export class InvalidInput extends Data.TaggedError("InvalidInput")<{ readonly field: string }> {}
 export class NotFound extends Data.TaggedError("NotFound")<{}> {}
 export class NameTaken extends Data.TaggedError("NameTaken")<{}> {}
@@ -151,107 +232,171 @@ const insert = (run: () => Promise<void>) =>
     Effect.catch((error) => (isUnique(error) ? Effect.fail(new NameTaken()) : Effect.die(error))),
   );
 
-/** Compares two secrets in time that does not depend on where they differ. */
-export const constantTimeEqual = (a: string, b: string) => {
-  const left = new TextEncoder().encode(a);
-  const right = new TextEncoder().encode(b);
-  let difference = left.length ^ right.length;
-  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
-    difference |= (left[index] ?? 0) ^ (right[index] ?? 0);
-  }
-  return difference === 0;
-};
-
 export const DEFAULT_MOUNT = "files";
 
-// --- Setup ---------------------------------------------------------------------------------
+// --- Registration --------------------------------------------------------------------------
 
-export const setupStatus = Effect.gen(function* () {
+/**
+ * Registration is open while the instance has no user: the first account becomes its owner. It
+ * also says whether registering needs the deployment's setup token, and whether passkeys are on.
+ */
+export const registrationStatus = Effect.gen(function* () {
   const records = yield* Records;
   const config = yield* InstanceConfig;
-  const users = yield* promise(() => records.users.count());
-  return { needed: users === 0, open: users === 0 && config.setupToken !== null };
+  return {
+    open: (yield* promise(() => records.users.count())) === 0,
+    tokenRequired: config.setupToken !== undefined && config.setupToken !== null,
+    passkeys: config.passkeys === true,
+  };
 });
+
+/** Fails with SetupTokenInvalid unless `given` is the deployment's setup token, when it sets one. */
+export const requireSetupToken = (given: string) =>
+  Effect.gen(function* () {
+    const config = yield* InstanceConfig;
+    const matches = yield* setupTokenMatches(config.setupToken, given);
+    return matches ? undefined : yield* Effect.fail(new SetupTokenInvalid());
+  });
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
 
-/** Creates the administrator, a default backend and its Mount. Only while no user exists. */
-export const completeSetup = (input: {
+/**
+ * Creates the owner, then a default backend and its Mount. Only the first registration wins; any
+ * later one, including one that raced it, fails with RegistrationClosed.
+ */
+export const registerOwner = (input: {
+  username: string;
   name: string;
   email: string;
   password: string;
-  token: string;
+  setupToken?: string;
 }) =>
   Effect.gen(function* () {
     const records = yield* Records;
     const identity = yield* Identity;
     const config = yield* InstanceConfig;
-    if (config.setupToken === null || (yield* promise(() => records.users.count())) > 0) {
-      return yield* Effect.fail(new SetupClosed());
+    if ((yield* promise(() => records.users.count())) > 0) {
+      return yield* Effect.fail(new RegistrationClosed());
     }
-    if (!constantTimeEqual(input.token, config.setupToken))
-      return yield* Effect.fail(new SetupTokenInvalid());
-    if (input.name.trim() === "" || input.name.length > 100)
-      return yield* Effect.fail(new InvalidInput({ field: "name" }));
-    if (!EMAIL.test(input.email) || input.email.length > 254)
+    yield* requireSetupToken(input.setupToken ?? "");
+    const username = input.username.trim();
+    if (username === "") return yield* Effect.fail(new InvalidInput({ field: "username" }));
+    const name = input.name.trim() === "" ? username : input.name.trim();
+    if (name.length > 100) return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    const email = input.email.trim();
+    if (email !== "" && (!EMAIL.test(email) || email.length > 254))
       return yield* Effect.fail(new InvalidInput({ field: "email" }));
-    if (input.password.length < 12 || input.password.length > 128) {
-      return yield* Effect.fail(new InvalidInput({ field: "password" }));
-    }
-    const user = yield* promise(() =>
-      identity.createAdmin({
-        name: input.name.trim(),
-        email: input.email,
+    const result = yield* promise(() =>
+      identity.registerOwner({
+        username,
+        name,
+        email: email === "" ? null : email,
         password: input.password,
       }),
     );
-    const backends = yield* promise(() => records.backends.list());
-    let backendId = backends[0]?.id;
-    if (backendId === undefined) {
-      const id = crypto.randomUUID();
-      backendId = id;
-      let chosen = config.defaultBackend ?? {
-        kind: config.storageKinds[0] ?? "durable-object",
-        config: {},
-        secretKey: null,
-      };
-      // The deployment's own S3 settings are checked like any other; an invalid one is stored as
-      // it is and shows as unavailable, so setup still completes and the admin can fix it.
-      const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
-      if (checked?.ok) chosen = { ...chosen, config: checked.config };
-      const cipher = yield* CredentialCipher;
-      const secret = chosen.secretKey;
-      const sealed = secret ? yield* cipher.seal(id, secret) : null;
-      yield* insert(() =>
-        records.backends.create({
-          id,
-          name: "Default",
-          kind: chosen.kind,
-          config: chosen.config,
-          ...(sealed === null ? {} : { secretKey: sealed }),
-        }),
+    if (!result.ok) {
+      if (result.refusal === "closed") return yield* Effect.fail(new RegistrationClosed());
+      if (result.refusal === "check-failed")
+        return yield* Effect.fail(new PasswordCheckFailed({ reason: result.reason }));
+      const reason = result.reason;
+      return yield* Effect.fail(
+        result.field === "username"
+          ? new UsernameRefused({ reason })
+          : result.field === "password"
+            ? new PasswordRefused({ reason })
+            : new EmailRefused({ reason }),
       );
     }
-    const mounts = yield* promise(() => records.mounts.list());
-    if (mounts.length === 0) {
-      yield* insert(() =>
-        records.mounts.create({
-          id: crypto.randomUUID(),
-          name: DEFAULT_MOUNT,
-          backendId: backendId ?? "",
-          root: "",
-        }),
-      );
+    // The owner's files go only to the backend and Mount registration creates now. A record that
+    // exists before the instance has an owner was made by nobody the owner trusts, such as an
+    // import that brought no user, so registration drops it rather than adopt it. Dropping a
+    // record leaves the files of its store where they are.
+    for (const orphan of yield* promise(() => records.mounts.list())) {
+      yield* promise(() => records.mounts.remove(orphan.id));
     }
-    return { userId: user.id };
+    for (const orphan of yield* promise(() => records.backends.list())) {
+      yield* promise(() => records.backends.remove(orphan.id));
+    }
+    const backendId = crypto.randomUUID();
+    let chosen = config.defaultBackend ?? {
+      kind: config.storageKinds[0] ?? "durable-object",
+      config: {},
+      secretKey: null,
+    };
+    // The deployment's own S3 settings are checked like any other; an invalid one is stored as
+    // it is and shows as unavailable, so registration still completes and the owner can fix it.
+    const checked = chosen.kind === "s3" ? checkS3Config(chosen.config) : null;
+    if (checked?.ok) chosen = { ...chosen, config: checked.config };
+    const cipher = yield* CredentialCipher;
+    const secret = chosen.secretKey;
+    const sealed = secret ? yield* cipher.seal(backendId, secret) : null;
+    yield* insert(() =>
+      records.backends.create({
+        id: backendId,
+        name: "Default",
+        kind: chosen.kind,
+        config: chosen.config,
+        ...(sealed === null ? {} : { secretKey: sealed }),
+      }),
+    );
+    yield* insert(() =>
+      records.mounts.create({
+        id: crypto.randomUUID(),
+        name: DEFAULT_MOUNT,
+        backendId,
+        root: "",
+      }),
+    );
+    return { userId: result.id };
   });
 
-/** The signed-in administrator, or Unauthorized. */
+/** The signed-in owner, or Unauthorized. */
 export const requireUser = (headers: Headers) =>
   Effect.gen(function* () {
     const identity = yield* Identity;
     const user = yield* promise(() => identity.sessionUser(headers));
     return user ?? (yield* Effect.fail(new Unauthorized()));
+  });
+
+// --- Step-up verification (PRD §6) ---------------------------------------------------------
+
+/** How long a verification lasts for step-up actions. */
+export const STEP_UP_WINDOW_MS = 5 * 60_000;
+
+/** Whether a session that proved presence at `verifiedAt` counts as fresh at `now`. */
+export const isFresh = (verifiedAt: number, now: number): boolean =>
+  Number.isFinite(verifiedAt) && verifiedAt <= now && now - verifiedAt < STEP_UP_WINDOW_MS;
+
+/**
+ * The signed-in owner, when the session may run an action of this effect now: a step-up action
+ * needs a verification within the window, else it fails with VerificationRequired.
+ */
+export const requireVerified = (headers: Headers, effect: ActionEffect, now: number) =>
+  Effect.gen(function* () {
+    const user = yield* requireUser(headers);
+    if (!verificationPermits(effect, isFresh(user.verifiedAt, now))) {
+      return yield* Effect.fail(new VerificationRequired());
+    }
+    return user;
+  });
+
+/** Proves presence again: the password, and the authenticator code when two-step is on. */
+export const reverify = (headers: Headers, input: { password: string; code: string }) =>
+  Effect.gen(function* () {
+    const identity = yield* Identity;
+    const result = yield* promise(() => identity.reverify(headers, input));
+    if (result === "verified") return { verified: true };
+    return yield* Effect.fail(
+      result === "no-session"
+        ? new Unauthorized()
+        : result === "wrong-password"
+          ? new WrongPassword()
+          : result === "code-required"
+            ? new CodeRequired()
+            : result === "locked"
+              ? new VerificationLocked()
+              : new WrongCode(),
+    );
   });
 
 // --- API Keys ------------------------------------------------------------------------------
@@ -266,6 +411,8 @@ export interface KeyView {
   readonly enabled: boolean;
   readonly expiresAt: string | null;
   readonly createdAt: string;
+  /** When a WebDAV client last signed in with it, to within a few minutes; null for never. */
+  readonly lastUsedAt: string | null;
 }
 
 const accessOf = (metadata: unknown): Access =>
@@ -303,6 +450,7 @@ const keyView = (key: ApiKeyRecord): KeyView => ({
   enabled: key.enabled,
   expiresAt: key.expiresAt?.toISOString() ?? null,
   createdAt: key.createdAt.toISOString(),
+  lastUsedAt: key.lastUsedAt?.toISOString() ?? null,
 });
 
 export const listKeys = Effect.gen(function* () {
@@ -356,6 +504,18 @@ export const createKey = (
     return { id: created.id, key: created.key };
   });
 
+/** Renames a key, as the admin tells keys apart; its secret, access and scope stay as they are. */
+export const renameKey = (id: string, input: { name: string }) =>
+  Effect.gen(function* () {
+    const records = yield* Records;
+    const name = input.name.trim();
+    if (name === "" || name.length > 64)
+      return yield* Effect.fail(new InvalidInput({ field: "name" }));
+    if (!(yield* promise(() => records.apiKeys.rename(id, name))))
+      return yield* Effect.fail(new NotFound());
+    return { id, name };
+  });
+
 export const revokeKey = (id: string) =>
   Effect.gen(function* () {
     const records = yield* Records;
@@ -366,23 +526,77 @@ export const revokeKey = (id: string) =>
 
 // --- Backends and Mounts -------------------------------------------------------------------
 
+/**
+ * How a backend answered when the list was read: in how many milliseconds, or what went wrong. A
+ * backend this runtime cannot open, for its kind or its saved settings, was never asked.
+ */
+export type BackendStatus =
+  | { readonly state: "answered"; readonly ms: number }
+  | { readonly state: "failed"; readonly failure: StorageFailure; readonly ms: number }
+  | { readonly state: "not-opened" };
+
+const backendStatusOf = (usage: StorageResult<Usage> | null, ms: number): BackendStatus =>
+  usage === null
+    ? { state: "not-opened" }
+    : usage.ok
+      ? { state: "answered", ms }
+      : { state: "failed", failure: usage.failure, ms };
+
+/** The fields of a backend's configuration that the Dashboard may see: never a secret. */
+const PUBLIC_CONFIG: Readonly<Record<string, readonly string[]>> = {
+  s3: ["endpoint", "region", "bucket", "prefix", "forcePathStyle", "accessKeyId"],
+  r2: ["binding", "prefix"],
+};
+
+/** A backend's configuration without its secrets, as the API returns it. */
+export const publicConfig = (kind: string, config: unknown): Record<string, string | boolean> => {
+  const view: Record<string, string | boolean> = {};
+  if (typeof config !== "object" || config === null) return view;
+  for (const field of PUBLIC_CONFIG[kind] ?? []) {
+    const value: unknown = Reflect.get(config, field);
+    if (typeof value === "string" || typeof value === "boolean") view[field] = value;
+  }
+  return view;
+};
+
 export const listBackends = Effect.gen(function* () {
   const records = yield* Records;
   const opener = yield* StorageOpener;
   const backends = yield* promise(() => records.backends.list());
-  return yield* Effect.forEach(backends, (backend) =>
-    Effect.gen(function* () {
-      const storage = opener.open(backend);
-      const usage = storage ? yield* promise(() => storage.usage()) : null;
-      return {
-        id: backend.id,
-        name: backend.name,
-        kind: backend.kind,
-        createdAt: backend.createdAt.toISOString(),
-        available: usage?.ok === true,
-        usage: usage?.ok ? usage.value : null,
-      };
-    }),
+  return yield* Effect.forEach(
+    backends,
+    (backend) =>
+      Effect.gen(function* () {
+        const storage = opener.open(backend);
+        const started = Date.now();
+        const [usage, quota] = storage
+          ? yield* promise(() =>
+              Promise.all([
+                storage
+                  .usage()
+                  .catch((): StorageResult<Usage> => ({ ok: false, failure: "unavailable" })),
+                storage.quota?.([]).catch(() => null) ?? null,
+              ]),
+            )
+          : [null, null];
+        return {
+          id: backend.id,
+          name: backend.name,
+          kind: backend.kind,
+          createdAt: backend.createdAt.toISOString(),
+          available: usage?.ok === true,
+          usage: usage?.ok ? usage.value : null,
+          status: backendStatusOf(usage, Date.now() - started),
+          /** The bytes the backend may hold in all, where it knows its limit; else null. */
+          capacity:
+            quota?.ok && quota.value.available !== null
+              ? quota.value.used + quota.value.available
+              : null,
+          config: publicConfig(backend.kind, backend.config),
+          hasSecretKey: backend.secretKey !== null,
+        };
+      }),
+    { concurrency: "unbounded" },
   );
 });
 
@@ -591,6 +805,17 @@ export interface Credential {
   readonly scope: Scope;
 }
 
+/**
+ * How stale a key's last use may get before a sign-in records it again. Each record is a database
+ * write, and Workers Free allows 100,000 a day, so a busy client writes at most once per key in
+ * this time rather than once per request.
+ */
+export const USE_RECORD_INTERVAL_MS = 5 * 60_000;
+
+/** Whether a sign-in at `now` records the key's use: never recorded, or recorded long enough ago. */
+export const shouldRecordUse = (lastUsedAt: Date | null, now: number): boolean =>
+  lastUsedAt === null || now - lastUsedAt.getTime() >= USE_RECORD_INTERVAL_MS;
+
 /** Checks an API Key sent as the password of Basic Auth; null when it is unknown, off or expired. */
 export const verifyApiKey = (key: string, now: number) =>
   Effect.gen(function* () {
@@ -605,6 +830,14 @@ export const verifyApiKey = (key: string, now: number) =>
     )
       return null;
     if (brokenScope(record.metadata)) return null;
+    if (shouldRecordUse(record.lastUsedAt, now)) {
+      // The sign-in stands whether or not the record is written.
+      yield* promise(() =>
+        records.apiKeys.recordUse(record.id, new Date(now)).catch((error: unknown) => {
+          console.error("Could not record the use of an API Key:", redactedError(error));
+        }),
+      );
+    }
     return {
       keyId: record.id,
       access: accessOf(record.metadata),

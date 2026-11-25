@@ -27,6 +27,7 @@ const TABLES: Readonly<Record<ArchiveTable, SQLiteTable>> = {
   mounts: schema.mounts,
   apikey: schema.apikey,
   dav_properties: schema.davProperties,
+  settings: schema.settings,
 };
 
 /** D1 binds at most 100 values to one statement. */
@@ -54,17 +55,30 @@ interface Column {
   readonly name: string;
   readonly kind: Kind;
   readonly notNull: boolean;
+  /** Whether the database fills the column when a row leaves it out. */
+  readonly optional: boolean;
 }
 
-const columnsOf = (table: SQLiteTable): Column[] =>
-  Object.entries(getTableColumns(table)).map(([key, column]) => ({
-    key,
-    name: column.name,
-    kind: kindOf(column),
-    notNull: column.notNull,
-  }));
+/**
+ * Columns an export leaves out. Two-step verification stays behind: its secret is encrypted with
+ * this instance's secret, so on another instance the flag would ask for a code nobody can give.
+ */
+const LEFT_OUT: Readonly<Partial<Record<ArchiveTable, readonly string[]>>> = {
+  user: ["two_factor_enabled"],
+};
 
-const COLUMNS = mapArchiveTables((table) => columnsOf(TABLES[table]));
+const columnsOf = (name: ArchiveTable, table: SQLiteTable): Column[] =>
+  Object.entries(getTableColumns(table))
+    .filter(([, column]) => !(LEFT_OUT[name] ?? []).includes(column.name))
+    .map(([key, column]) => ({
+      key,
+      name: column.name,
+      kind: kindOf(column),
+      notNull: column.notNull,
+      optional: !column.notNull || column.hasDefault,
+    }));
+
+const COLUMNS = mapArchiveTables((table) => columnsOf(table, TABLES[table]));
 
 const fromDatabase = (kind: Kind, value: unknown): unknown =>
   kind === "timestamp" && value instanceof Date ? value.getTime() : (value ?? null);
@@ -90,8 +104,9 @@ const KIND_PROBLEM: Readonly<Record<Kind, string>> = {
 
 /** Why a value does not fit its column, or null. */
 const misfit = (column: Column, value: unknown): string | null => {
-  // An export holds every column of every row, so a row is written exactly as it was read.
-  if (value === undefined) return "is missing";
+  // An export holds every column of every row, so a row is written exactly as it was read. An
+  // export made before a column existed leaves it out, and the database fills it in.
+  if (value === undefined) return column.optional ? null : "is missing";
   if (value === null) return column.notNull ? "is missing" : null;
   return KIND_TEST[column.kind](value) ? null : KIND_PROBLEM[column.kind];
 };

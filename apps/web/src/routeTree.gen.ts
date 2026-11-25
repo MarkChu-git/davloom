@@ -11,7 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppDashboardRouteImport } from './routes/_app/_dashboard'
-import { Route as AppSetupRouteImport } from './routes/_app/setup'
+import { Route as AppRegisterRouteImport } from './routes/_app/register'
 import { Route as AppSignInRouteImport } from './routes/_app/sign-in'
 import { Route as AppDashboardIndexRouteImport } from './routes/_app/_dashboard/index'
 import { Route as AppDashboardCredentialsRouteImport } from './routes/_app/_dashboard/credentials'
@@ -29,9 +29,9 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/_dashboard',
   getParentRoute: () => AppRoute,
 } as any)
-const AppSetupRoute = AppSetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
+const AppRegisterRoute = AppRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSignInRoute = AppSignInRouteImport.update({
@@ -77,7 +77,7 @@ const AppDesignCheckDeepPageRoute = AppDesignCheckDeepPageRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppDashboardIndexRoute
-  '/setup': typeof AppSetupRoute
+  '/register': typeof AppRegisterRoute
   '/sign-in': typeof AppSignInRoute
   '/credentials': typeof AppDashboardCredentialsRoute
   '/files': typeof AppDashboardFilesRoute
@@ -88,7 +88,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof AppDashboardIndexRoute
-  '/setup': typeof AppSetupRoute
+  '/register': typeof AppRegisterRoute
   '/sign-in': typeof AppSignInRoute
   '/credentials': typeof AppDashboardCredentialsRoute
   '/files': typeof AppDashboardFilesRoute
@@ -101,7 +101,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/_app/_dashboard': typeof AppDashboardRouteWithChildren
-  '/_app/setup': typeof AppSetupRoute
+  '/_app/register': typeof AppRegisterRoute
   '/_app/sign-in': typeof AppSignInRoute
   '/_app/_dashboard/credentials': typeof AppDashboardCredentialsRoute
   '/_app/_dashboard/files': typeof AppDashboardFilesRoute
@@ -115,7 +115,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/setup'
+    | '/register'
     | '/sign-in'
     | '/credentials'
     | '/files'
@@ -126,7 +126,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/setup'
+    | '/register'
     | '/sign-in'
     | '/credentials'
     | '/files'
@@ -138,7 +138,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/_app/_dashboard'
-    | '/_app/setup'
+    | '/_app/register'
     | '/_app/sign-in'
     | '/_app/_dashboard/credentials'
     | '/_app/_dashboard/files'
@@ -169,11 +169,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/setup': {
-      id: '/_app/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof AppSetupRouteImport
+    '/_app/register': {
+      id: '/_app/register'
+      path: '/register'
+      fullPath: '/register'
+      preLoaderRoute: typeof AppRegisterRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/sign-in': {
@@ -257,7 +257,7 @@ const AppDashboardRouteWithChildren = AppDashboardRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppDashboardRoute: typeof AppDashboardRouteWithChildren
-  AppSetupRoute: typeof AppSetupRoute
+  AppRegisterRoute: typeof AppRegisterRoute
   AppSignInRoute: typeof AppSignInRoute
   AppDesignCheckIndexRoute: typeof AppDesignCheckIndexRoute
   AppDesignCheckDeepPageRoute: typeof AppDesignCheckDeepPageRoute
@@ -265,7 +265,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppDashboardRoute: AppDashboardRouteWithChildren,
-  AppSetupRoute: AppSetupRoute,
+  AppRegisterRoute: AppRegisterRoute,
   AppSignInRoute: AppSignInRoute,
   AppDesignCheckIndexRoute: AppDesignCheckIndexRoute,
   AppDesignCheckDeepPageRoute: AppDesignCheckDeepPageRoute,

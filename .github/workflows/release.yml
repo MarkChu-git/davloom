@@ -1,0 +1,230 @@
+name: Release
+
+# The Phase 6 release pipeline (PRD §11): for each version tag, builds the self-hosted image with
+# Docker Buildx for amd64 and arm64, runs the smoke test against each image with RustFS beside it,
+# scans each with Trivy, writes its Syft SBOM and checks the licenses in it, and only then pushes
+# the images that were scanned to GHCR, attests their provenance and SBOMs, and creates the GitHub
+# Release. docs/deployment/release.md describes the steps and how to roll a release back.
+#
+# A pull request that changes the image, its scripts or this workflow runs everything up to the
+# push, so the pipeline is tested before a tag needs it. It reads no secret: GITHUB_TOKEN is the
+# only token any job sees, and the jobs that can write run for tags alone.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/actions/setup/**
+      - deploy/docker/**
+      - .dockerignore
+      - scripts/image-smoke.ts
+      - scripts/smoke.ts
+      - scripts/license-check.ts
+      - scripts/lib/licenses.ts
+      - scripts/lib/tools.ts
+      - scripts/tool.ts
+      - bun.lock
+      - "**/package.json"
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push to a pull request replaces its run; a tag's run always finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Builds the image natively on each architecture, so that Bun never runs under emulation, and
+  # runs the smoke test against it. The image leaves the job as a docker save archive, which the
+  # scan and the push both take, so the bytes that are pushed are the bytes that were scanned.
+  image:
+    name: image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      # The provenance that matters is GitHub's attestation in the publish job; Buildx's own would
+      # turn the image into an index that `--load` cannot keep.
+      - name: Build the image with Buildx
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          docker buildx build --platform "linux/$ARCH" --provenance=false --load \
+            -f deploy/docker/Dockerfile -t "davloom:$ARCH" .
+          docker save "davloom:$ARCH" -o "image-$ARCH.tar"
+      - name: Smoke-test the image with RustFS
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: deploy/docker/smoke.sh "davloom:$ARCH"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: image-${{ matrix.arch }}.tar
+          retention-days: 7
+          if-no-files-found: error
+
+  # Trivy and Syft run as the pinned release binaries that scripts/lib/tools.ts checks by SHA-256,
+  # not as third-party actions, in a job that holds no secret (PRD §11, Tooling Choices).
+  scan:
+    name: scan (${{ matrix.arch }})
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun
+        uses: ./.github/actions/setup
+        with:
+          install: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: image-${{ matrix.arch }}
+      # Every vulnerability rated High or Critical that has a fix fails the release.
+      - name: Scan the image for vulnerabilities with Trivy
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          bun scripts/tool.ts trivy image --input "image-$ARCH.tar" --scanners vuln \
+            --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 --no-progress
+      - name: Scan the Dockerfile and Compose file with Trivy
+        if: ${{ !cancelled() }}
+        run: bun scripts/tool.ts trivy config --severity HIGH,CRITICAL --exit-code 1 deploy/docker
+      - name: Write the SBOM with Syft
+        if: ${{ !cancelled() }}
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          bun scripts/tool.ts syft scan "docker-archive:image-$ARCH.tar" --quiet \
+            -o "spdx-json=davloom-$ARCH.spdx.json" -o "syft-json=davloom-$ARCH.syft.json"
+      - name: Check the licenses in the SBOM
+        if: ${{ !cancelled() }}
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: bun scripts/license-check.ts "davloom-$ARCH.syft.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ matrix.arch }}
+          path: davloom-${{ matrix.arch }}.spdx.json
+          retention-days: 90
+          if-no-files-found: error
+
+  # Pushes the scanned images to GHCR, joins them under the version's tag, and attests the
+  # provenance of the result and the SBOM of each image with GitHub Artifact Attestations, which
+  # Sigstore signs (PRD §11: no Cosign).
+  publish:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: [image, scan]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{image,sbom}-*"
+          merge-multiple: true
+      - name: Push the images and the multi-platform tag
+        id: push
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          sources=()
+          for arch in amd64 arm64; do
+            docker load -i "image-$arch.tar"
+            docker tag "davloom:$arch" "$image:$VERSION-$arch"
+            docker push "$image:$VERSION-$arch"
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$image:$VERSION-$arch")"
+            echo "${arch}_digest=${digest#*@}" >> "$GITHUB_OUTPUT"
+            sources+=("$digest")
+          done
+          tags=(-t "$image:$VERSION")
+          # A version with a pre-release part, such as v1.0.0-rc.1, does not move latest.
+          if [[ "$VERSION" != *-* ]]; then tags+=(-t "$image:latest"); fi
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          digest="$(docker buildx imagetools inspect "$image:$VERSION" --format '{{json .Manifest}}' | jq -r .digest)"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: Attest the provenance of the image
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: Attest the SBOM of the amd64 image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.amd64_digest }}
+          sbom-path: davloom-amd64.spdx.json
+          push-to-registry: true
+      - name: Attest the SBOM of the arm64 image
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ${{ steps.push.outputs.image }}
+          subject-digest: ${{ steps.push.outputs.arm64_digest }}
+          sbom-path: davloom-arm64.spdx.json
+          push-to-registry: true
+
+  release:
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+          IMAGE: ${{ needs.publish.outputs.image }}
+          DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          flags=(--verify-tag --generate-notes --title "Davloom $VERSION")
+          if [[ "$VERSION" == *-* ]]; then flags+=(--prerelease); fi
+          {
+            echo "Docker image: \`$IMAGE:$VERSION\` (\`$IMAGE@$DIGEST\`)"
+            echo
+            echo "Verify it with \`gh attestation verify oci://$IMAGE:$VERSION --repo $GITHUB_REPOSITORY\`."
+            echo "The SBOMs below are the SPDX documents attested for each platform's image."
+          } > notes.md
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" "${flags[@]}" \
+            --notes-file notes.md davloom-amd64.spdx.json davloom-arm64.spdx.json

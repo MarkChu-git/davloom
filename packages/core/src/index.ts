@@ -16,6 +16,8 @@ export { createMemoryStorage, type MemoryStorageOptions } from "./memory-storage
 export { createMemoryPropertyStore, isKeyWithin, type PropertyStore } from "./property-store";
 export { createMountedStorage, type Mount } from "./mounts";
 export * from "./instance";
+export { setupTokenFrom, setupTokenMatches } from "./setup-token";
+export { redactedError, redactedStack } from "./redact";
 export {
   checkR2Config,
   checkS3Config,
@@ -31,3 +33,7 @@ export {
   type Scope,
 } from "./scope";
 export * from "./archive";
+export * from "./backends";
+export * from "./operations";
+export * from "./settings";
+export * from "./audit";

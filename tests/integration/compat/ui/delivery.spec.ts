@@ -1,5 +1,6 @@
 import { connect } from "node:net";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
+import { test } from "./fixtures";
 import { onlyInChromium } from "./helpers";
 
 test("opening a deep route directly renders that route", async ({ page }) => {
@@ -74,6 +75,41 @@ test("a null byte in the path is not a server error", async ({ request }) => {
   const response = await request.get("/%00");
 
   expect(response.status()).toBeLessThan(500);
+});
+
+// Cloudflare's edge compresses for a deployment on Workers; local workerd and Bun do so too, so the
+// Lighthouse run in CI measures what a browser downloads from a real deployment.
+test("the Dashboard's page, stylesheet and scripts arrive gzipped", async ({ request }) => {
+  const gzip = { "accept-encoding": "gzip" };
+  const page = await request.get("/sign-in", { headers: gzip });
+  const html = await page.text();
+  const assets = [...html.matchAll(/(?:href|src)="(\/assets\/[^"]+\.(?:css|js))"/g)].map(
+    ([, path]) => path ?? "",
+  );
+
+  expect(page.headers()["content-encoding"]).toBe("gzip");
+  expect(assets.some((path) => path.endsWith(".css"))).toBe(true);
+  expect(assets.some((path) => path.endsWith(".js"))).toBe(true);
+  for (const path of assets) {
+    const asset = await request.get(path, { headers: gzip });
+    expect(asset.status(), path).toBe(200);
+    // Bun leaves a file under 1 KiB as it is, where gzip's own header outweighs what it saves.
+    if ((await asset.body()).byteLength >= 1024) {
+      expect(asset.headers()["content-encoding"], path).toBe("gzip");
+    }
+  }
+});
+
+test("robots.txt is a plain-text file that keeps crawlers out of the API and WebDAV", async ({
+  request,
+}) => {
+  const response = await request.get("/robots.txt");
+
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain("text/plain");
+  expect(await response.text()).toMatch(
+    /^User-agent: \*$[\s\S]*^Disallow: \/api\/$[\s\S]*^Disallow: \/dav\/$/m,
+  );
 });
 
 test("the bare API path is the API's own 404", async ({ request }) => {

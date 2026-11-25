@@ -82,3 +82,30 @@ describe("unsealWith", () => {
     expect(await unsealWith(cipher)("b", "bad")).toBeNull();
   });
 });
+
+describe("openS3Backend with a secret that opens", () => {
+  // The endpoint refuses connections, so every call reaches the S3 driver and comes back as the
+  // driver's failure: the record opened, and each method is wired to the opened backend.
+  it.each([undefined, 30])("passes every call to the S3 backend (maxEntries %s)", async (max) => {
+    const backend = openS3Backend(
+      record(),
+      () => Promise.resolve("secret"),
+      createMemoryPropertyStore(),
+      max,
+    );
+    const results = await Promise.all([
+      backend.stat(["f"]),
+      backend.list([]),
+      backend.read(["f"]),
+      backend.write(["f"], null, {}),
+      backend.createCollection(["d"]),
+      backend.remove(["f"]),
+      backend.copy(["f"], ["g"], { overwrite: false, shallow: false }),
+      backend.move(["f"], ["g"], { overwrite: false }),
+      backend.patchProperties(["f"], [], []),
+      backend.usage(),
+    ]);
+    for (const result of results) expect(result).toMatchObject({ ok: false });
+    expect(await backend.properties([])).toEqual({ ok: true, value: {} });
+  });
+});

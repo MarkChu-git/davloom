@@ -64,6 +64,8 @@ describe("answers", () => {
       expect(response.headers.get("transfer-encoding")).toBeNull();
       expect(new Uint8Array(await response.arrayBuffer())).toEqual(body);
     },
+    // Comparing 3 MB byte by byte takes seconds under coverage with every other suite running.
+    20_000,
   );
 
   it.each([0, 1, 700, MEASURED_BODY_BYTES])(

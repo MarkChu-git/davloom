@@ -19,7 +19,8 @@ export {
   type Relation,
 } from "./policy";
 export { isValidName, isValidPath } from "./names";
-export { planImport, type ImportEntry } from "./imports";
+export { exportHasOwner, planImport, type ImportEntry } from "./imports";
+export { clientHop, type HopKind } from "./forwarding";
 export { decideMigration, type CopyAction, type CopySource, type CopyTarget } from "./copying";
 export {
   decideUnlock,
@@ -69,3 +70,10 @@ export {
   type TargetForm,
   type UrlPlan,
 } from "./framing";
+export {
+  ACTION_EFFECTS,
+  verificationLevel,
+  verificationPermits,
+  type ActionEffect,
+  type VerificationLevel,
+} from "./verification";

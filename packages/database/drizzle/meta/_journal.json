@@ -29,6 +29,41 @@
       "when": 1795469544927,
       "tag": "0003_dav_properties",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1795537336053,
+      "tag": "0004_settings_and_operations",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1795543808218,
+      "tag": "0005_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795550321392,
+      "tag": "0006_rate_limit",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795557283417,
+      "tag": "0007_verification_attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795560720684,
+      "tag": "0008_audit_events",
+      "breakpoints": true
     }
   ]
 }

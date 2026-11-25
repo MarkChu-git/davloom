@@ -4,14 +4,16 @@ import { davloomTheme } from "@davloom/ui/themes/davloom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
-import { createQueryClient } from "../features/api/queries";
+import { browserQueryClient, createQueryClient } from "../features/api/queries";
 import { useAppearanceMode } from "../features/appearance/store";
 import { RouterLink } from "../features/shell/RouterLink";
 
-// A child of the root route, so it only renders in the browser, where the stored mode is known and
-// the API can be reached.
+// The Dashboard's providers. The prerender renders them too, with the frame of each page; it reads
+// nothing, and the browser renders the page again with its stored mode and the API's answers.
 const AppLayout = () => {
-  const [client] = useState(createQueryClient);
+  const [client] = useState(() =>
+    import.meta.env.SSR ? createQueryClient() : browserQueryClient(),
+  );
   return (
     <QueryClientProvider client={client}>
       <Theme theme={davloomTheme} mode={useAppearanceMode()}>

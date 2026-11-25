@@ -1,5 +1,14 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
-import { isNarrow, onScreen, openRowDetails, recordOf, rowAction, shown } from "./helpers";
+import { expect, type Locator, type Page } from "@playwright/test";
+import { test } from "./fixtures";
+import {
+  isNarrow,
+  onScreen,
+  openList,
+  openRowDetails,
+  recordOf,
+  rowAction,
+  shown,
+} from "./helpers";
 import { createKey, unique, WORKERS_ORIGIN } from "./instances";
 
 // The Credentials scenarios about the key list, creating a key and revoking one, against the
@@ -12,8 +21,11 @@ const rowOf = (page: Page, name: string): Locator =>
   page.getByRole("row").filter({ has: page.getByText(name, { exact: true }) });
 
 /** What a key's row says in one of its columns. */
-const columnOf = (row: Locator, column: "Access" | "Expires" | "Status"): Locator =>
-  row.getByRole("cell").nth({ Access: 1, Expires: 3, Status: 4 }[column]);
+const columnOf = (
+  row: Locator,
+  column: "Access" | "Scope" | "Last used" | "Expires" | "Status",
+): Locator =>
+  row.getByRole("cell").nth({ Access: 1, Scope: 2, "Last used": 3, Expires: 4, Status: 5 }[column]);
 
 /** Text a page shows, as a pattern that lets the layout put space between its parts. */
 const spaced = (...parts: string[]): RegExp =>
@@ -25,16 +37,17 @@ const expectKey = async (
   name: string,
   {
     access,
-    reaches,
+    scope,
+    lastUsed,
     expires,
     status,
-  }: { access?: string; reaches?: string; expires?: string; status?: string },
+  }: { access?: string; scope?: string; lastUsed?: string; expires?: string; status?: string },
 ) => {
   if (!isNarrow(page)) {
     const row = rowOf(page, name);
-    if (access !== undefined) {
-      await expect(columnOf(row, "Access")).toHaveText(`${access}${reaches ?? ""}`);
-    }
+    if (access !== undefined) await expect(columnOf(row, "Access")).toHaveText(access);
+    if (scope !== undefined) await expect(columnOf(row, "Scope")).toHaveText(scope);
+    if (lastUsed !== undefined) await expect(columnOf(row, "Last used")).toHaveText(lastUsed);
     if (expires !== undefined) await expect(columnOf(row, "Expires")).toHaveText(expires);
     if (status !== undefined) await expect(columnOf(row, "Status")).toHaveText(status);
     return;
@@ -42,7 +55,10 @@ const expectKey = async (
   if (status !== undefined) await expect(recordOf(page, "key", name)).toContainText(status);
   const details = await openRowDetails(page, "key", name);
   if (access !== undefined) await expect(details).toContainText(spaced("Access", access));
-  if (reaches !== undefined) await expect(details).toContainText(spaced("Reaches", reaches));
+  if (scope !== undefined) await expect(details).toContainText(spaced("Scope", scope));
+  if (lastUsed !== undefined) {
+    await expect(details).toContainText(spaced("Last used", lastUsed));
+  }
   if (expires !== undefined) await expect(details).toContainText(spaced("Expires", expires));
 };
 
@@ -60,7 +76,7 @@ const inDays = (days: number): string =>
     new Date(Date.now() + days * 86_400_000),
   );
 
-test("Keys from the API: each key shows its access, its expiry and its status", async ({
+test("Keys from the API: each key shows its access, its scope, when it was last used, its expiry and its status", async ({
   page,
 }) => {
   const reader = unique("Accountant");
@@ -68,8 +84,18 @@ test("Keys from the API: each key shows its access, its expiry and its status", 
   await createKey(page.request, reader, "read-only", 30);
   await createKey(page.request, writer, "read-write", null);
   await page.goto("/credentials");
-  await expectKey(page, reader, { access: "Read only", expires: inDays(30), status: "Active" });
-  await expectKey(page, writer, { access: "Read and write", expires: "Never" });
+  await expectKey(page, reader, {
+    access: "Read only",
+    scope: "All mounts",
+    lastUsed: "Never",
+    expires: inDays(30),
+    status: "Active",
+  });
+  await expectKey(page, writer, {
+    access: "Read and write",
+    scope: "All mounts",
+    expires: "Never",
+  });
 });
 
 test("A key without a name: the form stays open and asks for a name only after the submit", async ({
@@ -84,27 +110,59 @@ test("A key without a name: the form stays open and asks for a name only after t
   await expect(dialog).toBeVisible();
 });
 
-test("A key limited to folders: the list shows its access with the folders it reaches", async ({
+/** Chooses the Mount a new key is limited to, in the form's Mount selector. */
+const chooseMount = async (page: Page, dialog: Locator, label: string) => {
+  await openList(page, "combobox", "Mount", dialog);
+  await page.getByRole("option", { name: label, exact: true }).click();
+};
+
+test("A key limited to a folder: the folder field opens once a mount is chosen, and the list shows the key's scope", async ({
   page,
 }) => {
   const name = unique("Photo frame");
   const dialog = await openForm(page);
   await dialog.getByLabel("Name").fill(name);
+  // A key reaches every mount until the form names one, so there is no folder to name yet.
+  await expect(dialog.getByRole("combobox", { name: "Mount" })).toHaveText("All mounts");
+  await expect(dialog.getByLabel("Folder inside the mount")).toBeDisabled();
+
+  await chooseMount(page, dialog, "/files");
+  const folder = dialog.getByLabel("Folder inside the mount");
+  await expect(folder).toBeEnabled();
+  await folder.fill(" photos//2026/ ");
   await dialog.getByRole("switch", { name: "Read only" }).click();
-  await dialog.getByLabel("Folders").fill("files/photos, /files/albums/");
   await dialog.getByRole("button", { name: "Create key" }).click();
   await shown(page.getByRole("heading", { name: `Key “${name}” is ready` }));
   await page.getByRole("button", { name: "Done" }).click();
-  await expectKey(page, name, { access: "Read only", reaches: "/files/photos, /files/albums" });
+  await expectKey(page, name, { access: "Read only", scope: "/files/photos/2026" });
 });
 
-test("Folders that name no folder: the form stays open and says why", async ({ page }) => {
+test("A key limited to a mount: with no folder, the key reaches the whole mount", async ({
+  page,
+}) => {
+  const name = unique("Backup");
+  const dialog = await openForm(page);
+  await dialog.getByLabel("Name").fill(name);
+  await chooseMount(page, dialog, "/files");
+  await dialog.getByRole("button", { name: "Create key" }).click();
+  await shown(page.getByRole("heading", { name: `Key “${name}” is ready` }));
+  await page.getByRole("button", { name: "Done" }).click();
+  await expectKey(page, name, { access: "Read and write", scope: "/files" });
+});
+
+test("A folder that leaves its mount: the form stays open and says why", async ({ page }) => {
+  const reason = "Name a folder inside the mount, without . or .. in its path.";
   const dialog = await openForm(page);
   await dialog.getByLabel("Name").fill(unique("Bad scope"));
-  await dialog.getByLabel("Folders").fill("/");
+  await chooseMount(page, dialog, "/files");
+  await dialog.getByLabel("Folder inside the mount").fill("photos/../..");
   await dialog.getByRole("button", { name: "Create key" }).click();
-  await shown(onScreen(page, "Name a mount or a folder inside one, such as /files/photos."));
+  await shown(onScreen(page, reason));
   await expect(dialog).toBeVisible();
+
+  // Changing the folder clears the reason.
+  await dialog.getByLabel("Folder inside the mount").fill("photos");
+  await expect(onScreen(page, reason)).toHaveCount(0);
 });
 
 test("Creating a key: the dialog shows the whole key once, with how to connect, and after Done the list holds only its first characters", async ({
@@ -152,6 +210,30 @@ test("Creating a key: the dialog shows the whole key once, with how to connect, 
 
   await expect(recordOf(page, "key", name)).toContainText(key.slice(0, 6));
   await expectKey(page, name, { expires: inDays(90) });
+});
+
+test("Renaming a key: the form starts from its name, refuses an empty one, and the list shows the new one", async ({
+  page,
+}) => {
+  const name = unique("Phone");
+  const renamed = unique("Old phone");
+  await createKey(page.request, name);
+  await page.goto("/credentials");
+  await rowAction(page, "key", name, "Rename");
+
+  const dialog = page.getByRole("dialog");
+  const field = dialog.getByLabel("Name");
+  await expect(field).toHaveValue(name);
+  await field.fill("   ");
+  await dialog.getByRole("button", { name: "Rename" }).click();
+  await shown(onScreen(page, "Name the key after the device or person that will use it."));
+  await expect(dialog).toBeVisible();
+
+  await field.fill(renamed);
+  await dialog.getByRole("button", { name: "Rename" }).click();
+  await shown(onScreen(page, `Renamed to “${renamed}”.`));
+  await shown(recordOf(page, "key", renamed));
+  await expect(recordOf(page, "key", name)).toHaveCount(0);
 });
 
 test("Revoking a key: the confirmation warns that access ends for good, the key leaves the list, and it no longer opens WebDAV", async ({

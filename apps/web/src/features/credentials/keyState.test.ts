@@ -1,6 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { hasExpired, keyStateOf, parseFolders, reachOf } from "./keyState";
+import { ALL_MOUNTS, hasExpired, keyStateOf, reachOf, scopeOf } from "./keyState";
 
 const NOW = new Date("2026-11-16T15:30:00Z");
 
@@ -39,28 +39,54 @@ describe("key states", () => {
   });
 });
 
-describe("parseFolders", () => {
+describe("scopeOf", () => {
   it.each([
-    ["", []],
-    ["  ", []],
-    ["/files/photos", ["/files/photos"]],
-    ["files/photos/", ["/files/photos"]],
-    ["/files, /docs\n/music", ["/files", "/docs", "/music"]],
-    ["/files,/files", ["/files"]],
-    ["/中文/😀", ["/中文/😀"]],
-  ])("reads %j as %j", (text, folders) => {
-    expect(parseFolders(text)).toEqual({ folders });
+    [ALL_MOUNTS, "", null],
+    [ALL_MOUNTS, "photos", null],
+    ["files", "", ["/files"]],
+    ["files", "photos", ["/files/photos"]],
+    ["files", "/photos/2024/", ["/files/photos/2024"]],
+    ["files", "//photos//2024", ["/files/photos/2024"]],
+    ["files", " photos / 2024 ", ["/files/photos/2024"]],
+    ["files", "   ", ["/files"]],
+    ["中文", "😀", ["/中文/😀"]],
+  ])("reads mount %j and folder %j as %j", (mount, folder, paths) => {
+    expect(scopeOf(mount, folder)).toEqual({ paths });
   });
 
-  it.each(["/", "/files/..", "./x", Array.from({ length: 17 }, (_, i) => `/m${i}`).join(",")])(
-    "refuses %j",
-    (text) => {
-      expect(parseFolders(text)).toHaveProperty("problem");
-    },
-  );
+  it.each(["..", "./x", "photos/..", "a/./b", " .. "])("refuses the folder %j", (folder) => {
+    expect(scopeOf("files", folder)).toHaveProperty("problem");
+  });
 
-  it("names a key's reach", () => {
-    expect(reachOf(null)).toBe("Every mount");
+  it("limits a key to one root inside its mount for any folder without . or ..", () => {
+    const name = fc
+      .stringMatching(/^[^/]{1,8}$/)
+      .filter((n) => n.trim() !== "" && n.trim() !== "." && n.trim() !== "..");
+    fc.assert(
+      fc.property(
+        name,
+        fc.array(fc.oneof(name, fc.constant("")), { maxLength: 6 }),
+        (mount, parts) => {
+          const scope = scopeOf(mount, parts.join("/"));
+          if (!("paths" in scope) || scope.paths === null) {
+            throw new Error("expected one root");
+          }
+          expect(scope.paths).toHaveLength(1);
+          const names = (scope.paths[0] ?? "").split("/").slice(1);
+          expect(names[0]).toBe(mount);
+          expect(names.slice(1)).toEqual(
+            parts.map((part) => part.trim()).filter((part) => part !== ""),
+          );
+          expect(names.slice(1)).not.toContain("");
+          expect(names.slice(1)).not.toContain("..");
+        },
+      ),
+    );
+  });
+
+  it("names a key's scope", () => {
+    expect(reachOf(null)).toBe("All mounts");
     expect(reachOf(["/files/a", "/docs"])).toBe("/files/a, /docs");
+    expect(reachOf([])).toBe("Nothing: its folders cannot be read");
   });
 });

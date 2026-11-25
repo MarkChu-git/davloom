@@ -69,6 +69,19 @@ storageContract("a Mount of a memory backend", {
   runs: 100,
 });
 
+/** A backend of one byte whose usage was measured at `measuredAt`, or is current for null. */
+const measuredBackend = (measuredAt: number | null): StorageBackend => ({
+  ...createMemoryStorage(),
+  usage: () =>
+    Promise.resolve({
+      ok: true,
+      value:
+        measuredAt === null
+          ? { files: 1, collections: 0, bytes: 1 }
+          : { files: 1, collections: 0, bytes: 1, measuredAt },
+    }),
+});
+
 describe("mounted storage", () => {
   it("presents the Mounts as the root's members", async () => {
     const { storage } = await namespace();
@@ -209,6 +222,19 @@ describe("mounted storage", () => {
     expect(await storage.usage()).toEqual({
       ok: true,
       value: { files: 2, collections: 2, bytes: 5 },
+    });
+  });
+
+  it("gives a sum as old as the oldest earlier count in it", async () => {
+    const storage = createMountedStorage([
+      { name: "a", backendId: "a", backend: measuredBackend(null), root: [] },
+      { name: "b", backendId: "b", backend: measuredBackend(20), root: [] },
+      { name: "c", backendId: "c", backend: measuredBackend(10), root: [] },
+      { name: "d", backendId: "d", backend: measuredBackend(30), root: [] },
+    ]);
+    expect(await storage.usage()).toEqual({
+      ok: true,
+      value: { files: 4, collections: 0, bytes: 4, measuredAt: 10 },
     });
   });
 

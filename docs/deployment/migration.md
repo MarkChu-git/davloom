@@ -22,14 +22,14 @@ with both can read every record.
 
 ## Import
 
-Deploy the new instance with its own `DAVLOOM_SECRET` and a `DAVLOOM_SETUP_TOKEN`, and open it.
-On the setup page, choose From an export, pick the file, and enter the export key and the setup
-token. The import writes every record or none: a wrong key, a damaged file, or records that do
+Deploy the new instance with its own `DAVLOOM_SECRET`, and open it. On the Create account page,
+choose From an export, pick the file, and enter the export key. The import writes every record or none: a wrong key, a damaged file, or records that do
 not fit together, such as a Mount whose backend is missing, change nothing and say what is wrong.
 Then sign in with the password from the old instance.
 
-Only an instance without an administrator imports. The setup token makes sure only whoever
-deployed it can.
+Only an instance without an account imports, like registration: import right after deploying,
+before anyone else opens the instance. The import leaves two-step verification off; set it up
+again in Settings.
 
 The new instance seals each backend's secret key again with its own `DAVLOOM_SECRET`.
 

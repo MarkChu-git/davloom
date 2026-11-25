@@ -356,7 +356,9 @@ Provides:
 - Optional MFA
 - Admin account management
 
-Public registration is disabled by default.
+There is no public registration. The first visitor registers the owner account, which also creates the default backend and the Mount `files`, and registration then closes permanently. Importing an export in its place closes it the same way; the export must hold exactly one user who signs in with a password, who becomes the owner.
+
+A deployment may set the optional `DAVLOOM_SETUP_TOKEN`. When it is set, registration and import require it, compared in constant time. When it is unset, registration is open until the owner exists, so the owner registers right after deploying.
 
 ### WebDAV
 

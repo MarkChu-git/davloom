@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apiFetch } from "../api/client";
 import { json, renderPage } from "../../test/render";
+import { AfterFirstPaint } from "./AfterFirstPaint";
 import { CopyField } from "./CopyField";
 import { PageHeader, TitleLine } from "./PageHeader";
 import { QueryState } from "./QueryState";
@@ -47,12 +48,50 @@ describe("StatusLabel", () => {
   });
 });
 
+describe("AfterFirstPaint", () => {
+  it("adds its content once the page around it is on screen", async () => {
+    render(
+      <>
+        <p>First screen</p>
+        <AfterFirstPaint>
+          <p>Below it</p>
+        </AfterFirstPaint>
+      </>,
+    );
+    expect(screen.getByText("First screen")).toBeTruthy();
+    expect(screen.queryByText("Below it")).toBeNull();
+    expect(await screen.findByText("Below it")).toBeTruthy();
+  });
+
+  it("adds its parts one at a time, in their order on the page", async () => {
+    const seen: string[][] = [];
+    const observer = new MutationObserver(() => {
+      seen.push([...document.querySelectorAll("p")].map((p) => p.textContent ?? ""));
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    render(
+      <>
+        <AfterFirstPaint>
+          <p>First</p>
+        </AfterFirstPaint>
+        <AfterFirstPaint>
+          <p>Second</p>
+        </AfterFirstPaint>
+      </>,
+    );
+    expect(await screen.findByText("Second")).toBeTruthy();
+    observer.disconnect();
+    expect(seen.map((texts) => texts.join(",")).filter((t) => t !== "")).toContain("First");
+    expect(seen.at(-1)).toEqual(["First", "Second"]);
+  });
+});
+
 describe("PageHeader", () => {
   it.each([
     ["without actions", undefined, []],
     ["with an action", <TitleAction key="a" label="New key" />, ["New key"]],
-  ])("names the page %s", (_, actions, buttons) => {
-    themed(<PageHeader title="Credentials" actions={actions} />);
+  ])("names the page %s", async (_, actions, buttons) => {
+    await renderPage(<PageHeader title="Credentials" actions={actions} />);
     expect(screen.getByRole("heading", { level: 1, name: "Credentials" })).toBeTruthy();
     expect(screen.queryAllByRole("button").map((button) => button.textContent)).toEqual(buttons);
   });

@@ -1,20 +1,38 @@
-import { env } from "cloudflare:workers";
-import { createAuth, createIdentity } from "@davloom/auth";
+import { env, waitUntil } from "cloudflare:workers";
+import {
+  configuredOrigin,
+  createAuth,
+  createIdentity,
+  leakedPasswordCheckFrom,
+  rateLimitFrom,
+} from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
   checkR2Config,
+  createAuditCounter,
+  createOperationRecorder,
   credentialCipherLayer,
   Identity,
   InstanceConfig,
+  InstanceSettings,
   makeCredentialCipher,
+  OperationLog,
   Records,
+  setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
 import { createSqlPropertyStore } from "@davloom/database/properties";
 import { createObjectStoreStorage } from "@davloom/storage/object-store";
 import { openS3Backend, unsealWith } from "@davloom/storage/open-s3";
 import { createR2Driver } from "@davloom/storage/r2";
+import { withUsageCache } from "@davloom/storage/usage-cache";
 import { createArchive } from "@davloom/database/archive";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import { createD1Database, d1Atomic } from "@davloom/database/d1";
 import { createRepositories } from "@davloom/database/repositories";
 import { durableObjectStorage, type StorageObject } from "@davloom/storage/durable-object";
@@ -29,7 +47,11 @@ declare global {
       readonly STORAGE: DurableObjectNamespace<StorageObject>;
       /** The instance secret: signs sessions. At least 32 bytes. */
       readonly DAVLOOM_SECRET?: string;
-      /** The token the first-run setup asks for. */
+      /** `off` turns off the check of new passwords against Have I Been Pwned. */
+      readonly DAVLOOM_CHECK_LEAKED_PASSWORDS?: string;
+      /** `off` turns off Better Auth's rate limit, for test harnesses only. */
+      readonly DAVLOOM_AUTH_RATE_LIMIT?: string;
+      /** When set, registering the owner or importing in its place has to name it. */
       readonly DAVLOOM_SETUP_TOKEN?: string;
       /** The public URL, e.g. https://davloom.example.workers.dev; else the request's origin. */
       readonly DAVLOOM_URL?: string;
@@ -67,10 +89,24 @@ export const workersInstance = (origin: string): Instance => {
   const unseal = async (backendId: string, sealed: string) =>
     await unsealWith(await cipher)(backendId, sealed);
   const repositories = createRepositories(db);
-  const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
+  const auth = createAuth({
+    database: db,
+    secret,
+    baseURL: configuredOrigin(env.DAVLOOM_URL) ?? origin,
+    checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+    rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
+    // Cloudflare sets it to the client's address, replacing any value the client sent.
+    clientIpHeaders: ["cf-connecting-ip"],
+    passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
+  });
+  const operationLog = createOperationLog(db, d1Atomic(db));
+  const auditLog = createAuditLog(db, d1Atomic(db));
   const layer = Layer.mergeAll(
     Layer.succeed(Records, repositories),
     Layer.succeed(Archive, createArchive(db, d1Atomic(db))),
+    Layer.succeed(OperationLog, operationLog),
+    Layer.succeed(AuditLog, auditLog),
+    Layer.succeed(InstanceSettings, createSettingsStore(db)),
     Layer.succeed(Identity, createIdentity(auth)),
     Layer.succeed(StorageOpener, {
       open: (backend) => {
@@ -79,12 +115,23 @@ export const workersInstance = (origin: string): Instance => {
           const checked = checkR2Config(backend.config);
           const bucket = checked.ok ? r2Bindings.get(checked.config.binding) : undefined;
           if (!checked.ok || !bucket) return null;
-          return createObjectStoreStorage({
-            driver: createR2Driver({ bucket }),
-            prefix: checked.config.prefix,
-            properties: createSqlPropertyStore(db, backend.id),
-            maxEntries: R2_MAX_ENTRIES,
-          });
+          // Counting the usage lists the whole bucket, so a recent count answers instead.
+          return withUsageCache(
+            createObjectStoreStorage({
+              driver: createR2Driver({ bucket }),
+              prefix: checked.config.prefix,
+              properties: createSqlPropertyStore(db, backend.id),
+              maxEntries: R2_MAX_ENTRIES,
+            }),
+            {
+              key: JSON.stringify([
+                "r2",
+                backend.id,
+                checked.config.binding,
+                checked.config.prefix,
+              ]),
+            },
+          );
         }
         if (backend.kind === "s3") {
           return openS3Backend(
@@ -100,15 +147,44 @@ export const workersInstance = (origin: string): Instance => {
     credentialCipherLayer(Redacted.make(secret)),
 
     Layer.succeed(InstanceConfig, {
-      setupToken: env.DAVLOOM_SETUP_TOKEN?.trim() ? env.DAVLOOM_SETUP_TOKEN.trim() : null,
       // R2 is offered only where the deployment has an R2 binding; enabling R2 needs a payment
       // method, so the default deployment has none.
       storageKinds: r2Bindings.size > 0 ? ["durable-object", "s3", "r2"] : ["durable-object", "s3"],
+      setupToken: setupTokenFrom(env.DAVLOOM_SETUP_TOKEN),
+      passkeys: configuredOrigin(env.DAVLOOM_URL) !== undefined,
     }),
   );
   return {
     layer,
     authHandler: (request) => auth.handler(request),
     locks: createSqlLockStore(repositories.locks),
+    // Counts gather for 20 s, inside the 30 s that waitUntil keeps a Worker alive after its
+    // response, so an isolate writes the operation log at most three times a minute.
+    operations: createOperationRecorder({
+      write: operationLog.add,
+      schedule: (task) => waitUntil(task),
+      delayMs: 20_000,
+    }),
+    // Refused WebDAV credentials gather the same way, one row per address, key and minute.
+    refusedCredentials: createAuditCounter({
+      write: auditLog.add,
+      schedule: (task) => waitUntil(task),
+      delayMs: 20_000,
+    }),
+    // Cloudflare sets it to the client's address, replacing any value the client sent.
+    clientAddress: (request) => request.headers.get("cf-connecting-ip"),
+    about: (request) => ({
+      runtime: "Cloudflare Workers",
+      deployment: "Cloudflare",
+      region: coloOf(request),
+      database: "Cloudflare D1",
+    }),
   };
+};
+
+/** The Cloudflare data center that served the request, such as NRT; null outside Cloudflare. */
+const coloOf = (request: Request): string | null => {
+  const cf: unknown = Reflect.get(request, "cf");
+  const colo: unknown = typeof cf === "object" && cf !== null ? Reflect.get(cf, "colo") : null;
+  return typeof colo === "string" ? colo : null;
 };

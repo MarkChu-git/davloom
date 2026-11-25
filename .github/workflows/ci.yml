@@ -111,6 +111,21 @@ jobs:
         if: ${{ !cancelled() }}
         run: bun run scan:zizmor
 
+  # The Cloud Free quota check (PRD §11): the production Worker in local workerd with its D1,
+  # Durable Object and fetch bindings metered, and each WebDAV and API request held to the Free
+  # plan's limits per invocation, to the budget measured for it and, in a modeled day, to the
+  # plan's daily quotas. It needs no Cloudflare account.
+  quota:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      - run: bun run --filter @davloom/compat-tests test:quota
+
   # The compatibility tests, each suite or shard a job of its own so that they run side by side.
   # `bun run test:compat` runs the same suites one after the other.
   # Rebuilds every Bend module with the pinned Bend and fails when a committed .mjs differs, and
@@ -133,6 +148,49 @@ jobs:
           key: laws-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/laws/toolchain.json') }}
       - run: bun run laws:setup
       - run: bun run laws:check
+
+  # Builds the Dashboard, serves the production Worker in local workerd and runs Lighthouse three
+  # times on every Dashboard page with the desktop and the mobile preset. It fails when the median
+  # score of any category is below the threshold in tests/integration/compat/scripts/lighthouse.ts.
+  lighthouse:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup
+      # The same key as the brand suite's, which also caches Chromium alone.
+      - name: Compute the Playwright browser cache key
+        id: playwright
+        working-directory: tests/integration/compat
+        run: |
+          bun -e '
+            const { scripts } = await Bun.file("package.json").json();
+            const { version } = await Bun.file("node_modules/@playwright/test/package.json").json();
+            if (!process.env.ImageOS) throw new Error("ImageOS is not set");
+            const install = scripts["playwright:install"].replace(/[^A-Za-z0-9.]+/g, "-");
+            console.log(`key=browsers-${process.env.ImageOS}-${process.arch}-${version}-${install}`);
+          ' >> "$GITHUB_OUTPUT"
+      - name: Cache the Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright.outputs.key }}-chromium
+      - name: Install Chromium
+        working-directory: tests/integration/compat
+        run: bunx --bun playwright install chromium
+      - name: Run Lighthouse on every Dashboard page
+        run: bun run lighthouse
+      # Also after a failure, which is when the reports say what to fix.
+      - name: Upload the Lighthouse reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-reports
+          path: reports/lighthouse/
+          if-no-files-found: warn
 
   compat-suite:
     name: compat (${{ matrix.suite }})
@@ -189,10 +247,15 @@ jobs:
         if: matrix.suite == 'brand'
         working-directory: tests/integration/compat
         run: bunx --bun playwright install chromium
-      # The real WebDAV clients that http/clients.test.ts drives against the Worker.
-      - name: Install litmus and rclone
+      # The real WebDAV clients that http/clients.test.ts, http/cadaver.test.ts and
+      # http/davfs2.test.ts drive against both deployments. davfs2 mounts through the runner's
+      # /dev/fuse with passwordless sudo; noninteractive keeps its package from asking whether
+      # unprivileged users may mount.
+      - name: Install litmus, rclone, cadaver and davfs2
         if: startsWith(matrix.suite, 'http-')
-        run: sudo apt-get update -q && sudo apt-get install -y -q litmus rclone
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: sudo -E apt-get update -q && sudo -E apt-get install -y -q litmus rclone cadaver davfs2
       # From the repository root, where bunfig.toml starts on Bun the tools whose launchers name
       # Node; `bun run` inside a package directory does not.
       - name: Run the ${{ matrix.suite }} suite
@@ -292,6 +355,8 @@ jobs:
       # file prints, in a collapsed group, because each failed test can have its own cause.
       - name: Print the Playwright failure context
         if: failure()
+        # The job runs in a container whose default shell is sh, which has no process substitution.
+        shell: bash
         run: |
           dir=tests/integration/compat/test-results
           total=0

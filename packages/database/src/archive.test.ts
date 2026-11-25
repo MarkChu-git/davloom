@@ -9,8 +9,7 @@ import {
   makeCredentialCipher,
   Records,
   sealArchive,
-  SetupClosed,
-  SetupTokenInvalid,
+  RegistrationClosed,
   type ArchiveRow,
   type ArchiveTables,
 } from "@davloom/core";
@@ -24,12 +23,10 @@ import * as schema from "./schema";
 // Export and import through the real services, between two migrated in-memory Bun SQLite
 // databases with different instance secrets, as a move from one instance to another does.
 
-const TOKEN = "setup-token-0123456789";
 const T0 = new Date("2026-03-04T05:06:07.000Z");
 
 const instance = (
   secret: string,
-  setupToken: string | null = TOKEN,
   config: Partial<Context.Service.Shape<typeof InstanceConfig>> = {},
 ) => {
   const db = createBunSqliteDatabase(new Database(":memory:"));
@@ -38,7 +35,7 @@ const instance = (
   const layer = Layer.mergeAll(
     Layer.succeed(Records, createRepositories(db)),
     Layer.succeed(Archive, archive),
-    Layer.succeed(InstanceConfig, { setupToken, storageKinds: ["s3"], ...config }),
+    Layer.succeed(InstanceConfig, { storageKinds: ["s3"], ...config }),
     Layer.effect(CredentialCipher, makeCredentialCipher(Redacted.make(secret))),
   );
   const run = <A, E>(
@@ -124,6 +121,9 @@ const seed = async (source: Instance) => {
       xml: '<x:tag xmlns:x="urn:x">1</x:tag>',
     },
   ]);
+  await db
+    .insert(schema.settings)
+    .values({ key: "storage.defaultBackendId", value: "b2", updatedAt: T0 });
 };
 
 const exported = async (source: Instance) => {
@@ -155,7 +155,7 @@ describe("export and import", () => {
     expect(JSON.stringify(file)).not.toContain("admin@davloom.test");
 
     const target = instance(SECRET_B);
-    const exit = await target.run(importInstance({ token: TOKEN, key, file }));
+    const exit = await target.run(importInstance({ key, file }));
     expect(Exit.isSuccess(exit) && exit.value).toEqual({
       user: 1,
       account: 1,
@@ -163,6 +163,7 @@ describe("export and import", () => {
       mounts: 2,
       apikey: 2,
       dav_properties: 1,
+      settings: 1,
     });
     const before = await source.archive.read();
     const after = await target.archive.read();
@@ -201,10 +202,8 @@ describe("export and import", () => {
         secret_key: null,
       })),
     }));
-    const target = instance(SECRET_B, TOKEN, { storageKinds: ["s3"], defaultBackend: S3 });
-    expect(Exit.isSuccess(await target.run(importInstance({ token: TOKEN, key, file })))).toBe(
-      true,
-    );
+    const target = instance(SECRET_B, { storageKinds: ["s3"], defaultBackend: S3 });
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
     const backends = (await target.archive.read()).storage_backends;
     expect(backends.map((row) => [row["name"], row["kind"]])).toEqual([
       ["Default", "durable-object"],
@@ -224,18 +223,26 @@ describe("export and import", () => {
     const source = instance(SECRET_A);
     await seed(source);
     const { key, file } = await exported(source);
-    const target = instance(SECRET_B, TOKEN, { storageKinds: ["s3"], defaultBackend: S3 });
-    expect(Exit.isSuccess(await target.run(importInstance({ token: TOKEN, key, file })))).toBe(
-      true,
-    );
+    const target = instance(SECRET_B, { storageKinds: ["s3"], defaultBackend: S3 });
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
     expect((await target.archive.read()).storage_backends).toHaveLength(2);
   });
 
-  it("exports an empty instance, and imports it", async () => {
+  it("exports an instance without an owner, and refuses to import it", async () => {
     const { key, file } = await exported(instance(SECRET_A));
     const target = instance(SECRET_B);
-    const exit = await target.run(importInstance({ token: TOKEN, key, file }));
-    expect(Exit.isSuccess(exit)).toBe(true);
+    const error = failure(await target.run(importInstance({ key, file })));
+    expect(error instanceof ArchiveInvalid && error.reason).toMatch(/exactly one user/);
+    expect(await target.db.select().from(schema.user)).toEqual([]);
+  });
+
+  it("refuses an export of backends and Mounts alone, which would leave registration open", async () => {
+    const { key, file } = await crafted((t) => ({ ...t, user: [], account: [], apikey: [] }));
+    const target = instance(SECRET_B);
+    const error = failure(await target.run(importInstance({ key, file })));
+    expect(error instanceof ArchiveInvalid && error.reason).toMatch(/exactly one user/);
+    expect(await target.db.select().from(schema.storageBackends)).toEqual([]);
+    expect(await target.db.select().from(schema.mounts)).toEqual([]);
   });
 
   it("imports many rows, more than one statement holds", async () => {
@@ -251,14 +258,15 @@ describe("export and import", () => {
     );
     const { key, file } = await exported(source);
     const target = instance(SECRET_B);
-    expect(Exit.isSuccess(await target.run(importInstance({ token: TOKEN, key, file })))).toBe(
-      true,
-    );
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
     expect((await target.archive.read()).dav_properties).toHaveLength(451);
   });
 });
 
 // --- Imports that must change nothing -----------------------------------------------------
+
+/** The text with its first character changed. */
+const flipFirst = (text: string) => `${text.startsWith("A") ? "B" : "A"}${text.slice(1)}`;
 
 const crafted = async (change: (tables: ArchiveTables) => ArchiveTables) => {
   const source = instance(SECRET_A);
@@ -302,12 +310,12 @@ const REJECTED: readonly (readonly [string, (tables: ArchiveTables) => ArchiveTa
   [
     "two users with one email",
     addRow("user", (t) => ({ ...t.user[0], id: "u2" })),
-    /repeats email:admin@davloom.test/,
+    /exactly one user/,
   ],
   [
     "a login of a user not in the export",
     editRow("account", 0, (row) => ({ ...row, user_id: "u9" })),
-    /needs user:u9/,
+    /exactly one user/,
   ],
   [
     "an API Key of a user not in the export",
@@ -345,9 +353,9 @@ const REJECTED: readonly (readonly [string, (tables: ArchiveTables) => ArchiveTa
   [
     "a missing column",
     editRow("mounts", 0, (row) =>
-      Object.fromEntries(Object.entries(row).filter(([column]) => column !== "root")),
+      Object.fromEntries(Object.entries(row).filter(([column]) => column !== "backend_id")),
     ),
-    /root of row 1 of mounts is missing/,
+    /backend_id of row 1 of mounts is missing/,
   ],
   [
     "a null in a required column",
@@ -381,7 +389,7 @@ describe("an import that fails changes nothing", () => {
     const { key, file } = await crafted(change);
     const target = instance(SECRET_B);
     const before = await target.archive.read();
-    const error = failure(await target.run(importInstance({ token: TOKEN, key, file })));
+    const error = failure(await target.run(importInstance({ key, file })));
     expect(error).toBeInstanceOf(ArchiveInvalid);
     expect(error instanceof ArchiveInvalid && error.reason).toMatch(reason);
     expect(await target.archive.read()).toEqual(before);
@@ -392,7 +400,8 @@ describe("an import that fails changes nothing", () => {
       ["not an object", () => "text", /not a Davloom export/],
       ["another format", (f) => ({ ...f, format: "other" }), /not a Davloom export/],
       ["another version", (f) => ({ ...f, version: 2 }), /version 1 only/],
-      ["damaged data", (f) => ({ ...f, data: `A${String(f["data"]).slice(1)}` }), /does not open/],
+      // The first character changes, whatever it was.
+      ["damaged data", (f) => ({ ...f, data: flipFirst(String(f["data"])) }), /does not open/],
       ["data that is not base64", (f) => ({ ...f, data: "%%%" }), /damaged/],
       ["a short IV", (f) => ({ ...f, iv: "AAAA" }), /damaged/],
     ];
@@ -400,9 +409,7 @@ describe("an import that fails changes nothing", () => {
   it.each(FILES)("a file that is %s", async (_, change, reason) => {
     const { key, file } = await crafted((t) => t);
     const target = instance(SECRET_B);
-    const error = failure(
-      await target.run(importInstance({ token: TOKEN, key, file: change({ ...file }) })),
-    );
+    const error = failure(await target.run(importInstance({ key, file: change({ ...file }) })));
     expect(error instanceof ArchiveInvalid && error.reason).toMatch(reason);
     expect((await target.archive.read()).user).toEqual([]);
   });
@@ -418,9 +425,7 @@ describe("an import that fails changes nothing", () => {
   it.each(KEYS)("%s", async (_, change, reason) => {
     const { key, file } = await crafted((t) => t);
     const target = instance(SECRET_B);
-    const error = failure(
-      await target.run(importInstance({ token: TOKEN, key: change(key), file })),
-    );
+    const error = failure(await target.run(importInstance({ key: change(key), file })));
     expect(error instanceof ArchiveInvalid && error.reason).toMatch(reason);
     expect((await target.archive.read()).user).toEqual([]);
   });
@@ -430,24 +435,60 @@ describe("an import that fails changes nothing", () => {
     const target = instance(SECRET_B);
     await seed(target);
     const before = await target.archive.read();
-    expect(failure(await target.run(importInstance({ token: TOKEN, key, file })))).toBeInstanceOf(
-      SetupClosed,
+    expect(failure(await target.run(importInstance({ key, file })))).toBeInstanceOf(
+      RegistrationClosed,
     );
     expect(await target.archive.read()).toEqual(before);
   });
 
-  it("refuses a wrong setup token, and an instance without one", async () => {
-    const { key, file } = await crafted((t) => t);
-    expect(
-      failure(await instance(SECRET_B).run(importInstance({ token: "wrong", key, file }))),
-    ).toBeInstanceOf(SetupTokenInvalid);
-    expect(
-      failure(await instance(SECRET_B, null).run(importInstance({ token: TOKEN, key, file }))),
-    ).toBeInstanceOf(SetupClosed);
+  it("imports an export made before a column existed, and fills it in", async () => {
+    const { key, file } = await crafted((t) => ({
+      ...t,
+      user: t.user.map((row) =>
+        Object.fromEntries(
+          Object.entries(row).filter(
+            ([column]) => !["username", "display_username"].includes(column),
+          ),
+        ),
+      ),
+    }));
+    const target = instance(SECRET_B);
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
+    const [user] = await target.db.select().from(schema.user);
+    expect(user).toMatchObject({ username: null, twoFactorEnabled: false });
+  });
+
+  it("imports an export made before settings were exported, with the settings unset", async () => {
+    const { key, file } = await crafted((t) => {
+      const older = { ...t };
+      Reflect.deleteProperty(older, "settings");
+      return older;
+    });
+    const target = instance(SECRET_B);
+    expect(Exit.isSuccess(await target.run(importInstance({ key, file })))).toBe(true);
+    expect(await target.db.select().from(schema.settings)).toEqual([]);
+    expect(await target.db.select().from(schema.mounts)).toHaveLength(2);
+  });
+
+  it("leaves two-step verification behind, since its secret stays with the old instance", async () => {
+    const source = instance(SECRET_A);
+    await seed(source);
+    await source.db.update(schema.user).set({ twoFactorEnabled: true });
+    const made = await source.run(exportInstance);
+    if (!Exit.isSuccess(made)) throw new Error("no export");
+    const tables = await source.archive.read();
+    expect(Object.keys(tables.user[0] ?? {})).not.toContain("two_factor_enabled");
+    const target = instance(SECRET_B);
+    const imported = await target.run(
+      importInstance({ key: Redacted.value(made.value.key), file: made.value.file }),
+    );
+    expect(Exit.isSuccess(imported)).toBe(true);
+    const [user] = await target.db.select().from(schema.user);
+    expect(user?.twoFactorEnabled).toBe(false);
   });
 
   it("refuses a backend id that the target holds already", async () => {
-    const { key, file } = await crafted((t) => ({ ...t, user: [], account: [], apikey: [] }));
+    const { key, file } = await crafted((t) => t);
     const target = instance(SECRET_B);
     await target.db.insert(schema.storageBackends).values({
       id: "b1",
@@ -458,7 +499,7 @@ describe("an import that fails changes nothing", () => {
       updatedAt: T0,
     });
     const before = await target.archive.read();
-    const error = failure(await target.run(importInstance({ token: TOKEN, key, file })));
+    const error = failure(await target.run(importInstance({ key, file })));
     expect(error instanceof ArchiveInvalid && error.reason).toMatch(/repeats backend:b1/);
     expect(await target.archive.read()).toEqual(before);
   });

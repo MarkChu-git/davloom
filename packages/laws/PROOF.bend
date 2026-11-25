@@ -13,6 +13,8 @@ import ./src/properties.bend as F
 import ./src/objects.bend as O
 import ./src/mounts.bend as W
 import ./src/framing.bend as H
+import ./src/verification.bend as U
+import ./src/forwarding.bend as X
 
 # Lemmas the hand-written proofs share.
 
@@ -6060,6 +6062,60 @@ def L.import_all_or_nothing(entries, known):
   %Lemma.valid(entries, known) : {I.decide(_, entries) == Bool.pick(I.Plan, L.spec_valid(entries, known), I.Apply{entries}, I.Reject{}) : I.Plan}
   Lemma.decide(L.spec_valid(entries, known), entries)
 
+def L.import_needs_one_owner(users, logins):
+  match users:
+    case I.CNone{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.COne{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.CMany{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+
+def L.import_refuses_ownerless(users, logins):
+  match users:
+    case I.CNone{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.COne{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+    case I.CMany{}:
+      match logins:
+        case I.CNone{}:
+          {==}
+        case I.COne{}:
+          {==}
+        case I.CMany{}:
+          {==}
+
 def L.copy_writes_safely(s, t, overwrite):
   match s:
     case M.SFile{}:
@@ -8536,3 +8592,173 @@ def L.url_path_exact(f, host_ok):
           {==}
         case True{}:
           {==}
+
+def L.step_up_exactly_sensitive(e):
+  match e:
+    case U.EffRead{}:
+      {==}
+    case U.EffChange{}:
+      {==}
+    case U.EffEndSelf{}:
+      {==}
+    case U.EffDestroy{}:
+      {==}
+    case U.EffCredential{}:
+      {==}
+    case U.EffDisclose{}:
+      {==}
+
+def L.step_up_needs_fresh(e, fresh):
+  match e:
+    case U.EffRead{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffChange{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffEndSelf{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffDestroy{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffCredential{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffDisclose{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.fresh_permits(e):
+  match e:
+    case U.EffRead{}:
+      {==}
+    case U.EffChange{}:
+      {==}
+    case U.EffEndSelf{}:
+      {==}
+    case U.EffDestroy{}:
+      {==}
+    case U.EffCredential{}:
+      {==}
+    case U.EffDisclose{}:
+      {==}
+
+def L.only_step_up_refused(e, fresh):
+  match e:
+    case U.EffRead{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffChange{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffEndSelf{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffDestroy{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffCredential{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case U.EffDisclose{}:
+      match fresh:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.reads_ask_nothing(e):
+  match e:
+    case U.EffRead{}:
+      {==}
+    case U.EffChange{}:
+      {==}
+    case U.EffEndSelf{}:
+      {==}
+    case U.EffDestroy{}:
+      {==}
+    case U.EffCredential{}:
+      {==}
+    case U.EffDisclose{}:
+      {==}
+
+def L.end_self_confirms():
+  {==}
+
+def L.forwarding_passes_only_trusted(h, more):
+  match h:
+    case X.HTrusted{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case X.HUntrusted{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+    case X.HInvalid{}:
+      match more:
+        case False{}:
+          {==}
+        case True{}:
+          {==}
+
+def L.forwarding_takes_untrusted(more):
+  match more:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.forwarding_never_takes_invalid(more):
+  match more:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def L.forwarding_ends(h):
+  match h:
+    case X.HTrusted{}:
+      {==}
+    case X.HUntrusted{}:
+      {==}
+    case X.HInvalid{}:
+      {==}

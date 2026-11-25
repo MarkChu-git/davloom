@@ -1,16 +1,34 @@
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { createAuth, createIdentity } from "@davloom/auth";
+import {
+  CLIENT_IP_HEADER,
+  configuredOrigin,
+  createAuth,
+  createIdentity,
+  leakedPasswordCheckFrom,
+  rateLimitFrom,
+} from "@davloom/auth";
 import {
   Archive,
+  AuditLog,
+  createAuditCounter,
   credentialCipherLayer,
   Identity,
+  createOperationRecorder,
   InstanceConfig,
+  InstanceSettings,
   makeCredentialCipher,
+  OperationLog,
   Records,
+  setupTokenFrom,
   StorageOpener,
 } from "@davloom/core";
+import {
+  createAuditLog,
+  createOperationLog,
+  createSettingsStore,
+} from "@davloom/database/instance-data";
 import { createArchive } from "@davloom/database/archive";
 import {
   bunSqliteAtomic,
@@ -36,7 +54,7 @@ const S3_MAX_ENTRIES = 1000;
 
 export type BunEnv = Readonly<Record<string, string | undefined>>;
 
-/** The S3-compatible backend the first-run setup creates, from DAVLOOM_S3_* variables, or null. */
+/** The S3-compatible backend registration creates, from DAVLOOM_S3_* variables, or null. */
 export const defaultS3Backend = (env: BunEnv) => {
   if (!env.DAVLOOM_S3_ENDPOINT) return null;
   return {
@@ -70,13 +88,30 @@ export const bunInstance =
     const db = createBunSqliteDatabase(sqlite);
     migrateBunSqliteDatabase(db);
     const repositories = createRepositories(db);
-    const auth = createAuth({ database: db, secret, baseURL: env.DAVLOOM_URL ?? origin });
+    const auth = createAuth({
+      database: db,
+      secret,
+      baseURL: configuredOrigin(env.DAVLOOM_URL) ?? origin,
+      checkLeakedPasswords: leakedPasswordCheckFrom(env.DAVLOOM_CHECK_LEAKED_PASSWORDS),
+      rateLimit: rateLimitFrom(env.DAVLOOM_AUTH_RATE_LIMIT),
+      // node-server.bun.ts sets it to the socket's address, replacing any value the client sent.
+      clientIpHeaders: [CLIENT_IP_HEADER],
+      passkeyOrigin: configuredOrigin(env.DAVLOOM_URL),
+    });
     const cipher = Effect.runPromise(makeCredentialCipher(Redacted.make(secret)));
     const unseal = async (backendId: string, sealed: string) =>
       await unsealWith(await cipher)(backendId, sealed);
+    const operationLog = createOperationLog(db, bunSqliteAtomic(db));
+    const auditLog = createAuditLog(db, bunSqliteAtomic(db));
+    const sqliteVersion =
+      sqlite.query<{ version: string }, []>("SELECT sqlite_version() AS version").get()?.version ??
+      "";
     const layer = Layer.mergeAll(
       Layer.succeed(Records, repositories),
       Layer.succeed(Archive, createArchive(db, bunSqliteAtomic(db))),
+      Layer.succeed(OperationLog, operationLog),
+      Layer.succeed(AuditLog, auditLog),
+      Layer.succeed(InstanceSettings, createSettingsStore(db)),
       Layer.succeed(Identity, createIdentity(auth)),
       Layer.succeed(StorageOpener, {
         open: (backend) =>
@@ -85,9 +120,10 @@ export const bunInstance =
             : null,
       }),
       Layer.succeed(InstanceConfig, {
-        setupToken: env.DAVLOOM_SETUP_TOKEN?.trim() ? env.DAVLOOM_SETUP_TOKEN.trim() : null,
         storageKinds: ["s3"],
         defaultBackend: defaultS3Backend(env),
+        setupToken: setupTokenFrom(env.DAVLOOM_SETUP_TOKEN),
+        passkeys: configuredOrigin(env.DAVLOOM_URL) !== undefined,
       }),
       credentialCipherLayer(Redacted.make(secret)),
     );
@@ -95,6 +131,24 @@ export const bunInstance =
       layer,
       authHandler: (request) => auth.handler(request),
       locks: createSqlLockStore(repositories.locks),
+      operations: createOperationRecorder({
+        write: operationLog.add,
+        schedule: (task) => void task,
+        delayMs: 10_000,
+      }),
+      refusedCredentials: createAuditCounter({
+        write: auditLog.add,
+        schedule: (task) => void task,
+        delayMs: 10_000,
+      }),
+      // node-server.bun.ts sets it to the client's address, replacing any value the client sent.
+      clientAddress: (request) => request.headers.get(CLIENT_IP_HEADER),
+      about: () => ({
+        runtime: `Bun ${Bun.version}`,
+        deployment: "Self-hosted",
+        region: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        database: `SQLite ${sqliteVersion}`.trim(),
+      }),
     };
   };
 

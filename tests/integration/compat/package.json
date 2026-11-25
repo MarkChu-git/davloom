@@ -17,8 +17,10 @@
     "test:cloud": "vitest run --config vitest.cloud.config.ts",
     "test:cloud:local": "DAVLOOM_PROBE_LOCAL=1 vitest run --config vitest.cloud.config.ts",
     "cloud:free": "bun scripts/cloud-free.ts",
+    "test:quota": "vitest run --config vitest.quota.config.ts",
+    "test:load": "bun run build:web && bun scripts/load.ts",
     "test": "bun run test:without-ui && bun run test:ui",
-    "test:without-ui": "bun run test:http && bun run test:d1 && bun run test:workerd && bun run test:storage && bun run test:s3 && bun run test:bun-sqlite && bun run test:ui:brand && bun run test:cloud:local && bun run test:cloud",
+    "test:without-ui": "bun run test:http && bun run test:d1 && bun run test:workerd && bun run test:storage && bun run test:s3 && bun run test:bun-sqlite && bun run test:ui:brand && bun run test:cloud:local && bun run test:cloud && bun run test:quota",
     "test:storage": "vitest run --config vitest.storage.config.ts",
     "test:s3": "bun run --filter @davloom/storage test:s3"
   },
@@ -36,10 +38,14 @@
     "elysia": "1.4.32"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.14.1",
     "@cloudflare/vitest-plugin": "1.8.3",
     "@cloudflare/workers-types": "5.20261116.1",
     "@playwright/test": "1.65.1",
-    "better-auth": "1.7.25",
+    "better-auth": "1.7.28",
+    "chrome-launcher": "1.2.3",
+    "drizzle-orm": "0.45.4",
+    "lighthouse": "13.6.0",
     "miniflare": "5.20261116.0-beta",
     "vitest": "5.1.0",
     "wrangler": "4.163.0"

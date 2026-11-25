@@ -73,3 +73,27 @@ def decide(ok: Bool, entries: +List<Entry>) -> Plan:
 # The plan of an import: every entry, in order, or nothing.
 def plan(+entries: +List<Entry>, +known: +List<Nat>) -> Plan:
   decide(valid(entries, known), entries)
+
+# How many of something an export holds, as far as the rule about its owner cares.
+type Count is Data:
+  CNone{}
+  COne{}
+  CMany{}
+
+# Whether an export can start an instance: it holds exactly one user, the owner, with at least one
+# login that has a password. Without an owner the import would leave registration open, and the
+# first visitor would become the owner of the imported backends and Mounts.
+def owned(users: Count, logins: Count) -> Bool:
+  match users:
+    case CNone{}:
+      False{}
+    case COne{}:
+      match logins:
+        case CNone{}:
+          False{}
+        case COne{}:
+          True{}
+        case CMany{}:
+          True{}
+    case CMany{}:
+      False{}

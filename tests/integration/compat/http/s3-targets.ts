@@ -5,7 +5,7 @@ import type { ListPage } from "@davloom/storage/object-store";
 import { createS3Client, createS3Driver } from "@davloom/storage/s3";
 import {
   SECRET,
-  SETUP_TOKEN,
+  OFFLINE_VARS,
   startDavloom,
   startWorkersServer,
   stringField,
@@ -236,7 +236,7 @@ export const S3_TARGETS: readonly S3Target[] = [
         const davloom = await startDavloom(() =>
           startBunServer("apps/api/src/entry.bun.ts", {
             DAVLOOM_SECRET: SECRET,
-            DAVLOOM_SETUP_TOKEN: SETUP_TOKEN,
+            ...OFFLINE_VARS,
             DAVLOOM_DATA_DIR: dataDir,
             DAVLOOM_S3_ENDPOINT: proxy.url,
             DAVLOOM_S3_ACCESS_KEY_ID: ACCESS_KEY,

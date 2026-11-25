@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { waitedFor } from "../../../scripts/test/cloudflare-workers";
 import { InstanceConfig, StorageOpener, type BackendRecord } from "@davloom/core";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it } from "vitest";
@@ -44,9 +45,9 @@ describe("workersInstance", () => {
   });
 
   it("offers Durable Objects and S3, opens them, and nothing it does not know", async () => {
-    setBindings({ DAVLOOM_SECRET: SECRET, DAVLOOM_SETUP_TOKEN: " token " });
+    setBindings({ DAVLOOM_SECRET: SECRET });
     const { opener, config } = await services(workersInstance("https://x.test"));
-    expect(config).toMatchObject({ setupToken: "token", storageKinds: ["durable-object", "s3"] });
+    expect(config).toMatchObject({ storageKinds: ["durable-object", "s3"] });
     expect(opener.open(backend("durable-object"))).not.toBeNull();
     expect(opener.open(backend("r2", { binding: "FILES" }))).toBeNull();
     expect(opener.open(backend("memory"))).toBeNull();
@@ -66,12 +67,45 @@ describe("workersInstance", () => {
   it("offers R2 where the deployment has an R2 binding, and opens backends of it", async () => {
     setBindings({ DAVLOOM_SECRET: SECRET, FILES: bucket(), NOT_A_BUCKET: { get: () => null } });
     const { opener, config } = await services(workersInstance("https://x.test"));
-    expect(config).toMatchObject({
-      setupToken: null,
-      storageKinds: ["durable-object", "s3", "r2"],
-    });
+    expect(config).toMatchObject({ storageKinds: ["durable-object", "s3", "r2"] });
     expect(opener.open(backend("r2", { binding: "FILES" }))).not.toBeNull();
     expect(opener.open(backend("r2", { binding: "NOT_A_BUCKET" }))).toBeNull();
     expect(opener.open(backend("r2", { binding: 7 }))).toBeNull();
+  });
+
+  it("names where it runs, with the data center of the request", () => {
+    setBindings({ DAVLOOM_SECRET: SECRET });
+    const instance = workersInstance("https://x.test");
+    const request = Object.assign(new Request("https://x.test/api/instance"), {
+      cf: { colo: "NRT" },
+    });
+    expect(instance.about?.(request)).toEqual({
+      runtime: "Cloudflare Workers",
+      deployment: "Cloudflare",
+      region: "NRT",
+      database: "Cloudflare D1",
+    });
+    expect(instance.about?.(new Request("https://x.test/")).region).toBeNull();
+  });
+
+  it("hands the write of counted operations to waitUntil", () => {
+    setBindings({ DAVLOOM_SECRET: SECRET });
+    const before = waitedFor.length;
+    const instance = workersInstance("https://x.test");
+    instance.operations?.record({
+      at: 0,
+      method: "PUT",
+      path: "/files/a",
+      destination: null,
+      status: 201,
+    });
+    instance.operations?.record({
+      at: 1,
+      method: "PUT",
+      path: "/files/b",
+      destination: null,
+      status: 201,
+    });
+    expect(waitedFor.length - before).toBe(1);
   });
 });

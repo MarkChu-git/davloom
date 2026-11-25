@@ -117,9 +117,21 @@ describe("DashboardShell", () => {
     });
     const clear = vi.spyOn(client, "clear");
     await userEvent.click(screen.getByText("Sign out"));
+    const confirm = await screen.findByRole("alertdialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Sign out" }));
     await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
     expect(calls.some((call) => call.url.endsWith("/api/auth/sign-out"))).toBe(true);
     expect(clear).toHaveBeenCalledOnce();
+  });
+
+  it("stays signed in when the sign-out is cancelled", async () => {
+    const { router, calls } = await showShell("/files");
+    await userEvent.click(screen.getByText("Sign out"));
+    const confirm = await screen.findByRole("alertdialog");
+    await userEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(router.state.location.pathname).toBe("/files");
+    expect(calls.some((call) => call.url.endsWith("/api/auth/sign-out"))).toBe(false);
   });
 
   describe("on a phone", () => {
@@ -144,6 +156,8 @@ describe("DashboardShell", () => {
       await userEvent.click(await screen.findByRole("button", { name: "Menu" }));
       const menu = await screen.findByRole("dialog");
       await userEvent.click(within(menu).getByText("Sign out"));
+      const confirm = await screen.findByRole("alertdialog");
+      await userEvent.click(within(confirm).getByRole("button", { name: "Sign out" }));
       await waitFor(() => expect(router.state.location.pathname).toBe("/sign-in"));
     });
 

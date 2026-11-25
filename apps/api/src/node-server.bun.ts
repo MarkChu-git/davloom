@@ -1,6 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { planUrl, sendsMeasuredLength, type TargetForm } from "@davloom/laws";
+import { CLIENT_IP_HEADER } from "@davloom/auth";
+import { redactedError, redactedStack } from "@davloom/core";
+import type { BlockList } from "node:net";
+import { clientAddress } from "./client-address.bun";
 
 // The self-hosted HTTP server: node:http on Bun, in front of the app's fetch handler. Bun.serve
 // (Bun 1.4) drops the Content-Length of every answer whose body is a stream and sends it chunked,
@@ -73,7 +77,11 @@ const bodyOf = (incoming: Readable): ReadableStream<Uint8Array> => {
 };
 
 /** The Web Request of a node:http request; aborted when the client goes away. */
-export const toRequest = (incoming: IncomingMessage, signal: AbortSignal): Request => {
+export const toRequest = (
+  incoming: IncomingMessage,
+  signal: AbortSignal,
+  trustedProxies: BlockList | null = null,
+): Request => {
   const headers = new Headers();
   for (let index = 0; index + 1 < incoming.rawHeaders.length; index += 2) {
     const name = incoming.rawHeaders[index] ?? "";
@@ -84,6 +92,17 @@ export const toRequest = (incoming: IncomingMessage, signal: AbortSignal): Reque
       // node:http accepts header values that a Web Headers object refuses; they are dropped.
     }
   }
+  // The rate limit of sign-in counts by the client's address: the socket's peer, or behind a
+  // trusted proxy the address it forwarded (client-address.bun.ts). A value a client sends in the
+  // header is replaced.
+  headers.set(
+    CLIENT_IP_HEADER,
+    clientAddress(
+      incoming.socket.remoteAddress ?? "",
+      headers.get("x-forwarded-for"),
+      trustedProxies,
+    ),
+  );
   const method = incoming.method ?? "GET";
   const body = BODILESS_METHODS.has(method) ? undefined : bodyOf(incoming);
   return new Request(urlOf(incoming.url ?? "/", incoming.headers.host), {
@@ -188,12 +207,14 @@ export const writeResponse = async (
 export interface ListenOptions {
   readonly hostname: string;
   readonly port: number;
+  /** The reverse proxies whose X-Forwarded-For names the client (DAVLOOM_TRUSTED_PROXIES). */
+  readonly trustedProxies?: BlockList | null;
 }
 
 /** Serves `handle` over HTTP; resolves once it listens. */
 export const serveNode = async (
   handle: FetchHandler,
-  { hostname, port }: ListenOptions,
+  { hostname, port, trustedProxies = null }: ListenOptions,
 ): Promise<{ readonly server: Server; readonly url: string }> => {
   const server = createServer((incoming, outgoing) => {
     const aborted = new AbortController();
@@ -203,9 +224,14 @@ export const serveNode = async (
     const answer = async () => {
       let response: Response;
       try {
-        response = await handle(toRequest(incoming, aborted.signal));
+        response = await handle(toRequest(incoming, aborted.signal, trustedProxies));
       } catch (error) {
-        console.error("the request handler failed", error);
+        // What was thrown can hold the values of a database query, so only its class and frames.
+        console.error(
+          "the request handler failed:",
+          redactedError(error),
+          `\n${redactedStack(error)}`,
+        );
         response = new Response(null, { status: 500 });
       }
       await writeResponse(response, outgoing, incoming.method === "HEAD");
