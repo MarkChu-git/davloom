@@ -240,12 +240,20 @@ describe("OverviewPage in Chinese", () => {
     });
     expect(await screen.findByText("12 个文件，分布在 3 个文件夹中")).toBeTruthy();
     expect(screen.getByText("已存储")).toBeTruthy();
+    // The panels render after the tiles, one by one: wait for the last of them, for the chart's
+    // code and for the failed read of the operations, so the check sees the whole page every time.
+    expect(await screen.findByText("最近的操作错误")).toBeTruthy();
+    expect(await screen.findByRole("img", { name: "各后端存储的字节数" })).toBeTruthy();
+    expect(await screen.findByText("无法读取操作记录")).toBeTruthy();
     expectChinese(container, [
       "Primary",
       "Archive",
+      // The Archive backend's kind, one the page does not know and so shows as it is.
+      "s3-ish",
       "Spare",
       "files",
       "photos",
+      "pics",
       "lost",
       "MB",
       "kB",
