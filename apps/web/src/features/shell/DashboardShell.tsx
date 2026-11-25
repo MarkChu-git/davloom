@@ -285,6 +285,19 @@ const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOption
         variant="ghost"
         icon={<Icon icon={Menu} size="sm" />}
         xstyle={styles.menu}
+        // Until the Popover has attached its own handler, a tap attaches it and opens the dropdown
+        // in the same render, so a tap just after the page loads is not lost.
+        onClick={
+          anchor === undefined
+            ? () => {
+                const element = button.current;
+                if (element === null) return;
+                setHasOpened(true);
+                setAnchor({ current: element });
+                setOpenOn(pathname);
+              }
+            : undefined
+        }
       />
       {anchor === undefined ? null : (
         <Popover
