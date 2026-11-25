@@ -11,7 +11,15 @@ import {
   placeholderRows,
   shown,
 } from "./helpers";
-import { createMount, dav, LONG_LOG_NAME, scratchFolder, SAMPLE_NAMES, unique } from "./instances";
+import {
+  createMount,
+  dav,
+  LONG_LOG_NAME,
+  MOUNT_TOP,
+  scratchFolder,
+  SAMPLE_NAMES,
+  unique,
+} from "./instances";
 
 // The File Explorer's scenarios about finding things: the folder in the address, the loading and
 // empty states, sorting, search, an item's details, long names and a listing that fails. Each test
@@ -53,7 +61,8 @@ const holdListings = async (page: Page) => {
 test("Opening a folder by its address: the breadcrumb names the folder and the list shows what it holds", async ({
   page,
 }) => {
-  const folder = await scratchFolder(page.request);
+  // At the top of the Mount, so the breadcrumb has one folder between the Mount and this one.
+  const folder = await scratchFolder(page.request, { parent: MOUNT_TOP });
   await page.goto(filesAt(folder));
   const breadcrumb = page.getByRole("navigation", { name: "Folder" });
   await expect(breadcrumb).toHaveText(`Files / files / ${nameOf(folder)}`, { useInnerText: true });

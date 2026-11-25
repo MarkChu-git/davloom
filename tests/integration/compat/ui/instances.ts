@@ -199,12 +199,38 @@ export const seedSample = async (request: APIRequestContext, folder: string): Pr
   }
 };
 
-/** Makes a folder of its own in the Mount "files" for one test, with the sample in it. */
+/**
+ * The folder of the Mount "files" that tests keep their folders in. A listing of 200 entries or
+ * more draws only the rows in view, and every browser project of a run shares the one Worker, so
+ * the top of the Mount, whose sample files some tests open, holds only a few of them.
+ */
+const FLOWS = `/${MOUNT}/flows`;
+
+/** Makes `folder` unless it is there already, as when tests that run at once both make it. */
+const ensureFolder = async (request: APIRequestContext, folder: string): Promise<void> => {
+  const response = await request.fetch(davPath(folder, true), {
+    method: "MKCOL",
+    headers: DASHBOARD,
+  });
+  // 405: another test made it first.
+  if (response.status() !== 201 && response.status() !== 405) {
+    throw new Error(`MKCOL ${folder}: ${response.status()}`);
+  }
+};
+
+/** The top of the Mount "files", for the few tests whose folder has to sit there. */
+export const MOUNT_TOP = `/${MOUNT}`;
+
+/**
+ * Makes a folder of its own in the Mount "files" for one test, with the sample in it: inside
+ * `parent`, which is made when it is missing, and by default in FLOWS.
+ */
 export const scratchFolder = async (
   request: APIRequestContext,
-  { withSample = true } = {},
+  { withSample = true, parent = FLOWS }: { withSample?: boolean; parent?: string } = {},
 ): Promise<string> => {
-  const folder = `/${MOUNT}/${unique("t")}`;
+  if (parent !== MOUNT_TOP) await ensureFolder(request, parent);
+  const folder = `${parent}/${unique("t")}`;
   await dav(request, "MKCOL", folder, { isFolder: true });
   if (withSample) {
     await seedSample(request, folder);

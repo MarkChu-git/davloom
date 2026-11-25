@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { test } from "./fixtures";
 import { filesAt, isNarrow, onScreen, openList, openRowDetails, recordOf, shown } from "./helpers";
-import { scratchFolder, unique } from "./instances";
+import { api, field, scratchFolder, unique } from "./instances";
 
 // The core flows of giving access (PRD §11): an API Key of each access level and each expiry,
 // made in Credentials and used by a WebDAV client, and a mount of each kind of name, made in
@@ -110,6 +110,13 @@ for (const prefix of MOUNT_NAMES) {
       headers: { depth: "0", "x-davloom-dashboard": "1" },
     });
     expect(listing.status()).toBe(207);
+
+    // Every test adds mounts on the one Worker, so this one leaves none behind.
+    const mounts = await api(page.request, "GET", "/api/mounts");
+    const added = Array.isArray(mounts)
+      ? mounts.find((mount: unknown) => Reflect.get(Object(mount), "name") === name)
+      : undefined;
+    await api(page.request, "DELETE", `/api/mounts/${encodeURIComponent(field(added, "id"))}`);
   });
 }
 

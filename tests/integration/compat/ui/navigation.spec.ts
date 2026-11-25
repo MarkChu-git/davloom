@@ -120,6 +120,15 @@ test.describe("without a session", () => {
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
       await expectPage(page, name);
       expect(new URL(page.url()).pathname).toBe(path);
+
+      // The owner's session list shows 100 sessions at most, and the specs that sign out look for
+      // their own in it, so this session ends with the test.
+      const { origin } = new URL(page.url());
+      const signedOut = await page.request.post("/api/auth/sign-out", {
+        headers: { "content-type": "application/json", origin },
+        data: "{}",
+      });
+      expect(signedOut.ok()).toBe(true);
     });
   }
 });

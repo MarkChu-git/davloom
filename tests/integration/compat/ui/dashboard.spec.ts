@@ -2532,6 +2532,10 @@ test("Data export: Export downloads an encrypted file and shows its key once, in
   await page.goto("/settings?section=export");
   const download = page.waitForEvent("download");
   await page.getByRole("main").getByRole("button", { name: "Export" }).click();
+  // Later than the step-up window after the run signed in, the export asks for the password
+  // first. The fixture answers that dialog only while the test waits on the page, so the test
+  // waits for the notice before it waits for the download.
+  await shown(page.getByText("The export is in your downloads"));
   const file = await download;
   expect(file.suggestedFilename()).toMatch(/^davloom-export-\d{4}-\d{2}-\d{2}\.json$/);
   const path = await file.path();
@@ -2540,7 +2544,6 @@ test("Data export: Export downloads an encrypted file and shows its key once, in
   );
   expect(saved).toMatchObject({ format: "davloom-export", version: 1 });
   expect(JSON.stringify(saved)).not.toContain("@");
-  await shown(page.getByText("The export is in your downloads"));
   await expect(page.getByRole("textbox", { name: "Export key", exact: true })).toHaveValue(
     /^dvx_[A-Za-z0-9_-]{43}$/,
   );
