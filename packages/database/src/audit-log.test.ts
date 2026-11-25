@@ -42,6 +42,7 @@ describe("createAuditLog", () => {
       const atomic = bunSqliteAtomic(db);
       const log = createAuditLog(db, (statements) => {
         for (const statement of statements) {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Drizzle's statements carry toSQL()
           const query = (statement as { toSQL?: () => { params: unknown[] } }).toSQL?.();
           if (query) bound.push(query.params.length);
         }
