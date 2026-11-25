@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleCanceledAnimations } from "../../test/layout";
 import { json, renderPage, type Handler } from "../../test/render";
+import { translator } from "../i18n/translate";
 import { describeEvent, eventDetails, type AuditEvent } from "./ActivitySection";
 import { SettingsPage } from "./SettingsPage";
 
@@ -16,6 +17,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 const event = (id: string, extra: Partial<AuditEvent> = {}): AuditEvent => ({
   id,
@@ -79,7 +83,7 @@ describe("describeEvent", () => {
     [{ action: "webdav.auth", outcome: "failure" }, "Refused a WebDAV key"],
     [{ action: "later.action" }, "later.action"],
   ] as const)("describes %j as %s", (extra, text) => {
-    expect(describeEvent(event("e", extra))).toBe(text);
+    expect(describeEvent(en, event("e", extra))).toBe(text);
   });
 });
 
@@ -91,7 +95,19 @@ describe("eventDetails", () => {
     [{ action: "webdav.auth", target: null, count: 2 }, /^[^·]+ · 2 times$/],
     [{ count: 1 }, /^[^·]+$/],
   ] as const)("writes %j", (extra, pattern) => {
-    expect(eventDetails(event("e", extra))).toMatch(pattern);
+    expect(eventDetails(en, event("e", extra))).toMatch(pattern);
+  });
+
+  it("writes them in Chinese", () => {
+    expect(describeEvent(zh, event("e", { action: "key.rename", target: "phone" }))).toBe(
+      "将密钥重命名为 phone",
+    );
+    expect(describeEvent(zh, event("e", { action: "webdav.auth", outcome: "failure" }))).toBe(
+      "拒绝了一个 WebDAV 密钥",
+    );
+    expect(eventDetails(zh, event("e", { action: "webdav.auth", target: null, count: 2 }))).toMatch(
+      /^2026年11月24日/,
+    );
   });
 });
 

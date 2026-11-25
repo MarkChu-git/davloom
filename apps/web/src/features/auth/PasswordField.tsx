@@ -6,6 +6,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { Copy, Dices } from "lucide-react";
 import { useState } from "react";
 import { generatePassword } from "../api/account";
+import { useT } from "../i18n/I18nProvider";
 
 /**
  * A new password, with Generate, which fills in a random one from Better Auth's generator and
@@ -26,8 +27,9 @@ export const NewPasswordField = ({
   problem?: string;
   hasAutoFocus?: boolean;
 }) => {
+  const t = useT();
   const [generated, setGenerated] = useState<string>();
-  const { copy, isCopied } = useClipboard({ announce: "Password copied" });
+  const { copy, isCopied } = useClipboard({ announce: t("password.copied") });
   const isGenerated = generated !== undefined && generated === value;
   return (
     <InputGroup
@@ -49,7 +51,7 @@ export const NewPasswordField = ({
         hasAutoFocus={hasAutoFocus}
       />
       <Button
-        label="Generate"
+        label={t("password.generate")}
         icon={<Icon icon={Dices} size="sm" />}
         onClick={() => {
           const next = generatePassword();
@@ -59,7 +61,7 @@ export const NewPasswordField = ({
       />
       {isGenerated ? (
         <Button
-          label={isCopied ? "Copied" : "Copy"}
+          label={isCopied ? t("copy.copied") : t("copy.copy")}
           icon={<Icon icon={Copy} size="sm" />}
           onClick={() => void copy(value)}
         />

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import { deviceName } from "./device";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 describe("deviceName", () => {
   it.each([
@@ -45,6 +49,10 @@ describe("deviceName", () => {
     [undefined, "Unknown device"],
     ["SomeBot (Windows)", "Windows"],
   ])("names %j %j", (userAgent, name) => {
-    expect(deviceName(userAgent)).toBe(name);
+    expect(deviceName(en, userAgent)).toBe(name);
+  });
+
+  it("names a device in Chinese", () => {
+    expect(deviceName(zh, null)).toBe("未知设备");
   });
 });

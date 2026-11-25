@@ -16,22 +16,26 @@ const isOnScreen = (element: HTMLElement): boolean =>
  * focus falls to the page body.
  *
  * Each form passed to `show` needs a new `key`, because the dialog keeps its content while it
- * closes and the next form would otherwise start with what the last one held.
+ * closes and the next form would otherwise start with what the last one held. Astryx names a dialog
+ * after its DialogHeader only when the dialog first opens, so a later form would keep the first
+ * one's name or none: `show` takes the form's title, which names the dialog.
  */
 export const useFormDialog = (width: number) => {
   const [content, setContent] = useState<ReactNode>(null);
+  const [label, setLabel] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const opener = useRef<Find>(() => undefined);
 
   /**
-   * Opens the dialog. `fallback` finds where focus goes back to when the opener is no longer on
-   * screen, as with an item of a menu that has closed.
+   * Opens the dialog, named `title`, the title of the form's header. `fallback` finds where focus
+   * goes back to when the opener is no longer on screen, as with an item of a menu that has closed.
    */
-  const show = useCallback((next: ReactNode, fallback?: Find) => {
+  const show = useCallback((next: ReactNode, title: string, fallback?: Find) => {
     const active = document.activeElement;
     const control = active instanceof HTMLElement && active !== document.body ? active : undefined;
     opener.current = () => (control !== undefined && isOnScreen(control) ? control : fallback?.());
     setContent(next);
+    setLabel(title);
     setIsOpen(true);
   }, []);
 
@@ -51,6 +55,7 @@ export const useFormDialog = (width: number) => {
       }}
       purpose="form"
       width={width}
+      aria-label={label}
     >
       {content}
     </Dialog>

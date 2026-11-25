@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { Translator } from "../i18n/translate";
 import { apiFetch, isApiError, isUnauthorized } from "./client";
 
 // Server state of the Dashboard, read and changed through TanStack Query. The shapes are the JSON
@@ -92,13 +93,18 @@ export interface ApiKey {
 }
 
 /** The storage kinds this Dashboard can name; the API decides which a deployment offers. */
-export const BACKEND_KINDS: Record<string, string> = {
-  "durable-object": "Cloudflare Durable Objects",
-  s3: "S3 compatible",
-  r2: "Cloudflare R2",
+export const kindLabel = (t: Translator, kind: string): string => {
+  switch (kind) {
+    case "durable-object":
+      return t("kind.durableObject");
+    case "s3":
+      return t("kind.s3");
+    case "r2":
+      return t("kind.r2");
+    default:
+      return kind;
+  }
 };
-
-export const kindLabel = (kind: string): string => BACKEND_KINDS[kind] ?? kind;
 
 export const keys = {
   me: ["me"] as const,

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import { passwordProblem, registrationProblems, safeRedirect } from "./forms";
+
+const en = translator("en");
 
 describe("where sign-in returns", () => {
   it.each([
@@ -27,7 +30,7 @@ describe("registration", () => {
     ["a password of 12 characters", { password: "x".repeat(12) }],
     ["a password of 128 characters", { password: "x".repeat(128) }],
   ])("takes %s", (_case, change) => {
-    expect(registrationProblems({ ...valid, ...change })).toEqual({});
+    expect(registrationProblems(en, { ...valid, ...change })).toEqual({});
   });
 
   it.each([
@@ -42,12 +45,12 @@ describe("registration", () => {
     ["password", { password: "x".repeat(11) }],
     ["password", { password: "x".repeat(129) }],
   ])("refuses a %s of %j", (field, change) => {
-    expect(Object.keys(registrationProblems({ ...valid, ...change }))).toEqual([field]);
+    expect(Object.keys(registrationProblems(en, { ...valid, ...change }))).toEqual([field]);
   });
 
   it("names every field that cannot be sent", () => {
     expect(
-      Object.keys(registrationProblems({ username: "", name: "", email: "x", password: "" })),
+      Object.keys(registrationProblems(en, { username: "", name: "", email: "x", password: "" })),
     ).toEqual(["username", "email", "password"]);
   });
 });
@@ -60,6 +63,10 @@ describe("passwordProblem", () => {
     ["x".repeat(128), undefined],
     ["x".repeat(129), "Use at most 128 characters."],
   ])("of %j is %j", (password, problem) => {
-    expect(passwordProblem(password)).toBe(problem);
+    expect(passwordProblem(en, password)).toBe(problem);
+  });
+
+  it("says it in Chinese", () => {
+    expect(passwordProblem(translator("zh-CN"), "short")).toBe("请至少使用 12 个字符。");
   });
 });

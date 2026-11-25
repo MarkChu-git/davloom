@@ -35,10 +35,11 @@ import {
   type ApiKey,
 } from "../api/queries";
 import { NameForm } from "../files/dialogs";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { CopyField } from "../shell/CopyField";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
-import { formatDate, formatRelative } from "../shell/format";
 import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
@@ -52,27 +53,27 @@ import { ALL_MOUNTS, hasExpired, keyStateOf, reachOf, scopeOf, type KeyState } f
 // Rows keep the API's fields; the table wants records.
 type KeyRow = ApiKey & Record<string, unknown>;
 
-const EXPIRY_OPTIONS = [
-  { value: "30", label: "In 30 days" },
-  { value: "90", label: "In 90 days" },
-  { value: "365", label: "In a year" },
-  { value: "never", label: "Never" },
-] as const;
+const expiryOptions = (t: Translator) => [
+  { value: "30", label: t("keys.expiry.days", { count: 30 }) },
+  { value: "90", label: t("keys.expiry.days", { count: 90 }) },
+  { value: "365", label: t("keys.expiry.year") },
+  { value: "never", label: t("keys.never") },
+];
 
-const KEY_STATES: Record<KeyState, { tone: Tone; label: string }> = {
-  active: { tone: "success", label: "Active" },
-  expired: { tone: "warning", label: "Expired" },
-  disabled: { tone: "error", label: "Off" },
-};
+const keyStates = (t: Translator): Record<KeyState, { tone: Tone; label: string }> => ({
+  active: { tone: "success", label: t("keys.state.active") },
+  expired: { tone: "warning", label: t("keys.state.expired") },
+  disabled: { tone: "error", label: t("keys.state.off") },
+});
 
-const accessOf = (key: ApiKey): string =>
-  key.access === "read-only" ? "Read only" : "Read and write";
+const accessOf = (t: Translator, key: ApiKey): string =>
+  key.access === "read-only" ? t("keys.readOnly") : t("keys.readWrite");
 
-const lastUsedOf = (key: ApiKey): string =>
-  key.lastUsedAt === null ? "Never" : formatRelative(key.lastUsedAt);
+const lastUsedOf = (t: Translator, key: ApiKey): string =>
+  key.lastUsedAt === null ? t("keys.never") : t.relative(key.lastUsedAt);
 
-const expiresOf = (key: ApiKey): string =>
-  key.expiresAt === null ? "Never" : formatDate(key.expiresAt);
+const expiresOf = (t: Translator, key: ApiKey): string =>
+  key.expiresAt === null ? t("keys.never") : t.date(key.expiresAt);
 
 const startOf = (key: ApiKey): string => (key.start === null ? "—" : `${key.start}…`);
 
@@ -90,42 +91,48 @@ const KeyName = ({ apiKey }: { apiKey: ApiKey }) => (
 /** The time the page opened, which a key's status and expiry are measured against. */
 const useNow = (): Date => useState(() => new Date())[0];
 
-const KeyStatus = ({ apiKey }: { apiKey: ApiKey }) => (
-  <StatusLabel {...KEY_STATES[keyStateOf(apiKey, useNow())]} />
-);
+const KeyStatus = ({ apiKey }: { apiKey: ApiKey }) => {
+  const t = useT();
+  return <StatusLabel {...keyStates(t)[keyStateOf(apiKey, useNow())]} />;
+};
 
 /** The narrowest table, in rem, that has room for a column per detail. */
 const WIDE_TABLE = 58;
 
-const WIDE_COLUMNS: TableColumn<KeyRow>[] = [
+const wideColumns = (t: Translator): TableColumn<KeyRow>[] => [
   {
     key: "name",
-    header: "Name",
+    header: t("field.name"),
     width: proportional(2, { minWidth: 180 }),
     renderCell: (key) => <KeyName apiKey={key} />,
   },
-  { key: "access", header: "Access", width: pixel(136), renderCell: accessOf },
+  {
+    key: "access",
+    header: t("keys.access"),
+    width: pixel(136),
+    renderCell: (key) => accessOf(t, key),
+  },
   {
     key: "paths",
-    header: "Scope",
+    header: t("keys.scope"),
     width: proportional(2, { minWidth: 160 }),
-    renderCell: (key) => <Text maxLines={1}>{reachOf(key.paths)}</Text>,
+    renderCell: (key) => <Text maxLines={1}>{reachOf(t, key.paths)}</Text>,
   },
   {
     key: "lastUsedAt",
-    header: "Last used",
+    header: t("keys.lastUsed"),
     width: pixel(120),
-    renderCell: (key) => <Text color="secondary">{lastUsedOf(key)}</Text>,
+    renderCell: (key) => <Text color="secondary">{lastUsedOf(t, key)}</Text>,
   },
   {
     key: "expiresAt",
-    header: "Expires",
+    header: t("keys.expires"),
     width: pixel(120),
-    renderCell: (key) => <Text color="secondary">{expiresOf(key)}</Text>,
+    renderCell: (key) => <Text color="secondary">{expiresOf(t, key)}</Text>,
   },
   {
     key: "state",
-    header: "Status",
+    header: t("keys.status"),
     width: pixel(120),
     renderCell: (key) => <KeyStatus apiKey={key} />,
   },
@@ -145,15 +152,18 @@ const KeySummary = ({ apiKey }: { apiKey: ApiKey }) => (
 
 /** What a key's row shows once opened: the details the table has columns for. */
 const KeyFacts = ({ apiKey }: { apiKey: ApiKey }) => {
+  const t = useT();
   const now = useNow();
   return (
     <MetadataList>
-      <MetadataListItem label="Access">{accessOf(apiKey)}</MetadataListItem>
-      <MetadataListItem label="Scope">{reachOf(apiKey.paths)}</MetadataListItem>
-      <MetadataListItem label="Last used">{lastUsedOf(apiKey)}</MetadataListItem>
-      <MetadataListItem label="Created">{formatDate(apiKey.createdAt)}</MetadataListItem>
-      <MetadataListItem label={hasExpired(apiKey, now) ? "Expired" : "Expires"}>
-        {expiresOf(apiKey)}
+      <MetadataListItem label={t("keys.access")}>{accessOf(t, apiKey)}</MetadataListItem>
+      <MetadataListItem label={t("keys.scope")}>{reachOf(t, apiKey.paths)}</MetadataListItem>
+      <MetadataListItem label={t("keys.lastUsed")}>{lastUsedOf(t, apiKey)}</MetadataListItem>
+      <MetadataListItem label={t("keys.created")}>{t.date(apiKey.createdAt)}</MetadataListItem>
+      <MetadataListItem
+        label={hasExpired(apiKey, now) ? t("keys.state.expired") : t("keys.expires")}
+      >
+        {expiresOf(t, apiKey)}
       </MetadataListItem>
     </MetadataList>
   );
@@ -168,35 +178,36 @@ const ShowOnce = ({
   name: string;
   secret: string;
   onDone: () => void;
-}) => (
-  <Layout
-    header={<DialogHeader title={`Key “${name}” is ready`} onOpenChange={onDone} />}
-    content={
-      <LayoutContent>
-        <VStack gap={4}>
-          <Text color="secondary">
-            Copy the key now: Davloom keeps only its hash and cannot show it again.
-          </Text>
-          <CopyField label="API key" value={secret} copyLabel="Copy key" />
-          <MetadataList label={{ position: "top" }}>
-            <MetadataListItem label="WebDAV address">
-              <Text type="code">{webdavAddress()}</Text>
-            </MetadataListItem>
-            <MetadataListItem label="Username">Any name</MetadataListItem>
-            <MetadataListItem label="Password">This key</MetadataListItem>
-          </MetadataList>
-        </VStack>
-      </LayoutContent>
-    }
-    footer={
-      <LayoutFooter>
-        <HStack hAlign="end">
-          <Button label="Done" variant="primary" onClick={onDone} />
-        </HStack>
-      </LayoutFooter>
-    }
-  />
-);
+}) => {
+  const t = useT();
+  return (
+    <Layout
+      header={<DialogHeader title={t("keys.ready", { name })} onOpenChange={onDone} />}
+      content={
+        <LayoutContent>
+          <VStack gap={4}>
+            <Text color="secondary">{t("keys.copyNow")}</Text>
+            <CopyField label={t("keys.apiKey")} value={secret} copyLabel={t("keys.copyKey")} />
+            <MetadataList label={{ position: "top" }}>
+              <MetadataListItem label={t("overview.webdavAddress")}>
+                <Text type="code">{webdavAddress()}</Text>
+              </MetadataListItem>
+              <MetadataListItem label={t("field.username")}>{t("keys.anyName")}</MetadataListItem>
+              <MetadataListItem label={t("field.password")}>{t("keys.thisKey")}</MetadataListItem>
+            </MetadataList>
+          </VStack>
+        </LayoutContent>
+      }
+      footer={
+        <LayoutFooter>
+          <HStack hAlign="end">
+            <Button label={t("keys.done")} variant="primary" onClick={onDone} />
+          </HStack>
+        </LayoutFooter>
+      }
+    />
+  );
+};
 
 const CreateKeyForm = ({
   onCancel,
@@ -205,6 +216,7 @@ const CreateKeyForm = ({
   onCancel: () => void;
   onCreate: (name: string, secret: string) => void;
 }) => {
+  const t = useT();
   const create = useCreateKey();
   const mounts = useMounts();
   const [name, setName] = useState("");
@@ -217,12 +229,12 @@ const CreateKeyForm = ({
 
   const submit = () => {
     const trimmed = name.trim();
-    const nameIssue = keyNameProblem(name);
+    const nameIssue = keyNameProblem(t, name);
     if (nameIssue !== undefined) {
       setProblem(nameIssue);
       return;
     }
-    const scope = scopeOf(mount, folder);
+    const scope = scopeOf(t, mount, folder);
     if ("problem" in scope) {
       setFolderProblem(scope.problem);
       return;
@@ -243,15 +255,15 @@ const CreateKeyForm = ({
 
   return (
     <Layout
-      header={<DialogHeader title="Create a key" onOpenChange={onCancel} />}
+      header={<DialogHeader title={t("keys.createTitle")} onOpenChange={onCancel} />}
       content={
         <LayoutContent>
           <VStack gap={4}>
             {create.isError ? (
-              <Banner status="error" title={describeError(create.error)} container="card" />
+              <Banner status="error" title={describeError(t, create.error)} container="card" />
             ) : null}
             <TextInput
-              label="Name"
+              label={t("field.name")}
               value={name}
               onChange={(value) => {
                 setName(value);
@@ -265,14 +277,14 @@ const CreateKeyForm = ({
               status={problem === undefined ? undefined : { type: "error", message: problem }}
             />
             <Selector
-              label="Mount"
+              label={t("keys.mount")}
               value={mount}
               onChange={(value) => {
                 setMount(value);
                 setFolderProblem(undefined);
               }}
               options={[
-                { value: ALL_MOUNTS, label: "All mounts" },
+                { value: ALL_MOUNTS, label: t("keys.allMounts") },
                 ...(mounts.data ?? []).map((item) => ({
                   value: item.name,
                   label: `/${item.name}`,
@@ -280,7 +292,7 @@ const CreateKeyForm = ({
               ]}
             />
             <TextInput
-              label="Folder inside the mount"
+              label={t("keys.folder")}
               value={folder}
               onChange={(value) => {
                 setFolder(value);
@@ -300,12 +312,12 @@ const CreateKeyForm = ({
                   : { type: "error", message: folderProblem }
               }
             />
-            <Switch label="Read only" value={isReadOnly} onChange={setIsReadOnly} />
+            <Switch label={t("keys.readOnly")} value={isReadOnly} onChange={setIsReadOnly} />
             <Selector
-              label="Expires"
+              label={t("keys.expires")}
               value={expiry}
               onChange={setExpiry}
-              options={EXPIRY_OPTIONS.map((option) => ({ ...option }))}
+              options={expiryOptions(t)}
             />
           </VStack>
         </LayoutContent>
@@ -313,9 +325,9 @@ const CreateKeyForm = ({
       footer={
         <LayoutFooter>
           <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="secondary" onClick={onCancel} />
+            <Button label={t("action.cancel")} variant="secondary" onClick={onCancel} />
             <Button
-              label="Create key"
+              label={t("keys.create")}
               variant="primary"
               isLoading={create.isPending}
               onClick={submit}
@@ -328,11 +340,11 @@ const CreateKeyForm = ({
 };
 
 /** Why a name cannot name a key, as the server checks it; undefined when it can. */
-const keyNameProblem = (name: string): string | undefined =>
+const keyNameProblem = (t: Translator, name: string): string | undefined =>
   name.trim() === ""
-    ? "Name the key after the device or person that will use it."
+    ? t("keys.nameMissing")
     : name.trim().length > 64
-      ? "Use at most 64 characters."
+      ? t("form.atMost", { count: 64 })
       : undefined;
 
 /** What the key dialog shows: the form, then the new key in its place. */
@@ -340,6 +352,7 @@ type KeyDialog = { step: "form" } | { step: "secret"; name: string; secret: stri
 
 /** Credentials (PRD §8.3): the API keys WebDAV clients sign in with. */
 export const CredentialsPage = () => {
+  const t = useT();
   const apiKeys = useApiKeys();
   const revoke = useRevokeKey();
   const rename = useRenameKey();
@@ -353,19 +366,19 @@ export const CredentialsPage = () => {
 
   const finish = () => {
     if (keyDialog?.step === "secret") {
-      toast({ body: `Created key “${keyDialog.name}”.` });
+      toast({ body: t("keys.created.toast", { name: keyDialog.name }) });
     }
     setKeyDialog(undefined);
     // The form's Name field focuses itself as the dialog opens, which Astryx Dialog then takes for
     // the opener, so focus is sent back to Create key here (shell/useFormDialog.tsx says more).
-    refocusIfLost(() => buttonNamed("Create key"));
+    refocusIfLost(() => buttonNamed(t("keys.create")));
   };
 
   const openRevoke = (key: ApiKey, rows: readonly ApiKey[]) =>
     confirm.show({
-      title: `Revoke “${key.name}”?`,
-      description: "Clients signed in with it lose access, and this cannot be undone.",
-      actionLabel: "Revoke",
+      title: t("keys.revokeTitle", { name: key.name }),
+      description: t("keys.revokeDescription"),
+      actionLabel: t("keys.revoke"),
       onAction: () => {
         confirm.hide();
         const index = rows.findIndex((row) => row.id === key.id);
@@ -373,17 +386,17 @@ export const CredentialsPage = () => {
         const next = rest[Math.min(index, rest.length - 1)];
         revoke.mutate(key.id, {
           onSuccess: () => {
-            toast({ body: `Revoked “${key.name}”.` });
+            toast({ body: t("keys.revoked", { name: key.name }) });
             // The key leaves the list with its menu, so focus moves to the key that took its
             // place, or to Create key.
             refocusIfLost(() =>
               next === undefined
-                ? buttonNamed("Create key")
-                : (buttonLabelled(`Actions for key ${next.name}`) ??
-                  buttonLabelled(`Details for key ${next.name}`)),
+                ? buttonNamed(t("keys.create"))
+                : (buttonLabelled(t("keys.actionsFor", { name: next.name })) ??
+                  buttonLabelled(t("keys.detailsFor", { name: next.name }))),
             );
           },
-          onError: (error) => toast({ type: "error", body: describeError(error) }),
+          onError: (error) => toast({ type: "error", body: describeError(t, error) }),
         });
       },
     });
@@ -392,12 +405,12 @@ export const CredentialsPage = () => {
     nameDialog.show(
       <NameForm
         key={nextFormKey()}
-        title={`Rename “${key.name}”`}
-        submitLabel="Rename"
+        title={t("files.renameTitle", { name: key.name })}
+        submitLabel={t("action.rename")}
         initialName={key.name}
         onCancel={() => nameDialog.hide()}
         onSubmit={async (name) => {
-          const problem = keyNameProblem(name);
+          const problem = keyNameProblem(t, name);
           if (problem !== undefined) {
             return problem;
           }
@@ -406,29 +419,35 @@ export const CredentialsPage = () => {
             try {
               await rename.mutateAsync({ id: key.id, name: to });
             } catch (error) {
-              return describeError(error);
+              return describeError(t, error);
             }
-            toast({ body: `Renamed to “${to}”.` });
+            toast({ body: t("files.renamed", { name: to }) });
           }
           // The menu or the details that opened the dialog now carry the new name.
           nameDialog.hide(
             () =>
-              buttonLabelled(`Actions for key ${to}`) ?? buttonLabelled(`Details for key ${to}`),
+              buttonLabelled(t("keys.actionsFor", { name: to })) ??
+              buttonLabelled(t("keys.detailsFor", { name: to })),
           );
           return undefined;
         }}
       />,
+      t("files.renameTitle", { name: key.name }),
     );
 
   const keyMenu = (key: ApiKey, rows: readonly ApiKey[]) => (
     <MoreMenu
-      label={`Actions for key ${key.name}`}
+      label={t("keys.actionsFor", { name: key.name })}
       size="sm"
       alignment="end"
       items={[
-        { label: "Rename", onClick: () => openRename(key) },
+        { label: t("action.rename"), onClick: () => openRename(key) },
         { type: "divider" },
-        { label: "Revoke", variant: "destructive", onClick: () => openRevoke(key, rows) },
+        {
+          label: t("keys.revoke"),
+          variant: "destructive",
+          onClick: () => openRevoke(key, rows),
+        },
       ]}
     />
   );
@@ -440,10 +459,10 @@ export const CredentialsPage = () => {
         <LayoutContent padding={gutter}>
           <VStack gap={6}>
             <PageHeader
-              title="Credentials"
+              title={t("nav.credentials")}
               actions={
                 <TitleAction
-                  label="Create key"
+                  label={t("keys.create")}
                   variant="primary"
                   icon={<Icon icon={Plus} size="sm" />}
                   onClick={() => setKeyDialog({ step: "form" })}
@@ -453,16 +472,17 @@ export const CredentialsPage = () => {
             {/* Built once the page's header is on screen, in a render of its own. */}
             <AfterFirstPaint>
               <VStack ref={tableRef}>
-                <QueryState query={apiKeys} title="Cannot read the keys">
+                <QueryState query={apiKeys} title={t("keys.cannotRead")}>
                   {(data) => {
                     const rows = data.toSorted((a, b) => b.createdAt.localeCompare(a.createdAt));
                     if (rows.length === 0) {
                       return (
                         <EmptyState
-                          title="No keys yet"
+                          title={t("keys.none")}
+                          headingLevel={2}
                           actions={
                             <Button
-                              label="Create a key"
+                              label={t("keys.createTitle")}
                               variant="primary"
                               onClick={() => setKeyDialog({ step: "form" })}
                             />
@@ -483,20 +503,20 @@ export const CredentialsPage = () => {
                             <>
                               <KeyFacts apiKey={key} />
                               <Button
-                                label="Rename"
+                                label={t("action.rename")}
                                 variant="secondary"
                                 width="100%"
                                 onClick={() => openRename(key)}
                               />
                               <Button
-                                label="Revoke"
+                                label={t("keys.revoke")}
                                 variant="destructive"
                                 width="100%"
                                 onClick={() => openRevoke(key, rows)}
                               />
                             </>
                           ),
-                          toggleLabel: `Details for key ${key.name}`,
+                          toggleLabel: t("keys.detailsFor", { name: key.name }),
                         }))}
                       />
                     ) : (
@@ -504,10 +524,10 @@ export const CredentialsPage = () => {
                         <Table<KeyRow>
                           data={rows.map((key) => ({ ...key }))}
                           columns={[
-                            ...WIDE_COLUMNS,
+                            ...wideColumns(t),
                             {
                               key: "actions",
-                              header: <VisuallyHidden>Actions</VisuallyHidden>,
+                              header: <VisuallyHidden>{t("files.actions")}</VisuallyHidden>,
                               width: pixel(64),
                               align: "end",
                               renderCell: (key) => keyMenu(key, rows),
@@ -537,7 +557,9 @@ export const CredentialsPage = () => {
             // Astryx names a dialog after its DialogHeader only when the dialog opens, so the
             // second step's dialog would keep no name: it is named here for both steps.
             aria-label={
-              keyDialog?.step === "secret" ? `Key “${keyDialog.name}” is ready` : "Create a key"
+              keyDialog?.step === "secret"
+                ? t("keys.ready", { name: keyDialog.name })
+                : t("keys.createTitle")
             }
             width={520}
           >

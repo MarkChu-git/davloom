@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { Backend, Mount } from "../api/queries";
 import { FakeDav } from "../../test/fakeDav";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import { FileExplorerPage } from "./FileExplorerPage";
 import { clearFinished } from "./uploadStore";
@@ -1034,4 +1035,32 @@ describe("a large folder", () => {
       expect(await screen.findAllByText(/50,000 selected/)).not.toHaveLength(0);
     },
   );
+});
+
+describe("FileExplorerPage in Chinese", () => {
+  it("writes its listing, actions and details in Chinese", async () => {
+    layOut(WIDE);
+    const { container } = await renderPage(<FileExplorerPage path="/files" />, {
+      path: "/files?path=%2Ffiles",
+      locale: "zh-CN",
+      api: seeded().api({
+        "GET /api/mounts": () => json(MOUNTS),
+        "GET /api/backends": () => json(BACKENDS),
+      }),
+    });
+    expect(await screen.findByRole("link", { name: "README.txt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "新建文件夹" })).toBeTruthy();
+    expectChinese(container, [
+      "README.txt",
+      "Quarterly report.pdf",
+      "budget.xlsx",
+      "Drafts",
+      "Archive",
+      "files",
+      "photos",
+      ...MOUNTS.map((mount) => mount.name),
+      ...BACKENDS.map((backend) => backend.name),
+      "kB",
+    ]);
+  });
 });

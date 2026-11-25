@@ -19,14 +19,6 @@ export const Route = createFileRoute("/_app/_dashboard/files")({
     path: typeof search.path === "string" ? normalizePath(search.path) : undefined,
     file: typeof search.file === "string" && search.file !== "" ? search.file : undefined,
   }),
-  head: () => ({
-    meta: [
-      { title: "Files | Davloom" },
-      {
-        name: "description",
-        content: "Browse, upload, move and share the files in your Davloom storage.",
-      },
-    ],
-  }),
+  staticData: { page: "files" },
   component: FilesRoute,
 });

@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useT } from "../i18n/I18nProvider";
 import { Waiting } from "./AuthFrame";
 
 /**
@@ -8,11 +9,12 @@ import { Waiting } from "./AuthFrame";
  * which never ended.
  */
 export const GoTo = ({ href }: { href: string }) => {
+  const t = useT();
   const navigate = useNavigate();
   useEffect(() => {
     void navigate({ href, replace: true });
   }, [navigate, href]);
-  return <Waiting label="Opening Davloom" />;
+  return <Waiting label={t("auth.opening")} />;
 };
 
 /** The sign-in page, returning to `href` once signed in. */

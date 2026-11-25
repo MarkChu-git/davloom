@@ -5,6 +5,7 @@ import { Skeleton } from "@astryxdesign/core/Skeleton";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { describeError } from "../api/client";
+import { useT } from "../i18n/I18nProvider";
 
 /** Placeholder rows, as a list shows while its first answer is on the way. */
 export const LoadingRows = ({ rows = 5 }: { rows?: number }) => (
@@ -30,22 +31,25 @@ export const LoadError = ({
   error: unknown;
   isRetrying: boolean;
   onRetry: () => void;
-}) => (
-  <Banner
-    status="error"
-    title={title}
-    description={describeError(error)}
-    endContent={
-      <Button
-        label="Try again"
-        variant="secondary"
-        size="sm"
-        isLoading={isRetrying}
-        onClick={onRetry}
-      />
-    }
-  />
-);
+}) => {
+  const t = useT();
+  return (
+    <Banner
+      status="error"
+      title={title}
+      description={describeError(t, error)}
+      endContent={
+        <Button
+          label={t("action.tryAgain")}
+          variant="secondary"
+          size="sm"
+          isLoading={isRetrying}
+          onClick={onRetry}
+        />
+      }
+    />
+  );
+};
 
 /**
  * What a query shows: placeholders while it loads, its error with Try again when it failed, and

@@ -10,7 +10,8 @@ import { ChartScatter, LayoutGrid, List as ListIcon, type LucideIcon } from "luc
 import { useMemo, useState } from "react";
 import type { OperationError } from "../api/queries";
 import { FileName } from "../files/FileName";
-import { formatRelative } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages/en";
 import { ExpandableRows } from "../shell/ExpandableList";
 import { ErrorTimeline } from "./lazyCharts";
 import { Age, CauseMark, ErrorDetails, ErrorSubject } from "./ErrorParts";
@@ -19,14 +20,14 @@ import { isErrorView, setErrorView, useErrorView, type ErrorView } from "./error
 
 interface ViewChoice {
   view: ErrorView;
-  label: string;
+  label: MessageKey;
   icon: LucideIcon;
 }
 
 const VIEWS: readonly ViewChoice[] = [
-  { view: "list", label: "List", icon: ListIcon },
-  { view: "timeline", label: "Timeline", icon: ChartScatter },
-  { view: "tiles", label: "Tiles", icon: LayoutGrid },
+  { view: "list", label: "errors.view.list", icon: ListIcon },
+  { view: "timeline", label: "errors.view.timeline", icon: ChartScatter },
+  { view: "tiles", label: "errors.view.tiles", icon: LayoutGrid },
 ];
 
 /**
@@ -36,27 +37,29 @@ const VIEWS: readonly ViewChoice[] = [
  * name would have a screen reader read the word twice.
  */
 const ViewChoiceItem = ({ choice }: { choice: ViewChoice }) => {
+  const t = useT();
   const { ref: tooltipRef, renderTooltip } = useTooltip({ placement: "above" });
   return (
     <>
       <SegmentedControlItem
         ref={tooltipRef}
         value={choice.view}
-        label={choice.label}
+        label={t(choice.label)}
         icon={<Icon icon={choice.icon} size="sm" />}
         isLabelHidden
       />
-      {renderTooltip(choice.label)}
+      {renderTooltip(t(choice.label))}
     </>
   );
 };
 
 /** The choice of view beside the panel's title: three pictures, each named in a tooltip. */
 export const ErrorViewSwitch = () => {
+  const t = useT();
   const view = useErrorView();
   return (
     <SegmentedControl
-      label="Show errors as"
+      label={t("errors.view.label")}
       size="sm"
       value={view}
       onChange={(next) => {
@@ -73,23 +76,26 @@ export const ErrorViewSwitch = () => {
 };
 
 /** One line per error, its cause as a picture, opened in place like the rows of keys. */
-const ErrorList = ({ errors }: { errors: readonly OperationError[] }) => (
-  <ExpandableRows
-    edge="outset"
-    records={errors.map((error) => {
-      const name = nameOf(error);
-      return {
-        id: error.id,
-        icon: <CauseMark cause={causeOf(error)} />,
-        // The cause leads the line, so the name leaves out the picture of its kind.
-        title: <FileName name={name} kind={kindOf(error)} weight="semibold" hasIcon={false} />,
-        meta: <Age at={error.at} />,
-        details: <ErrorDetails error={error} />,
-        toggleLabel: `Details for ${name}`,
-      };
-    })}
-  />
-);
+const ErrorList = ({ errors }: { errors: readonly OperationError[] }) => {
+  const t = useT();
+  return (
+    <ExpandableRows
+      edge="outset"
+      records={errors.map((error) => {
+        const name = nameOf(error);
+        return {
+          id: error.id,
+          icon: <CauseMark cause={causeOf(t, error)} />,
+          // The cause leads the line, so the name leaves out the picture of its kind.
+          title: <FileName name={name} kind={kindOf(error)} weight="semibold" hasIcon={false} />,
+          meta: <Age at={error.at} />,
+          details: <ErrorDetails error={error} />,
+          toggleLabel: t("errors.detailsFor", { name }),
+        };
+      })}
+    />
+  );
+};
 
 /** A tile with an error's cause large, its age and its file; a tap shows its details beside it. */
 const ErrorTile = ({ error }: { error: OperationError }) => {
@@ -97,12 +103,13 @@ const ErrorTile = ({ error }: { error: OperationError }) => {
   // The tile anchors its details once it is drawn.
   const [tile, setTile] = useState<HTMLElement | null>(null);
   const anchor = useMemo(() => (tile === null ? null : { current: tile }), [tile]);
-  const cause = causeOf(error);
+  const t = useT();
+  const cause = causeOf(t, error);
   const name = nameOf(error);
   return (
     <VStack ref={setTile}>
       <ClickableCard
-        label={`${name}, ${cause.label}, ${formatRelative(error.at)}`}
+        label={t("errors.tileLabel", { name, cause: cause.label, age: t.relative(error.at) })}
         onClick={() => {
           // A tap or click on the tile's face reaches the card rather than its button, so focus
           // would stay where it was, and the details would give it back there when they close.
@@ -159,9 +166,10 @@ export const RecentErrors = ({
   /** When the errors were read, in milliseconds since the epoch. */
   readAt: number;
 }) => {
+  const t = useT();
   const view = useErrorView();
   if (errors.length === 0) {
-    return <EmptyState title="No failed operations in the last 24 hours" />;
+    return <EmptyState title={t("errors.none")} />;
   }
   if (view === "timeline") {
     return <ErrorTimeline errors={errors} now={readAt} />;

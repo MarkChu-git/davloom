@@ -25,6 +25,9 @@ import { webdavAddress } from "../api/dav";
 import { describeError } from "../api/client";
 import { exportInstance } from "../api/queries";
 import { AppearanceSwitch } from "../appearance/AppearanceSwitch";
+import { useT } from "../i18n/I18nProvider";
+import { LanguageSwitch } from "../i18n/LanguageSwitch";
+import { RichText } from "../i18n/RichText";
 import { CopyField } from "../shell/CopyField";
 import { TitleLine } from "../shell/PageHeader";
 import { useIsNarrowPage, usePageGutter } from "../shell/pageWidth";
@@ -71,48 +74,60 @@ const Details = ({ children }: { children: ReactNode }) => {
 };
 
 const ProfileSection = () => (
-  <SectionFrame title="Profile">
+  <SectionFrame title={useT()("settings.profile")}>
     <ProfileContent />
   </SectionFrame>
 );
 
 const SecuritySection = () => (
-  <SectionFrame title="Sign-in and security">
+  <SectionFrame title={useT()("settings.security")}>
     <SecurityContent />
   </SectionFrame>
 );
 
 const ActivitySection = () => (
-  <SectionFrame title="Activity">
+  <SectionFrame title={useT()("settings.activity")}>
     <ActivityContent />
   </SectionFrame>
 );
 
 const AppearanceSection = () => (
-  <SectionFrame title="Appearance">
-    <AppearanceSwitch />
-  </SectionFrame>
-);
-
-const WebDavSection = () => (
-  <SectionFrame title="WebDAV">
-    <CopyField label="Address" value={webdavAddress()} copyLabel="Copy address" />
-    <VStack gap={2}>
-      <Heading level={3}>Connecting a client</Heading>
-      <Details>
-        <MetadataListItem label="Server">
-          <Text type="code">{webdavAddress()}</Text>
-        </MetadataListItem>
-        <MetadataListItem label="Username">Any name</MetadataListItem>
-        <MetadataListItem label="Password">An API key</MetadataListItem>
-      </Details>
-      <Text type="supporting" color="secondary">
-        Create a key for each device on <Link href="/credentials">Credentials</Link>. In Finder,
-        choose Go, then Connect to Server; in rclone, add a remote of type webdav with vendor other.
-      </Text>
+  <SectionFrame title={useT()("settings.appearance")}>
+    <VStack gap={4}>
+      <AppearanceSwitch />
+      <LanguageSwitch />
     </VStack>
   </SectionFrame>
 );
+
+const WebDavSection = () => {
+  const t = useT();
+  return (
+    <SectionFrame title={t("settings.webdav")}>
+      <CopyField
+        label={t("settings.address")}
+        value={webdavAddress()}
+        copyLabel={t("overview.copyAddress")}
+      />
+      <VStack gap={2}>
+        <Heading level={3}>{t("settings.connecting")}</Heading>
+        <Details>
+          <MetadataListItem label={t("settings.server")}>
+            <Text type="code">{webdavAddress()}</Text>
+          </MetadataListItem>
+          <MetadataListItem label={t("field.username")}>{t("keys.anyName")}</MetadataListItem>
+          <MetadataListItem label={t("field.password")}>{t("settings.anApiKey")}</MetadataListItem>
+        </Details>
+        <Text type="supporting" color="secondary">
+          <RichText text={t("settings.webdavHelp")} tags={CREDENTIALS_LINK} />
+        </Text>
+      </VStack>
+    </SectionFrame>
+  );
+};
+
+/** The words of a message's <link> tag, as a link to Credentials. */
+const CREDENTIALS_LINK = { link: (words: string) => <Link href="/credentials">{words}</Link> };
 
 /** Saves a value as a JSON file in the browser's downloads. */
 const download = (name: string, value: unknown) => {
@@ -125,6 +140,7 @@ const download = (name: string, value: unknown) => {
 };
 
 const ExportSection = () => {
+  const t = useT();
   const [key, setKey] = useState<string>();
   const [failure, setFailure] = useState<string>();
   const [isExporting, setIsExporting] = useState(false);
@@ -136,33 +152,29 @@ const ExportSection = () => {
       download(`davloom-export-${new Date().toISOString().slice(0, 10)}.json`, result.file);
       setKey(result.key);
     } catch (error) {
-      setFailure(describeError(error));
+      setFailure(describeError(t, error));
     } finally {
       setIsExporting(false);
     }
   };
   return (
-    <SectionFrame title="Data export">
-      <Text>
-        An export saves the administrator, the keys, the backends, the mounts and their properties
-        in one encrypted file. Set up a new Davloom from it to move this instance. The files stay in
-        their backends.
-      </Text>
+    <SectionFrame title={t("settings.export")}>
+      <Text>{t("export.description")}</Text>
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       {key === undefined ? null : (
         <VStack gap={4}>
           <Banner
             status="success"
-            title="The export is in your downloads"
-            description="Keep this key with the file. It opens the file, and Davloom shows it only now."
+            title={t("export.done")}
+            description={t("export.keepKey")}
             container="card"
           />
-          <CopyField label="Export key" value={key} copyLabel="Copy key" />
+          <CopyField label={t("register.exportKey")} value={key} copyLabel={t("keys.copyKey")} />
         </VStack>
       )}
       <HStack>
         <Button
-          label={key === undefined ? "Export" : "Export again"}
+          label={key === undefined ? t("export.run") : t("export.again")}
           variant={key === undefined ? "primary" : "secondary"}
           isLoading={isExporting}
           onClick={() => void run()}
@@ -173,13 +185,13 @@ const ExportSection = () => {
 };
 
 const StorageSection = () => (
-  <SectionFrame title="Storage">
+  <SectionFrame title={useT()("settings.storage")}>
     <StorageSettingsContent />
   </SectionFrame>
 );
 
 const AboutSection = () => (
-  <SectionFrame title="About this instance">
+  <SectionFrame title={useT()("settings.about")}>
     <AboutContent />
   </SectionFrame>
 );
@@ -197,6 +209,7 @@ const SECTION_CONTENT: Record<SettingsSection, () => ReactNode> = {
 
 /** Settings (PRD §8.5): a section list beside the chosen section. */
 export const SettingsPage = ({ section }: { section: SettingsSection }) => {
+  const t = useT();
   const Content = SECTION_CONTENT[section];
   const navigate = useNavigate();
   // Responsive contract: on a page wider than 776px, which a 1024px window leaves beside the side
@@ -217,17 +230,17 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
             padding={gutter}
             width={280}
             role="navigation"
-            label="Settings sections"
+            label={t("settings.sections")}
           >
             <VStack gap={6}>
               <TitleLine>
-                <Heading level={1}>Settings</Heading>
+                <Heading level={1}>{t("nav.settings")}</Heading>
               </TitleLine>
               <List density="balanced">
                 {SETTINGS_SECTIONS.map((item) => (
                   <ListItem
                     key={item.id}
-                    label={item.label}
+                    label={t(item.label)}
                     startContent={<Icon icon={SECTION_ICONS[item.id]} size="sm" />}
                     href={`/settings?section=${item.id}`}
                     isSelected={item.id === section}
@@ -244,13 +257,16 @@ export const SettingsPage = ({ section }: { section: SettingsSection }) => {
             {isNarrow ? (
               <VStack gap={6}>
                 <TitleLine>
-                  <Heading level={1}>Settings</Heading>
+                  <Heading level={1}>{t("nav.settings")}</Heading>
                 </TitleLine>
                 <Selector
-                  label="Section"
+                  label={t("settings.section")}
                   value={section}
                   onChange={(next) => void navigate({ href: `/settings?section=${next}` })}
-                  options={SETTINGS_SECTIONS.map(({ id, label }) => ({ value: id, label }))}
+                  options={SETTINGS_SECTIONS.map(({ id, label }) => ({
+                    value: id,
+                    label: t(label),
+                  }))}
                 />
               </VStack>
             ) : null}

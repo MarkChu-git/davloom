@@ -6,9 +6,8 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Copy } from "lucide-react";
 import { useState } from "react";
+import { useT } from "../i18n/I18nProvider";
 import { useNarrowerThan } from "./useNarrowerThan";
-
-const BLOCKED = "This browser blocked copying here. Select the text and copy it yourself.";
 
 /**
  * The narrowest field, in rem, whose Copy button still shows its words beside the whole WebDAV
@@ -43,17 +42,19 @@ export const CopyField = ({
   /** The slot the frame's script (features/frame/fill.ts) writes the value into, if any. */
   frameSlot?: string;
 }) => {
-  const { copy, isCopied } = useClipboard({ announce: `${label} copied` });
+  const t = useT();
+  const blocked = t("copy.blocked");
+  const { copy, isCopied } = useClipboard({ announce: t("copy.announce", { label }) });
   const announce = useAnnounce();
   const [isBlocked, setIsBlocked] = useState(false);
   const [ref, isNarrow] = useNarrowerThan(ROOM_FOR_WORDS);
-  const buttonLabel = isCopied ? "Copied" : copyLabel;
+  const buttonLabel = isCopied ? t("copy.copied") : copyLabel;
   return (
     <VStack ref={ref} width={width} maxWidth="100%">
       <InputGroup
         label={label}
         isLabelHidden={isLabelHidden}
-        status={isBlocked ? { type: "warning", message: BLOCKED } : undefined}
+        status={isBlocked ? { type: "warning", message: blocked } : undefined}
       >
         {/* InputGroup names its field with the group's label and then the field's own, so the
             field's own stays empty: a screen reader hears "WebDAV address", not "WebDAV address
@@ -76,7 +77,7 @@ export const CopyField = ({
             void copy(value).then((isDone) => {
               setIsBlocked(!isDone);
               if (!isDone) {
-                announce(BLOCKED, "assertive");
+                announce(blocked, "assertive");
               }
             })
           }

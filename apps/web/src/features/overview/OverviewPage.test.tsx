@@ -2,6 +2,7 @@ import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleCanceledAnimations } from "../../test/layout";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage } from "../../test/render";
 import type { Backend, Mount, Overview } from "../api/queries";
 import { OverviewPage } from "./OverviewPage";
@@ -224,5 +225,26 @@ describe("OverviewPage, errors", () => {
     expect(await screen.findByRole("img", { name: "Bytes stored on each backend" })).toBeTruthy();
     expect(tileOf("Stored")).toContain("2.5 MB");
     expect(screen.queryByText("Cannot read the overview")).toBeNull();
+  });
+});
+
+describe("OverviewPage in Chinese", () => {
+  it("writes its tiles, panels and figures in Chinese", async () => {
+    const { container } = await renderPage(<OverviewPage />, {
+      locale: "zh-CN",
+      api: { "GET /api/overview": () => json(OVERVIEW) },
+    });
+    expect(await screen.findByText("12 个文件，分布在 3 个文件夹中")).toBeTruthy();
+    expect(screen.getByText("已存储")).toBeTruthy();
+    expectChinese(container, [
+      "Primary",
+      "Archive",
+      "Spare",
+      "files",
+      "photos",
+      "lost",
+      "MB",
+      "kB",
+    ]);
   });
 });

@@ -3,12 +3,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { signOut } from "../api/account";
+import { useT } from "../i18n/I18nProvider";
 
 /**
  * Signs this browser out once the person confirms (a `confirm` action, apps/api/verification.ts),
  * forgets what the Dashboard read with the session, and opens the sign-in page. Render `element`.
  */
 export const useSignOut = () => {
+  const t = useT();
   const client = useQueryClient();
   const navigate = useNavigate();
   const confirm = useImperativeAlertDialog();
@@ -25,9 +27,9 @@ export const useSignOut = () => {
   };
   const ask = () =>
     confirm.show({
-      title: "Sign out?",
-      description: "This browser leaves the Dashboard until you sign in again.",
-      actionLabel: "Sign out",
+      title: t("signOut.title"),
+      description: t("signOut.description"),
+      actionLabel: t("nav.signOut"),
       actionVariant: "primary",
       onAction: () => {
         confirm.hide();

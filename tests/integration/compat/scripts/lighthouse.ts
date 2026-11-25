@@ -103,9 +103,16 @@ const METRICS = [
 
 const chromePath = process.env.DAVLOOM_CHROMIUM_PATH || chromium.executablePath();
 const server = await startWorkersServer();
+// The browser's language, such as zh-CN, which the Dashboard shows its pages in.
+const lang = option("lang");
 const chrome = await launch({
   chromePath,
-  chromeFlags: ["--headless=new", "--no-sandbox", "--disable-gpu"],
+  chromeFlags: [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-gpu",
+    ...(lang === undefined ? [] : [`--lang=${lang}`, `--accept-lang=${lang}`]),
+  ],
 });
 
 rmSync(REPORT_DIRECTORY, { recursive: true, force: true });

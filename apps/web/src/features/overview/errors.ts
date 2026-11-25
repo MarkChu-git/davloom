@@ -25,6 +25,9 @@ import {
 } from "lucide-react";
 import type { EntryKind } from "../api/dav";
 import type { OperationError } from "../api/queries";
+import type { Locale } from "../i18n/locale";
+import type { MessageKey } from "../i18n/messages/en";
+import type { Translator } from "../i18n/translate";
 import { relativeSpan } from "../shell/format";
 
 /** Why an operation failed, as a picture and in a word or two. */
@@ -39,7 +42,15 @@ export interface Cause {
   icon: LucideIcon;
 }
 
-const cause = (label: string, reason: string, glyph: LucideIconData): Cause => ({
+/** A cause's words in the dictionary and its picture. */
+interface CauseEntry {
+  label: MessageKey;
+  reason: MessageKey;
+  glyph: LucideIconData;
+  icon: LucideIcon;
+}
+
+const cause = (label: MessageKey, reason: MessageKey, glyph: LucideIconData): CauseEntry => ({
   label,
   reason,
   glyph,
@@ -48,43 +59,40 @@ const cause = (label: string, reason: string, glyph: LucideIconData): Cause => (
 
 // The statuses WebDAV operations fail with (RFC 9110 §15, RFC 4918 §11), each named for what the
 // owner of the instance would do about it.
-const CAUSES: ReadonlyMap<number, Cause> = new Map([
-  [400, cause("Bad request", "The client sent a request Davloom could not read.", CircleX)],
-  [403, cause("Not allowed", "The key may not do this here.", Ban)],
-  [404, cause("Not found", "Nothing has this name.", FileQuestionMark)],
-  [405, cause("Not allowed here", "This name holds something this operation cannot change.", Ban)],
-  [409, cause("Conflict", "The folder it needs is missing.", Split)],
-  [413, cause("Too large", "The upload is larger than one request may carry.", Maximize2)],
-  [423, cause("Locked", "Another client holds a lock on it.", Lock)],
-  [500, cause("Server error", "Davloom failed while handling the request.", ServerCrash)],
-  [502, cause("Other backend", "Copies and moves stay within one backend.", Split)],
-  [503, cause("Backend unavailable", "The backend did not answer.", CloudOff)],
-  [504, cause("Timed out", "The backend did not answer in time.", TimerOff)],
-  [507, cause("Storage full", "The backend has no room left.", HardDrive)],
+const CAUSES: ReadonlyMap<number, CauseEntry> = new Map([
+  [400, cause("cause.badRequest", "cause.badRequest.reason", CircleX)],
+  [403, cause("cause.forbidden", "cause.forbidden.reason", Ban)],
+  [404, cause("cause.notFound", "cause.notFound.reason", FileQuestionMark)],
+  [405, cause("cause.notAllowed", "cause.notAllowed.reason", Ban)],
+  [409, cause("cause.conflict", "cause.conflict.reason", Split)],
+  [413, cause("cause.tooLarge", "cause.tooLarge.reason", Maximize2)],
+  [423, cause("cause.locked", "cause.locked.reason", Lock)],
+  [500, cause("cause.serverError", "cause.serverError.reason", ServerCrash)],
+  [502, cause("cause.otherBackend", "cause.otherBackend.reason", Split)],
+  [503, cause("cause.unavailable", "cause.unavailable.reason", CloudOff)],
+  [504, cause("cause.timedOut", "cause.timedOut.reason", TimerOff)],
+  [507, cause("cause.full", "cause.full.reason", HardDrive)],
 ]);
 
-const ALREADY_EXISTS = cause(
-  "Already exists",
-  "The destination exists, and the client asked not to overwrite it.",
-  CopyX,
-);
-const CHANGED = cause(
-  "Changed since",
-  "It changed after the client last read it, so the client's condition no longer held.",
-  History,
-);
-const FAILED = cause("Failed", "The operation failed.", CircleX);
+const ALREADY_EXISTS = cause("cause.exists", "cause.exists.reason", CopyX);
+const CHANGED = cause("cause.changed", "cause.changed.reason", History);
+const FAILED = cause("cause.failed", "cause.failed.reason", CircleX);
+
+const entryOf = (error: Pick<OperationError, "status" | "method">): CauseEntry => {
+  if (error.status === 412) {
+    return error.method === "MOVE" || error.method === "COPY" ? ALREADY_EXISTS : CHANGED;
+  }
+  return CAUSES.get(error.status) ?? FAILED;
+};
 
 /**
  * Why an operation failed. A MOVE or COPY with `Overwrite: F` onto a name that exists fails with
  * 412, so a 412 from those two reads as a name that already exists; any other 412 is a condition
  * of the request, such as an `If-Match`, that no longer held.
  */
-export const causeOf = (error: Pick<OperationError, "status" | "method">): Cause => {
-  if (error.status === 412) {
-    return error.method === "MOVE" || error.method === "COPY" ? ALREADY_EXISTS : CHANGED;
-  }
-  return CAUSES.get(error.status) ?? FAILED;
+export const causeOf = (t: Translator, error: Pick<OperationError, "status" | "method">): Cause => {
+  const entry = entryOf(error);
+  return { label: t(entry.label), reason: t(entry.reason), glyph: entry.glyph, icon: entry.icon };
 };
 
 const METHOD_ICONS: ReadonlyMap<string, LucideIcon> = new Map([
@@ -117,30 +125,27 @@ export const requestOf = (error: Pick<OperationError, "method" | "path" | "desti
 export const minutesAgo = (iso: string, now: Date): number =>
   Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60_000));
 
-const inUnit = (unit: "minute" | "hour" | "day" | "month" | "year") =>
-  new Intl.NumberFormat("en", { style: "unit", unit, unitDisplay: "narrow" });
-const inMinutes = inUnit("minute");
-const inHours = inUnit("hour");
-const inDays = inUnit("day");
+const inUnit = (unit: "minute" | "hour" | "day" | "month" | "year", locale: Locale) =>
+  new Intl.NumberFormat(locale, { style: "unit", unit, unitDisplay: "narrow" });
 
 /** A span of minutes as short as it gets, such as "10m", "6h" or "2d", for the timeline's ticks. */
-export const shortSpan = (minutes: number): string => {
+export const shortSpan = (minutes: number, locale: Locale): string => {
   if (minutes < 60) {
-    return inMinutes.format(Math.round(minutes));
+    return inUnit("minute", locale).format(Math.round(minutes));
   }
   if (minutes < 24 * 60) {
-    return inHours.format(Math.round(minutes / 60));
+    return inUnit("hour", locale).format(Math.round(minutes / 60));
   }
-  return inDays.format(Math.round(minutes / (24 * 60)));
+  return inUnit("day", locale).format(Math.round(minutes / (24 * 60)));
 };
 
 /**
  * How long ago a time was, as short as it gets, such as "12m", "5h" or "2d". It shows the count and
  * the unit that `formatRelative` reads out, so "1h" and "1 hour ago" always name the same age.
  */
-export const shortAge = (iso: string, now: Date = new Date()): string => {
+export const shortAge = (iso: string, locale: Locale, now: Date = new Date()): string => {
   const { count, unit } = relativeSpan(iso, now);
-  return inUnit(unit).format(Math.abs(count));
+  return inUnit(unit, locale).format(Math.abs(count));
 };
 
 const numberIn = (attributes: Readonly<Record<string, unknown>>, name: string): number =>

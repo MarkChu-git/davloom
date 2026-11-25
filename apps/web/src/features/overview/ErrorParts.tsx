@@ -7,7 +7,7 @@ import * as stylex from "@stylexjs/stylex";
 import { Clock } from "lucide-react";
 import type { OperationError } from "../api/queries";
 import { FileName } from "../files/FileName";
-import { formatRelative } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
 import { causeOf, kindOf, methodIconOf, nameOf, shortAge, type Cause } from "./errors";
 
 const styles = stylex.create({
@@ -47,16 +47,19 @@ export const CauseMark = ({ cause, isLarge = false }: { cause: Cause; isLarge?: 
 );
 
 /** How long ago an operation failed, such as "12m" on screen and "12 minutes ago" when read. */
-export const Age = ({ at }: { at: string }) => (
-  <HStack gap={0} vAlign="center" xstyle={styles.keep}>
-    <HStack aria-hidden>
-      <Text type="supporting" color="secondary" hasTabularNumbers>
-        {shortAge(at)}
-      </Text>
+export const Age = ({ at }: { at: string }) => {
+  const t = useT();
+  return (
+    <HStack gap={0} vAlign="center" xstyle={styles.keep}>
+      <HStack aria-hidden>
+        <Text type="supporting" color="secondary" hasTabularNumbers>
+          {shortAge(at, t.locale)}
+        </Text>
+      </HStack>
+      <VisuallyHidden>{t.relative(at)}</VisuallyHidden>
     </HStack>
-    <VisuallyHidden>{formatRelative(at)}</VisuallyHidden>
-  </HStack>
-);
+  );
+};
 
 /** The file or folder an operation failed on, with a picture of its kind. */
 export const ErrorSubject = ({ error }: { error: OperationError }) => (
@@ -65,7 +68,8 @@ export const ErrorSubject = ({ error }: { error: OperationError }) => (
 
 /** An error's details: the status code and its cause, the request, the reason, and when. */
 export const ErrorDetails = ({ error }: { error: OperationError }) => {
-  const cause = causeOf(error);
+  const t = useT();
+  const cause = causeOf(t, error);
   return (
     <VStack gap={3}>
       <HStack gap={2} vAlign="center">
@@ -86,7 +90,7 @@ export const ErrorDetails = ({ error }: { error: OperationError }) => {
       <HStack gap={2} vAlign="center">
         <Icon icon={Clock} size="sm" color="secondary" />
         <Text type="supporting" color="secondary">
-          {formatRelative(error.at)}
+          {t.relative(error.at)}
         </Text>
       </HStack>
     </VStack>

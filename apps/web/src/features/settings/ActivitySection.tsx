@@ -6,7 +6,9 @@ import { ScrollableArea } from "@astryxdesign/core/ScrollableArea";
 import * as stylex from "@stylexjs/stylex";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { apiFetch } from "../api/client";
-import { formatCount, formatDateTime } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages/en";
+import type { Translator } from "../i18n/translate";
 import { LoadingRows, QueryState } from "../shell/QueryState";
 import { StatusLabel } from "../shell/StatusLabel";
 
@@ -53,125 +55,136 @@ export const useActivity = () =>
     getNextPageParam: (last) => last.next,
   });
 
-const TWO_FACTOR: Record<string, string> = {
-  enabled: "Turned on two-step verification",
-  disabled: "Turned off two-step verification",
-  "backup codes": "Made new backup codes",
+const TWO_FACTOR: Record<string, MessageKey> = {
+  enabled: "activity.twoFactor.enabled",
+  disabled: "activity.twoFactor.disabled",
+  "backup codes": "activity.twoFactor.backupCodes",
 };
 
-const PASSKEY: Record<string, string> = {
-  added: "Added a passkey",
-  renamed: "Renamed a passkey",
-  removed: "Removed a passkey",
+const PASSKEY: Record<string, MessageKey> = {
+  added: "activity.passkey.added",
+  renamed: "activity.passkey.renamed",
+  removed: "activity.passkey.removed",
 };
 
-const SESSIONS: Record<string, string> = {
-  one: "Signed out a session",
-  all: "Signed out every session",
-  others: "Signed out the other sessions",
+const SESSIONS: Record<string, MessageKey> = {
+  one: "activity.sessions.one",
+  all: "activity.sessions.all",
+  others: "activity.sessions.others",
 };
 
-const SIGN_IN: Record<string, string> = {
-  password: "with the password",
-  authenticator: "with the authenticator",
-  "backup code": "with a backup code",
-  passkey: "with a passkey",
+const SIGN_IN: Record<string, MessageKey> = {
+  password: "activity.how.password",
+  authenticator: "activity.how.authenticator",
+  "backup code": "activity.how.backupCode",
+  passkey: "activity.how.passkey",
 };
 
-const named = (prefix: string, target: string | null) =>
-  target === null ? prefix : `${prefix} ${target}`;
+/** A message that names its target, or its own words without one. */
+const named = (t: Translator, key: MessageKey, withName: MessageKey, target: string | null) =>
+  target === null ? t(key) : t(withName, { name: target });
 
 /** What an event says, as a line of the list. */
-export const describeEvent = ({ action, outcome, target }: AuditEvent): string => {
+export const describeEvent = (t: Translator, { action, outcome, target }: AuditEvent): string => {
   const how = target === null ? undefined : SIGN_IN[target];
   switch (action) {
     case "sign-in":
-      return `${outcome === "success" ? "Signed in" : "Refused a sign-in"}${how ? ` ${how}` : ""}`;
+      if (how === undefined) {
+        return outcome === "success" ? t("activity.signIn") : t("activity.signInRefused");
+      }
+      return t(outcome === "success" ? "activity.signInHow" : "activity.signInRefusedHow", {
+        how: t(how),
+      });
     case "sign-out":
-      return "Signed out";
+      return t("activity.signOut");
     case "registration":
-      return outcome === "success" ? "Registered the owner" : "Refused a registration";
+      return outcome === "success" ? t("activity.registered") : t("activity.registrationRefused");
     case "import":
-      return outcome === "success" ? "Imported an export" : "Refused an import";
+      return outcome === "success" ? t("activity.imported") : t("activity.importRefused");
     case "export":
-      return "Exported the instance";
+      return t("activity.exported");
     case "step-up":
       return outcome === "success"
-        ? "Verified again"
+        ? t("activity.verified")
         : outcome === "locked"
-          ? "Locked verification"
-          : "Refused a verification";
+          ? t("activity.verificationLocked")
+          : t("activity.verificationRefused");
     case "password":
-      return "Changed the password";
+      return t("activity.password");
     case "email":
-      return "Changed the email";
+      return t("activity.email");
     case "two-factor":
-      return TWO_FACTOR[target ?? ""] ?? "Changed two-step verification";
+      return t(TWO_FACTOR[target ?? ""] ?? "activity.twoFactor.changed");
     case "passkey":
-      return PASSKEY[target ?? ""] ?? "Changed a passkey";
+      return t(PASSKEY[target ?? ""] ?? "activity.passkey.changed");
     case "sessions":
-      return SESSIONS[target ?? ""] ?? "Signed out sessions";
+      return t(SESSIONS[target ?? ""] ?? "activity.sessions.some");
     case "key.create":
-      return named("Created the key", target);
+      return named(t, "activity.keyCreate", "activity.keyCreate.named", target);
     case "key.rename":
-      return named("Renamed a key to", target);
+      return named(t, "activity.keyRename", "activity.keyRename.named", target);
     case "key.revoke":
-      return "Revoked a key";
+      return t("activity.keyRevoke");
     case "backend.create":
-      return named("Added the backend", target);
+      return named(t, "activity.backendCreate", "activity.backendCreate.named", target);
     case "backend.edit":
-      return named("Changed the backend", target);
+      return named(t, "activity.backendEdit", "activity.backendEdit.named", target);
     case "backend.remove":
-      return "Removed a backend";
+      return t("activity.backendRemove");
     case "mount.create":
-      return named("Created the mount", target);
+      return named(t, "activity.mountCreate", "activity.mountCreate.named", target);
     case "mount.edit":
-      return "Changed a mount";
+      return t("activity.mountEdit");
     case "mount.remove":
-      return "Removed a mount";
+      return t("activity.mountRemove");
     case "settings":
-      return "Changed the default backend";
+      return t("activity.settings");
     case "webdav.auth":
-      return "Refused a WebDAV key";
+      return t("activity.webdavAuth");
     default:
       return action;
   }
 };
 
 /** When, from where, and how often an event happened. */
-export const eventDetails = (event: AuditEvent): string =>
+export const eventDetails = (t: Translator, event: AuditEvent): string =>
   [
-    formatDateTime(event.at),
+    t.dateTime(event.at),
     ...(event.address === null ? [] : [event.address]),
     ...(event.action === "webdav.auth" && event.target !== null ? [`${event.target}…`] : []),
-    ...(event.count > 1 ? [`${formatCount(event.count)} times`] : []),
+    ...(event.count > 1 ? [t("activity.times", { count: event.count })] : []),
   ].join(" · ");
 
 export const ActivityContent = () => {
+  const t = useT();
   const activity = useActivity();
   return (
     <QueryState
       query={activity}
-      title="Cannot read the activity"
+      title={t("activity.cannotRead")}
       loading={<LoadingRows rows={4} />}
     >
       {(data) => {
         const events = data.pages.flatMap((page) => page.events);
-        if (events.length === 0) return <EmptyState title="No activity yet" />;
+        if (events.length === 0) return <EmptyState title={t("activity.none")} />;
         return (
           <VStack gap={4}>
-            <ScrollableArea label="Activity" xstyle={styles.events}>
+            <ScrollableArea label={t("settings.activity")} xstyle={styles.events}>
               <List density="compact" edge="flush" hasDividers>
                 {events.map((event) => (
                   <ListItem
                     key={event.id}
-                    label={describeEvent(event)}
-                    description={eventDetails(event)}
+                    label={describeEvent(t, event)}
+                    description={eventDetails(t, event)}
                     endContent={
                       event.outcome === "success" ? undefined : (
                         <StatusLabel
                           tone="error"
-                          label={event.outcome === "locked" ? "Locked" : "Refused"}
+                          label={
+                            event.outcome === "locked"
+                              ? t("activity.outcome.locked")
+                              : t("activity.outcome.refused")
+                          }
                         />
                       )
                     }
@@ -182,7 +195,7 @@ export const ActivityContent = () => {
             {activity.hasNextPage ? (
               <HStack>
                 <Button
-                  label="Show more"
+                  label={t("activity.more")}
                   variant="secondary"
                   isLoading={activity.isFetchingNextPage}
                   onClick={() => void activity.fetchNextPage()}

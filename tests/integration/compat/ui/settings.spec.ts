@@ -123,14 +123,18 @@ test(
   },
 );
 
-test("The modes on offer: Appearance offers Light, Dark and System, with System selected", async ({
+test("The modes on offer: Appearance offers Light, Dark and System, with System selected, and the languages English, 简体中文 and System", async ({
   page,
 }) => {
   await page.goto("/settings?section=appearance");
-  await expect(page.getByRole("radio")).toHaveCount(3);
-  await expect(page.getByRole("radio", { name: "Light" })).not.toBeChecked();
-  await expect(page.getByRole("radio", { name: "Dark" })).not.toBeChecked();
-  await expect(page.getByRole("radio", { name: "System" })).toBeChecked();
+  const mode = page.getByRole("radiogroup", { name: "Appearance" });
+  await expect(mode.getByRole("radio")).toHaveCount(3);
+  await expect(mode.getByRole("radio", { name: "Light" })).not.toBeChecked();
+  await expect(mode.getByRole("radio", { name: "Dark" })).not.toBeChecked();
+  await expect(mode.getByRole("radio", { name: "System" })).toBeChecked();
+  const language = page.getByRole("radiogroup", { name: "Language" });
+  await expect(language.getByRole("radio")).toHaveText(["English", "简体中文", "System"]);
+  await expect(language.getByRole("radio", { name: "System" })).toBeChecked();
 });
 
 test("Connecting a client: the WebDAV section shows this instance's /dav/ address with Copy address, and says the password is an API key", async ({

@@ -1,6 +1,9 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import { DavError, davHref, davProblem, entriesOf, hrefParts, type DavResponse } from "./dav";
+
+const en = translator("en");
 
 const response = (href: string, rest: Partial<DavResponse> = {}): DavResponse => ({
   href,
@@ -107,10 +110,15 @@ describe("refusals", () => {
     [507, "full"],
     [500, "(500)"],
   ])("%d says %s", (status, words) => {
-    expect(davProblem(new DavError(status), "/files")).toContain(words);
+    expect(davProblem(en, new DavError(status), "/files")).toContain(words);
   });
 
   it("an error that is not a refusal asks to try again", () => {
-    expect(davProblem(new Error("boom"))).toBe("Something went wrong. Try again.");
+    expect(davProblem(en, new Error("boom"))).toBe("Something went wrong. Try again.");
+  });
+
+  it("names the path in Chinese too", () => {
+    expect(davProblem(translator("zh-CN"), new DavError(404), "/files")).toContain("/files");
+    expect(davProblem(translator("zh-CN"), new DavError(404), "/files")).not.toContain("no longer");
   });
 });

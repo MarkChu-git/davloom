@@ -10,6 +10,7 @@ import { useState } from "react";
 import { importInstance, register, registrationQuery, signInWithPassword } from "../api/account";
 import { describeError, isApiError } from "../api/client";
 import { keys } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
 import { AuthFrame } from "./AuthFrame";
 import { registrationProblems, type RegistrationFields } from "./forms";
 import { GoTo } from "./GoTo";
@@ -25,7 +26,6 @@ const FIELD_OF_CODE: Readonly<Record<string, keyof RegistrationFields>> = {
 /** The largest export file the Dashboard reads. */
 const MAX_EXPORT_BYTES = 50 * 1024 * 1024;
 
-const SETUP_TOKEN_MISSING = "Enter the setup token.";
 const SETUP_TOKEN_CODE = "setup_token_invalid";
 
 /** The deployment's setup token (DAVLOOM_SETUP_TOKEN), when registering needs it. */
@@ -45,10 +45,11 @@ const SetupTokenField = ({
   problem: string | undefined;
   onChange: () => void;
   onEnter: () => void;
-}) =>
-  token.required ? (
+}) => {
+  const t = useT();
+  return token.required ? (
     <TextInput
-      label="Setup token"
+      label={t("register.setupToken")}
       type="password"
       value={token.value}
       onChange={(value) => {
@@ -60,9 +61,11 @@ const SetupTokenField = ({
       status={problem === undefined ? undefined : { type: "error", message: problem }}
     />
   ) : null;
+};
 
 /** An instance from an export of another: its owner, keys, backends and mounts. */
 const ImportForm = ({ token }: { token: SetupToken }) => {
+  const t = useT();
   const client = useQueryClient();
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
@@ -73,9 +76,10 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
 
   const submit = async () => {
     const next = {
-      file: file === null ? "Choose the export file." : undefined,
-      key: key.trim() === "" ? "Enter the export key." : undefined,
-      token: token.required && token.value.trim() === "" ? SETUP_TOKEN_MISSING : undefined,
+      file: file === null ? t("register.exportFileMissing") : undefined,
+      key: key.trim() === "" ? t("register.exportKeyMissing") : undefined,
+      token:
+        token.required && token.value.trim() === "" ? t("register.setupTokenMissing") : undefined,
     };
     setProblems(next);
     setFailure(undefined);
@@ -88,7 +92,7 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
       try {
         parsed = JSON.parse(await file.text());
       } catch {
-        setFailure("That file is not a Davloom export.");
+        setFailure(t("register.notAnExport"));
         setIsImporting(false);
         return;
       }
@@ -101,9 +105,9 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
       await navigate({ to: "/sign-in", replace: true });
     } catch (error) {
       if (isApiError(error) && error.code === SETUP_TOKEN_CODE) {
-        setProblems({ token: describeError(error) });
+        setProblems({ token: describeError(t, error) });
       } else {
-        setFailure(describeError(error));
+        setFailure(describeError(t, error));
       }
       setIsImporting(false);
     }
@@ -114,7 +118,7 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       <VStack gap={4}>
         <FileInput
-          label="Export file"
+          label={t("register.exportFile")}
           value={file}
           onChange={(next) => {
             setFile(Array.isArray(next) ? (next[0] ?? null) : next);
@@ -127,7 +131,7 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
           }
         />
         <TextInput
-          label="Export key"
+          label={t("register.exportKey")}
           type="password"
           value={key}
           onChange={(value) => {
@@ -146,7 +150,7 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
         />
       </VStack>
       <Button
-        label="Import"
+        label={t("register.import")}
         variant="primary"
         isLoading={isImporting}
         onClick={() => void submit()}
@@ -161,6 +165,7 @@ const ImportForm = ({ token }: { token: SetupToken }) => {
  * sends every visitor to sign in.
  */
 export const RegisterPage = () => {
+  const t = useT();
   const client = useQueryClient();
   const navigate = useNavigate();
   const registration = useQuery(registrationQuery);
@@ -189,18 +194,22 @@ export const RegisterPage = () => {
   }
   if (registration.isError) {
     return (
-      <AuthFrame title="Create account">
-        <Banner status="error" title={describeError(registration.error)} container="card" />
-        <Button label="Try again" variant="secondary" onClick={() => void registration.refetch()} />
+      <AuthFrame title={t("register.title")}>
+        <Banner status="error" title={describeError(t, registration.error)} container="card" />
+        <Button
+          label={t("action.tryAgain")}
+          variant="secondary"
+          onClick={() => void registration.refetch()}
+        />
       </AuthFrame>
     );
   }
 
   const submit = async () => {
-    const next = registrationProblems(fields);
+    const next = registrationProblems(t, fields);
     const missingToken = token.required && setupToken.trim() === "";
     setProblems(next);
-    setTokenProblem(missingToken ? SETUP_TOKEN_MISSING : undefined);
+    setTokenProblem(missingToken ? t("register.setupTokenMissing") : undefined);
     setFailure(undefined);
     if (Object.keys(next).length > 0 || missingToken) {
       return;
@@ -221,13 +230,13 @@ export const RegisterPage = () => {
     } catch (error) {
       const field = isApiError(error) ? FIELD_OF_CODE[error.code] : undefined;
       if (field !== undefined) {
-        setProblems({ [field]: describeError(error) });
+        setProblems({ [field]: describeError(t, error) });
       } else if (isApiError(error) && error.code === SETUP_TOKEN_CODE) {
-        setTokenProblem(describeError(error));
+        setTokenProblem(describeError(t, error));
       } else if (isApiError(error) && error.code === "registration_closed") {
         await client.invalidateQueries({ queryKey: registrationQuery.queryKey });
       } else {
-        setFailure(describeError(error));
+        setFailure(describeError(t, error));
       }
       setIsSaving(false);
     }
@@ -248,19 +257,19 @@ export const RegisterPage = () => {
 
   const modes = (
     <SegmentedControl
-      label="Start from"
+      label={t("register.startFrom")}
       value={mode}
       onChange={(next) => setMode(next === "import" ? "import" : "new")}
       layout="fill"
     >
-      <SegmentedControlItem value="new" label="New account" />
-      <SegmentedControlItem value="import" label="From an export" />
+      <SegmentedControlItem value="new" label={t("register.newAccount")} />
+      <SegmentedControlItem value="import" label={t("register.fromExport")} />
     </SegmentedControl>
   );
 
   if (mode === "import") {
     return (
-      <AuthFrame title="Create account">
+      <AuthFrame title={t("register.title")}>
         {modes}
         <ImportForm token={token} />
       </AuthFrame>
@@ -268,12 +277,12 @@ export const RegisterPage = () => {
   }
 
   return (
-    <AuthFrame title="Create account">
+    <AuthFrame title={t("register.title")}>
       {modes}
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       <VStack gap={4}>
         <TextInput
-          label="Username"
+          label={t("field.username")}
           {...field("username")}
           autoComplete="username"
           autoCapitalize="none"
@@ -282,14 +291,14 @@ export const RegisterPage = () => {
           hasAutoFocus
         />
         <TextInput
-          label="Display name"
+          label={t("field.displayName")}
           isOptional
           {...field("name")}
           autoComplete="name"
           hasSpellCheck={false}
         />
         <TextInput
-          label="Email"
+          label={t("field.email")}
           type="email"
           isOptional
           {...field("email")}
@@ -298,7 +307,7 @@ export const RegisterPage = () => {
           hasSpellCheck={false}
         />
         <NewPasswordField
-          label="Password"
+          label={t("field.password")}
           value={fields.password}
           onChange={field("password").onChange}
           onEnter={() => void submit()}
@@ -312,7 +321,7 @@ export const RegisterPage = () => {
         />
       </VStack>
       <Button
-        label="Create account"
+        label={t("register.submit")}
         variant="primary"
         isLoading={isSaving}
         onClick={() => void submit()}

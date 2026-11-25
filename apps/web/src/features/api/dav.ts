@@ -1,4 +1,5 @@
 import { joinPath } from "../files/paths";
+import type { Translator } from "../i18n/translate";
 import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
 
 // The Dashboard's WebDAV client. It reaches /dav with the session cookie, which the server takes
@@ -423,39 +424,39 @@ export const uploadFile = async (
 };
 
 /** What a refused WebDAV request means, in a sentence. */
-export const davProblem = (error: unknown, path: string = joinPath([])): string => {
+export const davProblem = (t: Translator, error: unknown, path: string = joinPath([])): string => {
   if (!isDavError(error)) {
-    return "Something went wrong. Try again.";
+    return t("error.unknown");
   }
   switch (error.status) {
     case 0:
-      return "Davloom could not be reached. Check the connection and try again.";
+      return t("error.network");
     case 401:
-      return "Your session has ended. Sign in again.";
+      return t("error.unauthorized");
     case 403:
       return error.code === VERIFICATION_REQUIRED
-        ? "Verify it is you to do this."
-        : "This session may not change files here.";
+        ? t("error.verificationRequired")
+        : t("dav.forbidden");
     case 404:
-      return `${path} is no longer there.`;
+      return t("dav.notFound", { path });
     case 405:
     case 412:
-      return "Something with this name is already there.";
+      return t("dav.exists");
     case 409:
-      return "The destination folder does not exist.";
+      return t("dav.noDestination");
     case 413:
-      return "The file is larger than one request may carry.";
+      return t("dav.tooLarge");
     case 423:
-      return "It is locked. Unlock it, then try again.";
+      return t("dav.locked");
     case 501:
-      return "This server does not serve files yet.";
+      return t("dav.notImplemented");
     case 502:
-      return "The server's answer could not be read.";
+      return t("dav.badGateway");
     case 503:
-      return "The storage backend is not answering.";
+      return t("dav.unavailable");
     case 507:
-      return "The storage backend is full.";
+      return t("dav.full");
     default:
-      return `The server refused the request (${error.status}).`;
+      return t("error.refused", { status: String(error.status) });
   }
 };

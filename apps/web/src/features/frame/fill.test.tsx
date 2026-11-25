@@ -1,33 +1,44 @@
 import * as fc from "fast-check";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webdavAddress } from "../api/dav";
+import { LOCALES, type Locale } from "../i18n/locale";
+import { translator, type Translator } from "../i18n/translate";
 import { formatBytes, formatCount } from "../shell/format";
 import {
   FILL_SCRIPT,
   FRAME_PARSED_SCRIPT,
+  FRAME_WORDS,
   type FrameOverview,
   fillFrame,
   frameTexts,
 } from "./fill";
 
-const plural = (count: number, one: string, many: string) =>
-  `${formatCount(count)} ${count === 1 ? one : many}`;
-
-/** The tiles' texts as OverviewPage wrote them from format.ts before the frame shared them. */
-const pageTexts = ({ usage, mounts, backends }: FrameOverview): Record<string, string> => {
+/** The tiles' texts as the Dashboard's own translator writes them. */
+const pageTexts = (t: Translator, { usage, mounts, backends }: FrameOverview) => {
   const hasKnownCapacity = backends.some(
     (backend) => typeof backend.capacity === "number" && backend.capacity > 0,
   );
   return {
-    stored: formatBytes(usage.bytes),
-    "stored-caption": `${plural(usage.files, "file", "files")} in ${plural(usage.collections, "folder", "folders")}`,
-    mounts: formatCount(mounts.length),
-    "mounts-caption": `On ${new Set(mounts.map((mount) => mount.backendId)).size} of ${plural(backends.length, "backend", "backends")}`,
+    stored: t.bytes(usage.bytes),
+    "stored-caption": t("overview.storedCaption", {
+      files: t("count.files", { count: usage.files }),
+      folders: t("count.folders", { count: usage.collections }),
+    }),
+    mounts: t.count(mounts.length),
+    "mounts-caption": t("overview.mountsCaption", {
+      used: new Set(mounts.map((mount) => mount.backendId)).size,
+      backends: t("count.backends", { count: backends.length }),
+    }),
     ...(hasKnownCapacity
       ? {}
-      : { capacity: "No fixed limit", "capacity-caption": `${formatBytes(usage.bytes)} stored` }),
+      : {
+          capacity: t("overview.noFixedLimit"),
+          "capacity-caption": t("overview.bytesStored", { bytes: t.bytes(usage.bytes) }),
+        }),
   };
 };
+
+const locales = fc.constantFrom<Locale>(...LOCALES);
 
 const bytes = fc.oneof(
   fc.nat(),
@@ -54,7 +65,9 @@ describe("the frame's formatters", () => {
   it("format bytes as format.ts does", () => {
     fc.assert(
       fc.property(bytes, (value) => {
-        expect(frameTexts.formatBytes(value)).toBe(formatBytes(value));
+        for (const locale of LOCALES) {
+          expect(frameTexts.formatBytes(value, locale)).toBe(formatBytes(value, locale));
+        }
       }),
     );
   });
@@ -62,17 +75,28 @@ describe("the frame's formatters", () => {
   it("format counts as format.ts does", () => {
     fc.assert(
       fc.property(fc.oneof(fc.nat(), fc.integer()), (value) => {
-        expect(frameTexts.formatCount(value)).toBe(formatCount(value));
+        for (const locale of LOCALES) {
+          expect(frameTexts.formatCount(value, locale)).toBe(formatCount(value, locale));
+        }
       }),
     );
   });
 
-  it("write the overview's tiles as the page wrote them", () => {
+  it("write the overview's tiles as the Dashboard's translator does, in either language", () => {
     fc.assert(
-      fc.property(overviews, (overview) => {
-        expect(frameTexts.overviewTexts(overview)).toEqual(pageTexts(overview));
+      fc.property(overviews, locales, (overview, locale) => {
+        expect(frameTexts.overviewTexts(overview, locale)).toEqual(
+          pageTexts(translator(locale), overview),
+        );
       }),
     );
+  });
+
+  it("write the overview's tiles in Chinese", () => {
+    expect(frameTexts.overviewTexts(OVERVIEW, "zh-CN")).toMatchObject({
+      "stored-caption": "1 个文件，分布在 3 个文件夹中",
+      capacity: translator("zh-CN")("overview.noFixedLimit"),
+    });
   });
 
   it.each([
@@ -161,7 +185,9 @@ const compile = (source: string): (() => unknown) => {
   return () => Reflect.apply(script, undefined, []);
 };
 
-const runScript = isInstrumented ? () => fillFrame() : () => compile(FILL_SCRIPT)();
+const runScript = isInstrumented
+  ? () => fillFrame(undefined, FRAME_WORDS)
+  : () => compile(FILL_SCRIPT)();
 
 /** Runs the frame's script at `path` over the frame `html`. */
 const run = (path: string, html: string, { inert = true } = {}) => {
@@ -186,6 +212,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  document.documentElement.removeAttribute("lang");
   document.body.removeAttribute("inert");
   window.history.replaceState(null, "", "/");
 });
@@ -208,6 +235,15 @@ describe("the frame's script", () => {
     expect(text("capacity")?.textContent).toBe("No fixed limit");
     expect(text("mounts")?.textContent).toBe("2");
     expect(document.querySelectorAll("[data-frame-placeholder]")).toHaveLength(0);
+  });
+
+  it("writes them in the language <html> names", async () => {
+    document.documentElement.lang = "zh-CN";
+    answer({ "/api/overview": OVERVIEW });
+    const reads = run("/", TILES);
+    await settle(reads);
+    expect(text("stored-caption")?.textContent).toBe("1 个文件，分布在 3 个文件夹中");
+    expect(text("capacity")?.textContent).toBe(translator("zh-CN")("overview.noFixedLimit"));
   });
 
   it("leaves the skeleton of a tile that draws a meter", async () => {

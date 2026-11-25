@@ -40,6 +40,8 @@ import {
   type Backend,
   type Mount,
 } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { ExpandableList } from "../shell/ExpandableList";
 import { buttonLabelled, buttonNamed, refocusIfLost } from "../shell/focus";
 import { AfterFirstPaint } from "../shell/AfterFirstPaint";
@@ -56,8 +58,8 @@ import { mountFolderOf, mountNameProblem } from "./mountName";
 type MountRow = Mount & Record<string, unknown>;
 
 const pathOf = (mount: Pick<Mount, "name">): string => `/${mount.name}`;
-const folderOf = (mount: Pick<Mount, "root">): string =>
-  mount.root === "" ? "Whole backend" : `/${mount.root}`;
+const folderOf = (t: Translator, mount: Pick<Mount, "root">): string =>
+  mount.root === "" ? t("mount.wholeBackend") : `/${mount.root}`;
 
 const identifier = {
   autoCapitalize: "none",
@@ -81,39 +83,49 @@ const DialogFrame = ({
   onCancel: () => void;
   onSubmit: () => void;
   children: ReactNode;
-}) => (
-  <Layout
-    header={<DialogHeader title={title} onOpenChange={onCancel} />}
-    content={
-      <LayoutContent>
-        <VStack gap={4}>
-          {failure === undefined ? null : (
-            <Banner status="error" title={failure} container="card" />
-          )}
-          {children}
-        </VStack>
-      </LayoutContent>
-    }
-    footer={
-      <LayoutFooter>
-        <HStack gap={2} hAlign="end">
-          <Button label="Cancel" variant="secondary" onClick={onCancel} />
-          <Button label={submitLabel} variant="primary" isLoading={isSaving} onClick={onSubmit} />
-        </HStack>
-      </LayoutFooter>
-    }
-  />
-);
+}) => {
+  const t = useT();
+  return (
+    <Layout
+      header={<DialogHeader title={title} onOpenChange={onCancel} />}
+      content={
+        <LayoutContent>
+          <VStack gap={4}>
+            {failure === undefined ? null : (
+              <Banner status="error" title={failure} container="card" />
+            )}
+            {children}
+          </VStack>
+        </LayoutContent>
+      }
+      footer={
+        <LayoutFooter>
+          <HStack gap={2} hAlign="end">
+            <Button label={t("action.cancel")} variant="secondary" onClick={onCancel} />
+            <Button label={submitLabel} variant="primary" isLoading={isSaving} onClick={onSubmit} />
+          </HStack>
+        </LayoutFooter>
+      }
+    />
+  );
+};
 
-const mountFailure = (error: unknown): { name?: string; root?: string; failure?: string } => {
+const mountFailure = (
+  t: Translator,
+  error: unknown,
+): { name?: string; root?: string; failure?: string } => {
   if (isApiError(error) && error.code === "name_taken") {
-    return { name: "Another mount already uses this folder." };
+    return { name: t("mount.nameTaken") };
   }
   if (isApiError(error) && error.code === "invalid_input") {
-    return { failure: "The server refused the mount. Check the folder name and the folder." };
+    return { failure: t("mount.refused") };
   }
-  return { failure: describeError(error) };
+  return { failure: describeError(t, error) };
 };
+
+/** The title of the mount form: Add a mount, or Rename /files. */
+export const mountFormTitle = (t: Translator, mount?: Mount): string =>
+  mount === undefined ? t("mount.addTitle") : t("mount.renameTitle", { path: pathOf(mount) });
 
 /** Adds a mount, or renames one: a mount keeps its backend and folder. */
 const MountForm = ({
@@ -132,6 +144,7 @@ const MountForm = ({
   onCancel: () => void;
   onSaved: (path: string) => void;
 }) => {
+  const t = useT();
   const create = useCreateMount();
   const rename = useRenameMount();
   const [name, setName] = useState(mount?.name ?? "");
@@ -147,10 +160,10 @@ const MountForm = ({
 
   const submit = () => {
     const folder = mountFolderOf(name);
-    const nameProblem = mountNameProblem(name, takenPaths);
+    const nameProblem = mountNameProblem(t, name, takenPaths);
     const rootParts = root.split("/").filter((part) => part.trim() !== "");
     const rootProblem = rootParts.some((part) => part === "." || part === "..")
-      ? "Name a folder of the backend, without . or .. in its path."
+      ? t("mount.rootDots")
       : undefined;
     setProblems({ name: nameProblem, root: mount === undefined ? rootProblem : undefined });
     if (nameProblem !== undefined || (mount === undefined && rootProblem !== undefined)) {
@@ -159,7 +172,7 @@ const MountForm = ({
     if (isSaving) {
       return;
     }
-    const onError = (error: Error) => setProblems(mountFailure(error));
+    const onError = (error: Error) => setProblems(mountFailure(t, error));
     if (mount === undefined) {
       create.mutate(
         { name: folder, backendId, root: rootParts.join("/") },
@@ -168,8 +181,8 @@ const MountForm = ({
           onError: (error) =>
             setProblems(
               isApiError(error) && error.code === "invalid_input" && rootParts.length > 0
-                ? { root: "No folder of this name is in the backend." }
-                : mountFailure(error),
+                ? { root: t("mount.rootMissing") }
+                : mountFailure(t, error),
             ),
         },
       );
@@ -185,16 +198,16 @@ const MountForm = ({
 
   return (
     <DialogFrame
-      title={mount === undefined ? "Add a mount" : `Rename ${pathOf(mount)}`}
-      submitLabel={mount === undefined ? "Add mount" : "Rename"}
+      title={mountFormTitle(t, mount)}
+      submitLabel={mount === undefined ? t("mount.add") : t("action.rename")}
       isSaving={isSaving}
       failure={problems.failure}
       onCancel={onCancel}
       onSubmit={submit}
     >
       <TextInput
-        label="Folder name"
-        description="WebDAV clients see the mount as this folder."
+        label={t("mount.folderName")}
+        description={t("mount.folderNameDescription")}
         value={name}
         onChange={(value) => {
           setName(value);
@@ -209,18 +222,18 @@ const MountForm = ({
       {mount === undefined ? (
         <>
           <Selector
-            label="Backend"
+            label={t("mount.backend")}
             value={backendId}
             onChange={setBackendId}
             options={backends.map((backend) => ({
               value: backend.id,
               label: backend.name,
-              description: kindLabel(backend.kind),
+              description: kindLabel(t, backend.kind),
             }))}
           />
           <TextInput
-            label="Folder in the backend"
-            description="Leave it empty to show the whole backend."
+            label={t("mount.root")}
+            description={t("mount.rootDescription")}
             value={root}
             onChange={(value) => {
               setRoot(value);
@@ -236,10 +249,10 @@ const MountForm = ({
         </>
       ) : (
         <MetadataList>
-          <MetadataListItem label="Backend">
-            {backends.find((backend) => backend.id === mount.backendId)?.name ?? "Unknown"}
+          <MetadataListItem label={t("mount.backend")}>
+            {backends.find((backend) => backend.id === mount.backendId)?.name ?? t("files.unknown")}
           </MetadataListItem>
-          <MetadataListItem label="Folder">{folderOf(mount)}</MetadataListItem>
+          <MetadataListItem label={t("files.folder")}>{folderOf(t, mount)}</MetadataListItem>
         </MetadataList>
       )}
     </DialogFrame>
@@ -261,6 +274,7 @@ const MoveForm = ({
   onCancel: () => void;
   onSaved: (backend: string) => void;
 }) => {
+  const t = useT();
   const move = useMoveMount();
   const others = backends.filter((backend) => backend.id !== mount.backendId);
   const [backendId, setBackendId] = useState(others[0]?.id ?? "");
@@ -270,7 +284,7 @@ const MoveForm = ({
   const submit = () => {
     const rootParts = root.split("/").filter((part) => part.trim() !== "");
     if (rootParts.some((part) => part === "." || part === "..")) {
-      setProblems({ root: "Name a folder of the backend, without . or .. in its path." });
+      setProblems({ root: t("mount.rootDots") });
       return;
     }
     if (backendId === "" || move.isPending) return;
@@ -278,12 +292,14 @@ const MoveForm = ({
       { id: mount.id, backendId, root: rootParts.join("/") },
       {
         onSuccess: () =>
-          onSaved(backends.find((backend) => backend.id === backendId)?.name ?? "the backend"),
+          onSaved(
+            backends.find((backend) => backend.id === backendId)?.name ?? t("mount.theBackend"),
+          ),
         onError: (error) =>
           setProblems(
             isApiError(error) && error.code === "invalid_input"
-              ? { root: "No folder of this name is in the backend." }
-              : { failure: describeError(error) },
+              ? { root: t("mount.rootMissing") }
+              : { failure: describeError(t, error) },
           ),
       },
     );
@@ -291,33 +307,27 @@ const MoveForm = ({
 
   return (
     <DialogFrame
-      title={`Move ${pathOf(mount)}`}
-      submitLabel="Move mount"
+      title={moveFormTitle(t, mount)}
+      submitLabel={t("mount.moveSubmit")}
       isSaving={move.isPending}
-      failure={
-        problems.failure ??
-        (others.length === 0 ? "Add another backend first, then copy the files to it." : undefined)
-      }
+      failure={problems.failure ?? (others.length === 0 ? t("mount.noOtherBackend") : undefined)}
       onCancel={onCancel}
       onSubmit={submit}
     >
-      <Text>
-        Copy the files first, with bun run migrate from a mount of this backend to a mount of the
-        new one. Moving the mount then shows the new backend&apos;s files under {pathOf(mount)}.
-      </Text>
+      <Text>{t("mount.moveHow", { path: pathOf(mount) })}</Text>
       <Selector
-        label="Backend"
+        label={t("mount.backend")}
         value={backendId}
         onChange={setBackendId}
         options={others.map((backend) => ({
           value: backend.id,
           label: backend.name,
-          description: kindLabel(backend.kind),
+          description: kindLabel(t, backend.kind),
         }))}
       />
       <TextInput
-        label="Folder in the backend"
-        description="Leave it empty to show the whole backend."
+        label={t("mount.root")}
+        description={t("mount.rootDescription")}
         value={root}
         onChange={(value) => {
           setRoot(value);
@@ -332,11 +342,16 @@ const MoveForm = ({
   );
 };
 
+/** The title of the form that moves a mount. */
+const moveFormTitle = (t: Translator, mount: Mount): string =>
+  t("mount.moveTitle", { path: pathOf(mount) });
+
 /** The narrowest mount table, in rem, that has room for a column per detail. */
 const WIDE_MOUNT_TABLE = 39;
 
 /** Storage & Mounts (PRD §8.4): where bytes live, and how they appear to WebDAV clients. */
 export const StoragePage = () => {
+  const t = useT();
   const backendsQuery = useBackends();
   const mountsQuery = useMounts();
   const settings = useStorageSettings();
@@ -352,7 +367,7 @@ export const StoragePage = () => {
   const mounts = mountsQuery.data ?? [];
 
   const backendName = (id: string): string =>
-    backends.find((backend) => backend.id === id)?.name ?? "Unknown backend";
+    backends.find((backend) => backend.id === id)?.name ?? t("overview.unknownBackend");
 
   // Each form gets a new key, so that it starts from its mount or the default (useFormDialog).
   const openForm = (mount?: Mount) =>
@@ -366,16 +381,19 @@ export const StoragePage = () => {
         onCancel={() => dialog.hide()}
         onSaved={(path) => {
           dialog.hide();
-          toast({ body: mount === undefined ? `Added ${path}.` : `Renamed to ${path}.` });
+          toast({
+            body: mount === undefined ? t("mount.added", { path }) : t("mount.renamed", { path }),
+          });
         }}
       />,
+      mountFormTitle(t, mount),
       // Rename opens from the mount's menu, which is gone once the dialog is open, or on a phone
       // from the mount's details, whose button a tap does not focus in every browser.
       mount === undefined
         ? undefined
         : () =>
-            buttonLabelled(`Actions for mount ${pathOf(mount)}`) ??
-            buttonLabelled(`Details for mount ${pathOf(mount)}`),
+            buttonLabelled(t("mount.actionsFor", { path: pathOf(mount) })) ??
+            buttonLabelled(t("mount.detailsFor", { path: pathOf(mount) })),
     );
 
   // Without the instance's answer, the form offers the kinds every deployment of Davloom can
@@ -392,35 +410,46 @@ export const StoragePage = () => {
         onCancel={() => dialog.hide()}
         onSaved={(name) => {
           dialog.hide();
-          toast({ body: backend === undefined ? `Added backend “${name}”.` : `Saved “${name}”.` });
+          toast({
+            body:
+              backend === undefined
+                ? t("backendForm.added", { name })
+                : t("backendForm.saved", { name }),
+          });
         }}
       />,
       backend === undefined
+        ? t("backendForm.addTitle")
+        : t("backendForm.editTitle", { name: backend.name }),
+      backend === undefined
         ? undefined
-        : () => buttonLabelled(`Actions for backend ${backend.name}`),
+        : () => buttonLabelled(t("backendCard.actionsFor", { name: backend.name })),
     );
 
   const openRemoveBackend = (backend: Backend) => {
     const used = mounts.filter((mount) => mount.backendId === backend.id);
     confirm.show({
-      title: `Remove ${backend.name}?`,
+      title: t("backendForm.removeTitle", { name: backend.name }),
       description:
         used.length > 0
-          ? `${used.map(pathOf).join(", ")} ${used.length === 1 ? "uses" : "use"} this backend. Move or remove ${used.length === 1 ? "it" : "them"} first.`
+          ? t("backendForm.removeUsed", {
+              count: used.length,
+              paths: used.map(pathOf).join(t("keys.pathSeparator")),
+            })
           : backend.kind === "durable-object"
-            ? "Its storage is deleted with it. A backend that still holds files cannot be removed."
-            : "Its objects stay in the bucket. Davloom forgets the backend and its WebDAV properties.",
-      actionLabel: "Remove backend",
+            ? t("backendForm.removeDurable")
+            : t("backendForm.removeBucket"),
+      actionLabel: t("backendForm.remove"),
       onAction: () => {
         confirm.hide();
         removeBackend.mutate(backend.id, {
           onSuccess: (result) =>
             toast({
               body: result.filesKept
-                ? `Removed “${backend.name}”. Its objects stay in the bucket.`
-                : `Removed “${backend.name}” and its storage.`,
+                ? t("backendForm.removedKept", { name: backend.name })
+                : t("backendForm.removed", { name: backend.name }),
             }),
-          onError: (error) => toast({ type: "error", body: describeError(error) }),
+          onError: (error) => toast({ type: "error", body: describeError(t, error) }),
         });
       },
     });
@@ -435,19 +464,20 @@ export const StoragePage = () => {
         onCancel={() => dialog.hide()}
         onSaved={(name) => {
           dialog.hide();
-          toast({ body: `${pathOf(mount)} now shows ${name}.` });
+          toast({ body: t("mount.moved", { path: pathOf(mount), name }) });
         }}
       />,
+      moveFormTitle(t, mount),
       () =>
-        buttonLabelled(`Actions for mount ${pathOf(mount)}`) ??
-        buttonLabelled(`Details for mount ${pathOf(mount)}`),
+        buttonLabelled(t("mount.actionsFor", { path: pathOf(mount) })) ??
+        buttonLabelled(t("mount.detailsFor", { path: pathOf(mount) })),
     );
 
   const openRemove = (mount: Mount) =>
     confirm.show({
-      title: `Remove ${pathOf(mount)}?`,
-      description: "Its files stay in the backend, and a new mount of its folder shows them again.",
-      actionLabel: "Remove mount",
+      title: t("mount.removeTitle", { path: pathOf(mount) }),
+      description: t("mount.removeDescription"),
+      actionLabel: t("mount.remove"),
       onAction: () => {
         const index = mounts.findIndex((item) => item.id === mount.id);
         const rest = mounts.filter((item) => item.id !== mount.id);
@@ -455,17 +485,17 @@ export const StoragePage = () => {
         confirm.hide();
         remove.mutate(mount.id, {
           onSuccess: () => {
-            toast({ body: `Removed ${pathOf(mount)}.` });
+            toast({ body: t("mount.removed", { path: pathOf(mount) }) });
             // The row goes away with its menu, or on a phone with its details, so focus moves to
             // the next mount's menu or row, or else to Add mount.
             refocusIfLost(() =>
               next === undefined
-                ? buttonNamed("Add mount")
-                : (buttonLabelled(`Actions for mount ${pathOf(next)}`) ??
-                  buttonLabelled(`Details for mount ${pathOf(next)}`)),
+                ? buttonNamed(t("mount.add"))
+                : (buttonLabelled(t("mount.actionsFor", { path: pathOf(next) })) ??
+                  buttonLabelled(t("mount.detailsFor", { path: pathOf(next) }))),
             );
           },
-          onError: (error) => toast({ type: "error", body: describeError(error) }),
+          onError: (error) => toast({ type: "error", body: describeError(t, error) }),
         });
       },
     });
@@ -473,42 +503,46 @@ export const StoragePage = () => {
   const columns: TableColumn<MountRow>[] = [
     {
       key: "name",
-      header: "Mount",
+      header: t("keys.mount"),
       width: proportional(1, { minWidth: 120 }),
       renderCell: (mount) => pathOf(mount),
     },
     {
       key: "backendId",
-      header: "Backend",
+      header: t("mount.backend"),
       width: proportional(1, { minWidth: 140 }),
       renderCell: (mount) => backendName(mount.backendId),
     },
     {
       key: "root",
-      header: "Folder",
+      header: t("files.folder"),
       width: proportional(2, { minWidth: 160 }),
       renderCell: (mount) =>
         mount.root === "" ? (
-          <Text color="secondary">Whole backend</Text>
+          <Text color="secondary">{t("mount.wholeBackend")}</Text>
         ) : (
-          <Text type="code">{folderOf(mount)}</Text>
+          <Text type="code">{folderOf(t, mount)}</Text>
         ),
     },
     {
       key: "actions",
-      header: <VisuallyHidden>Actions</VisuallyHidden>,
+      header: <VisuallyHidden>{t("files.actions")}</VisuallyHidden>,
       width: pixel(64),
       align: "end",
       renderCell: (mount) => (
         <MoreMenu
-          label={`Actions for mount ${pathOf(mount)}`}
+          label={t("mount.actionsFor", { path: pathOf(mount) })}
           size="sm"
           alignment="end"
           items={[
-            { label: "Rename", onClick: () => openForm(mount) },
-            { label: "Move to another backend", onClick: () => openMove(mount) },
+            { label: t("action.rename"), onClick: () => openForm(mount) },
+            { label: t("mount.moveToOther"), onClick: () => openMove(mount) },
             { type: "divider" },
-            { label: "Remove", variant: "destructive", onClick: () => openRemove(mount) },
+            {
+              label: t("action.remove"),
+              variant: "destructive",
+              onClick: () => openRemove(mount),
+            },
           ]}
         />
       ),
@@ -522,10 +556,10 @@ export const StoragePage = () => {
         <LayoutContent padding={gutter}>
           <VStack gap={6}>
             <PageHeader
-              title="Storage & Mounts"
+              title={t("nav.storage")}
               actions={
                 <TitleAction
-                  label="Add mount"
+                  label={t("mount.add")}
                   variant="primary"
                   icon={<Icon icon={Plus} size="sm" />}
                   isDisabled={backends.length === 0}
@@ -537,10 +571,10 @@ export const StoragePage = () => {
             <AfterFirstPaint>
               <VStack gap={3}>
                 <TitleRow
-                  title={<Heading level={2}>Backends</Heading>}
+                  title={<Heading level={2}>{t("storage.backends")}</Heading>}
                   actions={
                     <TitleAction
-                      label="Add backend"
+                      label={t("backendForm.add")}
                       variant="secondary"
                       size="sm"
                       icon={<Icon icon={Plus} size="sm" />}
@@ -552,7 +586,7 @@ export const StoragePage = () => {
                 />
                 <QueryState
                   query={backendsQuery}
-                  title="Cannot read the backends"
+                  title={t("storage.cannotReadBackends")}
                   loading={<LoadingRows rows={2} />}
                 >
                   {(data) => (
@@ -577,14 +611,14 @@ export const StoragePage = () => {
             </AfterFirstPaint>
             <AfterFirstPaint>
               <VStack gap={3}>
-                <Heading level={2}>Mounts</Heading>
+                <Heading level={2}>{t("overview.mounts")}</Heading>
                 <VStack ref={tableRef}>
-                  <QueryState query={mountsQuery} title="Cannot read the mounts">
+                  <QueryState query={mountsQuery} title={t("storage.cannotReadMounts")}>
                     {(data) =>
                       data.length === 0 ? (
                         <EmptyState
-                          title="No mounts yet"
-                          description="A mount shows a backend, or a folder of one, to WebDAV clients."
+                          title={t("files.noMounts")}
+                          description={t("storage.noMountsDescription")}
                         />
                       ) : isNarrowTable ? (
                         // Where a column per detail has no room, as on a phone, each mount is a row
@@ -598,14 +632,14 @@ export const StoragePage = () => {
                             details: (
                               <>
                                 <MetadataList>
-                                  <MetadataListItem label="Folder">
-                                    {folderOf(mount)}
+                                  <MetadataListItem label={t("files.folder")}>
+                                    {folderOf(t, mount)}
                                   </MetadataListItem>
                                 </MetadataList>
                                 <HStack gap={2}>
                                   <StackItem size="fill">
                                     <Button
-                                      label="Rename"
+                                      label={t("action.rename")}
                                       variant="secondary"
                                       width="100%"
                                       onClick={() => openForm(mount)}
@@ -613,7 +647,7 @@ export const StoragePage = () => {
                                   </StackItem>
                                   <StackItem size="fill">
                                     <Button
-                                      label="Move"
+                                      label={t("files.move")}
                                       variant="secondary"
                                       width="100%"
                                       onClick={() => openMove(mount)}
@@ -621,7 +655,7 @@ export const StoragePage = () => {
                                   </StackItem>
                                   <StackItem size="fill">
                                     <Button
-                                      label="Remove"
+                                      label={t("action.remove")}
                                       variant="destructive"
                                       width="100%"
                                       onClick={() => openRemove(mount)}
@@ -630,7 +664,7 @@ export const StoragePage = () => {
                                 </HStack>
                               </>
                             ),
-                            toggleLabel: `Details for mount ${pathOf(mount)}`,
+                            toggleLabel: t("mount.detailsFor", { path: pathOf(mount) }),
                           }))}
                         />
                       ) : (

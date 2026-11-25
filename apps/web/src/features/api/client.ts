@@ -1,3 +1,4 @@
+import type { Translator } from "../i18n/translate";
 import { DavError } from "./dav";
 import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
 // The Dashboard's calls to the management API (apps/api/src/app.ts). Every call goes to the origin
@@ -103,63 +104,71 @@ export const apiFetchOnce = async <T>(
 };
 
 /** What a refused call means for the person, in a sentence. */
-export const describeError = (error: unknown): string => {
+/**
+ * The API's own explanation, in English, where Davloom shows English; another language says what
+ * the code means in its own words instead.
+ */
+const detailIn = (t: Translator, error: ApiError): string | undefined =>
+  t.locale === "en" ? error.detail : undefined;
+
+export const describeError = (t: Translator, error: unknown): string => {
   if (!isApiError(error)) {
-    return "Something went wrong. Try again.";
+    return t("error.unknown");
   }
   switch (error.code) {
     case "network_error":
-      return "Davloom could not be reached. Check the connection and try again.";
+      return t("error.network");
     case "unauthorized":
-      return "Your session has ended. Sign in again.";
+      return t("error.unauthorized");
     case "not_configured":
-      return "This instance is not configured: DAVLOOM_SECRET is missing or shorter than 32 bytes.";
+      return t("error.notConfigured");
     case "mount_in_use":
-      return "An API key is limited to this mount. Revoke that key first.";
+      return t("error.mountInUse");
     case "name_taken":
-      return "That name is already in use.";
+      return t("error.nameTaken");
     case "not_found":
-      return "It is no longer there.";
+      return t("error.notFound");
     case "invalid_input":
-      return "Check the values and try again.";
+      return t("error.invalidInput");
     case "backend_in_use":
-      return "A mount uses this backend. Move or remove the mount first.";
+      return t("error.backendInUse");
     case "backend_not_empty":
-      return "This backend still holds files. Delete them first.";
+      return t("error.backendNotEmpty");
     case "backend_unavailable":
-      return "The backend did not answer. Try again.";
+      return t("error.backendUnavailable");
     case "setup_token_invalid":
-      return "That is not this instance's setup token.";
+      return t("error.setupTokenInvalid");
     case "cross_site":
-      return (
-        error.detail ??
-        "This request did not come from this Davloom's own address. Open Davloom at its own address and try again."
-      );
+      return detailIn(t, error) ?? t("error.crossSite");
     case "unsupported_media_type":
-      return "The server refused the request's format.";
+      return t("error.unsupportedMediaType");
     case "archive_invalid":
-      return error.detail ?? "This export cannot be imported.";
+      return detailIn(t, error) ?? t("error.archiveInvalid");
     case VERIFICATION_REQUIRED:
-      return "Verify it is you to do this.";
+      return t("error.verificationRequired");
     case "registration_closed":
-      return "This Davloom has its owner already. Sign in instead.";
+      return t("error.registrationClosed");
     case "username_refused":
+      return detailIn(t, error) ?? t("error.usernameRefused");
     case "password_refused":
+      return detailIn(t, error) ?? t("error.passwordRefused");
     case "email_refused":
-      return error.detail ?? "Check the values and try again.";
+      return detailIn(t, error) ?? t("error.emailRefused");
     case "verification_locked":
-      return "Too many wrong attempts. Wait 15 minutes, then try again.";
+      return t("error.verificationLocked");
     case "password_check_failed":
-      return "Davloom could not check the password against known breaches. Try again later.";
+      return t("error.passwordCheckFailed");
     case "password_compromised":
-      return error.detail ?? "This password appears in known data breaches. Choose another.";
-    default:
+      return detailIn(t, error) ?? t("error.passwordCompromised");
+    default: {
       // Better Auth explains its refusals, such as a username that is taken.
-      if (error.detail !== undefined && error.status >= 400 && error.status < 500) {
-        return error.detail;
+      const detail = detailIn(t, error);
+      if (detail !== undefined && error.status >= 400 && error.status < 500) {
+        return detail;
       }
       return error.status === 501
-        ? "This server does not run the management API yet."
-        : `The server refused the request (${error.status}).`;
+        ? t("error.notImplemented")
+        : t("error.refused", { status: String(error.status) });
+    }
   }
 };

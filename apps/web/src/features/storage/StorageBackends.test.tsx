@@ -15,6 +15,7 @@ import type { Backend, BackendCheck, Mount } from "../api/queries";
 import { endpointOf } from "./BackendCard";
 import { s3Config, s3Problems, type S3Fields } from "./BackendForm";
 import { StoragePage } from "./StoragePage";
+import { translator } from "../i18n/translate";
 
 // Storage & Mounts: S3-compatible backends, editing, checking and removing backends, and the
 // default backend for new mounts.
@@ -142,7 +143,7 @@ describe("s3Problems", () => {
     ["no secret on a new backend", { secretKey: "" }, false, { secretKey: expect.any(String) }],
     ["no secret on an edit, which keeps it", { secretKey: "" }, true, {}],
   ])("finds %s", (_, patch, isEditing, problems) => {
-    expect(s3Problems(filledS3(patch), isEditing)).toEqual(problems);
+    expect(s3Problems(translator("en"), filledS3(patch), isEditing)).toEqual(problems);
   });
 
   it("sends the configuration trimmed, without the secret", () => {

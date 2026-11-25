@@ -1,6 +1,9 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import { mountFolderOf, mountNameProblem } from "./mountName";
+
+const en = translator("en");
 
 // A mount's folder is one path segment that no other mount uses, as the server's Mount
 // resolution requires.
@@ -21,7 +24,13 @@ describe("mount folder names", () => {
     ["documents", "Another mount already uses this folder."],
     ["/ documents", "Another mount already uses this folder."],
   ])("%j gives %j", (name, problem) => {
-    expect(mountNameProblem(name, taken)).toBe(problem);
+    expect(mountNameProblem(en, name, taken)).toBe(problem);
+  });
+
+  it("says why in Chinese", () => {
+    const zh = translator("zh-CN");
+    expect(mountNameProblem(zh, "documents", taken)).toBe(zh("mount.nameTaken"));
+    expect(mountNameProblem(zh, "", taken)).not.toMatch(/[A-Za-z]/);
   });
 
   it.each([
@@ -69,7 +78,7 @@ describe("mount folder names", () => {
             folder !== "." &&
             folder !== ".." &&
             !paths.includes(`/${folder}`);
-          expect(mountNameProblem(name, paths) === undefined).toBe(isValid);
+          expect(mountNameProblem(en, name, paths) === undefined).toBe(isValid);
         },
       ),
     );

@@ -1,20 +1,45 @@
 import { davloomTheme } from "@davloom/ui/themes/davloom";
-import { Asset, createRootRoute, Scripts, useRouterState, useTags } from "@tanstack/react-router";
+import {
+  Asset,
+  createRootRoute,
+  Scripts,
+  useMatches,
+  useRouterState,
+  useTags,
+} from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { APPEARANCE_SCRIPT, SUPPORTED_COLOR_SCHEMES } from "../features/appearance/script";
 import { FILL_SCRIPT, FRAME_PARSED_SCRIPT, frameTexts } from "../features/frame/fill";
+import { pageText } from "../features/i18n/pages";
+import { languageScript } from "../features/i18n/script";
+import { useActiveLocale } from "../features/i18n/store";
 import globals from "../styles/globals.css?url";
 
 /**
  * The route-managed head tags, as TanStack Router's HeadContent renders them, but without the
  * modulepreload links for the page's code. The frame paints from the HTML and CSS alone, so the code
  * downloads once the entry script asks for it instead of competing with the stylesheet, and the
- * entry's own imports still fetch each chunk in parallel.
+ * entry's own imports still fetch each chunk in parallel. The title and the description follow the
+ * page and the language.
  */
-const PageHead = () => {
+const PageHead = ({ title, description }: { title: string; description: string }) => {
   const tags = useTags().filter((tag) => tag.attrs?.rel !== "modulepreload");
-  return tags.map((tag) => <Asset {...tag} key={`tsr-meta-${JSON.stringify(tag)}`} />);
+  return (
+    <>
+      {tags.map((tag) => (
+        <Asset {...tag} key={`tsr-meta-${JSON.stringify(tag)}`} />
+      ))}
+      <title>{title}</title>
+      <meta name="description" content={description} />
+    </>
+  );
 };
+
+/** The page that names the tab: the deepest route whose staticData names one. */
+const usePage = () =>
+  useMatches({
+    select: (matches) => matches.findLast((match) => match.staticData.page)?.staticData.page,
+  });
 
 /**
  * Preloads for the reads the frame's script starts, in the prerendered HTML only. The browser's
@@ -35,30 +60,39 @@ const FramePreloads = () => {
 };
 
 // Prerendered into each page's HTML file. The appearance script puts the stored mode on <html>
-// before the page renders. React writes the stylesheet first in <head>, so the script runs once the
-// stylesheet has loaded, still before <body> is parsed. A stylesheet in <head> holds back
-// rendering, so the first paint already shows the stored mode. The prerendered frame is `inert`:
-// it is only a picture of the page until client.tsx renders the page in its place, so nothing in
-// it takes focus, a click or typing that the render would then throw away.
-const Document = ({ children }: { children: ReactNode }) => (
-  <html lang="en" data-astryx-theme={davloomTheme.name} suppressHydrationWarning>
-    <head>
-      <PageHead />
-      {import.meta.env.SSR ? <FramePreloads /> : null}
-      <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
-      {/* Starts the reads whose values the frame shows first, and writes them into it. */}
-      <script dangerouslySetInnerHTML={{ __html: FILL_SCRIPT }} />
-    </head>
-    <body inert={import.meta.env.SSR ? true : undefined}>
-      {children}
-      {/* The frame is parsed: the script in <head> may write into it before the code below runs. */}
-      {import.meta.env.SSR ? (
-        <script dangerouslySetInnerHTML={{ __html: FRAME_PARSED_SCRIPT }} />
-      ) : null}
-      <Scripts />
-    </body>
-  </html>
-);
+// before the page renders, and the language script puts the stored or the browser's language there
+// as `lang`, which shows the frame in that language (LocaleFrames) and, for Chinese, writes the
+// page's Chinese title and description. React writes the stylesheet first in <head>, so the scripts
+// run once the stylesheet has loaded, still before <body> is parsed. A stylesheet in <head> holds
+// back rendering, so the first paint already shows the stored mode and the language. The
+// prerendered frame is `inert`: it is only a picture of the page until client.tsx renders the page
+// in its place, so nothing in it takes focus, a click or typing that the render would then throw
+// away.
+const Document = ({ children }: { children: ReactNode }) => {
+  const locale = useActiveLocale();
+  const page = usePage();
+  const text = pageText(page, locale);
+  return (
+    <html lang={locale} data-astryx-theme={davloomTheme.name} suppressHydrationWarning>
+      <head>
+        <PageHead title={text.title} description={text.description} />
+        {import.meta.env.SSR ? <FramePreloads /> : null}
+        <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: languageScript(pageText(page, "zh-CN")) }} />
+        {/* Starts the reads whose values the frame shows first, and writes them into it. */}
+        <script dangerouslySetInnerHTML={{ __html: FILL_SCRIPT }} />
+      </head>
+      <body inert={import.meta.env.SSR ? true : undefined}>
+        {children}
+        {/* The frame is parsed: the script in <head> may write into it before the code below runs. */}
+        {import.meta.env.SSR ? (
+          <script dangerouslySetInnerHTML={{ __html: FRAME_PARSED_SCRIPT }} />
+        ) : null}
+        <Scripts />
+      </body>
+    </html>
+  );
+};
 
 export const Route = createRootRoute({
   head: () => ({
@@ -68,9 +102,6 @@ export const Route = createRootRoute({
       // The schemes the page supports, known before any stylesheet loads. It never changes, so
       // hydration finds it as rendered; the scheme in use is set on <html>.
       { name: "color-scheme", content: SUPPORTED_COLOR_SCHEMES },
-      { title: "Davloom" },
-      // Prerendered, so the page has one before any script runs; each page's route names its own.
-      { name: "description", content: "Davloom: your own WebDAV storage and its Dashboard." },
     ],
     links: [
       { rel: "stylesheet", href: globals },

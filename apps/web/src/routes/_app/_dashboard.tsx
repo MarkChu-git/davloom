@@ -7,10 +7,12 @@ import { describeError, isUnauthorized } from "../../features/api/client";
 import { useMe } from "../../features/api/queries";
 import { GoTo, signInHref } from "../../features/auth/GoTo";
 import { StepUpDialog } from "../../features/auth/StepUpDialog";
+import { useT } from "../../features/i18n/I18nProvider";
 import { DashboardShell } from "../../features/shell/DashboardShell";
 
 /** The Dashboard's pages need a session: without one, the browser goes to sign in and back. */
 const DashboardLayout = () => {
+  const t = useT();
   const me = useMe();
   const href = useRouterState({ select: (state) => state.location.href });
   // The page to return to, read once: while the router moves to the sign-in page, the location
@@ -26,11 +28,11 @@ const DashboardLayout = () => {
       <Center axis="both" padding={4}>
         <Banner
           status="error"
-          title="Davloom cannot open the Dashboard"
-          description={describeError(me.error)}
+          title={t("dashboard.cannotOpen")}
+          description={describeError(t, me.error)}
           endContent={
             <Button
-              label="Try again"
+              label={t("action.tryAgain")}
               variant="secondary"
               size="sm"
               isLoading={me.isFetching}

@@ -14,6 +14,8 @@ import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 import { createQueryClient } from "../features/api/queries";
+import { I18nProvider } from "../features/i18n/context";
+import type { Locale } from "../features/i18n/locale";
 import { RouterLink } from "../features/shell/RouterLink";
 
 // Renders a Dashboard page as the app does, inside the query client, the theme and a router, with
@@ -27,7 +29,11 @@ export const json = (value: unknown, status = 200) => Response.json(value, { sta
 
 export const renderPage = async (
   ui: ReactNode,
-  { path = "/", api = {} }: { path?: string; api?: Record<string, Handler> } = {},
+  {
+    path = "/",
+    api = {},
+    locale = "en",
+  }: { path?: string; api?: Record<string, Handler>; locale?: Locale } = {},
 ) => {
   const calls: Request[] = [];
   vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -43,10 +49,12 @@ export const renderPage = async (
     component: () => (
       <QueryClientProvider client={client}>
         <Theme theme={davloomTheme} mode="light">
-          <LinkProvider component={RouterLink}>
-            {ui}
-            <Outlet />
-          </LinkProvider>
+          <I18nProvider locale={locale}>
+            <LinkProvider component={RouterLink}>
+              {ui}
+              <Outlet />
+            </LinkProvider>
+          </I18nProvider>
         </Theme>
       </QueryClientProvider>
     ),

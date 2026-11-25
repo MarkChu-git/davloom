@@ -9,6 +9,7 @@ import { useState } from "react";
 import { changeEmail, updateProfile } from "../api/account";
 import { describeError } from "../api/client";
 import { keys, useMe, type User } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
 import { LoadingRows, QueryState } from "../shell/QueryState";
 
 const EMAIL = /^[^\s@]+@[^\s@]+$/;
@@ -36,6 +37,7 @@ const FRAME_USER: User = {
  * answers, before the page's code has loaded.
  */
 const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean }) => {
+  const t = useT();
   const slot = (name: string) => (isFrame ? { "data-frame-slot": `profile-${name}` } : {});
   const toast = useToast();
   const client = useQueryClient();
@@ -50,22 +52,22 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
     const next: Problems = {
       name:
         name.trim() === ""
-          ? "Enter the name Davloom should call you."
+          ? t("profile.nameMissing")
           : name.trim().length > 100
-            ? "Use at most 100 characters."
+            ? t("form.atMost", { count: 100 })
             : undefined,
       username:
         username.trim() === "" && user.username === null
           ? undefined
           : USERNAME.test(username.trim())
             ? undefined
-            : "Use 3 to 30 letters, digits, dots or underscores.",
+            : t("form.usernameInvalid"),
       email:
         email.trim() === "" && user.email === null
           ? undefined
           : EMAIL.test(email.trim())
             ? undefined
-            : "Enter an email address, such as you@example.com.",
+            : t("form.emailInvalid"),
     };
     setProblems(next);
     setFailure(undefined);
@@ -87,9 +89,9 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
         await changeEmail(email.trim());
       }
       await client.invalidateQueries({ queryKey: keys.me });
-      toast({ body: "Profile saved." });
+      toast({ body: t("profile.saved") });
     } catch (error) {
-      setFailure(describeError(error));
+      setFailure(describeError(t, error));
     } finally {
       setIsSaving(false);
     }
@@ -100,7 +102,7 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       <FormLayout>
         <TextInput
-          label="Display name"
+          label={t("field.displayName")}
           value={name}
           onChange={(value) => {
             setName(value);
@@ -116,7 +118,7 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
           }
         />
         <TextInput
-          label="Username"
+          label={t("field.username")}
           value={username}
           onChange={(value) => {
             setUsername(value);
@@ -135,7 +137,7 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
           }
         />
         <TextInput
-          label="Email"
+          label={t("field.email")}
           type="email"
           isOptional
           value={email}
@@ -155,7 +157,7 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
       </FormLayout>
       <HStack>
         <Button
-          label="Save profile"
+          label={t("profile.save")}
           variant="primary"
           isLoading={isSaving}
           onClick={() => void save()}
@@ -167,10 +169,11 @@ const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean 
 
 /** Settings > Profile: the display name, the username and the email, saved through Better Auth. */
 export const ProfileContent = () => {
+  const t = useT();
   const me = useMe();
   if (import.meta.env.SSR) return <ProfileForm user={FRAME_USER} isFrame />;
   return (
-    <QueryState query={me} title="Cannot read the profile" loading={<LoadingRows rows={3} />}>
+    <QueryState query={me} title={t("profile.cannotRead")} loading={<LoadingRows rows={3} />}>
       {(user) => <ProfileForm key={user.id} user={user} />}
     </QueryState>
   );

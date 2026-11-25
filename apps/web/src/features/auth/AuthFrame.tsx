@@ -38,7 +38,7 @@ export const AuthFrame = ({
     <VStack gap={6} hAlign="center" xstyle={styles.column}>
       <HStack gap={2} vAlign="center">
         <LoomMark />
-        <Text weight="semibold" size="lg">
+        <Text type="large" size="xl">
           Davloom
         </Text>
       </HStack>

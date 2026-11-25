@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import { SettingsPage } from "./SettingsPage";
 
@@ -399,7 +400,18 @@ describe("SettingsPage", () => {
     const dark = screen.getByRole("radio", { name: "Dark" });
     await userEvent.click(dark);
     expect(dark.getAttribute("aria-checked")).toBe("true");
-    await userEvent.click(screen.getByRole("radio", { name: "System" }));
+    await userEvent.click(screen.getAllByRole("radio", { name: "System" })[0]!);
+    expect(dark.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("switches the language and remembers it", async () => {
+    await renderPage(<SettingsPage section="appearance" />);
+    const group = screen.getByRole("radiogroup", { name: "Language" });
+    await userEvent.click(within(group).getByRole("radio", { name: "简体中文" }));
+    expect(localStorage.getItem("davloom-language")).toBe("zh-CN");
+    expect(document.documentElement.lang).toBe("zh-CN");
+    await userEvent.click(within(group).getByRole("radio", { name: "System" }));
+    expect(localStorage.getItem("davloom-language")).toBeNull();
   });
 
   it("gives the WebDAV address and how to connect", async () => {
@@ -518,4 +530,36 @@ describe("SettingsPage", () => {
       expect(screen.getByText("Your session has ended. Sign in again.")).toBeTruthy(),
     );
   });
+});
+
+describe("SettingsPage in Chinese", () => {
+  it.each(["profile", "security", "appearance", "webdav"] as const)(
+    "writes the %s section in Chinese",
+    async (section) => {
+      const { container } = await renderPage(<SettingsPage section={section} />, {
+        path: `/settings?section=${section}`,
+        locale: "zh-CN",
+        api: securityApi(),
+      });
+      expect(await screen.findByRole("heading", { level: 1, name: "设置" })).toBeTruthy();
+      if (section === "security") {
+        await screen.findByText("Windows 上的 Firefox");
+      }
+      expectChinese(container, [
+        "English",
+        "Ada Lovelace",
+        "ada@example.com",
+        "ada",
+        "Safari",
+        "macOS",
+        "Firefox",
+        "Windows",
+        `${location.origin}/dav/`,
+        // rclone's own settings, which a reader types as they are.
+        "webdav",
+        "vendor",
+        "other",
+      ]);
+    },
+  );
 });

@@ -1,5 +1,6 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import {
   destinationProblem,
   filesHref,
@@ -10,6 +11,9 @@ import {
   splitPath,
 } from "./paths";
 import { isPreviewable } from "./preview";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 describe("paths", () => {
   it.each([
@@ -64,7 +68,13 @@ describe("names", () => {
     ["..", [], "Choose another name."],
     ["Drafts", ["Drafts"], "Something with this name is already here."],
   ])("%j among %j: %j", (name, siblings, problem) => {
-    expect(nameProblem(name, siblings)).toBe(problem);
+    expect(nameProblem(en, name, siblings)).toBe(problem);
+  });
+
+  it("says why in Chinese", () => {
+    expect(nameProblem(zh, "", [])).toBe(zh("name.missing"));
+    expect(nameProblem(zh, "a/b", [])).not.toMatch(/[A-Za-z]/);
+    expect(destinationProblem(zh, "/files", ["a"], "/")).toContain("/files");
   });
 });
 
@@ -79,7 +89,7 @@ describe("destinations", () => {
     ["/files", ["a"], "/files/a/b", "A folder cannot go inside itself."],
     ["/files", ["a"], "/files/ab", undefined],
   ])("from %s, %j to %s: %j", (from, names, to, problem) => {
-    expect(destinationProblem(from, names, to)).toBe(problem);
+    expect(destinationProblem(en, from, names, to)).toBe(problem);
   });
 
   it("a destination is refused exactly when it is outside the mounts, the same folder, or inside an item", () => {
@@ -90,7 +100,7 @@ describe("destinations", () => {
         fc.uniqueArray(part, { minLength: 1, maxLength: 2 }),
         fc.array(part, { maxLength: 4 }),
         (from, names, to) => {
-          const problem = destinationProblem(joinPath(from), names, joinPath(to));
+          const problem = destinationProblem(en, joinPath(from), names, joinPath(to));
           const inside = names.some((name) => isWithin(joinPath(to), joinPath([...from, name])));
           const refused = to.length === 0 || joinPath(to) === joinPath(from) || inside;
           expect(problem !== undefined).toBe(refused);

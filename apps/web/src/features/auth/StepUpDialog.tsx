@@ -11,23 +11,25 @@ import { canUsePasskeys, reverify, signInWithPasskey } from "../api/account";
 import { describeError, isApiError } from "../api/client";
 import { keys, useMe } from "../api/queries";
 import { setStepUpHandler } from "../api/stepUp";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 
-const failureOf = (error: unknown): string => {
+const failureOf = (t: Translator, error: unknown): string => {
   if (!isApiError(error)) {
-    return describeError(error);
+    return describeError(t, error);
   }
   switch (error.code) {
     case "wrong_password":
-      return "The password is wrong.";
+      return t("verify.wrongPassword");
     case "code_required":
-      return "Enter the code from your authenticator app.";
+      return t("verify.codeMissing");
     case "wrong_code":
-      return "The code is wrong or has expired.";
+      return t("verify.wrongCode");
     case "too_many_attempts_request_new_code":
     case "account_temporarily_locked":
-      return "Too many wrong codes. Wait a few minutes and try again.";
+      return t("verify.tooManyCodes");
     default:
-      return describeError(error);
+      return describeError(t, error);
   }
 };
 
@@ -40,6 +42,7 @@ const VerifyForm = ({
   onDone: () => void;
   onCancel: () => void;
 }) => {
+  const t = useT();
   const client = useQueryClient();
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -53,11 +56,11 @@ const VerifyForm = ({
 
   const submit = async () => {
     if (password === "") {
-      setFailure("Enter your password.");
+      setFailure(t("verify.passwordMissing"));
       return;
     }
     if (hasSecondStep && code.trim() === "") {
-      setFailure("Enter the code from your authenticator app.");
+      setFailure(t("verify.codeMissing"));
       return;
     }
     setIsBusy(true);
@@ -66,7 +69,7 @@ const VerifyForm = ({
       await reverify(password, code);
       await finish();
     } catch (error) {
-      setFailure(failureOf(error));
+      setFailure(failureOf(t, error));
       setIsBusy(false);
     }
   };
@@ -78,14 +81,14 @@ const VerifyForm = ({
       await signInWithPasskey();
       await finish();
     } catch (error) {
-      setFailure(failureOf(error));
+      setFailure(failureOf(t, error));
       setIsBusy(false);
     }
   };
 
   return (
     <Layout
-      header={<DialogHeader title="Verify it is you" onOpenChange={onCancel} />}
+      header={<DialogHeader title={t("verify.title")} onOpenChange={onCancel} />}
       content={
         <LayoutContent>
           <VStack gap={4}>
@@ -93,7 +96,7 @@ const VerifyForm = ({
               <Banner status="error" title={failure} container="card" />
             )}
             <TextInput
-              label="Password"
+              label={t("field.password")}
               type="password"
               value={password}
               onChange={setPassword}
@@ -103,7 +106,7 @@ const VerifyForm = ({
             />
             {hasSecondStep ? (
               <TextInput
-                label="Authenticator code"
+                label={t("verify.code")}
                 value={code}
                 onChange={setCode}
                 onEnter={() => void submit()}
@@ -115,7 +118,7 @@ const VerifyForm = ({
             {canUsePasskeys() ? (
               <HStack>
                 <Button
-                  label="Use a passkey"
+                  label={t("verify.usePasskey")}
                   variant="secondary"
                   icon={<Icon icon={KeyRound} size="sm" />}
                   isDisabled={isBusy}
@@ -129,9 +132,9 @@ const VerifyForm = ({
       footer={
         <LayoutFooter>
           <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="secondary" onClick={onCancel} />
+            <Button label={t("action.cancel")} variant="secondary" onClick={onCancel} />
             <Button
-              label="Verify"
+              label={t("verify.submit")}
               variant="primary"
               isLoading={isBusy}
               onClick={() => void submit()}
