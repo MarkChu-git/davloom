@@ -5,13 +5,26 @@ import { useWindowWidth } from "./frame";
 const remSize = (): number =>
   Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 
+/** The width below which AppShell lays a page out as a phone's, in pixels (its md width point). */
+const PHONE_LAYOUT_BELOW = 768;
+
 /**
- * The first answer, before the element is measured. An element is never wider than the window, so
- * a window narrower than `rem` answers for it; a wider window is taken to leave the element room.
- * In the prerender the window is the frame being drawn (frame.tsx). A right guess spares the page
- * a second render once the element is measured.
+ * The widest a page's content can be in a window `windowWidth` pixels wide: the window less the
+ * page's gutters (`usePageGutter`), 16 px on each side on a phone and 24 px beside the side
+ * navigation, whatever width the navigation has.
  */
-const guess = (rem: number, windowWidth: number): boolean => windowWidth < rem * 16;
+const widestContent = (windowWidth: number): number =>
+  windowWidth - 2 * (windowWidth < PHONE_LAYOUT_BELOW ? 16 : 24);
+
+/**
+ * The first answer, before the element is measured. An element on the page is never wider than the
+ * page's content, so content narrower than `rem` answers for it; wider content is taken to leave
+ * the element room. In the prerender the window is the frame being drawn (frame.tsx). A right guess
+ * spares the page a second render once the element is measured, which on the page's first render
+ * would also run every effect of the page before the browser can paint.
+ */
+export const guess = (rem: number, windowWidth: number): boolean =>
+  widestContent(windowWidth) < rem * 16;
 
 /**
  * Whether the element given the returned ref is narrower than `rem`, so a component lays itself out

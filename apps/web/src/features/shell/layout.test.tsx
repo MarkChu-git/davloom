@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NARROW_PAGE_WIDTH, NAV_WIDTH, useIsNarrowPage, usePageGutter } from "./pageWidth";
-import { useNarrowerThan } from "./useNarrowerThan";
+import { guess, useNarrowerThan } from "./useNarrowerThan";
 
 afterEach(() => {
   cleanup();
@@ -87,5 +87,34 @@ describe("useNarrowerThan", () => {
     expect(screen.getByText("absent")).toBeTruthy();
     rerender(<NarrowProbe rem={24} />);
     expect(screen.getByText("narrower")).toBeTruthy();
+  });
+});
+
+describe("guess", () => {
+  // The page's content is the window less 16 px on each side on a phone and 24 px beside the side
+  // navigation: an element whose page content is narrower than `rem` is taken to be narrower.
+  it.each([
+    [415, 24, true],
+    [416, 24, false],
+    [412, 24, true],
+    [360, 21, true],
+    [368, 21, false],
+    // Beside the navigation the gutters are wider, so a wider window can leave less room.
+    [767, 45.5, false],
+    [768, 45.5, true],
+    [975, 58, true],
+    [976, 58, false],
+    [1280, 58, false],
+  ])("a %i px window, against %i rem, guesses narrower: %s", (windowWidth, rem, isNarrower) => {
+    expect(guess(rem, windowWidth)).toBe(isNarrower);
+  });
+
+  it("is never narrower where the page's content leaves the element room", () => {
+    for (let windowWidth = 320; windowWidth <= 2000; windowWidth += 7) {
+      const gutters = windowWidth < 768 ? 32 : 48;
+      for (const rem of [21, 24, 30, 32, 37, 39, 58]) {
+        expect(guess(rem, windowWidth)).toBe(windowWidth - gutters < rem * 16);
+      }
+    }
   });
 });

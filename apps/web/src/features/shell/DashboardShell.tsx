@@ -26,7 +26,15 @@ import {
   Settings,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type ReactNode, type SVGProps } from "react";
+import {
+  startTransition,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+  type SVGProps,
+} from "react";
 import { useBackends } from "../api/queries";
 import { useSignOut } from "../auth/useSignOut";
 import { storageAlert } from "../storage/backendStatus";
@@ -239,11 +247,28 @@ const styles = stylex.create({
  * On a phone, AppShell trades the side navigation for a bar across the top. The same rows then drop
  * down from a Menu button in that bar. They stay links, as navigation should, rather than becoming
  * a menu of actions, and reaching another page closes the dropdown.
+ *
+ * The Popover attaches to the button from beside it, in a render after the page's first: attaching
+ * changes the Popover's own state, and a change while React puts the page on screen would make it
+ * render again and run every effect of the page before the browser could paint. The button itself
+ * is on the page from the first render, so nothing on screen changes when the Popover attaches.
+ * The rows render once the dropdown first opens, and stay for its later openings and closings.
  */
 const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOptions }) => {
   const { isMobile } = useAppShellMobile();
+  const button = useRef<HTMLButtonElement>(null);
+  // The button the Popover attaches to, set in a render after the one that put the button on the
+  // page: a phone's first, or the first once a window narrows to a phone's.
+  const [anchor, setAnchor] = useState<RefObject<HTMLElement>>();
+  useEffect(() => {
+    const element = button.current;
+    startTransition(() =>
+      setAnchor(isMobile && element !== null ? { current: element } : undefined),
+    );
+  }, [isMobile]);
   // The page the dropdown opened on, so a row or the browser's Back button closes it.
   const [openOn, setOpenOn] = useState<string>();
+  const [hasOpened, setHasOpened] = useState(false);
   if (!isMobile) {
     // A window widened past the phone layout shuts the dropdown, so it stays shut on the way back.
     if (openOn !== undefined) {
@@ -253,29 +278,39 @@ const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOption
   }
   const groups = navGroups(pathname, { ...options, onChoose: () => setOpenOn(undefined) });
   return (
-    <Popover
-      label="Menu"
-      alignment="end"
-      width={NAV_WIDTH.defaultWidth}
-      padding={2}
-      xstyle={styles.dropdown}
-      isOpen={openOn === pathname}
-      onOpenChange={(isOpen) => setOpenOn(isOpen ? pathname : undefined)}
-      content={
-        <VStack gap={2}>
-          {groups.work}
-          {groups.manage}
-          {groups.account}
-        </VStack>
-      }
-    >
+    <>
       <Button
+        ref={button}
         label="Menu"
         variant="ghost"
         icon={<Icon icon={Menu} size="sm" />}
         xstyle={styles.menu}
       />
-    </Popover>
+      {anchor === undefined ? null : (
+        <Popover
+          anchorRef={anchor}
+          label="Menu"
+          alignment="end"
+          width={NAV_WIDTH.defaultWidth}
+          padding={2}
+          xstyle={styles.dropdown}
+          isOpen={openOn === pathname}
+          onOpenChange={(isOpen) => {
+            setHasOpened((was) => was || isOpen);
+            setOpenOn(isOpen ? pathname : undefined);
+          }}
+          content={
+            hasOpened ? (
+              <VStack gap={2}>
+                {groups.work}
+                {groups.manage}
+                {groups.account}
+              </VStack>
+            ) : null
+          }
+        />
+      )}
+    </>
   );
 };
 
