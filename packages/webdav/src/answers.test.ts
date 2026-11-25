@@ -386,6 +386,7 @@ describe("what a lock does not change", () => {
   it.each([
     // RFC 4918 §9.7.2 and §9.3.1: the collection exists, whatever is locked inside it.
     ["PUT onto a collection with a locked member", "PUT", "/c", "/c/f.txt", 405],
+    ["MKCOL onto a collection with a locked member", "MKCOL", "/c", "/c/f.txt", 405],
     ["PUT onto the namespace root while it is locked", "PUT", "/", "/", 405],
   ] as const)("%s is 405 with Allow", async (_label, method, path, locked, status) => {
     const w = await world();
