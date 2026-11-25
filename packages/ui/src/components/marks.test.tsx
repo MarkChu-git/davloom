@@ -32,6 +32,22 @@ describe("LoomMark", () => {
     expect(svg?.querySelectorAll("circle[fill='currentColor']")).toHaveLength(1);
   });
 
+  it("draws the large mark at a size of its own, with the same artwork", () => {
+    const { container } = themed(
+      "light",
+      <>
+        <LoomMark />
+        <LoomMark size="large" />
+      </>,
+    );
+    const [small, large] = [...container.querySelectorAll("svg")];
+    expect(large?.getAttribute("viewBox")).toBe("0 0 32 32");
+    const box = (svg: Element | undefined) =>
+      svg?.closest("[aria-hidden='true']")?.getAttribute("class");
+    expect(box(large)).toBeTruthy();
+    expect(box(large)).not.toBe(box(small));
+  });
+
   it("is hidden from assistive technology, as the name beside it names the link", () => {
     const { container } = themed("light", <LoomMark />);
     expect(container.querySelector("svg")?.closest("[aria-hidden='true']")).not.toBeNull();

@@ -36,9 +36,10 @@ export const AuthFrame = ({
   // the page sits in a landmark.
   <Center role="main" axis="both" padding={4} xstyle={styles.page}>
     <VStack gap={6} hAlign="center" xstyle={styles.column}>
-      <HStack gap={2} vAlign="center">
-        <LoomMark />
-        <Text type="large" size="xl">
+      {/* The brand leads a page of its own: the mark at 48 px, the name at a size that matches. */}
+      <HStack gap={3} vAlign="center">
+        <LoomMark size="large" />
+        <Text type="large" size="3xl" weight="semibold">
           Davloom
         </Text>
       </HStack>
