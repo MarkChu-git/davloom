@@ -5,7 +5,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { apiFetch } from "../api/client";
+import { api, apiCall } from "../api/client";
 import { json, renderPage } from "../../test/render";
 import { AfterFirstPaint } from "./AfterFirstPaint";
 import { CopyField } from "./CopyField";
@@ -219,17 +219,19 @@ describe("CopyField", () => {
 });
 
 const Keys = () => {
-  const query = useQuery({ queryKey: ["keys"], queryFn: () => apiFetch<string[]>("/api/keys") });
+  const query = useQuery({ queryKey: ["keys"], queryFn: () => apiCall(() => api.keys.get()) });
   return (
     <QueryState query={query} title="Cannot read the keys">
-      {(names) => <p>{names.length === 0 ? "No keys" : names.join(", ")}</p>}
+      {(keys) => <p>{keys.length === 0 ? "No keys" : keys.map(({ name }) => name).join(", ")}</p>}
     </QueryState>
   );
 };
 
 describe("QueryState", () => {
   it("shows the data once it arrives", async () => {
-    await renderPage(<Keys />, { api: { "GET /api/keys": () => json(["Laptop", "Phone"]) } });
+    await renderPage(<Keys />, {
+      api: { "GET /api/keys": () => json([{ name: "Laptop" }, { name: "Phone" }]) },
+    });
     expect(await screen.findByText("Laptop, Phone")).toBeTruthy();
   });
 

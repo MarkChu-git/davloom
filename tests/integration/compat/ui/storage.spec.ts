@@ -14,7 +14,7 @@ import {
   shown,
   withUnavailableBackend,
 } from "./helpers";
-import { createMount, dav, scratchFolder, unique } from "./instances";
+import { createMount, dav, MOUNT_TOP, scratchFolder, unique } from "./instances";
 
 // The Storage & Mounts scenarios about the backends, adding, renaming and removing a mount, on the
 // Worker's real API. Mounts and backends are shared by every test, so each test names its own
@@ -222,7 +222,8 @@ test("An S3-compatible backend: the form asks for its endpoint, bucket and keys,
 test("Adding a mount: the new mount shows a folder of the backend, and Files lists what that folder holds", async ({
   page,
 }) => {
-  const folder = await scratchFolder(page.request, { withSample: false });
+  // At the top of the Mount, whose folder in the backend is the backend's top.
+  const folder = await scratchFolder(page.request, { withSample: false, parent: MOUNT_TOP });
   await dav(page.request, "PUT", `${folder}/inside.txt`, { body: "inside" });
   const root = folder.split("/").at(-1) ?? "";
   const name = unique("projects");

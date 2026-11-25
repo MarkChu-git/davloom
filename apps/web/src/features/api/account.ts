@@ -2,8 +2,9 @@ import { passkeyClient } from "@better-auth/passkey/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createAuthClient } from "better-auth/client";
 import { generateRandomString } from "better-auth/crypto";
-import { ApiError, apiFetch, apiFetchOnce } from "./client";
+import { ApiError, api, apiCall, apiCallOnce, authFetch, authFetchOnce } from "./client";
 import { withStepUp } from "./stepUp";
+import type { Answer } from "@davloom/client";
 
 // The owner's account: registration, sign-in with a password, a second step or a passkey, and
 // the settings of Sign-in and security. Better Auth answers under /api/auth (packages/auth);
@@ -40,18 +41,16 @@ const throwIfError = (error: ClientError | null | undefined): void => {
 
 // --- Registration --------------------------------------------------------------------------
 
-export interface RegistrationStatus {
-  /** The instance has no owner yet, so its first visitor may register. */
-  open: boolean;
-  /** Registering, or importing in its place, needs the deployment's setup token. */
-  tokenRequired?: boolean;
-  /** Passkeys are on, which needs the instance's configured public URL (DAVLOOM_URL). */
-  passkeys?: boolean;
-}
+/**
+ * Whether the instance has no owner yet, so its first visitor may register (`open`); whether
+ * registering, or importing in its place, needs the deployment's setup token; and whether passkeys
+ * are on, which needs the instance's configured public URL (DAVLOOM_URL).
+ */
+export type RegistrationStatus = Answer<"GET /api/registration">;
 
 export const registrationQuery = {
   queryKey: ["registration"] as const,
-  queryFn: () => apiFetch<RegistrationStatus>("/api/registration"),
+  queryFn: () => apiCall(() => api.registration.get()),
   retry: false,
 } as const;
 
@@ -61,11 +60,11 @@ export const register = (input: {
   email: string;
   password: string;
   setupToken?: string;
-}) => apiFetch<{ userId: string }>("/api/registration", { method: "POST", body: input });
+}) => apiCall(() => api.registration.post(input));
 
 /** Imports an export into this instance in place of registering its owner. */
 export const importInstance = (input: { key: string; file: unknown; setupToken?: string }) =>
-  apiFetch<Record<string, number>>("/api/registration/import", { method: "POST", body: input });
+  apiCall(() => api.registration.import.post(input));
 
 // --- Signing in ----------------------------------------------------------------------------
 
@@ -81,13 +80,10 @@ export const signInWithPassword = async (
   password: string,
 ): Promise<SignInStep> => {
   const answer = identifier.includes("@")
-    ? await apiFetchOnce<unknown>("/api/auth/sign-in/email", {
-        method: "POST",
-        body: { email: identifier, password },
-      })
-    : await apiFetchOnce<unknown>("/api/auth/sign-in/username", {
-        method: "POST",
-        body: { username: identifier, password },
+    ? await authFetchOnce<unknown>("/api/auth/sign-in/email", { email: identifier, password })
+    : await authFetchOnce<unknown>("/api/auth/sign-in/username", {
+        username: identifier,
+        password,
       });
   return typeof answer === "object" &&
     answer !== null &&
@@ -98,16 +94,10 @@ export const signInWithPassword = async (
 
 /** The second step of a sign-in, or of turning two-step verification on: the app's code. */
 export const verifyTotp = (code: string) =>
-  apiFetchOnce<unknown>("/api/auth/two-factor/verify-totp", {
-    method: "POST",
-    body: { code: code.replace(/\s/g, "") },
-  });
+  authFetchOnce<unknown>("/api/auth/two-factor/verify-totp", { code: code.replace(/\s/g, "") });
 
 export const verifyBackupCode = (code: string) =>
-  apiFetchOnce<unknown>("/api/auth/two-factor/verify-backup-code", {
-    method: "POST",
-    body: { code: code.trim() },
-  });
+  authFetchOnce<unknown>("/api/auth/two-factor/verify-backup-code", { code: code.trim() });
 
 /** Signs in with a passkey; after a step-up it replaces this browser's session (packages/auth). */
 export const signInWithPasskey = async (): Promise<void> => {
@@ -119,15 +109,11 @@ export const signInWithPasskey = async (): Promise<void> => {
 export const canUsePasskeys = (): boolean =>
   typeof window !== "undefined" && typeof window.PublicKeyCredential === "function";
 
-export const signOut = () =>
-  apiFetchOnce<unknown>("/api/auth/sign-out", { method: "POST", body: {} });
+export const signOut = () => authFetchOnce<unknown>("/api/auth/sign-out", {});
 
 /** Proves presence again for a step-up action: the password, and the code when two-step is on. */
 export const reverify = (password: string, code: string) =>
-  apiFetchOnce<{ verified: true }>("/api/verify", {
-    method: "POST",
-    body: { password, code: code.replace(/\s/g, "") },
-  });
+  apiCallOnce(() => api.verify.post({ password, code: code.replace(/\s/g, "") }));
 
 // --- Profile -------------------------------------------------------------------------------
 
@@ -139,34 +125,27 @@ export const accountKeys = {
 
 /** Changes the display name, and the username when it differs (a step-up action). */
 export const updateProfile = (input: { name: string; username?: string }) =>
-  apiFetch<unknown>("/api/auth/update-user", { method: "POST", body: input });
+  authFetch<unknown>("/api/auth/update-user", input);
 
 export const changeEmail = (newEmail: string) =>
-  apiFetch<unknown>("/api/auth/change-email", { method: "POST", body: { newEmail } });
+  authFetch<unknown>("/api/auth/change-email", { newEmail });
 
 export const changePassword = (input: { currentPassword: string; newPassword: string }) =>
-  apiFetch<unknown>("/api/auth/change-password", {
-    method: "POST",
-    body: { ...input, revokeOtherSessions: false },
-  });
+  authFetch<unknown>("/api/auth/change-password", { ...input, revokeOtherSessions: false });
 
 // --- Two-step verification -----------------------------------------------------------------
 
 /** Starts turning two-step verification on: the authenticator's URI and the backup codes. */
 export const enableTwoFactor = (password: string) =>
-  apiFetch<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", {
-    method: "POST",
-    body: { password },
+  authFetch<{ totpURI: string; backupCodes: string[] }>("/api/auth/two-factor/enable", {
+    password,
   });
 
 export const disableTwoFactor = (password: string) =>
-  apiFetch<unknown>("/api/auth/two-factor/disable", { method: "POST", body: { password } });
+  authFetch<unknown>("/api/auth/two-factor/disable", { password });
 
 export const newBackupCodes = (password: string) =>
-  apiFetch<{ backupCodes: string[] }>("/api/auth/two-factor/generate-backup-codes", {
-    method: "POST",
-    body: { password },
-  });
+  authFetch<{ backupCodes: string[] }>("/api/auth/two-factor/generate-backup-codes", { password });
 
 /** The secret an authenticator app takes by hand, from an otpauth:// URI. */
 export const setupKeyOf = (uri: string): string => {
@@ -200,7 +179,7 @@ export interface SignedInSession {
 export const usePasskeys = () =>
   useQuery({
     queryKey: accountKeys.passkeys,
-    queryFn: () => apiFetch<Passkey[]>("/api/auth/passkey/list-user-passkeys"),
+    queryFn: () => authFetch<Passkey[]>("/api/auth/passkey/list-user-passkeys"),
   });
 
 /** Adds a passkey of this device; registering one is a step-up action. */
@@ -211,7 +190,7 @@ export const addPasskey = (name: string) =>
   });
 
 export const removePasskey = (id: string) =>
-  apiFetch<unknown>("/api/auth/passkey/delete-passkey", { method: "POST", body: { id } });
+  authFetch<unknown>("/api/auth/passkey/delete-passkey", { id });
 
 /** Every session of the owner, and the token of this browser's. */
 export const useSessions = () =>
@@ -219,15 +198,15 @@ export const useSessions = () =>
     queryKey: accountKeys.sessions,
     queryFn: async () => {
       const [sessions, current] = await Promise.all([
-        apiFetch<SignedInSession[]>("/api/auth/list-sessions"),
-        apiFetch<{ session: { token: string } } | null>("/api/auth/get-session"),
+        authFetch<SignedInSession[]>("/api/auth/list-sessions"),
+        authFetch<{ session: { token: string } } | null>("/api/auth/get-session"),
       ]);
       return { sessions, currentToken: current?.session.token ?? null };
     },
   });
 
 export const revokeSession = (token: string) =>
-  apiFetch<unknown>("/api/auth/revoke-session", { method: "POST", body: { token } });
+  authFetch<unknown>("/api/auth/revoke-session", { token });
 
 /** A mutation that reads the account's lists and the owner again once it is done. */
 export const useAccountMutation = <I, O>(run: (input: I) => Promise<O>) => {

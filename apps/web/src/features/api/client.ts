@@ -1,9 +1,11 @@
+import { createApiClient, jsonRequest, type Fetcher, type Outcome } from "@davloom/client";
 import type { MessageKey } from "../i18n/messages/en";
 import type { Translator } from "../i18n/translate";
 import { DavError } from "./dav";
 import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
-// The Dashboard's calls to the management API (apps/api/src/app.ts). Every call goes to the origin
-// that served the Dashboard and carries its session cookie.
+// The Dashboard's calls to the management API (apps/api/src/app.ts): Davloom's own routes through
+// the typed client of packages/client, Better Auth's through `authFetch`. Every call goes to the
+// origin that served the Dashboard and carries its session cookie.
 
 /** A refused call: the HTTP status and the API's machine-readable code, when it sent one. */
 export class ApiError extends Error {
@@ -78,33 +80,66 @@ const reasonOf = (body: unknown): string | undefined =>
     : undefined;
 
 /**
- * Calls the API and returns its JSON answer, or throws an ApiError. An action that needs step-up
- * verification asks for it and runs again (stepUp.ts).
+ * Sends one request to the API with the session cookie, as JSON when it changes something
+ * (`jsonRequest`); a dropped connection throws an ApiError with status 0. Both clients below send
+ * through it.
  */
-export const apiFetch = <T>(
-  path: string,
-  options: { method?: string; body?: unknown } = {},
-): Promise<T> => withStepUp(() => apiFetchOnce<T>(path, options));
-
-/** Calls the API once, without asking for verification. */
-export const apiFetchOnce = async <T>(
-  path: string,
-  { method = "GET", body }: { method?: string; body?: unknown } = {},
-): Promise<T> => {
-  let response: Response;
-  // The API takes a request that changes something only as JSON from this origin, which no
-  // cross-site form can send (apps/api same-origin.ts), so every such request carries JSON.
-  const changes = method !== "GET" && method !== "HEAD";
+export const send: Fetcher = async (url, init) => {
+  const { method, headers, body } = jsonRequest(init);
   try {
-    response = await fetch(path, {
-      method,
-      credentials: "same-origin",
-      headers: changes || body !== undefined ? { "content-type": "application/json" } : {},
-      body: body === undefined ? (changes ? "{}" : undefined) : JSON.stringify(body),
-    });
+    return await fetch(url, { method, credentials: "same-origin", headers, body });
   } catch {
     throw new ApiError(0, "network_error");
   }
+};
+
+/** The typed client of Davloom's own routes (packages/client), on this page's origin. */
+export const api = createApiClient({ fetcher: send });
+
+/**
+ * Runs a call of the typed client and returns its answer, or throws an ApiError. An action that
+ * needs step-up verification asks for it and runs again (stepUp.ts).
+ */
+export const apiCall = <Data>(call: () => Promise<Outcome<Data>>): Promise<Data> =>
+  withStepUp(() => apiCallOnce(call));
+
+/** Runs a call of the typed client once, without asking for verification. */
+export const apiCallOnce = async <Data>(call: () => Promise<Outcome<Data>>): Promise<Data> => {
+  let outcome: Outcome<Data>;
+  try {
+    outcome = await call();
+  } catch {
+    // Eden throws when an answer that says it is JSON is not.
+    throw new ApiError(0, "network_error");
+  }
+  if (outcome.error === null) return outcome.data;
+  const { status, error } = outcome;
+  // The fetcher threw: `send` throws an ApiError for a dropped connection.
+  if (outcome.response === undefined) {
+    throw isApiError(error.value) ? error.value : new ApiError(0, "network_error");
+  }
+  throw new ApiError(
+    status,
+    errorCodeOf(status, error.value),
+    detailOf(error.value),
+    reasonOf(error.value),
+  );
+};
+
+/**
+ * Calls one of Better Auth's routes under /api/auth, which the typed client does not cover, and
+ * returns its JSON answer, or throws an ApiError. An action that needs step-up verification asks
+ * for it and runs again (stepUp.ts).
+ */
+export const authFetch = <T>(path: string, body?: unknown): Promise<T> =>
+  withStepUp(() => authFetchOnce<T>(path, body));
+
+/** Calls one of Better Auth's routes once: a GET without a body, otherwise a POST of `body`. */
+export const authFetchOnce = async <T>(path: string, body?: unknown): Promise<T> => {
+  const response = await send(path, {
+    method: body === undefined ? "GET" : "POST",
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
   const parsed = await readBody(response);
   if (!response.ok) {
     throw new ApiError(
@@ -114,7 +149,7 @@ export const apiFetchOnce = async <T>(
       reasonOf(parsed),
     );
   }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer for this path
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Better Auth's own answer for this path
   return parsed as T;
 };
 

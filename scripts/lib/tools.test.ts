@@ -59,6 +59,13 @@ describe("the pinned images", () => {
       );
     },
   );
+
+  it("pins the Bun image of the Bun that packageManager names", async () => {
+    const manifest: unknown = await Bun.file(
+      join(import.meta.dirname, "../../package.json"),
+    ).json();
+    expect(`bun@${IMAGES.bun?.version}`).toBe(Reflect.get(Object(manifest), "packageManager"));
+  });
 });
 
 describe("the pinned tools", () => {

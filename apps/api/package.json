@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./app": "./src/app.ts"
+    "./app": "./src/app.ts",
+    "./contract": "./src/contract.ts",
+    "./testing": "./src/testing.bun.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.bun.json && tsc -p tsconfig.workers.json",

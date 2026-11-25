@@ -27,8 +27,6 @@ describe("backendDetail", () => {
       { available: false, status: { state: "not-opened" } },
       "Main cannot be opened with its saved settings.",
     ],
-    [{ available: true }, "Main answered."],
-    [{ available: false }, "Main gave no answer."],
   ] as const)("%j reads %s", (backend, text) => {
     expect(backendDetail(en, { name: "Main", ...backend })).toBe(text);
   });

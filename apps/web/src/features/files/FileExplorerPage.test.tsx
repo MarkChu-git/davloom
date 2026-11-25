@@ -43,6 +43,10 @@ const BACKENDS: Backend[] = [
     createdAt: "2026-01-01T00:00:00.000Z",
     available: true,
     usage: null,
+    status: { state: "answered", ms: 5 },
+    capacity: null,
+    config: {},
+    hasSecretKey: false,
   },
   {
     id: "b2",
@@ -51,6 +55,10 @@ const BACKENDS: Backend[] = [
     createdAt: "2026-01-01T00:00:00.000Z",
     available: true,
     usage: null,
+    status: { state: "answered", ms: 5 },
+    capacity: null,
+    config: {},
+    hasSecretKey: false,
   },
 ];
 

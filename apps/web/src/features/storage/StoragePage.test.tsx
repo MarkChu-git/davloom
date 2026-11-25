@@ -39,6 +39,10 @@ const PRIMARY: Backend = {
   createdAt: "2026-03-01T12:00:00Z",
   available: true,
   usage: { files: 3, collections: 2, bytes: 1500 },
+  status: { state: "answered", ms: 5 },
+  capacity: null,
+  config: {},
+  hasSecretKey: false,
 };
 const ARCHIVE: Backend = {
   id: "b2",
@@ -47,6 +51,10 @@ const ARCHIVE: Backend = {
   createdAt: "2026-03-02T12:00:00Z",
   available: false,
   usage: null,
+  status: { state: "failed", failure: "unavailable", ms: 30_000 },
+  capacity: null,
+  config: {},
+  hasSecretKey: false,
 };
 const mount = (fields: Pick<Mount, "id" | "name" | "backendId" | "root">): Mount => ({
   backendKind: "durable-object",

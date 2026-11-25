@@ -22,11 +22,9 @@ export interface RouteContract {
   readonly public?: boolean;
 }
 
-const read = (summary: string, response: AnySchema): RouteContract => ({
-  summary,
-  response,
-  status: 200,
-});
+/** A route that answers 200, keeping its answer's schema in the type for typed clients. */
+const read = <Response extends AnySchema>(summary: string, response: Response) =>
+  ({ summary, response, status: 200 }) as const satisfies RouteContract;
 
 export const ROUTES = {
   "GET /api/health": { ...read("Whether the server answers", Api.Health), public: true },

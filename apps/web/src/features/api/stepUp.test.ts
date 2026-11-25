@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiFetch } from "./client";
+import { ApiError, api, apiCall } from "./client";
 import { DavError, removeEntry, transferEntry } from "./dav";
 import { needsStepUp, requestStepUp, setStepUpHandler, withStepUp } from "./stepUp";
 
@@ -61,7 +61,7 @@ describe("withStepUp", () => {
     remove = setStepUpHandler(async () => true);
     answers = [REFUSED];
 
-    expect(await apiFetch("/api/keys", { method: "POST", body: {} })).toEqual({ ok: true });
+    expect(await apiCall(() => api.keys.post({}))).toEqual({ ok: true });
     expect(sent).toEqual(["POST /api/keys", "POST /api/keys"]);
   });
 
@@ -69,7 +69,7 @@ describe("withStepUp", () => {
     remove = setStepUpHandler(async () => false);
     answers = [REFUSED];
 
-    await expect(apiFetch("/api/export", { method: "POST" })).rejects.toMatchObject({
+    await expect(apiCall(() => api.export.post())).rejects.toMatchObject({
       status: 403,
       code: "verification_required",
     });
@@ -81,7 +81,7 @@ describe("withStepUp", () => {
     remove = setStepUpHandler(handler);
     answers = [REFUSED, REFUSED];
 
-    await expect(apiFetch("/api/export", { method: "POST" })).rejects.toMatchObject({
+    await expect(apiCall(() => api.export.post())).rejects.toMatchObject({
       code: "verification_required",
     });
     expect(handler).toHaveBeenCalledTimes(1);
@@ -107,7 +107,7 @@ describe("withStepUp", () => {
   it("answers false without a dialog", async () => {
     expect(await requestStepUp()).toBe(false);
     answers = [REFUSED];
-    await expect(apiFetch("/api/export", { method: "POST" })).rejects.toBeInstanceOf(ApiError);
+    await expect(apiCall(() => api.export.post())).rejects.toBeInstanceOf(ApiError);
   });
 
   it("removes only its own dialog", async () => {

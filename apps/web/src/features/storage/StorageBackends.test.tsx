@@ -53,6 +53,7 @@ const DURABLE: Backend = {
   capacity: 1000,
   config: {},
   hasSecretKey: false,
+  status: { state: "answered", ms: 5 },
 };
 const BUCKET: Backend = {
   id: "b2",
@@ -64,6 +65,7 @@ const BUCKET: Backend = {
   capacity: null,
   config: S3_CONFIG,
   hasSecretKey: true,
+  status: { state: "answered", ms: 5 },
 };
 const FILES: Mount = {
   id: "files",
