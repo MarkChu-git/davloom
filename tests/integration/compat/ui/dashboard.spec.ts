@@ -1194,7 +1194,9 @@ test("One grid: the mark and each page's title share a line, the first link star
     await shown(title);
     expect(await middleOf(title), name).toBeCloseTo(await middleOf(mark), 0);
     const firstLink = navigation.getByRole("link", { name: "Overview" });
-    expect((await boxOf(firstLink)).y, name).toBeCloseTo(await page.evaluate(contentTop), 0);
+    // The page's content renders after its title, which the prerendered frame already shows.
+    const linkY = (await boxOf(firstLink)).y;
+    await expect.poll(() => page.evaluate(contentTop), { message: name }).toBeCloseTo(linkY, 0);
     // The navigation's content starts as far in from the window's edge as the page's content starts
     // from the navigation, and its last control ends as far above the bottom.
     const { x: navX, width: navWidth } = await boxOf(navigation);
