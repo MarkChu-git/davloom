@@ -445,6 +445,12 @@ export const davloomTheme = {
         "borderInlineEndWidth": "0"
       }
     },
+    "side-nav-heading": {
+      "base": {
+        "--text-large-size": "var(--font-size-xl)",
+        "--text-large-leading": "1.4"
+      }
+    },
     "side-nav-item": {
       "base": {
         "--color-text-primary": "var(--color-text-secondary)",

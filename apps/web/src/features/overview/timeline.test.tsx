@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OperationError, OperationHour } from "../api/queries";
+import { translator } from "../i18n/translate";
 import { describeOperations, ErrorTimeline, hourPoints, OperationsChart } from "./charts";
 import { glyphPaths } from "./errors";
 
@@ -13,6 +14,8 @@ afterEach(() => {
 });
 
 /** Makes the device's main pointer a finger, or a mouse. */
+const en = translator("en");
+
 const pointWith = (isFinger: boolean) => {
   const matchMedia = window.matchMedia.bind(window);
   vi.spyOn(window, "matchMedia").mockImplementation((query) => {
@@ -65,15 +68,21 @@ describe("hourPoints and describeOperations", () => {
   });
 
   it("names the busiest hour, now or before", () => {
-    expect(describeOperations(hourPoints(HOURS))).toBe(
+    expect(describeOperations(en, hourPoints(HOURS))).toBe(
       "13 operations, 2 of them failed, now. The busiest hour is now, with 9.",
     );
     expect(
-      describeOperations([
+      describeOperations(en, [
         { hoursAgo: 2, operations: 5, failed: 0 },
         { hoursAgo: 0, operations: 1, failed: 0 },
       ]),
     ).toBe("6 operations, 0 of them failed. The busiest hour was 2 hours ago, with 5.");
+  });
+
+  it("names the busiest hour in Chinese", () => {
+    const text = describeOperations(translator("zh-CN"), hourPoints(HOURS));
+    expect(text).toContain("13");
+    expect(text).not.toMatch(/[A-Za-z]/);
   });
 });
 

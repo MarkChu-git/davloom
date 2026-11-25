@@ -2,6 +2,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleCanceledAnimations } from "../../test/layout";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import { RegisterPage } from "./RegisterPage";
 
@@ -338,5 +339,17 @@ describe("RegisterPage", () => {
     expect(screen.queryByText("Enter the setup token.")).toBeNull();
     await userEvent.type(screen.getByLabelText("Setup token"), "{Enter}");
     expect(calls.some((call) => call.method === "POST")).toBe(false);
+  });
+});
+
+describe("RegisterPage in Chinese", () => {
+  it("writes its form in Chinese", async () => {
+    const { container } = await renderPage(<RegisterPage />, {
+      path: "/register",
+      locale: "zh-CN",
+      api: { "GET /api/registration": OPEN },
+    });
+    expect(await screen.findByRole("heading", { name: "创建账户" })).toBeTruthy();
+    expectChinese(container);
   });
 });

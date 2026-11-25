@@ -15,6 +15,8 @@ import {
   type Backend,
   type BackendConfig,
 } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 
 const identifier = {
   autoCapitalize: "none",
@@ -41,7 +43,7 @@ const BUCKET = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
  * What is wrong with an S3-compatible backend's fields, by field, as the API checks them. A form
  * that edits a backend may leave the secret key empty to keep the stored one.
  */
-export const s3Problems = (fields: S3Fields, isEditing: boolean): S3Problem => {
+export const s3Problems = (t: Translator, fields: S3Fields, isEditing: boolean): S3Problem => {
   const problems: S3Problem = {};
   let url: URL | null = null;
   try {
@@ -50,26 +52,26 @@ export const s3Problems = (fields: S3Fields, isEditing: boolean): S3Problem => {
     url = null;
   }
   if (url === null || (url.protocol !== "https:" && url.protocol !== "http:")) {
-    problems.endpoint = "Enter the endpoint's URL, such as https://s3.example.com.";
+    problems.endpoint = t("s3.endpointInvalid");
   } else if (url.username !== "" || url.password !== "" || url.search !== "" || url.hash !== "") {
-    problems.endpoint = "Enter the endpoint without a user, a query or a fragment.";
+    problems.endpoint = t("s3.endpointExtra");
   }
   const region = fields.region.trim();
   if (region !== "" && (region.length > 64 || !/^[a-z0-9-]+$/.test(region))) {
-    problems.region = "Use lowercase letters, digits and hyphens, such as us-east-1.";
+    problems.region = t("s3.regionInvalid");
   }
   if (!BUCKET.test(fields.bucket.trim())) {
-    problems.bucket = "Use 3 to 63 lowercase letters, digits, dots and hyphens.";
+    problems.bucket = t("s3.bucketInvalid");
   }
   const prefix = fields.prefix.trim();
   if (prefix.startsWith("/") || prefix.includes("//") || prefix.length > 100) {
-    problems.prefix = "Use a path without a leading or doubled slash, at most 100 characters.";
+    problems.prefix = t("s3.prefixInvalid");
   }
   if (fields.accessKeyId.trim() === "" || fields.accessKeyId.length > 256) {
-    problems.accessKeyId = "Enter the access key ID.";
+    problems.accessKeyId = t("s3.accessKeyMissing");
   }
   if ((!isEditing && fields.secretKey === "") || fields.secretKey.length > 256) {
-    problems.secretKey = "Enter the secret access key.";
+    problems.secretKey = t("s3.secretKeyMissing");
   }
   return problems;
 };
@@ -119,6 +121,7 @@ export const BackendForm = ({
   onCancel: () => void;
   onSaved: (name: string) => void;
 }) => {
+  const t = useT();
   const create = useCreateBackend();
   const update = useUpdateBackend();
   const isEditing = backend !== undefined;
@@ -138,10 +141,10 @@ export const BackendForm = ({
 
   const submit = () => {
     const trimmed = name.trim();
-    const next: S3Problem = kind === "s3" ? s3Problems(s3, isEditing) : {};
-    if (trimmed === "") next.name = "Enter a name for the backend.";
-    else if (trimmed.length > 64) next.name = "Use at most 64 characters.";
-    else if (takenNames.includes(trimmed)) next.name = "Another backend already has this name.";
+    const next: S3Problem = kind === "s3" ? s3Problems(t, s3, isEditing) : {};
+    if (trimmed === "") next.name = t("backendForm.nameMissing");
+    else if (trimmed.length > 64) next.name = t("form.atMost", { count: 64 });
+    else if (takenNames.includes(trimmed)) next.name = t("backendForm.nameTaken");
     setProblems(next);
     setFailure(undefined);
     if (Object.values(next).some((problem) => problem !== undefined) || isSaving) {
@@ -149,11 +152,11 @@ export const BackendForm = ({
     }
     const onError = (error: Error) => {
       if (isApiError(error) && error.code === "name_taken") {
-        setProblems({ name: "Another backend already has this name." });
+        setProblems({ name: t("backendForm.nameTaken") });
       } else if (isApiError(error) && error.code === "invalid_input") {
-        setFailure("The server refused these values. Check each field.");
+        setFailure(t("backendForm.refused"));
       } else {
-        setFailure(describeError(error));
+        setFailure(describeError(t, error));
       }
     };
     const s3Body =
@@ -202,7 +205,11 @@ export const BackendForm = ({
     <Layout
       header={
         <DialogHeader
-          title={isEditing ? `Edit ${backend.name}` : "Add a backend"}
+          title={
+            isEditing
+              ? t("backendForm.editTitle", { name: backend.name })
+              : t("backendForm.addTitle")
+          }
           onOpenChange={onCancel}
         />
       }
@@ -213,7 +220,7 @@ export const BackendForm = ({
               <Banner status="error" title={failure} container="card" />
             )}
             <TextInput
-              label="Name"
+              label={t("field.name")}
               value={name}
               onChange={(value) => {
                 setName(value);
@@ -227,32 +234,34 @@ export const BackendForm = ({
             />
             {isEditing || offered.length < 2 ? (
               <MetadataList>
-                <MetadataListItem label="Kind">{kindLabel(kind)}</MetadataListItem>
+                <MetadataListItem label={t("backendForm.kind")}>
+                  {kindLabel(t, kind)}
+                </MetadataListItem>
               </MetadataList>
             ) : (
               <Selector
-                label="Kind"
+                label={t("backendForm.kind")}
                 value={kind}
                 onChange={(next) => {
                   setKind(next);
                   setProblems({});
                 }}
-                options={offered.map((value) => ({ value, label: kindLabel(value) }))}
+                options={offered.map((value) => ({ value, label: kindLabel(t, value) }))}
               />
             )}
             {kind === "s3" ? (
               <>
-                {s3Input("endpoint", "Endpoint", { type: "url" })}
-                {s3Input("bucket", "Bucket")}
-                {s3Input("prefix", "Prefix", { isOptional: true })}
-                {s3Input("region", "Region", { isOptional: true, placeholder: "us-east-1" })}
-                {s3Input("accessKeyId", "Access key ID")}
-                {s3Input("secretKey", "Secret access key", {
+                {s3Input("endpoint", t("backendCard.endpoint"), { type: "url" })}
+                {s3Input("bucket", t("s3.bucket"))}
+                {s3Input("prefix", t("s3.prefix"), { isOptional: true })}
+                {s3Input("region", t("s3.region"), { isOptional: true, placeholder: "us-east-1" })}
+                {s3Input("accessKeyId", t("s3.accessKeyId"))}
+                {s3Input("secretKey", t("s3.secretKey"), {
                   type: "password",
-                  ...(isEditing ? { isOptional: true, placeholder: "Unchanged" } : {}),
+                  ...(isEditing ? { isOptional: true, placeholder: t("s3.unchanged") } : {}),
                 })}
                 <Switch
-                  label="Path-style addresses"
+                  label={t("s3.pathStyle")}
                   value={s3.forcePathStyle}
                   onChange={(value) => change("forcePathStyle", value)}
                 />
@@ -264,9 +273,9 @@ export const BackendForm = ({
       footer={
         <LayoutFooter>
           <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="secondary" onClick={onCancel} />
+            <Button label={t("action.cancel")} variant="secondary" onClick={onCancel} />
             <Button
-              label={isEditing ? "Save" : "Add backend"}
+              label={isEditing ? t("action.save") : t("backendForm.add")}
               variant="primary"
               isLoading={isSaving}
               onClick={submit}

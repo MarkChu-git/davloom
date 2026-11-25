@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import { passkeyApi, stubPasskeys } from "../../test/webauthn";
 import { SignInPage } from "./SignInPage";
@@ -312,5 +313,22 @@ describe("SignInPage", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Sign in with a passkey" }) !== null).toBe(shown),
     );
+  });
+});
+
+describe("SignInPage in Chinese", () => {
+  it("writes its form in Chinese", async () => {
+    const { container } = await renderPage(<SignInPage />, {
+      path: "/sign-in",
+      locale: "zh-CN",
+      api: {
+        "GET /api/auth/get-session": NO_SESSION,
+        "GET /api/me": SIGNED_OUT,
+        "GET /api/registration": CLOSED,
+      },
+    });
+    expect(await screen.findByRole("heading", { name: "登录" })).toBeTruthy();
+    expect(screen.getByLabelText("用户名或电子邮件")).toBeTruthy();
+    expectChinese(container);
   });
 });

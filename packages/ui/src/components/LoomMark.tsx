@@ -1,4 +1,6 @@
 import { Icon } from "@astryxdesign/core/Icon";
+import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
+import * as stylex from "@stylexjs/stylex";
 import { useId, type SVGProps } from "react";
 
 // The ring is an ellipse with radii of 14.6 and 3.5 about the planet's center, tilted 22 degrees up
@@ -67,4 +69,15 @@ const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
  * planet. It is drawn in the accent, which Icon sets as its color, so the mark inverts with the
  * mode. It is decorative; the product name beside it names the link.
  */
-export const LoomMark = () => <Icon icon={LoomGlyph} size="lg" color="accent" />;
+export const LoomMark = () => (
+  <Icon icon={LoomGlyph} size="lg" color="accent" xstyle={styles.mark} />
+);
+
+// Larger than Icon's largest size, 24 px, so the mark leads beside the product name: 32 px at a
+// 16 px root, and scaling with it.
+const styles = stylex.create({
+  mark: {
+    width: spacingVars["--spacing-8"],
+    height: spacingVars["--spacing-8"],
+  },
+});

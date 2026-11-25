@@ -192,11 +192,16 @@ const DialogPage = () => {
   return (
     <div role="main">
       {isRenameShown ? (
-        <Button label="Rename" onClick={() => dialog.show(form, () => buttonNamed("Fallback"))} />
+        <Button
+          label="Rename"
+          onClick={() => dialog.show(form, "Rename item", () => buttonNamed("Fallback"))}
+        />
       ) : null}
       <Button label="Fallback" />
       <Button label="Back" />
-      {isRenameShown ? <Button label="Open bare" onClick={() => dialog.show(form)} /> : null}
+      {isRenameShown ? (
+        <Button label="Open bare" onClick={() => dialog.show(form, "New folder")} />
+      ) : null}
       {dialog.element}
     </div>
   );
@@ -260,5 +265,15 @@ describe("useFormDialog", () => {
     await openDialog("Open bare");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => focusedIn("Open bare"));
+  });
+
+  it("is named by the title of each form it shows, not only the first", async () => {
+    render(<DialogPage />);
+    await openDialog("Rename");
+    expect(screen.getByRole("dialog", { name: "Rename item" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => focusedIn("Rename"));
+    await openDialog("Open bare");
+    expect(screen.getByRole("dialog", { name: "New folder" })).toBeTruthy();
   });
 });

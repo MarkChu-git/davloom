@@ -10,7 +10,8 @@ import { Text } from "@astryxdesign/core/Text";
 import * as stylex from "@stylexjs/stylex";
 import { describeError } from "../api/client";
 import { kindLabel, useVerifyBackend, type Backend, type BackendCheck } from "../api/queries";
-import { formatBytes, formatCount, formatRelative } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { StatusLabel } from "../shell/StatusLabel";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
 import { backendStatus } from "./backendStatus";
@@ -60,10 +61,10 @@ export const endpointOf = (backend: Backend): string | null => {
   return null;
 };
 
-const checkLabel = (check: BackendCheck): string =>
+const checkLabel = (t: Translator, check: BackendCheck): string =>
   check.available
-    ? `Answered just now, in ${formatCount(check.latencyMs ?? 0)} ms`
-    : `Still unavailable: ${check.reason ?? "no answer"}`;
+    ? t("backendCard.answeredNow", { ms: check.latencyMs ?? 0 })
+    : t("backendCard.stillUnavailable", { reason: check.reason ?? t("overview.noAnswer") });
 
 export const BackendCard = ({
   backend,
@@ -81,6 +82,7 @@ export const BackendCard = ({
   onEdit: () => void;
   onRemove: () => void;
 }) => {
+  const t = useT();
   const announce = useAnnounce();
   const verify = useVerifyBackend();
   // A narrower card, as on the narrowest phones, puts the status under the backend's kind and
@@ -96,11 +98,14 @@ export const BackendCard = ({
       onSuccess: (result) =>
         announce(
           result.available
-            ? `${backend.name} answered.`
-            : `${backend.name} is still unavailable: ${result.reason ?? "no answer"}.`,
+            ? t("backendDetail.answered", { name: backend.name })
+            : t("backendCard.stillUnavailableNamed", {
+                name: backend.name,
+                reason: result.reason ?? t("overview.noAnswer"),
+              }),
           result.available ? "polite" : "assertive",
         ),
-      onError: (error) => announce(describeError(error), "assertive"),
+      onError: (error) => announce(describeError(t, error), "assertive"),
     });
 
   return (
@@ -115,49 +120,54 @@ export const BackendCard = ({
         <VStack gap={0.5}>
           <Heading level={3}>{backend.name}</Heading>
           <Text type="supporting" color="secondary">
-            {isDefault ? `${kindLabel(backend.kind)} · Default` : kindLabel(backend.kind)}
+            {isDefault
+              ? `${kindLabel(t, backend.kind)} · ${t("backend.default")}`
+              : kindLabel(t, backend.kind)}
           </Text>
         </VStack>
         <HStack gap={1} vAlign="center">
-          <StatusLabel {...backendStatus(backend)} />
+          <StatusLabel {...backendStatus(t, backend)} />
           <MoreMenu
-            label={`Actions for backend ${backend.name}`}
+            label={t("backendCard.actionsFor", { name: backend.name })}
             size="sm"
             alignment="end"
             items={[
-              { label: "Edit", onClick: onEdit },
+              { label: t("action.edit"), onClick: onEdit },
               { type: "divider" },
-              { label: "Remove", variant: "destructive", onClick: onRemove },
+              { label: t("action.remove"), variant: "destructive", onClick: onRemove },
             ]}
           />
         </HStack>
       </Stack>
       <VStack gap={4}>
         <MetadataList label={isNarrow ? { position: "top" } : undefined}>
-          <MetadataListItem label="Endpoint">
+          <MetadataListItem label={t("backendCard.endpoint")}>
             {endpoint === null ? (
-              "Built in"
+              t("backendCard.builtIn")
             ) : (
               <Text type="code" xstyle={styles.code}>
                 {endpoint}
               </Text>
             )}
           </MetadataListItem>
-          <MetadataListItem label="Objects">
-            {usage === null ? "Unknown" : formatCount(usage.files + usage.collections)}
+          <MetadataListItem label={t("chart.objects")}>
+            {usage === null ? t("files.unknown") : t.count(usage.files + usage.collections)}
           </MetadataListItem>
-          <MetadataListItem label="Stored">
+          <MetadataListItem label={t("overview.stored")}>
             {usage === null
-              ? "Unknown"
+              ? t("files.unknown")
               : capacity === null
-                ? `${formatBytes(usage.bytes)}, no fixed limit`
-                : `${formatBytes(usage.bytes)} of ${formatBytes(capacity)}`}
+                ? t("backendCard.noLimit", { bytes: t.bytes(usage.bytes) })
+                : t("overview.bytesOf", {
+                    used: t.bytes(usage.bytes),
+                    capacity: t.bytes(capacity),
+                  })}
           </MetadataListItem>
-          <MetadataListItem label="Mounts">{formatCount(mountCount)}</MetadataListItem>
+          <MetadataListItem label={t("overview.mounts")}>{t.count(mountCount)}</MetadataListItem>
         </MetadataList>
         {capacity === null || usage === null ? null : (
           <ProgressBar
-            label={`${backend.name} capacity used`}
+            label={t("backendCard.capacityUsed", { name: backend.name })}
             isLabelHidden
             value={usage.bytes}
             max={capacity}
@@ -166,19 +176,21 @@ export const BackendCard = ({
       </VStack>
       <HStack gap={3} vAlign="center" wrap="wrap">
         <Button
-          label="Verify connection"
+          label={t("backendCard.verify")}
           variant="secondary"
           size="sm"
           isLoading={verify.isPending}
           onClick={runCheck}
         />
         {check !== undefined && !verify.isPending ? (
-          <StatusLabel tone={check.available ? "success" : "error"} label={checkLabel(check)} />
+          <StatusLabel tone={check.available ? "success" : "error"} label={checkLabel(t, check)} />
         ) : verify.isError ? (
-          <StatusLabel tone="error" label={describeError(verify.error)} />
+          <StatusLabel tone="error" label={describeError(t, verify.error)} />
         ) : (
           <Text type="supporting" color="secondary">
-            {`Last checked ${formatRelative(new Date(checkedAt).toISOString())}`}
+            {t("backendCard.lastChecked", {
+              when: t.relative(new Date(checkedAt).toISOString()),
+            })}
           </Text>
         )}
       </HStack>

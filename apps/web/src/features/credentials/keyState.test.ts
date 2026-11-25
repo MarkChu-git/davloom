@@ -1,6 +1,10 @@
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import { ALL_MOUNTS, hasExpired, keyStateOf, reachOf, scopeOf } from "./keyState";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 const NOW = new Date("2026-11-16T15:30:00Z");
 
@@ -51,11 +55,11 @@ describe("scopeOf", () => {
     ["files", "   ", ["/files"]],
     ["中文", "😀", ["/中文/😀"]],
   ])("reads mount %j and folder %j as %j", (mount, folder, paths) => {
-    expect(scopeOf(mount, folder)).toEqual({ paths });
+    expect(scopeOf(en, mount, folder)).toEqual({ paths });
   });
 
   it.each(["..", "./x", "photos/..", "a/./b", " .. "])("refuses the folder %j", (folder) => {
-    expect(scopeOf("files", folder)).toHaveProperty("problem");
+    expect(scopeOf(en, "files", folder)).toHaveProperty("problem");
   });
 
   it("limits a key to one root inside its mount for any folder without . or ..", () => {
@@ -67,7 +71,7 @@ describe("scopeOf", () => {
         name,
         fc.array(fc.oneof(name, fc.constant("")), { maxLength: 6 }),
         (mount, parts) => {
-          const scope = scopeOf(mount, parts.join("/"));
+          const scope = scopeOf(en, mount, parts.join("/"));
           if (!("paths" in scope) || scope.paths === null) {
             throw new Error("expected one root");
           }
@@ -85,8 +89,14 @@ describe("scopeOf", () => {
   });
 
   it("names a key's scope", () => {
-    expect(reachOf(null)).toBe("All mounts");
-    expect(reachOf(["/files/a", "/docs"])).toBe("/files/a, /docs");
-    expect(reachOf([])).toBe("Nothing: its folders cannot be read");
+    expect(reachOf(en, null)).toBe("All mounts");
+    expect(reachOf(en, ["/files/a", "/docs"])).toBe("/files/a, /docs");
+    expect(reachOf(en, [])).toBe("Nothing: its folders cannot be read");
+  });
+
+  it("names a key's scope in Chinese", () => {
+    expect(reachOf(zh, null)).toBe("所有挂载点");
+    expect(reachOf(zh, ["/files/a", "/docs"])).toBe("/files/a、/docs");
+    expect(scopeOf(zh, "files", "..")).toEqual({ problem: zh("keys.folderDots") });
   });
 });

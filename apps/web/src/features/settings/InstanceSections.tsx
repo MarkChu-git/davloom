@@ -16,7 +16,7 @@ import {
   useSaveStorageSettings,
   useStorageSettings,
 } from "../api/queries";
-import { formatCount } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
 import { LoadingRows, QueryState } from "../shell/QueryState";
 import { useNarrowerThan } from "../shell/useNarrowerThan";
 
@@ -37,6 +37,7 @@ const Details = ({ children }: { children: ReactNode }) => {
 
 /** The default backend for new mounts, chosen from the backends and saved on the server. */
 const StorageForm = ({ saved }: { saved: string | null }) => {
+  const t = useT();
   const backends = useBackends();
   const save = useSaveStorageSettings();
   const toast = useToast();
@@ -44,14 +45,14 @@ const StorageForm = ({ saved }: { saved: string | null }) => {
   const options = (backends.data ?? []).map((backend) => ({
     value: backend.id,
     label: backend.name,
-    description: kindLabel(backend.kind),
+    description: kindLabel(t, backend.kind),
   }));
   return (
     <>
       {/* In a form layout, as Profile's fields are, so the two sections' fields share a width. */}
       <FormLayout>
         <Selector
-          label="Default backend for new mounts"
+          label={t("storageSettings.defaultBackend")}
           value={chosen}
           onChange={setChosen}
           options={options}
@@ -60,7 +61,7 @@ const StorageForm = ({ saved }: { saved: string | null }) => {
       </FormLayout>
       <HStack>
         <Button
-          label="Save storage settings"
+          label={t("storageSettings.save")}
           variant="primary"
           isLoading={save.isPending}
           isDisabled={chosen === "" || chosen === saved}
@@ -68,8 +69,8 @@ const StorageForm = ({ saved }: { saved: string | null }) => {
             save.mutate(
               { defaultBackendId: chosen },
               {
-                onSuccess: () => toast({ body: "Storage settings saved." }),
-                onError: (error) => toast({ type: "error", body: describeError(error) }),
+                onSuccess: () => toast({ body: t("storageSettings.saved") }),
+                onError: (error) => toast({ type: "error", body: describeError(t, error) }),
               },
             )
           }
@@ -80,11 +81,12 @@ const StorageForm = ({ saved }: { saved: string | null }) => {
 };
 
 export const StorageSettingsContent = () => {
+  const t = useT();
   const settings = useStorageSettings();
   return (
     <QueryState
       query={settings}
-      title="Cannot read the storage settings"
+      title={t("storageSettings.cannotRead")}
       loading={<LoadingRows rows={1} />}
     >
       {(data) => <StorageForm key={data.defaultBackendId ?? ""} saved={data.defaultBackendId} />}
@@ -95,34 +97,47 @@ export const StorageSettingsContent = () => {
 const PENDING = "…";
 
 export const AboutContent = () => {
+  const t = useT();
   const info = useInstanceInfo();
   const backends = useBackends();
   const mounts = useMounts();
-  const kinds = [...new Set((backends.data ?? []).map((backend) => kindLabel(backend.kind)))];
+  const kinds = [...new Set((backends.data ?? []).map((backend) => kindLabel(t, backend.kind)))];
   const about = (pick: (value: NonNullable<typeof info.data>) => string | null): string => {
-    if (info.data !== undefined) return pick(info.data) ?? "Unknown";
-    return info.isError ? "Unknown" : PENDING;
+    if (info.data !== undefined) return pick(info.data) ?? t("files.unknown");
+    return info.isError ? t("files.unknown") : PENDING;
   };
   return (
     <Details>
-      <MetadataListItem label="Version">{about((value) => value.version)}</MetadataListItem>
-      <MetadataListItem label="Commit">
+      <MetadataListItem label={t("about.version")}>
+        {about((value) => value.version)}
+      </MetadataListItem>
+      <MetadataListItem label={t("about.commit")}>
         <Text type="code">{about((value) => value.commit?.slice(0, 12) ?? null)}</Text>
       </MetadataListItem>
-      <MetadataListItem label="Deployment">{about((value) => value.deployment)}</MetadataListItem>
-      <MetadataListItem label="Runtime">{about((value) => value.runtime)}</MetadataListItem>
-      <MetadataListItem label="Database">{about((value) => value.database)}</MetadataListItem>
-      <MetadataListItem label="Region">{about((value) => value.region)}</MetadataListItem>
-      <MetadataListItem label="Address">{location.origin}</MetadataListItem>
-      <MetadataListItem label="WebDAV address">{webdavAddress()}</MetadataListItem>
-      <MetadataListItem label="Storage">
-        {backends.data === undefined ? PENDING : kinds.length === 0 ? "None" : kinds.join(", ")}
+      <MetadataListItem label={t("about.deployment")}>
+        {about((value) => value.deployment)}
       </MetadataListItem>
-      <MetadataListItem label="Backends">
-        {backends.data === undefined ? PENDING : formatCount(backends.data.length)}
+      <MetadataListItem label={t("about.runtime")}>
+        {about((value) => value.runtime)}
       </MetadataListItem>
-      <MetadataListItem label="Mounts">
-        {mounts.data === undefined ? PENDING : formatCount(mounts.data.length)}
+      <MetadataListItem label={t("about.database")}>
+        {about((value) => value.database)}
+      </MetadataListItem>
+      <MetadataListItem label={t("s3.region")}>{about((value) => value.region)}</MetadataListItem>
+      <MetadataListItem label={t("settings.address")}>{location.origin}</MetadataListItem>
+      <MetadataListItem label={t("overview.webdavAddress")}>{webdavAddress()}</MetadataListItem>
+      <MetadataListItem label={t("settings.storage")}>
+        {backends.data === undefined
+          ? PENDING
+          : kinds.length === 0
+            ? t("about.none")
+            : kinds.join(t("keys.pathSeparator"))}
+      </MetadataListItem>
+      <MetadataListItem label={t("storage.backends")}>
+        {backends.data === undefined ? PENDING : t.count(backends.data.length)}
+      </MetadataListItem>
+      <MetadataListItem label={t("overview.mounts")}>
+        {mounts.data === undefined ? PENDING : t.count(mounts.data.length)}
       </MetadataListItem>
     </Details>
   );

@@ -63,6 +63,14 @@ export const davloomTheme = defineTheme({
       },
       "mode:topbar": { borderInlineEndWidth: "0" },
     },
+    // The product's name at 20 px, a step above the design system's 17 px, beside a mark that
+    // LoomMark draws larger than an icon.
+    "side-nav-heading": {
+      base: {
+        "--text-large-size": "var(--font-size-xl)",
+        "--text-large-leading": "1.4",
+      },
+    },
     // Rows in medium weight recede to secondary text, as in Linear. The current page keeps the
     // design system's fill and primary text and turns semibold, so it differs in weight as well as
     // shade (WCAG 1.4.1); its icon also draws a heavier stroke.

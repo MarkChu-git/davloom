@@ -13,9 +13,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { davProblem, type Transfer } from "../api/dav";
 import { keys } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { isWithin, joinPath, splitPath } from "./paths";
-
-const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 
 const DialogFrame = ({
   title,
@@ -31,20 +31,23 @@ const DialogFrame = ({
   onCancel: () => void;
   onSubmit: () => void;
   children: ReactNode;
-}) => (
-  <Layout
-    header={<DialogHeader title={title} onOpenChange={onCancel} />}
-    content={<LayoutContent>{children}</LayoutContent>}
-    footer={
-      <LayoutFooter>
-        <HStack gap={2} hAlign="end">
-          <Button label="Cancel" variant="secondary" onClick={onCancel} />
-          <Button label={submitLabel} variant="primary" isLoading={isSaving} onClick={onSubmit} />
-        </HStack>
-      </LayoutFooter>
-    }
-  />
-);
+}) => {
+  const t = useT();
+  return (
+    <Layout
+      header={<DialogHeader title={title} onOpenChange={onCancel} />}
+      content={<LayoutContent>{children}</LayoutContent>}
+      footer={
+        <LayoutFooter>
+          <HStack gap={2} hAlign="end">
+            <Button label={t("action.cancel")} variant="secondary" onClick={onCancel} />
+            <Button label={submitLabel} variant="primary" isLoading={isSaving} onClick={onSubmit} />
+          </HStack>
+        </LayoutFooter>
+      }
+    />
+  );
+};
 
 /** Makes a change and answers why it refused, if it did. */
 type Submit<T> = (value: T) => Promise<string | undefined>;
@@ -83,6 +86,7 @@ export const NameForm = ({
   onCancel: () => void;
   onSubmit: Submit<string>;
 }) => {
+  const t = useT();
   const [name, setName] = useState(initialName);
   const { problem, setProblem, isSaving, submit } = useSubmit(onSubmit);
 
@@ -95,7 +99,7 @@ export const NameForm = ({
       onSubmit={() => submit(name)}
     >
       <TextInput
-        label="Name"
+        label={t("field.name")}
         value={name}
         onChange={(value) => {
           setName(value);
@@ -111,6 +115,19 @@ export const NameForm = ({
       />
     </DialogFrame>
   );
+};
+
+/** The title of the form that moves or copies `names`, such as Move “report.pdf”. */
+export const transferTitle = (
+  t: Translator,
+  transfer: Transfer,
+  names: readonly string[],
+): string => {
+  const what =
+    names.length === 1
+      ? t("files.quoted", { name: names[0] ?? "" })
+      : t("count.items", { count: names.length });
+  return t(transfer === "move" ? "transfer.moveTitle" : "transfer.copyTitle", { what });
 };
 
 /** The folders inside a folder of the namespace, by name. */
@@ -140,10 +157,10 @@ export const TransferForm = ({
   onCancel: () => void;
   onSubmit: Submit<string>;
 }) => {
+  const t = useT();
+  const collator = new Intl.Collator(t.locale, { numeric: true, sensitivity: "base" });
   const [at, setAt] = useState<readonly string[]>(() => splitPath(from));
   const { problem, setProblem, isSaving, submit } = useSubmit(onSubmit);
-  const what = names.length === 1 ? `“${names[0]}”` : `${names.length} items`;
-  const verb = transfer === "move" ? "Move" : "Copy";
   const here = joinPath(at);
   const sources = names.map((name) => joinPath([...splitPath(from), name]));
 
@@ -160,7 +177,7 @@ export const TransferForm = ({
       : listed.data !== undefined
         ? { state: "ready" as const, names: listed.data }
         : listed.isError
-          ? { state: "error" as const, problem: davProblem(listed.error, here) }
+          ? { state: "error" as const, problem: davProblem(t, listed.error, here) }
           : { state: "loading" as const };
 
   const go = (parts: readonly string[]) => {
@@ -170,16 +187,16 @@ export const TransferForm = ({
 
   return (
     <DialogFrame
-      title={`${verb} ${what}`}
-      submitLabel={`${verb} here`}
+      title={transferTitle(t, transfer, names)}
+      submitLabel={t(transfer === "move" ? "transfer.moveHere" : "transfer.copyHere")}
       isSaving={isSaving}
       onCancel={onCancel}
       onSubmit={() => submit(here)}
     >
       <VStack gap={3}>
-        <Breadcrumbs label="Destination">
+        <Breadcrumbs label={t("transfer.destination")}>
           <BreadcrumbItem onClick={() => go([])} isCurrent={at.length === 0}>
-            Files
+            {t("nav.files")}
           </BreadcrumbItem>
           {at.map((part, index) => (
             <BreadcrumbItem
@@ -197,7 +214,7 @@ export const TransferForm = ({
         ) : shown.state === "error" ? (
           <Banner status="error" title={shown.problem} container="card" />
         ) : shown.names.length === 0 ? (
-          <Text color="secondary">No folders inside</Text>
+          <Text color="secondary">{t("transfer.noFolders")}</Text>
         ) : (
           <List density="compact">
             {shown.names

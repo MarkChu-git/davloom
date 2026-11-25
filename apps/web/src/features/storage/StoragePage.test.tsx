@@ -11,6 +11,7 @@ import {
   NARROW,
   WIDE,
 } from "../../test/layout";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import type { Backend, Mount } from "../api/queries";
 import { StoragePage } from "./StoragePage";
@@ -607,5 +608,26 @@ describe("StoragePage, narrow", () => {
     );
     expect(await screen.findAllByText("Removed /files.")).not.toHaveLength(0);
     await waitFor(() => expect(screen.queryByText("/files", { exact: true })).toBeNull());
+  });
+});
+
+describe("StoragePage in Chinese", () => {
+  it("writes its backends, mounts and states in Chinese", async () => {
+    const { container } = await renderPage(<Page />, {
+      locale: "zh-CN",
+      api: storageApi([PRIMARY, ARCHIVE], [FILES, PHOTOS, LOST]),
+    });
+    await screen.findAllByText("Primary");
+    expect(screen.getAllByText("不可用").length).toBeGreaterThan(0);
+    expectChinese(container, [
+      "Primary",
+      "Archive",
+      "s3-ish",
+      "/files",
+      "/photos",
+      "/lost",
+      "pics/2024",
+      "kB",
+    ]);
   });
 });

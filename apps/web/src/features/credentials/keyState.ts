@@ -1,4 +1,5 @@
 import type { ApiKey } from "../api/queries";
+import type { Translator } from "../i18n/translate";
 
 export type KeyState = "active" | "expired" | "disabled";
 
@@ -29,6 +30,7 @@ export const ALL_MOUNTS = "/";
  * name dropped; a `.` or `..` is refused, so a scope never reaches outside its Mount.
  */
 export const scopeOf = (
+  t: Translator,
   mount: string,
   folder: string,
 ): { paths: string[] | null } | { problem: string } => {
@@ -40,15 +42,15 @@ export const scopeOf = (
     .map((name) => name.trim())
     .filter((name) => name !== "");
   if (names.some((name) => name === "." || name === "..")) {
-    return { problem: "Name a folder inside the mount, without . or .. in its path." };
+    return { problem: t("keys.folderDots") };
   }
   return { paths: [`/${[mount, ...names].join("/")}`] };
 };
 
 /** How a key's scope reads in the list. */
-export const reachOf = (paths: readonly string[] | null): string =>
+export const reachOf = (t: Translator, paths: readonly string[] | null): string =>
   paths === null
-    ? "All mounts"
+    ? t("keys.allMounts")
     : paths.length === 0
-      ? "Nothing: its folders cannot be read"
-      : paths.join(", ");
+      ? t("keys.reachNothing")
+      : paths.join(t("keys.pathSeparator"));

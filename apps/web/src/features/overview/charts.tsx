@@ -35,7 +35,8 @@ import { scaleSymlog } from "d3-scale";
 import { curveMonotoneX } from "d3-shape";
 import { useMemo } from "react";
 import type { OperationError, OperationHour } from "../api/queries";
-import { formatBytes, formatCount, formatRelative } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { BAR_HEIGHT, OPERATIONS_HEIGHT, TIMELINE_HEIGHT } from "./chartHeights";
 import { ErrorDetails, ErrorSubject } from "./ErrorParts";
 import { causeOf, glyphPaths, lanesFor, minutesAgo, nameOf, requestOf, shortSpan } from "./errors";
@@ -202,8 +203,6 @@ const ABOVE_THE_PLOT = {
  */
 const TEXT_SIZE = 12;
 
-const list = new Intl.ListFormat("en");
-
 /**
  * A tooltip in the document's top layer rather than in the chart's own box, so a card's edge, which
  * clips what reaches past it, never cuts a tooltip short.
@@ -238,24 +237,25 @@ export const hourPoints = (hours: readonly OperationHour[]): HourPoint[] => {
   }));
 };
 
-const narrowHours = new Intl.RelativeTimeFormat("en", { numeric: "auto", style: "narrow" });
-const hoursFormat = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-const compact = new Intl.NumberFormat("en", { notation: "compact" });
-
 /**
  * An hour as a sentence names it, such as "12 hours ago". The latest one is "now", as the axis and
  * the tooltip call it, so a screen reader and the screen use one name for it.
  */
-const hourAgo = (hour: HourPoint): string =>
-  hour.hoursAgo === 0 ? "now" : hoursFormat.format(-hour.hoursAgo, "hour");
+const hourAgo = (t: Translator, hour: HourPoint): string =>
+  hour.hoursAgo === 0
+    ? t("chart.nowInSentence")
+    : new Intl.RelativeTimeFormat(t.locale, { numeric: "auto" }).format(-hour.hoursAgo, "hour");
 
 /** An hour as the axis and the tooltip name it: the latest one is "Now". */
-const hourTitle = (hour: HourPoint): string => (hour.hoursAgo === 0 ? "Now" : hourAgo(hour));
+const hourTitle = (t: Translator, hour: HourPoint): string =>
+  hour.hoursAgo === 0 ? t("chart.now") : hourAgo(t, hour);
 
 /** Hours run left to right towards now, so the latest hour sits at zero. */
 const hourPosition = (hour: HourPoint): number => -hour.hoursAgo;
 
-const defineOperations = (hours: readonly HourPoint[], isFinger: boolean) => {
+const defineOperations = (t: Translator, hours: readonly HourPoint[], isFinger: boolean) => {
+  const narrowHours = new Intl.RelativeTimeFormat(t.locale, { numeric: "auto", style: "narrow" });
+  const compact = new Intl.NumberFormat(t.locale, { notation: "compact" });
   // A quiet day still gets an axis of a few operations, so its flat line lies on the floor of the
   // plot rather than across its middle.
   const top = Math.max(4, ...hours.map((hour) => hour.operations));
@@ -302,7 +302,7 @@ const defineOperations = (hours: readonly HourPoint[], isFinger: boolean) => {
           ticks: {
             values: [-18, -12, -6, 0],
             line: false,
-            format: (value) => (value === 0 ? "Now" : narrowHours.format(value, "hour")),
+            format: (value) => (value === 0 ? t("chart.now") : narrowHours.format(value, "hour")),
           },
           tickLabels: { fontSize: TEXT_SIZE },
         },
@@ -342,10 +342,10 @@ const defineOperations = (hours: readonly HourPoint[], isFinger: boolean) => {
           return { rows: [] };
         }
         return {
-          title: hourTitle(hour),
+          title: hourTitle(t, hour),
           rows: [
-            { label: "Operations", value: formatCount(hour.operations) },
-            ...(hour.failed > 0 ? [{ label: "Failed", value: formatCount(hour.failed) }] : []),
+            { label: t("overview.operations"), value: t.count(hour.operations) },
+            ...(hour.failed > 0 ? [{ label: t("chart.failed"), value: t.count(hour.failed) }] : []),
           ],
         };
       },
@@ -354,25 +354,30 @@ const defineOperations = (hours: readonly HourPoint[], isFinger: boolean) => {
 };
 
 /** What the chart shows, in words, for assistive technology. */
-export const describeOperations = (hours: readonly HourPoint[]): string => {
+export const describeOperations = (t: Translator, hours: readonly HourPoint[]): string => {
   const total = hours.reduce((sum, hour) => sum + hour.operations, 0);
   const failed = hours.reduce((sum, hour) => sum + hour.failed, 0);
-  if (total === 0) return "No operations in the last 24 hours.";
+  if (total === 0) return t("chart.ops.none");
   const busiest = hours.reduce((top, hour) => (hour.operations > top.operations ? hour : top));
   return [
-    `${formatCount(total)} operations, ${formatCount(failed)} of them failed`,
-    failed === 0 ? "." : `, ${list.format(hours.filter((hour) => hour.failed > 0).map(hourAgo))}.`,
+    t("chart.ops.total", { count: total, failed }),
+    failed === 0
+      ? t("chart.ops.noFailedHours")
+      : t("chart.ops.failedHours", {
+          hours: t.list(hours.filter((hour) => hour.failed > 0).map((hour) => hourAgo(t, hour))),
+        }),
     busiest.hoursAgo === 0
-      ? ` The busiest hour is now, with ${formatCount(busiest.operations)}.`
-      : ` The busiest hour was ${hourAgo(busiest)}, with ${formatCount(busiest.operations)}.`,
+      ? t("chart.ops.busiestNow", { count: busiest.operations })
+      : t("chart.ops.busiest", { hour: hourAgo(t, busiest), count: busiest.operations }),
   ].join("");
 };
 
 /** Operations per hour over the last 24 hours, with a ring on each hour where one failed. */
 export const OperationsChart = ({ hours }: { hours: readonly OperationHour[] }) => {
+  const t = useT();
   const isFinger = useMediaQuery(FINGER);
   const points = useMemo(() => hourPoints(hours), [hours]);
-  const definition = useMemo(() => defineOperations(points, isFinger), [points, isFinger]);
+  const definition = useMemo(() => defineOperations(t, points, isFinger), [t, points, isFinger]);
   return (
     <TouchHold>
       <VStack xstyle={styles.reach}>
@@ -381,8 +386,8 @@ export const OperationsChart = ({ hours }: { hours: readonly OperationHour[] }) 
           definition={definition}
           height={OPERATIONS_HEIGHT}
           measureText={measureLabel}
-          ariaLabel="Operations per hour, last 24 hours"
-          ariaDescription={describeOperations(points)}
+          ariaLabel={t("chart.ops.label")}
+          ariaDescription={describeOperations(t, points)}
         />
       </VStack>
     </TouchHold>
@@ -404,7 +409,7 @@ const OTHERS_FADE = [{ when: { focus: "unmatched" }, style: { opacity: 0.35 } }]
  * past the track's end. The tracks line every row up as meters do, so backends that store nothing
  * yet read as empty meters rather than as an empty chart.
  */
-const defineStorage = (bars: readonly BackendBar[], isFinger: boolean) => {
+const defineStorage = (t: Translator, bars: readonly BackendBar[], isFinger: boolean) => {
   const largest = Math.max(1, ...bars.map((bar) => bar.bytes));
   const track = () => largest;
   return defineChart({
@@ -429,7 +434,7 @@ const defineStorage = (bars: readonly BackendBar[], isFinger: boolean) => {
       text(bars, {
         x: track,
         y: "name",
-        text: (bar) => formatBytes(bar.bytes),
+        text: (bar) => t.bytes(bar.bytes),
         anchor: "start",
         dx: 8,
         fill: LABEL,
@@ -459,8 +464,8 @@ const defineStorage = (bars: readonly BackendBar[], isFinger: boolean) => {
         return {
           title: bar.name,
           rows: [
-            { label: "Stored", value: formatBytes(bar.bytes) },
-            { label: "Objects", value: formatCount(bar.objects) },
+            { label: t("overview.stored"), value: t.bytes(bar.bytes) },
+            { label: t("chart.objects"), value: t.count(bar.objects) },
           ],
         };
       },
@@ -470,12 +475,15 @@ const defineStorage = (bars: readonly BackendBar[], isFinger: boolean) => {
 
 /** Bytes stored on each backend, largest first. */
 export const StorageChart = ({ bars }: { bars: readonly BackendBar[] }) => {
+  const t = useT();
   const isFinger = useMediaQuery(FINGER);
   const byUse = useMemo(() => bars.toSorted((a, b) => b.bytes - a.bytes), [bars]);
-  const definition = useMemo(() => defineStorage(byUse, isFinger), [byUse, isFinger]);
-  const description = `${list.format(
-    byUse.map((bar) => `${bar.name} stores ${formatBytes(bar.bytes)}`),
-  )}.`;
+  const definition = useMemo(() => defineStorage(t, byUse, isFinger), [t, byUse, isFinger]);
+  const description = t("chart.storage.description", {
+    backends: t.list(
+      byUse.map((bar) => t("chart.storage.stores", { name: bar.name, bytes: t.bytes(bar.bytes) })),
+    ),
+  });
   return (
     <TouchHold>
       <VStack xstyle={styles.reach}>
@@ -484,7 +492,7 @@ export const StorageChart = ({ bars }: { bars: readonly BackendBar[] }) => {
           definition={definition}
           height={Math.max(1, byUse.length) * BAR_HEIGHT}
           measureText={measureLabel}
-          ariaLabel="Bytes stored on each backend"
+          ariaLabel={t("chart.storage.label")}
           ariaDescription={description}
         />
       </VStack>
@@ -528,31 +536,39 @@ const ageScale = () => scaleSymlog().constant(1).domain([-DAY, 0]);
 
 const AGE_TICKS = [-DAY, -6 * 60, -60, -10, 0];
 
-const tickHours = new Intl.NumberFormat("en", {
-  style: "unit",
-  unit: "hour",
-  unitDisplay: "narrow",
-});
-
 /** A tick as short as it gets: "24h", "6h", "1h", "10m" and "Now". */
-const ageTick = (value: number): string => {
+const ageTick = (t: Translator, value: number): string => {
   if (value === 0) {
-    return "Now";
+    return t("chart.now");
   }
-  return value <= -60 ? tickHours.format(-value / 60) : shortSpan(-value);
+  return value <= -60
+    ? new Intl.NumberFormat(t.locale, {
+        style: "unit",
+        unit: "hour",
+        unitDisplay: "narrow",
+      }).format(-value / 60)
+    : shortSpan(-value, t.locale);
 };
 
-const errorRows = (error: OperationError) => [
-  { label: "Status", value: `${error.status} ${causeOf(error).label}` },
-  { label: "Request", value: requestOf(error) },
-  { label: "Reason", value: causeOf(error).reason },
-  { label: "When", value: formatRelative(error.at) },
+const errorRows = (t: Translator, error: OperationError) => [
+  {
+    label: t("chart.error.status"),
+    value: `${error.status} ${causeOf(t, error).label}`,
+  },
+  { label: t("chart.error.request"), value: requestOf(error) },
+  { label: t("chart.error.reason"), value: causeOf(t, error).reason },
+  { label: t("chart.error.when"), value: t.relative(error.at) },
 ];
 
-const defineErrorTimeline = (errors: readonly OperationError[], now: Date, isFinger: boolean) => {
+const defineErrorTimeline = (
+  t: Translator,
+  errors: readonly OperationError[],
+  now: Date,
+  isFinger: boolean,
+) => {
   const lastDay = errors.filter((error) => minutesAgo(error.at, now) <= DAY);
   const agePosition = (error: OperationError): number => -minutesAgo(error.at, now);
-  const glyphsOf = new Map(lastDay.map((error) => [error.id, glyphPaths(causeOf(error).glyph)]));
+  const glyphsOf = new Map(lastDay.map((error) => [error.id, glyphPaths(causeOf(t, error).glyph)]));
 
   const errorMarkers = createMark<OperationError, number, number>(({ markIndex }) => {
     const id = `errors-${markIndex}`;
@@ -681,7 +697,7 @@ const defineErrorTimeline = (errors: readonly OperationError[], now: Date, isFin
           ticks: {
             values: AGE_TICKS,
             line: false,
-            format: ageTick,
+            format: (value) => ageTick(t, value),
           },
           tickLabels: { fontSize: TEXT_SIZE },
         },
@@ -705,7 +721,7 @@ const defineErrorTimeline = (errors: readonly OperationError[], now: Date, isFin
         const error = points[0]?.datum;
         return error === undefined
           ? { rows: [] }
-          : { title: nameOf(error), rows: errorRows(error) };
+          : { title: nameOf(error), rows: errorRows(t, error) };
       },
     },
   });
@@ -713,14 +729,17 @@ const defineErrorTimeline = (errors: readonly OperationError[], now: Date, isFin
   // What the timeline shows, in words, for assistive technology: each error's file, cause and age,
   // oldest first, as the markers run from left to right.
   const description = [
-    `${formatCount(lastDay.length)} ${lastDay.length === 1 ? "operation" : "operations"} failed in the last 24 hours.`,
+    t("chart.errors.total", { count: lastDay.length }),
     ...lastDay
       .toSorted((first, second) => agePosition(first) - agePosition(second))
-      .map(
-        (error) =>
-          `${nameOf(error)}: ${causeOf(error).label.toLowerCase()}, ${formatRelative(error.at, now)}.`,
+      .map((error) =>
+        t("chart.errors.one", {
+          name: nameOf(error),
+          cause: causeOf(t, error).label.toLocaleLowerCase(t.locale),
+          age: t.relative(error.at, now),
+        }),
       ),
-  ].join(" ");
+  ].join(t("chart.errors.separator"));
 
   return { definition, description };
 };
@@ -734,10 +753,11 @@ export const ErrorTimeline = ({
   /** When the errors were read, in milliseconds since the epoch. */
   now: number;
 }) => {
+  const t = useT();
   const isFinger = useMediaQuery(FINGER);
   const { definition, description } = useMemo(
-    () => defineErrorTimeline(errors, new Date(now), isFinger),
-    [errors, now, isFinger],
+    () => defineErrorTimeline(t, errors, new Date(now), isFinger),
+    [t, errors, now, isFinger],
   );
   return (
     <TouchHold>
@@ -745,7 +765,7 @@ export const ErrorTimeline = ({
         {...stylex.props(styles.chart)}
         definition={definition}
         height={TIMELINE_HEIGHT}
-        ariaLabel="Operation errors, last 24 hours"
+        ariaLabel={t("chart.errors.label")}
         ariaDescription={description}
         renderTooltipBody={({ primaryPoint }) =>
           primaryPoint === undefined ? null : (

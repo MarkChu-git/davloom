@@ -1,3 +1,7 @@
+import type { Locale } from "../i18n/locale";
+import type { Message } from "../i18n/messages/en";
+import { MESSAGES } from "../i18n/translate";
+
 declare global {
   interface Window {
     /** The reads the frame's script started, by API path, for prefetch.ts to hand to the page. */
@@ -21,13 +25,44 @@ export interface FrameUser {
   email: string | null;
 }
 
+/** The dictionary's entries the frame writes. */
+type FrameKey =
+  | "count.files"
+  | "count.folders"
+  | "count.backends"
+  | "overview.storedCaption"
+  | "overview.mountsCaption"
+  | "overview.noFixedLimit"
+  | "overview.bytesStored";
+
+/** The frame's entries of a language's dictionary, as `MESSAGES` holds them. */
+const frameWordsIn = (locale: Locale): Record<FrameKey, Message> => {
+  const messages = MESSAGES[locale];
+  return {
+    "count.files": messages["count.files"],
+    "count.folders": messages["count.folders"],
+    "count.backends": messages["count.backends"],
+    "overview.storedCaption": messages["overview.storedCaption"],
+    "overview.mountsCaption": messages["overview.mountsCaption"],
+    "overview.noFixedLimit": messages["overview.noFixedLimit"],
+    "overview.bytesStored": messages["overview.bytesStored"],
+  };
+};
+
+/** The words the frame writes, in each language. */
+export type FrameWords = Record<Locale, Record<FrameKey, Message>>;
+
+export const FRAME_WORDS: FrameWords = {
+  en: frameWordsIn("en"),
+  "zh-CN": frameWordsIn("zh-CN"),
+};
+
 /** The texts the frame writes, from the function that writes them. */
 export interface FrameFormatters {
-  formatBytes: (bytes: number) => string;
-  formatCount: (count: number) => string;
-  plural: (count: number, one: string, many: string) => string;
-  /** The tiles' texts by slot; none for a tile that draws a meter. */
-  overviewTexts: (overview: FrameOverview) => Record<string, string>;
+  formatBytes: (bytes: number, locale: Locale) => string;
+  formatCount: (count: number, locale: Locale) => string;
+  /** The tiles' texts by slot, in `locale`; none for a tile that draws a meter. */
+  overviewTexts: (overview: FrameOverview, locale: Locale) => Record<string, string>;
   profileValues: (user: FrameUser) => Record<"name" | "username" | "email", string>;
   /** The WebDAV address at `origin`, as features/api/dav.ts writes it. */
   webdavAddress: (origin: string) => string;
@@ -45,15 +80,19 @@ export interface FrameFormatters {
  * writes nothing, and the page's own reads say why.
  *
  * The browser runs this function's source on its own, so it refers to nothing outside its body
- * but the browser's globals. With `mode` "formatters" it returns its formatters and writes
+ * but the browser's globals and `words`, the dictionary's entries it writes, which the inline
+ * script passes in. It writes in the language on <html>, which the language script set before
+ * (features/i18n/script.ts). With `mode` "formatters" it returns its formatters and writes
  * nothing, which the tests compare with the page's own (fill.test.ts).
  */
-export function fillFrame(mode: "formatters"): FrameFormatters;
-export function fillFrame(): undefined;
+export function fillFrame(mode: "formatters", words: FrameWords): FrameFormatters;
+export function fillFrame(mode: undefined, words: FrameWords): undefined;
 // The browser runs the body alone, so every helper stays inside it.
 /* oxlint-disable unicorn/consistent-function-scoping */
-export function fillFrame(mode?: "formatters"): FrameFormatters | undefined {
-  const LOCALE = "en";
+export function fillFrame(
+  mode: "formatters" | undefined,
+  words: FrameWords,
+): FrameFormatters | undefined {
   const UNITS = [
     ["byte", 1],
     ["kilobyte", 1e3],
@@ -62,36 +101,61 @@ export function fillFrame(mode?: "formatters"): FrameFormatters | undefined {
     ["terabyte", 1e12],
   ] as const;
   // As features/shell/format.ts formats them.
-  const formatBytes = (bytes: number): string => {
+  const formatBytes = (bytes: number, locale: Locale): string => {
     const [unit, size] = UNITS.findLast(([, step]) => bytes >= step) ?? UNITS[0];
-    return new Intl.NumberFormat(LOCALE, {
+    return new Intl.NumberFormat(locale, {
       style: "unit",
       unit,
       unitDisplay: unit === "byte" ? "long" : "short",
       maximumFractionDigits: unit === "byte" ? 0 : 1,
     }).format(bytes / size);
   };
-  const formatCount = (count: number): string => new Intl.NumberFormat(LOCALE).format(count);
-  // As features/overview/OverviewPage.tsx formats them.
-  const plural = (count: number, one: string, many: string): string =>
-    `${formatCount(count)} ${count === 1 ? one : many}`;
+  const formatCount = (count: number, locale: Locale): string =>
+    new Intl.NumberFormat(locale).format(count);
+  // As features/i18n/translate.ts formats a message.
+  const say = (
+    locale: Locale,
+    key: FrameKey,
+    params: Record<string, string | number> = {},
+  ): string => {
+    const message = words[locale][key];
+    const text =
+      typeof message === "string"
+        ? message
+        : ((new Intl.PluralRules(locale).select(Number(params.count)) === "one"
+            ? message.one
+            : undefined) ?? message.other);
+    return text.replace(/\{(\w+)\}/g, (whole, name: string) => {
+      const value = params[name];
+      if (value === undefined) return whole;
+      return typeof value === "number" ? formatCount(value, locale) : value;
+    });
+  };
 
   /** The tiles' texts, as OverviewPage's Tiles writes them; none for a tile with a meter. */
-  const overviewTexts = (overview: FrameOverview): Record<string, string> => {
+  const overviewTexts = (overview: FrameOverview, locale: Locale): Record<string, string> => {
     const { usage, mounts, backends } = overview;
     const texts: Record<string, string> = {
-      stored: formatBytes(usage.bytes),
-      "stored-caption": `${plural(usage.files, "file", "files")} in ${plural(usage.collections, "folder", "folders")}`,
-      mounts: formatCount(mounts.length),
-      "mounts-caption": `On ${new Set(mounts.map((mount) => mount.backendId)).size} of ${plural(backends.length, "backend", "backends")}`,
+      stored: formatBytes(usage.bytes, locale),
+      "stored-caption": say(locale, "overview.storedCaption", {
+        files: say(locale, "count.files", { count: usage.files }),
+        folders: say(locale, "count.folders", { count: usage.collections }),
+      }),
+      mounts: formatCount(mounts.length, locale),
+      "mounts-caption": say(locale, "overview.mountsCaption", {
+        used: new Set(mounts.map((mount) => mount.backendId)).size,
+        backends: say(locale, "count.backends", { count: backends.length }),
+      }),
     };
     const known = backends.filter(
       (backend) => typeof backend.capacity === "number" && backend.capacity > 0,
     );
     // A known capacity draws a meter, which only the page itself draws.
     if (known.length === 0) {
-      texts.capacity = "No fixed limit";
-      texts["capacity-caption"] = `${formatBytes(usage.bytes)} stored`;
+      texts.capacity = say(locale, "overview.noFixedLimit");
+      texts["capacity-caption"] = say(locale, "overview.bytesStored", {
+        bytes: formatBytes(usage.bytes, locale),
+      });
     }
     return texts;
   };
@@ -117,7 +181,6 @@ export function fillFrame(mode?: "formatters"): FrameFormatters | undefined {
     return {
       formatBytes,
       formatCount,
-      plural,
       overviewTexts,
       profileValues,
       webdavAddress,
@@ -173,8 +236,9 @@ export function fillFrame(mode?: "formatters"): FrameFormatters | undefined {
   const placeholders = (name: string) =>
     document.querySelectorAll(`[data-frame-placeholder="${name}"]`);
 
+  const locale: Locale = document.documentElement.lang === "zh-CN" ? "zh-CN" : "en";
   const writeOverview = (overview: FrameOverview) => {
-    for (const [name, text] of Object.entries(overviewTexts(overview))) {
+    for (const [name, text] of Object.entries(overviewTexts(overview, locale))) {
       for (const slot of slots(name)) {
         slot.textContent = text;
         slot.removeAttribute("hidden");
@@ -207,7 +271,7 @@ export function fillFrame(mode?: "formatters"): FrameFormatters | undefined {
 /* oxlint-enable unicorn/consistent-function-scoping */
 
 /** The inline script for <head>: the function above, run once as the page's HTML is parsed. */
-export const FILL_SCRIPT = `(${fillFrame.toString()})()`;
+export const FILL_SCRIPT = `(${fillFrame.toString()})(undefined,${JSON.stringify(FRAME_WORDS)})`;
 
 /** The inline script for the end of <body>, after the frame: tells FILL_SCRIPT it may write. */
 export const FRAME_PARSED_SCRIPT = "window.davloomFrameParsed&&window.davloomFrameParsed()";
@@ -217,4 +281,4 @@ export const FRAME_PARSED_SCRIPT = "window.davloomFrameParsed&&window.davloomFra
  * OverviewPage's tiles take their texts from here, so the figures the frame paints are the ones
  * the page then shows.
  */
-export const frameTexts: FrameFormatters = fillFrame("formatters");
+export const frameTexts: FrameFormatters = fillFrame("formatters", FRAME_WORDS);

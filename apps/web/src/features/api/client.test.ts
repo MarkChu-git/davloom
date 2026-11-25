@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError, apiFetch, describeError, errorCodeOf, isUnauthorized } from "./client";
+import { translator } from "../i18n/translate";
 import { DavError } from "./dav";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -34,11 +38,39 @@ describe("error codes", () => {
     ["http_501", 501, "does not run the management API"],
     ["http_500", 500, "(500)"],
   ])("%s says %s", (code, status, words) => {
-    expect(describeError(new ApiError(status, code))).toContain(words);
+    expect(describeError(en, new ApiError(status, code))).toContain(words);
   });
 
   it("anything else asks to try again", () => {
-    expect(describeError(new Error("boom"))).toBe("Something went wrong. Try again.");
+    expect(describeError(en, new Error("boom"))).toBe("Something went wrong. Try again.");
+  });
+
+  it.each([
+    ["network_error", 0, "无法连接"],
+    ["name_taken", 409, "已被使用"],
+    ["http_500", 500, "（500）"],
+  ])("%s says %s in Chinese", (code, status, words) => {
+    expect(describeError(zh, new ApiError(status, code))).toContain(words);
+  });
+
+  it.each([
+    "cross_site",
+    "archive_invalid",
+    "username_refused",
+    "password_refused",
+    "email_refused",
+    "password_compromised",
+    "invalid_username",
+  ])("%s gives the API's own explanation in English, and its own words otherwise", (code) => {
+    expect(describeError(en, new ApiError(400, code, "Because."))).toBe("Because.");
+    expect(describeError(zh, new ApiError(400, code, "Because."))).not.toContain("Because");
+    expect(describeError(en, new ApiError(400, code))).not.toBe("");
+  });
+
+  it("keeps the API's own English explanation out of a Chinese message", () => {
+    const error = new ApiError(400, "archive_invalid", "The file is not JSON.");
+    expect(describeError(en, error)).toContain("The file is not JSON.");
+    expect(describeError(zh, error)).not.toContain("The file is not JSON.");
   });
 });
 

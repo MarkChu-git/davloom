@@ -1,4 +1,4 @@
-const LOCALE = "en";
+import type { Locale } from "../i18n/locale";
 
 const UNITS = [
   ["byte", 1],
@@ -9,9 +9,9 @@ const UNITS = [
 ] as const;
 
 /** Decimal units (1 kB = 1,000 bytes), the way operating systems show file sizes. */
-export const formatBytes = (bytes: number): string => {
+export const formatBytes = (bytes: number, locale: Locale): string => {
   const [unit, size] = UNITS.findLast(([, step]) => bytes >= step) ?? UNITS[0];
-  return new Intl.NumberFormat(LOCALE, {
+  return new Intl.NumberFormat(locale, {
     style: "unit",
     unit,
     // The short form of "byte" has no plural ("120 byte"), so whole bytes use the long form.
@@ -20,7 +20,8 @@ export const formatBytes = (bytes: number): string => {
   }).format(bytes / size);
 };
 
-export const formatCount = (count: number): string => new Intl.NumberFormat(LOCALE).format(count);
+export const formatCount = (count: number, locale: Locale): string =>
+  new Intl.NumberFormat(locale).format(count);
 
 const RELATIVE_STEPS = [
   ["minute", 60],
@@ -49,15 +50,15 @@ export const relativeSpan = (
 };
 
 /** "2 minutes ago", or "this minute" within half a minute. */
-export const formatRelative = (iso: string, now: Date = new Date()): string => {
+export const formatRelative = (iso: string, locale: Locale, now: Date = new Date()): string => {
   const { count, unit } = relativeSpan(iso, now);
-  return new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" }).format(count, unit);
+  return new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(count, unit);
 };
 
-export const formatDate = (iso: string): string =>
-  new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium" }).format(new Date(iso));
+export const formatDate = (iso: string, locale: Locale): string =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(iso));
 
-export const formatDateTime = (iso: string): string =>
-  new Intl.DateTimeFormat(LOCALE, { dateStyle: "medium", timeStyle: "short" }).format(
+export const formatDateTime = (iso: string, locale: Locale): string =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(
     new Date(iso),
   );

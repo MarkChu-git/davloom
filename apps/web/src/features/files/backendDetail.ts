@@ -1,30 +1,43 @@
 import type { Backend } from "../api/queries";
+import type { Translator } from "../i18n/translate";
 
-const FAILURES: Record<string, string> = {
-  unavailable: "no answer",
-  "insufficient-storage": "a full store",
-};
-
-const durationOf = (ms: number): string =>
+const durationOf = (t: Translator, ms: number): string =>
   ms < 1000
-    ? `${new Intl.NumberFormat("en").format(Math.round(ms))} ms`
-    : `${new Intl.NumberFormat("en", { maximumFractionDigits: 1 }).format(ms / 1000)} s`;
+    ? t("duration.ms", { ms: Math.round(ms) })
+    : t("duration.s", {
+        s: new Intl.NumberFormat(t.locale, { maximumFractionDigits: 1 }).format(ms / 1000),
+      });
 
 /**
- * How a backend answered when the list of backends was read, as the rest of "Main storage …":
- * "answered in 38 ms", "gave no answer after 30 s", or that its saved settings do not open it.
+ * How a backend answered when the list of backends was read, in a sentence that names it:
+ * "Main storage answered in 38 ms.", "Main storage gave no answer after 30 s.", or that its saved
+ * settings do not open it.
  */
-export const backendDetail = (backend: Pick<Backend, "available" | "status">): string => {
-  const status = backend.status;
+export const backendDetail = (
+  t: Translator,
+  backend: Pick<Backend, "name" | "available" | "status">,
+): string => {
+  const { name, status } = backend;
   if (status === undefined) {
-    return backend.available ? "answered" : "gave no answer";
+    return backend.available
+      ? t("backendDetail.answered", { name })
+      : t("backendDetail.noAnswer", { name });
   }
   switch (status.state) {
     case "answered":
-      return `answered in ${durationOf(status.ms)}`;
-    case "failed":
-      return `gave ${FAILURES[status.failure] ?? status.failure} after ${durationOf(status.ms)}`;
+      return t("backendDetail.answeredIn", { name, duration: durationOf(t, status.ms) });
+    case "failed": {
+      const duration = durationOf(t, status.ms);
+      switch (status.failure) {
+        case "unavailable":
+          return t("backendDetail.noAnswerAfter", { name, duration });
+        case "insufficient-storage":
+          return t("backendDetail.fullAfter", { name, duration });
+        default:
+          return t("backendDetail.failedAfter", { name, failure: status.failure, duration });
+      }
+    }
     default:
-      return "cannot be opened with its saved settings";
+      return t("backendDetail.cannotOpen", { name });
   }
 };

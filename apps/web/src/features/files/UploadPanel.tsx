@@ -5,44 +5,54 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, StackItem, VStack } from "@astryxdesign/core/Layout";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Text } from "@astryxdesign/core/Text";
-import { formatBytes } from "../shell/format";
+import { useT } from "../i18n/I18nProvider";
 import { buttonLabelled, refocusIfLost } from "../shell/focus";
 import { StatusLabel } from "../shell/StatusLabel";
 import { FileName } from "./FileName";
 import { clearFinished, startUploads, useUploads, type Upload } from "./uploadStore";
 
-const UploadRow = ({ upload }: { upload: Upload }) => (
-  <VStack gap={1}>
-    <HStack gap={3} vAlign="center" hAlign="between">
-      <StackItem size="fill">
-        <FileName name={upload.name} kind="file" />
-      </StackItem>
+const UploadRow = ({ upload }: { upload: Upload }) => {
+  const t = useT();
+  return (
+    <VStack gap={1}>
+      <HStack gap={3} vAlign="center" hAlign="between">
+        <StackItem size="fill">
+          <FileName name={upload.name} kind="file" />
+        </StackItem>
+        {upload.state === "uploading" ? (
+          <Text type="supporting" color="secondary" hasTabularNumbers>
+            {t("overview.bytesOf", {
+              used: t.bytes(upload.sentBytes),
+              capacity: t.bytes(upload.sizeBytes),
+            })}
+          </Text>
+        ) : (
+          <StatusLabel
+            tone={upload.state === "done" ? "success" : "error"}
+            label={
+              upload.state === "done"
+                ? t("upload.doneTo", { path: upload.path })
+                : t("upload.failed")
+            }
+          />
+        )}
+      </HStack>
       {upload.state === "uploading" ? (
-        <Text type="supporting" color="secondary" hasTabularNumbers>
-          {`${formatBytes(upload.sentBytes)} of ${formatBytes(upload.sizeBytes)}`}
-        </Text>
-      ) : (
-        <StatusLabel
-          tone={upload.state === "done" ? "success" : "error"}
-          label={upload.state === "done" ? `Uploaded to ${upload.path}` : "Failed"}
+        <ProgressBar
+          label={t("upload.uploading", { name: upload.name })}
+          isLabelHidden
+          value={upload.sentBytes}
+          max={Math.max(upload.sizeBytes, 1)}
         />
+      ) : null}
+      {upload.problem === undefined ? null : (
+        <Text type="supporting" color="secondary">
+          {upload.problem(t)}
+        </Text>
       )}
-    </HStack>
-    {upload.state === "uploading" ? (
-      <ProgressBar
-        label={`Uploading ${upload.name}`}
-        isLabelHidden
-        value={upload.sentBytes}
-        max={Math.max(upload.sizeBytes, 1)}
-      />
-    ) : null}
-    {upload.problem === undefined ? null : (
-      <Text type="supporting" color="secondary">
-        {upload.problem}
-      </Text>
-    )}
-  </VStack>
-);
+    </VStack>
+  );
+};
 
 /** Upload UI (PRD §13, Phase 4 deliverable 3): a drop zone and the progress of every file. */
 export const UploadPanel = ({
@@ -55,6 +65,7 @@ export const UploadPanel = ({
   folders: ReadonlySet<string>;
   onSettled: (uploads: Upload[]) => void;
 }) => {
+  const t = useT();
   const uploads = useUploads();
   const hasFinished = uploads.some((upload) => upload.state !== "uploading");
 
@@ -62,23 +73,23 @@ export const UploadPanel = ({
     <Card elevation="low">
       <VStack gap={4}>
         <HStack hAlign="between" vAlign="center">
-          <Heading level={2}>Upload</Heading>
+          <Heading level={2}>{t("files.upload")}</Heading>
           {hasFinished ? (
             <Button
-              label="Clear finished"
+              label={t("upload.clearFinished")}
               variant="ghost"
               size="sm"
               onClick={() => {
                 clearFinished();
                 // The button goes away with the finished uploads, so focus moves to the drop zone's
                 // button. Its file input is hidden from assistive technology and never focused.
-                refocusIfLost(() => buttonLabelled(`Upload files to ${path}`));
+                refocusIfLost(() => buttonLabelled(t("upload.to", { path })));
               }}
             />
           ) : null}
         </HStack>
         <FileInput
-          label={`Upload files to ${path}`}
+          label={t("upload.to", { path })}
           isLabelHidden
           mode="dropzone"
           isMultiple
@@ -89,7 +100,7 @@ export const UploadPanel = ({
               startUploads(path, list, folders, onSettled);
             }
           }}
-          placeholder="Drop files here or choose them"
+          placeholder={t("upload.drop")}
         />
         {uploads.map((upload) => (
           <UploadRow key={upload.id} upload={upload} />

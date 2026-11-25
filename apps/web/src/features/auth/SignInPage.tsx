@@ -18,33 +18,35 @@ import {
 } from "../api/account";
 import { describeError, isApiError } from "../api/client";
 import { keys, sessionQuery } from "../api/queries";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { AuthFrame } from "./AuthFrame";
 import { safeRedirect } from "./forms";
 import { GoTo } from "./GoTo";
 
-const signInProblem = (error: unknown): string =>
+const signInProblem = (t: Translator, error: unknown): string =>
   isApiError(error) &&
   (error.status === 401 ||
     error.code === "invalid_email_or_password" ||
     error.code === "invalid_username_or_password")
-    ? "The username or the password is wrong."
-    : describeError(error);
+    ? t("signIn.wrongCredentials")
+    : describeError(t, error);
 
-const codeProblem = (error: unknown): string => {
+const codeProblem = (t: Translator, error: unknown): string => {
   if (!isApiError(error)) {
-    return describeError(error);
+    return describeError(t, error);
   }
   switch (error.code) {
     case "invalid_code":
     case "invalid_backup_code":
-      return "The code is wrong or has expired.";
+      return t("verify.wrongCode");
     case "invalid_two_factor_cookie":
-      return "The sign-in has expired. Start again.";
+      return t("signIn.expired");
     case "too_many_attempts_request_new_code":
     case "account_temporarily_locked":
-      return "Too many wrong codes. Wait a few minutes and try again.";
+      return t("verify.tooManyCodes");
     default:
-      return describeError(error);
+      return describeError(t, error);
   }
 };
 
@@ -56,6 +58,7 @@ const SecondStep = ({
   onSignedIn: () => void;
   onRestart: () => void;
 }) => {
+  const t = useT();
   const [isBackup, setIsBackup] = useState(false);
   const [code, setCode] = useState("");
   const [problem, setProblem] = useState<string>();
@@ -64,7 +67,7 @@ const SecondStep = ({
 
   const submit = async () => {
     if (code.trim() === "") {
-      setProblem(isBackup ? "Enter a backup code." : "Enter the code from your authenticator app.");
+      setProblem(isBackup ? t("signIn.backupCodeMissing") : t("verify.codeMissing"));
       return;
     }
     setIsVerifying(true);
@@ -73,17 +76,17 @@ const SecondStep = ({
       await (isBackup ? verifyBackupCode(code) : verifyTotp(code));
       onSignedIn();
     } catch (error) {
-      setFailure(codeProblem(error));
+      setFailure(codeProblem(t, error));
       setIsVerifying(false);
     }
   };
 
   return (
-    <AuthFrame title="Two-step verification">
+    <AuthFrame title={t("signIn.secondStep")}>
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       <TextInput
         key={isBackup ? "backup" : "totp"}
-        label={isBackup ? "Backup code" : "Authenticator code"}
+        label={isBackup ? t("signIn.backupCode") : t("verify.code")}
         value={code}
         onChange={(value) => {
           setCode(value);
@@ -99,13 +102,13 @@ const SecondStep = ({
         status={problem === undefined ? undefined : { type: "error", message: problem }}
       />
       <Button
-        label="Verify"
+        label={t("verify.submit")}
         variant="primary"
         isLoading={isVerifying}
         onClick={() => void submit()}
       />
       <Button
-        label={isBackup ? "Use the authenticator app" : "Use a backup code"}
+        label={isBackup ? t("signIn.useAuthenticator") : t("signIn.useBackupCode")}
         variant="ghost"
         onClick={() => {
           setIsBackup(!isBackup);
@@ -114,7 +117,7 @@ const SecondStep = ({
           setFailure(undefined);
         }}
       />
-      <Button label="Start again" variant="ghost" onClick={onRestart} />
+      <Button label={t("signIn.startAgain")} variant="ghost" onClick={onRestart} />
     </AuthFrame>
   );
 };
@@ -125,6 +128,7 @@ const SecondStep = ({
  * create the account instead.
  */
 export const SignInPage = ({ redirect }: { redirect?: string }) => {
+  const t = useT();
   const client = useQueryClient();
   const navigate = useNavigate();
   // Better Auth's session answers 200 with null for a visitor who is not signed in, where /api/me
@@ -169,8 +173,8 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
 
   const submit = async () => {
     const next = {
-      identifier: identifier.trim() === "" ? "Enter your username or email." : undefined,
-      password: password === "" ? "Enter your password." : undefined,
+      identifier: identifier.trim() === "" ? t("signIn.identifierMissing") : undefined,
+      password: password === "" ? t("verify.passwordMissing") : undefined,
     };
     setProblems(next);
     setFailure(undefined);
@@ -186,7 +190,7 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
       }
       await signedIn();
     } catch (error) {
-      setFailure(signInProblem(error));
+      setFailure(signInProblem(t, error));
       setIsSigningIn(false);
     }
   };
@@ -197,19 +201,19 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
       await signInWithPasskey();
       await signedIn();
     } catch (error) {
-      setFailure(describeError(error));
+      setFailure(describeError(t, error));
     }
   };
 
   return (
-    <AuthFrame title="Sign in">
+    <AuthFrame title={t("signIn.title")}>
       {failure === undefined ? null : <Banner status="error" title={failure} container="card" />}
       {registration.isError ? (
-        <Banner status="warning" title={describeError(registration.error)} container="card" />
+        <Banner status="warning" title={describeError(t, registration.error)} container="card" />
       ) : null}
       <VStack gap={4}>
         <TextInput
-          label="Username or email"
+          label={t("signIn.identifier")}
           value={identifier}
           onChange={(value) => {
             setIdentifier(value);
@@ -228,7 +232,7 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
           }
         />
         <TextInput
-          label="Password"
+          label={t("field.password")}
           type="password"
           value={password}
           onChange={(value) => {
@@ -245,7 +249,7 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
         />
       </VStack>
       <Button
-        label="Sign in"
+        label={t("signIn.submit")}
         variant="primary"
         isLoading={isSigningIn}
         onClick={() => void submit()}
@@ -254,7 +258,7 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
         <>
           <Divider />
           <Button
-            label="Sign in with a passkey"
+            label={t("signIn.withPasskey")}
             variant="secondary"
             icon={<Icon icon={KeyRound} size="sm" />}
             onClick={() => void withPasskey()}

@@ -479,7 +479,10 @@ const STATES: readonly PageState[] = [
   {
     name: "Appearance settings",
     path: "/settings?section=appearance",
-    show: (page) => shown(page.getByRole("radio", { name: "System" })),
+    show: (page) =>
+      shown(
+        page.getByRole("radiogroup", { name: "Language" }).getByRole("radio", { name: "System" }),
+      ),
   },
   {
     name: "Data export settings",

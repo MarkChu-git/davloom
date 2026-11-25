@@ -1,5 +1,6 @@
 import { Store, useStore } from "@tanstack/react-store";
 import { davProblem, uploadFile } from "../api/dav";
+import type { Translator } from "../i18n/translate";
 import { joinPath, splitPath } from "./paths";
 
 export type UploadState = "uploading" | "done" | "failed";
@@ -12,21 +13,23 @@ export interface Upload {
   sizeBytes: number;
   sentBytes: number;
   state: UploadState;
-  problem?: string;
+  /** Why it failed, in the language the page shows. */
+  problem?: (t: Translator) => string;
 }
 
 /** Cloudflare Free accepts request bodies up to 100 MB, so a larger file cannot go in one PUT. */
 export const UPLOAD_LIMIT_BYTES = 100_000_000;
 
 /** Why a file of this size cannot be uploaded in one request, or undefined when it can. */
-export const uploadProblem = (sizeBytes: number): string | undefined =>
-  sizeBytes > UPLOAD_LIMIT_BYTES
-    ? "Over the 100 MB limit for one request on Cloudflare Free."
-    : undefined;
+export const uploadProblem = (sizeBytes: number): ((t: Translator) => string) | undefined =>
+  sizeBytes > UPLOAD_LIMIT_BYTES ? (t) => t("upload.tooLarge") : undefined;
 
 /** Why a file dropped into `names` cannot keep its name, or undefined when it can. */
-export const uploadNameProblem = (name: string, folders: ReadonlySet<string>): string | undefined =>
-  folders.has(name) ? `A folder named “${name}” is already here.` : undefined;
+export const uploadNameProblem = (
+  name: string,
+  folders: ReadonlySet<string>,
+): ((t: Translator) => string) | undefined =>
+  folders.has(name) ? (t) => t("upload.folderExists", { name }) : undefined;
 
 /**
  * A folder dropped onto the page arrives as a File that cannot be read. Reading its first byte
@@ -64,7 +67,7 @@ const send = async (upload: Upload, file: File): Promise<Upload> => {
     const failed: Upload = {
       ...upload,
       state: "failed",
-      problem: "This is a folder or a file that cannot be read. Upload the files inside a folder.",
+      problem: (t) => t("upload.unreadable"),
     };
     replace(failed);
     return failed;
@@ -80,7 +83,11 @@ const send = async (upload: Upload, file: File): Promise<Upload> => {
     replace(done);
     return done;
   } catch (error) {
-    const failed: Upload = { ...upload, state: "failed", problem: davProblem(error, upload.path) };
+    const failed: Upload = {
+      ...upload,
+      state: "failed",
+      problem: (t) => davProblem(t, error, upload.path),
+    };
     replace(failed);
     return failed;
   }

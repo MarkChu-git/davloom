@@ -1,5 +1,6 @@
 import * as fc from "fast-check";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { translator } from "../i18n/translate";
 import {
   clearFinished,
   startUploads,
@@ -8,6 +9,9 @@ import {
   uploadProblem,
   type Upload,
 } from "./uploadStore";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 // The limit stands in for the Cloud Free request body limit, which the platform enforces.
 describe("upload size", () => {
@@ -34,7 +38,9 @@ describe("upload size", () => {
   });
 
   it("a file cannot take a folder's name", () => {
-    expect(uploadNameProblem("Drafts", new Set(["Drafts"]))).toContain("folder named");
+    expect(uploadNameProblem("Drafts", new Set(["Drafts"]))?.(en)).toContain("folder named");
+    expect(uploadNameProblem("Drafts", new Set(["Drafts"]))?.(zh)).toContain("Drafts");
+    expect(uploadProblem(UPLOAD_LIMIT_BYTES + 1)?.(zh)).toContain("100 MB");
     expect(uploadNameProblem("notes.md", new Set(["Drafts"]))).toBeUndefined();
   });
 });
@@ -79,7 +85,7 @@ describe("uploads", () => {
       "refused.txt failed",
       "Drafts failed",
     ]);
-    expect(outcomes[1]?.problem).toBe("The storage backend is full.");
+    expect(outcomes[1]?.problem?.(en)).toBe("The storage backend is full.");
     expect(outcomes[0]?.sentBytes).toBe(1);
   });
 
@@ -102,7 +108,7 @@ describe("uploads", () => {
     vi.spyOn(unreadable, "slice").mockReturnValue(part);
     const [outcome] = await settled("/files", [unreadable]);
     expect(outcome?.state).toBe("failed");
-    expect(outcome?.problem).toContain("folder");
+    expect(outcome?.problem?.(en)).toContain("folder");
     expect(open).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,7 @@
 // A session's device, named from its User-Agent the way people say it: "Safari on macOS".
 
+import type { Translator } from "../i18n/translate";
+
 const BROWSERS: readonly (readonly [RegExp, string])[] = [
   [/Edg(?:e|A|iOS)?\//, "Edge"],
   [/OPR\/|Opera/, "Opera"],
@@ -22,12 +24,12 @@ const first = (table: readonly (readonly [RegExp, string])[], text: string) =>
   table.find(([pattern]) => pattern.test(text))?.[1];
 
 /** "Browser on System", one of them alone, or "Unknown device". */
-export const deviceName = (userAgent: string | null | undefined): string => {
+export const deviceName = (t: Translator, userAgent: string | null | undefined): string => {
   const text = userAgent ?? "";
   const browser = first(BROWSERS, text);
   const system = first(SYSTEMS, text);
   if (browser !== undefined && system !== undefined) {
-    return `${browser} on ${system}`;
+    return t("device.on", { browser, system });
   }
-  return browser ?? system ?? "Unknown device";
+  return browser ?? system ?? t("device.unknown");
 };

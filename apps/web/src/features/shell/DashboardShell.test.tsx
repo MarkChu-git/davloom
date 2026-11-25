@@ -1,6 +1,7 @@
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import { DashboardShell } from "./DashboardShell";
 
@@ -175,5 +176,26 @@ describe("DashboardShell", () => {
       expect(await screen.findByRole("button", { name: "Menu" })).toBeTruthy();
       expect(screen.queryByRole("dialog")).toBeNull();
     });
+  });
+});
+
+describe("DashboardShell in Chinese", () => {
+  it("names the navigation and its rows in Chinese", async () => {
+    const { container } = await renderPage(
+      <DashboardShell>
+        <p>页面内容</p>
+      </DashboardShell>,
+      {
+        path: "/",
+        locale: "zh-CN",
+        api: { "GET /api/backends": () => json([backend("a", true), backend("b", false)]) },
+      },
+    );
+    expect(await screen.findByRole("link", { name: /^存储与挂载/ })).toBeTruthy();
+    for (const label of ["概览", "文件", "凭据", "设置"]) {
+      expect(screen.getByRole("link", { name: label })).toBeTruthy();
+    }
+    expect(await screen.findByRole("link", { name: /个后端不可用/ })).toBeTruthy();
+    expectChinese(container);
   });
 });

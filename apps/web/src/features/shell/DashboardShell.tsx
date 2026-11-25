@@ -29,6 +29,8 @@ import {
 import { useState, type ReactNode, type SVGProps } from "react";
 import { useBackends } from "../api/queries";
 import { useSignOut } from "../auth/useSignOut";
+import { useT } from "../i18n/I18nProvider";
+import type { Translator } from "../i18n/translate";
 import { storageAlert } from "../storage/backendStatus";
 import { Frame, FRAME_WINDOWS } from "./frame";
 import { NAV_WIDTH } from "./pageWidth";
@@ -62,28 +64,33 @@ interface NavEntry {
   alert?: { tone: Tone; text: string };
 }
 
+const OVERVIEW_ICONS = navIcons(LayoutDashboard);
+const FILES_ICONS = navIcons(Folder);
+const CREDENTIALS_ICONS = navIcons(KeyRound);
+const STORAGE_ICONS = navIcons(HardDrive);
+const SETTINGS_ICONS = navIcons(Settings);
+
 /** The pages people open most, at the top without a heading, as in Linear. */
-const WORK_ITEMS: NavEntry[] = [
-  { label: "Overview", href: "/", ...navIcons(LayoutDashboard) },
-  { label: "Files", href: "/files", ...navIcons(Folder) },
+const workItems = (t: Translator): NavEntry[] => [
+  { label: t("nav.overview"), href: "/", ...OVERVIEW_ICONS },
+  { label: t("nav.files"), href: "/files", ...FILES_ICONS },
 ];
 
 /** The pages that set the service up; Storage & Mounts names a backend that does not answer. */
-const manageItems = (alert: NavEntry["alert"]): NavEntry[] => [
-  { label: "Credentials", href: "/credentials", ...navIcons(KeyRound) },
-  { label: "Storage & Mounts", href: "/storage", ...navIcons(HardDrive), alert },
+const manageItems = (t: Translator, alert: NavEntry["alert"]): NavEntry[] => [
+  { label: t("nav.credentials"), href: "/credentials", ...CREDENTIALS_ICONS },
+  { label: t("nav.storage"), href: "/storage", ...STORAGE_ICONS, alert },
 ];
 
 const SIGN_OUT_ICONS = navIcons(LogOut);
 
 interface NavOptions {
+  t: Translator;
   alert: NavEntry["alert"];
   onSignOut: () => void;
   isSigningOut: boolean;
   onChoose?: () => void;
 }
-
-const SETTINGS: NavEntry = { label: "Settings", href: "/settings", ...navIcons(Settings) };
 
 /**
  * The side navigation keeps to the page's grid. Beside the page, its content starts one gutter,
@@ -151,13 +158,14 @@ const NavItem = ({
   isSelected: boolean;
   onChoose?: () => void;
 }) => {
+  const t = useT();
   const { isCollapsed } = useSideNavCollapse();
   const { alert } = entry;
   if (alert !== undefined && isCollapsed) {
     const glyph = <Icon icon={alert.tone} color={alert.tone} size="sm" />;
     return (
       <SideNavItem
-        label={`${entry.label}, ${alert.text}`}
+        label={t("nav.withAlert", { label: entry.label, alert: alert.text })}
         icon={glyph}
         selectedIcon={glyph}
         href={entry.href}
@@ -184,7 +192,10 @@ const NavItem = ({
 };
 
 /** The navigation's rows in their three groups, marking the page at `pathname` as current. */
-const navGroups = (pathname: string, { alert, onSignOut, isSigningOut, onChoose }: NavOptions) => {
+const navGroups = (
+  pathname: string,
+  { t, alert, onSignOut, isSigningOut, onChoose }: NavOptions,
+) => {
   const item = (entry: NavEntry) => (
     <NavItem
       key={entry.href}
@@ -195,16 +206,16 @@ const navGroups = (pathname: string, { alert, onSignOut, isSigningOut, onChoose 
   );
   return {
     work: (
-      <NavSection title="Dashboard" isHeaderHidden>
-        {WORK_ITEMS.map(item)}
+      <NavSection title={t("nav.dashboard")} isHeaderHidden>
+        {workItems(t).map(item)}
       </NavSection>
     ),
-    manage: <NavSection title="Manage">{manageItems(alert).map(item)}</NavSection>,
+    manage: <NavSection title={t("nav.manage")}>{manageItems(t, alert).map(item)}</NavSection>,
     account: (
-      <NavSection title="Account" isHeaderHidden>
-        {item(SETTINGS)}
+      <NavSection title={t("nav.account")} isHeaderHidden>
+        {item({ label: t("nav.settings"), href: "/settings", ...SETTINGS_ICONS })}
         <SideNavItem
-          label="Sign out"
+          label={t("nav.signOut")}
           {...SIGN_OUT_ICONS}
           isDisabled={isSigningOut}
           onClick={() => {
@@ -254,7 +265,7 @@ const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOption
   const groups = navGroups(pathname, { ...options, onChoose: () => setOpenOn(undefined) });
   return (
     <Popover
-      label="Menu"
+      label={options.t("nav.menu")}
       alignment="end"
       width={NAV_WIDTH.defaultWidth}
       padding={2}
@@ -270,7 +281,7 @@ const PhoneMenu = ({ pathname, options }: { pathname: string; options: NavOption
       }
     >
       <Button
-        label="Menu"
+        label={options.t("nav.menu")}
         variant="ghost"
         icon={<Icon icon={Menu} size="sm" />}
         xstyle={styles.menu}
@@ -315,10 +326,16 @@ const Shell = ({
   nav: typeof NO_DRAWER | typeof PHONE_FRAME_NAV;
   children: ReactNode;
 }) => {
+  const t = useT();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const backends = useBackends();
   const { isSigningOut, signOut: onSignOut, element: signOutDialog } = useSignOut();
-  const options: NavOptions = { alert: storageAlert(backends.data), onSignOut, isSigningOut };
+  const options: NavOptions = {
+    t,
+    alert: storageAlert(t, backends.data),
+    onSignOut,
+    isSigningOut,
+  };
   const groups = navGroups(pathname, options);
 
   return (

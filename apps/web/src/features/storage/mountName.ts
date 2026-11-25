@@ -1,5 +1,7 @@
 // The name of a Mount: the folder that WebDAV clients see at the top level of /dav.
 
+import type { Translator } from "../i18n/translate";
+
 const isEdge = (char: string): boolean => /[\s/]/.test(char);
 
 /**
@@ -25,21 +27,22 @@ export const mountFolderOf = (name: string): string => {
  * the common mistakes without a request.
  */
 export const mountNameProblem = (
+  t: Translator,
   name: string,
   takenPaths: readonly string[],
 ): string | undefined => {
   const folder = mountFolderOf(name);
   if (folder === "") {
-    return "Enter a folder name.";
+    return t("mount.nameMissing");
   }
   if (folder.includes("/")) {
-    return "Use one folder name, without slashes.";
+    return t("mount.nameSlash");
   }
   if (folder === "." || folder === "..") {
-    return "Choose another folder name.";
+    return t("mount.nameDots");
   }
   if (takenPaths.includes(`/${folder}`)) {
-    return "Another mount already uses this folder.";
+    return t("mount.nameTaken");
   }
   return undefined;
 };

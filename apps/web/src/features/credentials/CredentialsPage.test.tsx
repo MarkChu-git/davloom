@@ -11,6 +11,7 @@ import {
   NARROW,
   WIDE,
 } from "../../test/layout";
+import { expectChinese } from "../../test/chinese";
 import { json, renderPage, type Handler } from "../../test/render";
 import type { ApiKey, Mount } from "../api/queries";
 import { CredentialsPage } from "./CredentialsPage";
@@ -633,5 +634,20 @@ describe("CredentialsPage, rename", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Rename" }));
     expect(await within(dialog).findByText("It is no longer there.")).toBeTruthy();
     expect(calls).toBe(1);
+  });
+});
+
+describe("CredentialsPage in Chinese", () => {
+  it("writes its table, states and actions in Chinese", async () => {
+    const { container } = await renderPage(<Page />, { locale: "zh-CN", api: keysApi(KEYS) });
+    expect(await screen.findByRole("button", { name: "创建密钥" })).toBeTruthy();
+    await screen.findByText("Paused");
+    expectChinese(container, [
+      ...KEYS.map((row) => row.name),
+      "/files",
+      "/photos",
+      "/albums",
+      "dvk_ab",
+    ]);
   });
 });

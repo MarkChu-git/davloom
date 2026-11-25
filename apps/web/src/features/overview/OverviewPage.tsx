@@ -28,9 +28,9 @@ import {
 import { filesHref } from "../files/paths";
 import { backendStatus } from "../storage/backendStatus";
 import { frameTexts } from "../frame/fill";
+import { useT } from "../i18n/I18nProvider";
 import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { CopyField } from "../shell/CopyField";
-import { formatBytes, formatCount } from "../shell/format";
 import { PageHeader } from "../shell/PageHeader";
 import { usePageGutter } from "../shell/pageWidth";
 import { LoadError } from "../shell/QueryState";
@@ -40,8 +40,6 @@ import { OperationsChart, StorageChart } from "./lazyCharts";
 import { ErrorViewSwitch, RecentErrors } from "./RecentErrors";
 
 const TILE_GAP = spacingVars["--spacing-4"];
-
-const share = new Intl.NumberFormat("en", { style: "percent", maximumFractionDigits: 1 });
 
 const styles = stylex.create({
   // The three tiles sit side by side, or one above another, and never two above one. Once the row
@@ -114,9 +112,6 @@ const Panel = ({
   </Card>
 );
 
-const plural = (count: number, one: string, many: string): string =>
-  `${formatCount(count)} ${count === 1 ? one : many}`;
-
 /** The bytes stored on the backends that know their limit, and that limit in all. */
 export const knownCapacity = (
   backends: readonly Backend[],
@@ -134,9 +129,9 @@ export const knownCapacity = (
 
 /** The tiles, with the name of the slot the frame's script writes each one's texts into. */
 const TILE_SLOTS = [
-  ["Stored", "stored"],
-  ["Known capacity", "capacity"],
-  ["Mounts", "mounts"],
+  ["overview.stored", "stored"],
+  ["overview.knownCapacity", "capacity"],
+  ["overview.mounts", "mounts"],
 ] as const;
 
 /**
@@ -145,60 +140,65 @@ const TILE_SLOTS = [
  * (features/frame/fill.ts) can write the value there as soon as the API answers, before the
  * page's code has loaded.
  */
-const LoadingTiles = () => (
-  <Grid xstyle={styles.tiles} gap={4}>
-    {TILE_SLOTS.map(([label, slot], index) => (
-      <Tile
-        key={label}
-        label={label}
-        value={
-          <>
-            <Skeleton width={96} height={32} index={index} data-frame-placeholder={slot} />
-            <Text type="display-3" weight="semibold" data-frame-slot={slot} hidden>
-              {""}
-            </Text>
-          </>
-        }
-      >
-        <Skeleton
-          width={140}
-          height={14}
-          index={index + 3}
-          data-frame-placeholder={`${slot}-caption`}
-        />
-        <Text type="supporting" color="secondary" data-frame-slot={`${slot}-caption`} hidden>
-          {""}
-        </Text>
-      </Tile>
-    ))}
-  </Grid>
-);
+const LoadingTiles = () => {
+  const t = useT();
+  return (
+    <Grid xstyle={styles.tiles} gap={4}>
+      {TILE_SLOTS.map(([label, slot], index) => (
+        <Tile
+          key={slot}
+          label={t(label)}
+          value={
+            <>
+              <Skeleton width={96} height={32} index={index} data-frame-placeholder={slot} />
+              <Text type="display-3" weight="semibold" data-frame-slot={slot} hidden>
+                {""}
+              </Text>
+            </>
+          }
+        >
+          <Skeleton
+            width={140}
+            height={14}
+            index={index + 3}
+            data-frame-placeholder={`${slot}-caption`}
+          />
+          <Text type="supporting" color="secondary" data-frame-slot={`${slot}-caption`} hidden>
+            {""}
+          </Text>
+        </Tile>
+      ))}
+    </Grid>
+  );
+};
 
 const Tiles = ({ overview }: { overview: Overview | undefined }) => {
+  const t = useT();
   if (overview === undefined) return <LoadingTiles />;
   const known = knownCapacity(overview.backends);
   // The texts the frame's script wrote before the page's code loaded, written the same way.
-  const texts = frameTexts.overviewTexts(overview);
+  const texts = frameTexts.overviewTexts(overview, t.locale);
+  const share = new Intl.NumberFormat(t.locale, { style: "percent", maximumFractionDigits: 1 });
   return (
     <Grid xstyle={styles.tiles} gap={4}>
-      <Tile label="Stored" value={texts.stored}>
+      <Tile label={t("overview.stored")} value={texts.stored}>
         <Text type="supporting" color="secondary">
           {texts["stored-caption"]}
         </Text>
       </Tile>
       {known === null ? (
-        <Tile label="Known capacity" value={texts.capacity}>
+        <Tile label={t("overview.knownCapacity")} value={texts.capacity}>
           <Text type="supporting" color="secondary">
             {texts["capacity-caption"]}
           </Text>
         </Tile>
       ) : (
         <Tile
-          label="Known capacity"
+          label={t("overview.knownCapacity")}
           value={share.format(known.used / known.capacity)}
           meter={
             <ProgressBar
-              label="Known capacity used"
+              label={t("overview.knownCapacityUsed")}
               isLabelHidden
               value={known.used}
               max={known.capacity}
@@ -206,11 +206,14 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
           }
         >
           <Text type="supporting" color="secondary">
-            {`${formatBytes(known.used)} of ${formatBytes(known.capacity)}`}
+            {t("overview.bytesOf", {
+              used: t.bytes(known.used),
+              capacity: t.bytes(known.capacity),
+            })}
           </Text>
         </Tile>
       )}
-      <Tile label="Mounts" value={texts.mounts}>
+      <Tile label={t("overview.mounts")} value={texts.mounts}>
         <Text type="supporting" color="secondary">
           {texts["mounts-caption"]}
         </Text>
@@ -220,22 +223,23 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
 };
 
 const OperationsPanel = () => {
+  const t = useT();
   const operations = useOperations();
   const data = operations.data;
   const total = data?.hours.reduce((sum, hour) => sum + hour.operations, 0) ?? 0;
   const failed = data?.hours.reduce((sum, hour) => sum + hour.failed, 0) ?? 0;
   return (
     <Panel
-      title="Operations"
+      title={t("overview.operations")}
       action={
         <Text type="supporting" color="secondary">
-          Last 24 hours
+          {t("overview.last24Hours")}
         </Text>
       }
     >
       {operations.isError && data === undefined ? (
         <LoadError
-          title="Cannot read the operations"
+          title={t("overview.cannotReadOperations")}
           error={operations.error}
           isRetrying={operations.isFetching}
           onRetry={() => void operations.refetch()}
@@ -246,10 +250,10 @@ const OperationsPanel = () => {
         <>
           <HStack gap={3} wrap="wrap" xstyle={styles.onBaseline}>
             <Text type="display-3" weight="semibold">
-              {formatCount(total)}
+              {t.count(total)}
             </Text>
             {failed === 0 ? null : (
-              <StatusLabel tone="error" label={`${formatCount(failed)} failed`} />
+              <StatusLabel tone="error" label={t("overview.failedCount", { count: failed })} />
             )}
           </HStack>
           <OperationsChart hours={data.hours} />
@@ -260,15 +264,16 @@ const OperationsPanel = () => {
 };
 
 const RecentErrorsPanel = () => {
+  const t = useT();
   // The Operations panel above shows a failed read and offers Try again; this panel, put on the
   // page after it, does not read again on its own.
   const operations = useQuery({ ...operationsQuery, retryOnMount: false });
   const errors = operations.data?.errors;
   return (
-    <Panel title="Recent operation errors" action={<ErrorViewSwitch />}>
+    <Panel title={t("overview.recentErrors")} action={<ErrorViewSwitch />}>
       {errors === undefined ? (
         operations.isError ? (
-          <Text color="secondary">{describeError(operations.error)}</Text>
+          <Text color="secondary">{describeError(t, operations.error)}</Text>
         ) : (
           <Skeleton width="100%" height={44} />
         )
@@ -281,6 +286,7 @@ const RecentErrorsPanel = () => {
 
 /** Overview (PRD §8.1): what is stored and where, whether it answers, and what failed lately. */
 export const OverviewPage = () => {
+  const t = useT();
   const overview = useOverview();
   const settings = useStorageSettings();
   const check = useCheckBackends();
@@ -292,22 +298,33 @@ export const OverviewPage = () => {
   const checkConnections = () =>
     check.mutate(undefined, {
       onSuccess: (results) => {
-        const checked = `Checked ${plural(results.length, "backend", "backends")}.`;
+        const checked = t("overview.checked", {
+          backends: t("count.backends", { count: results.length }),
+        });
         const down = results.filter((result) => !result.available);
         // A backend that still does not answer is a failure, which error toasts announce assertively.
         toast(
           down.length === 0
-            ? { body: `${checked} Every one answered.`, uniqueID: "check" }
+            ? { body: t("overview.allAnswered", { checked }), uniqueID: "check" }
             : {
                 type: "error",
-                body: `${checked} ${down
-                  .map((result) => `${result.name}: ${result.reason ?? "no answer"}`)
-                  .join("; ")}.`,
+                body: t("overview.someDown", {
+                  checked,
+                  down: down
+                    .map((result) =>
+                      t("overview.downReason", {
+                        name: result.name,
+                        reason: result.reason ?? t("overview.noAnswer"),
+                      }),
+                    )
+                    .join(t("overview.downSeparator")),
+                }),
                 uniqueID: "check",
               },
         );
       },
-      onError: (error) => toast({ type: "error", body: describeError(error), uniqueID: "check" }),
+      onError: (error) =>
+        toast({ type: "error", body: describeError(t, error), uniqueID: "check" }),
     });
 
   return (
@@ -317,15 +334,15 @@ export const OverviewPage = () => {
         <LayoutContent padding={gutter}>
           <VStack gap={6}>
             <PageHeader
-              title="Overview"
+              title={t("nav.overview")}
               actions={
                 <CopyField
-                  label="WebDAV address"
+                  label={t("overview.webdavAddress")}
                   isLabelHidden
                   value={webdavAddress()}
                   // Prerendered without the origin: the frame's script writes the whole address.
                   frameSlot="webdav-address"
-                  copyLabel="Copy address"
+                  copyLabel={t("overview.copyAddress")}
                   width="28rem"
                 />
               }
@@ -333,7 +350,7 @@ export const OverviewPage = () => {
 
             {overview.isError && data === undefined ? (
               <LoadError
-                title="Cannot read the overview"
+                title={t("overview.cannotRead")}
                 error={overview.error}
                 isRetrying={overview.isFetching}
                 onRetry={() => void overview.refetch()}
@@ -349,10 +366,10 @@ export const OverviewPage = () => {
                 <AfterFirstPaint>
                   <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
                     <Panel
-                      title="Storage by backend"
+                      title={t("overview.storageByBackend")}
                       action={
                         <TitleAction
-                          label="Manage storage"
+                          label={t("overview.manageStorage")}
                           variant="secondary"
                           size="sm"
                           icon={<Icon icon={HardDrive} size="sm" />}
@@ -374,10 +391,10 @@ export const OverviewPage = () => {
                       )}
                     </Panel>
                     <Panel
-                      title="Connections"
+                      title={t("overview.connections")}
                       action={
                         <TitleAction
-                          label="Check connections"
+                          label={t("overview.checkConnections")}
                           variant="secondary"
                           size="sm"
                           icon={<Icon icon={RefreshCw} size="sm" />}
@@ -398,8 +415,8 @@ export const OverviewPage = () => {
                             // The default backend's mark leads the line of its mounts, so a narrow
                             // window cuts the paths short rather than the mark.
                             const details = [
-                              ...(backend.id === defaultBackendId ? ["Default"] : []),
-                              kindLabel(backend.kind),
+                              ...(backend.id === defaultBackendId ? [t("backend.default")] : []),
+                              kindLabel(t, backend.kind),
                               ...paths,
                             ];
                             return (
@@ -407,7 +424,7 @@ export const OverviewPage = () => {
                                 key={backend.id}
                                 label={backend.name}
                                 description={details.join(" · ")}
-                                endContent={<StatusLabel {...backendStatus(backend)} />}
+                                endContent={<StatusLabel {...backendStatus(t, backend)} />}
                               />
                             );
                           })}
@@ -418,10 +435,10 @@ export const OverviewPage = () => {
                 </AfterFirstPaint>
                 <AfterFirstPaint>
                   <Panel
-                    title="Mounts"
+                    title={t("overview.mounts")}
                     action={
                       <TitleAction
-                        label="Open Files"
+                        label={t("overview.openFiles")}
                         variant="secondary"
                         size="sm"
                         icon={<Icon icon={Folder} size="sm" />}
@@ -432,7 +449,7 @@ export const OverviewPage = () => {
                     {data === undefined ? (
                       <Skeleton width="100%" height={44} />
                     ) : data.mounts.length === 0 ? (
-                      <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
+                      <Text color="secondary">{t("overview.noMounts")}</Text>
                     ) : (
                       <List density="compact" edge="outset">
                         {data.mounts.map((mount) => (
@@ -441,8 +458,8 @@ export const OverviewPage = () => {
                             label={`/${mount.name}`}
                             description={[
                               data.backends.find((backend) => backend.id === mount.backendId)
-                                ?.name ?? "Unknown backend",
-                              mount.root === "" ? "whole backend" : `/${mount.root}`,
+                                ?.name ?? t("overview.unknownBackend"),
+                              mount.root === "" ? t("overview.wholeBackend") : `/${mount.root}`,
                             ].join(" · ")}
                             href={filesHref(`/${mount.name}`)}
                           />

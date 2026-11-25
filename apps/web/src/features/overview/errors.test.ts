@@ -11,6 +11,7 @@ import {
 } from "@lucide/icons";
 import * as fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { translator } from "../i18n/translate";
 import type { OperationError } from "../api/queries";
 import { formatRelative } from "../shell/format";
 import {
@@ -25,6 +26,9 @@ import {
   shortAge,
   shortSpan,
 } from "./errors";
+
+const en = translator("en");
+const zh = translator("zh-CN");
 
 const NOW = new Date("2026-11-24T15:30:00Z");
 
@@ -58,7 +62,7 @@ describe("an error's cause", () => {
     [507, "PUT", "Storage full"],
     [418, "PUT", "Failed"],
   ])("status %i of a %s is %s", (status, method, label) => {
-    const cause = causeOf(sample({ status, method }));
+    const cause = causeOf(en, sample({ status, method }));
     expect(cause.label).toBe(label);
     expect(cause.reason).toMatch(/\.$/);
   });
@@ -66,12 +70,20 @@ describe("an error's cause", () => {
   it("gives every status a cause with a picture and a reason", () => {
     fc.assert(
       fc.property(fc.integer({ min: 400, max: 599 }), fc.string(), (status, method) => {
-        const cause = causeOf({ status, method });
+        const cause = causeOf(en, { status, method });
         expect(cause.label).not.toBe("");
         expect(cause.reason).not.toBe("");
         expect(cause.glyph.node.length).toBeGreaterThan(0);
       }),
     );
+  });
+
+  it("names every cause in Chinese", () => {
+    for (const status of [400, 403, 404, 409, 412, 413, 423, 500, 502, 503, 504, 507, 418]) {
+      const cause = causeOf(zh, { status, method: "PUT" });
+      expect(cause.label).not.toMatch(/[A-Za-z]/);
+      expect(cause.reason).toMatch(/。$/);
+    }
   });
 });
 
@@ -111,7 +123,15 @@ describe("a short span of minutes", () => {
     [310, "5h"],
     [24 * 60, "1d"],
   ])("%i minutes is %s", (minutes, text) => {
-    expect(shortSpan(minutes)).toBe(text);
+    expect(shortSpan(minutes, "en")).toBe(text);
+  });
+
+  it.each([
+    [12, "12分钟"],
+    [95, "2小时"],
+    [24 * 60, "1天"],
+  ])("%i minutes is %s in Chinese", (minutes, text) => {
+    expect(shortSpan(minutes, "zh-CN")).toBe(text);
   });
 });
 
@@ -130,8 +150,14 @@ describe("an operation's age", () => {
     [36 * 60, "1d", "yesterday"],
     [60 * 60, "2d", "2 days ago"],
   ])("%f minutes ago is %s, read as %s", (minutes, short, words) => {
-    expect(shortAge(ago(minutes), NOW)).toBe(short);
-    expect(formatRelative(ago(minutes), NOW)).toBe(words);
+    expect(shortAge(ago(minutes), "en", NOW)).toBe(short);
+    expect(formatRelative(ago(minutes), "en", NOW)).toBe(words);
+  });
+
+  it("reads an age in Chinese", () => {
+    expect(shortAge(ago(12), "zh-CN", NOW)).toBe("12分钟");
+    expect(formatRelative(ago(12), "zh-CN", NOW)).toBe("12分钟前");
+    expect(formatRelative(ago(36 * 60), "zh-CN", NOW)).toBe("昨天");
   });
 
   it("counts whole minutes, and none for a time to come", () => {

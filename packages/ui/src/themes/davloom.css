@@ -547,6 +547,11 @@
     border-inline-end-width: 0;
   }
 
+  .astryx-side-nav-heading {
+    --text-large-size: var(--font-size-xl);
+    --text-large-leading: 1.4;
+  }
+
   .astryx-side-nav-item {
     --color-text-primary: var(--color-text-secondary);
     font-weight: var(--font-weight-medium);
