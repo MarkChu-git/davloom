@@ -29,6 +29,19 @@ export const ApiErrorBody = Schema.Struct({
       description: "Machine-readable, such as invalid_input, invalid_json or invalid_body.",
     }),
     message: Schema.optionalKey(Schema.String),
+    reason: Schema.optionalKey(
+      Schema.Literals([
+        "too_short",
+        "too_long",
+        "compromised",
+        "taken",
+        "invalid_characters",
+        "invalid",
+      ]).annotate({
+        description:
+          "Why username_refused, password_refused or email_refused refused the field, machine-readable: too_short, too_long, compromised (found in known breaches), taken, invalid_characters or invalid. `message` says the same in English.",
+      }),
+    ),
     issues: Schema.optionalKey(Schema.Array(ApiIssue)),
   }),
 }).annotate({ identifier: "ApiError" });

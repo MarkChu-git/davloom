@@ -76,6 +76,15 @@ export const en = {
   "error.usernameRefused": "Check the username and try again.",
   "error.passwordRefused": "Check the password and try again.",
   "error.emailRefused": "Check the email address and try again.",
+  "error.usernameTooShort": "The username is too short. Use 3 to 30 characters.",
+  "error.usernameTooLong": "The username is too long. Use 3 to 30 characters.",
+  "error.usernameInvalidCharacters":
+    "A username can hold only letters, digits, underscores and dots.",
+  "error.usernameTaken": "That username is already taken. Choose another.",
+  "error.passwordTooShort": "The password is too short. Use at least 12 characters.",
+  "error.passwordTooLong": "The password is too long. Use at most 128 characters.",
+  "error.emailInvalid": "That is not a valid email address.",
+  "error.emailTaken": "Another account already uses that email address.",
   "error.verificationLocked": "Too many wrong attempts. Wait 15 minutes, then try again.",
   "error.passwordCheckFailed":
     "Davloom could not check the password against known breaches. Try again later.",

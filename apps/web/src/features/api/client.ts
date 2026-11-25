@@ -1,3 +1,4 @@
+import type { MessageKey } from "../i18n/messages/en";
 import type { Translator } from "../i18n/translate";
 import { DavError } from "./dav";
 import { VERIFICATION_REQUIRED, withStepUp } from "./stepUp";
@@ -10,13 +11,16 @@ export class ApiError extends Error {
   readonly code: string;
   /** The API's own explanation, such as why an import was refused, when it sent one. */
   readonly detail: string | undefined;
+  /** Why a field was refused, machine-readable, such as `too_short`, when the API sent it. */
+  readonly reason: string | undefined;
 
-  constructor(status: number, code: string, detail?: string) {
+  constructor(status: number, code: string, detail?: string, reason?: string) {
     super(`${status} ${code}`);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.reason = reason;
   }
 }
 
@@ -67,6 +71,12 @@ const detailOf = (body: unknown): string | undefined => {
     : undefined;
 };
 
+/** The `reason` in an error body such as `{"error":{"code":"password_refused","reason":"too_short"}}`. */
+const reasonOf = (body: unknown): string | undefined =>
+  isRecord(body) && isRecord(body.error) && typeof body.error.reason === "string"
+    ? body.error.reason
+    : undefined;
+
 /**
  * Calls the API and returns its JSON answer, or throws an ApiError. An action that needs step-up
  * verification asks for it and runs again (stepUp.ts).
@@ -97,7 +107,12 @@ export const apiFetchOnce = async <T>(
   }
   const parsed = await readBody(response);
   if (!response.ok) {
-    throw new ApiError(response.status, errorCodeOf(response.status, parsed), detailOf(parsed));
+    throw new ApiError(
+      response.status,
+      errorCodeOf(response.status, parsed),
+      detailOf(parsed),
+      reasonOf(parsed),
+    );
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer for this path
   return parsed as T;
@@ -110,6 +125,48 @@ export const apiFetchOnce = async <T>(
  */
 const detailIn = (t: Translator, error: ApiError): string | undefined =>
   t.locale === "en" ? error.detail : undefined;
+
+/**
+ * The words for each reason a field can be refused for, by the API's code and its `reason`
+ * (docs/api.md). A reason not listed, such as `invalid`, gets the field's general message.
+ */
+const REFUSALS: Readonly<Record<string, Readonly<Record<string, MessageKey>>>> = {
+  username_refused: {
+    too_short: "error.usernameTooShort",
+    too_long: "error.usernameTooLong",
+    invalid_characters: "error.usernameInvalidCharacters",
+    taken: "error.usernameTaken",
+  },
+  password_refused: {
+    too_short: "error.passwordTooShort",
+    too_long: "error.passwordTooLong",
+    compromised: "error.passwordCompromised",
+  },
+  email_refused: { invalid: "error.emailInvalid", taken: "error.emailTaken" },
+};
+
+/** Better Auth's own codes for the same refusals, as it answers changing a password or email. */
+const AUTH_REFUSALS: Readonly<Record<string, MessageKey>> = {
+  password_too_short: "error.passwordTooShort",
+  password_too_long: "error.passwordTooLong",
+  username_too_short: "error.usernameTooShort",
+  username_too_long: "error.usernameTooLong",
+  invalid_username: "error.usernameInvalidCharacters",
+  username_is_already_taken: "error.usernameTaken",
+  invalid_email: "error.emailInvalid",
+  user_already_exists: "error.emailTaken",
+  user_already_exists_use_another_email: "error.emailTaken",
+};
+
+/** The Dashboard's own words for why a field was refused, in the language shown; else none. */
+const refusalIn = (t: Translator, error: ApiError): string | undefined => {
+  const reasons = Object.hasOwn(REFUSALS, error.code) ? REFUSALS[error.code] : undefined;
+  const key =
+    reasons !== undefined && error.reason !== undefined && Object.hasOwn(reasons, error.reason)
+      ? reasons[error.reason]
+      : undefined;
+  return key === undefined ? undefined : t(key);
+};
 
 export const describeError = (t: Translator, error: unknown): string => {
   if (!isApiError(error)) {
@@ -149,11 +206,11 @@ export const describeError = (t: Translator, error: unknown): string => {
     case "registration_closed":
       return t("error.registrationClosed");
     case "username_refused":
-      return detailIn(t, error) ?? t("error.usernameRefused");
+      return refusalIn(t, error) ?? detailIn(t, error) ?? t("error.usernameRefused");
     case "password_refused":
-      return detailIn(t, error) ?? t("error.passwordRefused");
+      return refusalIn(t, error) ?? detailIn(t, error) ?? t("error.passwordRefused");
     case "email_refused":
-      return detailIn(t, error) ?? t("error.emailRefused");
+      return refusalIn(t, error) ?? detailIn(t, error) ?? t("error.emailRefused");
     case "verification_locked":
       return t("error.verificationLocked");
     case "password_check_failed":
@@ -161,7 +218,11 @@ export const describeError = (t: Translator, error: unknown): string => {
     case "password_compromised":
       return detailIn(t, error) ?? t("error.passwordCompromised");
     default: {
-      // Better Auth explains its refusals, such as a username that is taken.
+      if (Object.hasOwn(AUTH_REFUSALS, error.code)) {
+        const key = AUTH_REFUSALS[error.code];
+        if (key !== undefined) return t(key);
+      }
+      // Better Auth explains its other refusals in English.
       const detail = detailIn(t, error);
       if (detail !== undefined && error.status >= 400 && error.status < 500) {
         return detail;

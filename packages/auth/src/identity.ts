@@ -8,6 +8,18 @@ export interface KeyMetadata {
   readonly paths?: readonly string[];
 }
 
+/**
+ * Why a field was refused, as a code that stays the same whatever Better Auth's English says
+ * (FieldRefusal of @davloom/core).
+ */
+export type FieldRefusal =
+  | "too_short"
+  | "too_long"
+  | "compromised"
+  | "taken"
+  | "invalid_characters"
+  | "invalid";
+
 /** Why Better Auth refused a registration, by the field it names, or that it could not check. */
 export type Registration =
   | { readonly ok: true; readonly id: string }
@@ -16,6 +28,7 @@ export type Registration =
       readonly ok: false;
       readonly refusal: "field";
       readonly field: "username" | "password" | "email";
+      readonly code: FieldRefusal;
       readonly reason: string;
     }
   | { readonly ok: false; readonly refusal: "check-failed"; readonly reason: string };
@@ -28,18 +41,21 @@ export type Reverification =
   | "wrong-code"
   | "locked";
 
-const FIELD_OF_CODE: Readonly<Record<string, "username" | "password" | "email">> = {
-  PASSWORD_TOO_SHORT: "password",
-  PASSWORD_TOO_LONG: "password",
-  PASSWORD_COMPROMISED: "password",
-  USERNAME_IS_ALREADY_TAKEN: "username",
-  USERNAME_TOO_SHORT: "username",
-  USERNAME_TOO_LONG: "username",
-  INVALID_USERNAME: "username",
-  INVALID_DISPLAY_USERNAME: "username",
-  INVALID_EMAIL: "email",
-  USER_ALREADY_EXISTS: "email",
-  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: "email",
+/** The field each of Better Auth's refusal codes names, and why it refused it. */
+export const REFUSAL_OF_CODE: Readonly<
+  Record<string, readonly ["username" | "password" | "email", FieldRefusal]>
+> = {
+  PASSWORD_TOO_SHORT: ["password", "too_short"],
+  PASSWORD_TOO_LONG: ["password", "too_long"],
+  PASSWORD_COMPROMISED: ["password", "compromised"],
+  USERNAME_IS_ALREADY_TAKEN: ["username", "taken"],
+  USERNAME_TOO_SHORT: ["username", "too_short"],
+  USERNAME_TOO_LONG: ["username", "too_long"],
+  INVALID_USERNAME: ["username", "invalid_characters"],
+  INVALID_DISPLAY_USERNAME: ["username", "invalid"],
+  INVALID_EMAIL: ["email", "invalid"],
+  USER_ALREADY_EXISTS: ["email", "taken"],
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: ["email", "taken"],
 };
 
 const codeOf = (error: unknown): string | undefined => {
@@ -95,14 +111,15 @@ export const createIdentity = (auth: Auth) => {
         const code = codeOf(error);
         // Better Auth's body validation names the field, as in "[body.email] Invalid email".
         const validated = /^\[body\.(username|password|email)\]/.exec(messageOf(error))?.[1];
-        const field =
+        const refused: readonly ["username" | "password" | "email", FieldRefusal] | undefined =
           validated === "username" || validated === "password" || validated === "email"
-            ? validated
+            ? [validated, "invalid"]
             : code === undefined
               ? undefined
-              : FIELD_OF_CODE[code];
-        if (field !== undefined) {
-          return { ok: false, refusal: "field", field, reason: messageOf(error) };
+              : REFUSAL_OF_CODE[code];
+        if (refused !== undefined) {
+          const [field, why] = refused;
+          return { ok: false, refusal: "field", field, code: why, reason: messageOf(error) };
         }
         if ((await countUsers()) > 0) return { ok: false, refusal: "closed" };
         // The leaked-password check could not reach its service, and refuses rather than guess.
