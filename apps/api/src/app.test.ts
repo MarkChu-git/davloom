@@ -362,7 +362,12 @@ describe("step-up verification", () => {
   });
 
   it("leaves the Dashboard's pages outside /api/ to the route that serves them", async () => {
-    const app = createApp().all("/*", () => new Response("<html>"), { parse: "none" });
+    // The root is the app's own route, which hands GET to the Dashboard it is given.
+    const app = createApp({ dashboard: () => new Response("<html>") }).all(
+      "/*",
+      () => new Response("<html>"),
+      { parse: "none" },
+    );
     for (const path of ["/", "/settings", "/sign-in"]) {
       const response = await app.handle(new Request(`http://localhost${path}`));
       expect(response.status, path).toBe(200);

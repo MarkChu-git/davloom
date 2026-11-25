@@ -58,7 +58,8 @@ openssl rand -base64 48 | bunx --bun wrangler secret put DAVLOOM_SECRET
 Open the Worker's address right after deploying and create your account: registration is open
 only while the instance has no account, so the first visitor becomes the owner, and it closes for
 everyone, permanently, once the owner exists. Then create an API Key on Credentials and mount
-`https://<worker>/dav/`. Registration creates a Durable Objects backend and the Mount `files`.
+`https://<worker>/dav/`; Finder also takes `https://<worker>`, whose WebDAV requests the Worker
+redirects to `/dav/`. Registration creates a Durable Objects backend and the Mount `files`.
 
 Until you register, anyone who finds the address could register first. To close that window, set
 the optional secret `DAVLOOM_SETUP_TOKEN` before you deploy: registration, and importing an

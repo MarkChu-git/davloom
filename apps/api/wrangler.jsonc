@@ -14,10 +14,14 @@
   },
 
   // The API and WebDAV share an origin with the Dashboard. Everything else is a static asset.
+  // The root path runs the Worker too: static assets answer every method but GET and HEAD with
+  // 405, and a WebDAV client given the bare address, as Finder is, sends OPTIONS and PROPFIND to
+  // `/`. The Worker redirects those to /dav/ and serves GET and HEAD from ASSETS.
   "assets": {
     "directory": "../web/dist/client",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api", "/api/*", "/dav", "/dav/*"],
+    "run_worker_first": ["/", "/api", "/api/*", "/dav", "/dav/*"],
   },
   "d1_databases": [
     {
