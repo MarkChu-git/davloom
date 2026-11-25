@@ -292,11 +292,9 @@ describe("Range answers, written out", () => {
   });
 
   it("sends these If-Range values", () => {
-    const lastModified = "Tue, 24 Nov 2026 12:00:00 GMT";
+    const modified = "Tue, 24 Nov 2026 12:00:00 GMT";
     expect(
-      IF_RANGES.map(
-        ([label, value, applies]) => `${label}: ${value('"t1"', lastModified)} ${applies}`,
-      ),
+      IF_RANGES.map(([label, value, applies]) => `${label}: ${value('"t1"', modified)} ${applies}`),
     ).toMatchInlineSnapshot(`
       [
         "the current strong tag: "t1" true",

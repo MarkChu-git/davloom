@@ -185,6 +185,12 @@ describe("Destination", () => {
 // What the grammars read and what the tables hold, written out (RFC 4918 §10.2, §10.6, §10.7,
 // §10.3), so a change to a value or to a grammar that moves an answer fails here, not only in the
 // comparison with the handler.
+const destinations = (where: Where) =>
+  destinationsOf(where).map(
+    ([label, value, statuses, created]) =>
+      `${label}: ${JSON.stringify(value)} -> ${statuses.join("/")} ${created}`,
+  );
+
 describe("the request-header tables, written out", () => {
   it("reads each Depth", () => {
     expect(DEPTHS.map((depth) => `${JSON.stringify(depth)} -> ${readDepth(depth)}`))
@@ -255,12 +261,6 @@ describe("the request-header tables, written out", () => {
       ]
     `);
   });
-
-  const destinations = (where: Where) =>
-    destinationsOf(where).map(
-      ([label, value, statuses, created]) =>
-        `${label}: ${JSON.stringify(value)} -> ${statuses.join("/")} ${created}`,
-    );
 
   it("lists the Destinations for the namespace root of an https origin", () => {
     expect(destinations({ origin: "https://dav.example", namespace: "/dav", root: "/dav" }))

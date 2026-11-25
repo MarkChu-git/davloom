@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { BODIES, DOCUMENTS, EMPTY, EMPTY_BODIES, STATUS, TABLE } from "./xml-bodies-cases";
 import { buildWorld } from "./world";
@@ -56,7 +55,14 @@ const shown = (text: string) =>
     ? `${JSON.stringify(text.slice(0, 70))}…${JSON.stringify(text.slice(-50))} (${text.length})`
     : JSON.stringify(text);
 
-const digest = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 12);
+/** A 32-bit FNV-1a digest of a body, enough to tell two bodies apart. */
+const digest = (text: string) => {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+};
 
 describe("the XML bodies, written out", () => {
   it("builds each PROPFIND body", () => {
@@ -134,61 +140,61 @@ describe("the XML bodies, written out", () => {
       ),
     ).toMatchInlineSnapshot(`
       [
-        "the canonical document: b215b860cabf cd826b16068d",
-        "no XML declaration: 59b6b4f113b0 6509601c57ce",
-        "whitespace before the root: 6abfd5c4b5b9 dc7b86566895",
-        "a byte order mark: 2a3d544510dc 579da590419a",
-        "a comment before the root: 0eb92800faed 08ff895b52a3",
-        "a comment inside the root: 1e024b5bc0cc 43613d75a64d",
-        "a processing instruction after the root: 0882a2440bb2 359b1b1e3c6c",
-        "another prefix for DAV:: 601b025c5b3f 1739c908d5b8",
-        "DAV: as the default namespace: 45f30adbe333 4932ca501f14",
-        "single-quoted namespace: d016337320c3 a8feb506f6e1",
-        "an unknown DAV: element: bad415d5243d 678322b95f0c",
-        "an unknown element in another namespace: 04c80ab1a6a0 bbe6d6e9c7c2",
-        "unknown attributes: 8ef80470b6bd 28e2eb45b47c",
-        "a CDATA section of whitespace: 878635aec37a 3e0844a5fe25",
-        "whitespace after the root: 0c63845e0f31 f4160bd68917",
-        "upper-case encoding and standalone: 74c996ee9b46 fb528dcfb8db",
-        "nesting 32 levels deep: 7c984158e052 950e9e0cd5d9",
-        "1,000 unknown siblings: 1ea4e3504fa9 afa50949186e",
-        "character and predefined entity references: 0c441aa54dcb c3626e74b03b",
-        "the namespace declared on every element: 275980b1de97 be7eaec6343c",
-        "a declaration and no root: 86e0a4d4f900 86e0a4d4f900",
-        "a body cut short by one character: 6e238ea2377e ef2162c7cfc3",
-        "a body cut in half: 4da35e95efdf af7075325935",
-        "a mismatched end tag: a9745212bf30 172c9d7d6a88",
-        "an unclosed root: 301a9b64538e dd19e83383da",
-        "two root elements: ce94bbf690c7 19f8e628dc16",
-        "text before the root: b836df8970f4 325781dc346f",
-        "whitespace before the declaration: 0a5eeceb848a c67489239b65",
-        "a declaration after the start: cbb7b72f4e21 792a041fa75e",
-        "an undeclared prefix: b8f7612cca1d b00bde7cb07b",
-        "an undefined entity: 90525a783b42 5d9d4d2a80df",
-        "a character reference to NUL: 6ec059f1ce29 783040c1a98d",
-        "a raw control character: 8f290d52b85a 36a35e1198d8",
-        "a raw < in an attribute: 0bd41e868812 0dedb758fd6e",
-        "an unquoted attribute: f1384594e638 643edafd9a57",
-        "a duplicate attribute: 684f33ff6f88 a0daff2fb598",
-        "a name starting with a digit: c41e6331e5b9 03fc0cad9e7e",
-        "an unterminated CDATA section: a123bb0d32b8 ad783f74f510",
-        "an unterminated comment: fc1879abc2b5 2efa76d8d8c1",
-        "a double hyphen in a comment: a5a15a3580f8 f12804ed99b4",
-        "a bare DOCTYPE: 8f7a48cb28b8 c3b22ead4e3b",
-        "an internal entity: 18b3d50692d4 8b4fb62c98ed",
-        "billion laughs: c800e1dd9aa3 9de0fb5b4f12",
-        "an external entity: c8102178da9f 4536d0b9d1e5",
-        "an external parameter entity: 368d88975d85 352d3db49ad9",
-        "an external DTD: 5cd86e6248e7 866f6035c2a6",
-        "a root without a namespace: ebb1245d13dd b5c564cfbc2c",
-        "a root in the namespace DAV: 048b331b87fb 0c935fe2a96f",
-        "a root in the namespace dav:: d2bd67f1084a 89fe3c5f4221",
-        "a root with the wrong name: e14ee645bc1e 99b3cf35765f",
-        "another method's document: 417212e921d6 b215b860cabf",
-        "nesting 5,000 levels deep: dcc92bfae2b4 b851be5fce27",
-        "100,000 elements: 2ff88abcdc67 41ec48d7b055",
-        "2 MiB of whitespace: 63a138d87186 a60ef384ac8b",
-        "a 2 MiB text node: 3005e2470b12 04ecb0230dfd",
+        "the canonical document: 8cc54a3a 2a7af9a4",
+        "no XML declaration: cdc0ec47 8b40f12d",
+        "whitespace before the root: 7a9bbe56 4d98c870",
+        "a byte order mark: b3870051 9e3ee5b3",
+        "a comment before the root: e39e332a 62d34634",
+        "a comment inside the root: 5e64cf3f b579ee45",
+        "a processing instruction after the root: 74448f14 1ca28822",
+        "another prefix for DAV:: 53b6f4b6 5f060faa",
+        "DAV: as the default namespace: d2cc81fd 75a3965b",
+        "single-quoted namespace: db11d04d 518335d7",
+        "an unknown DAV: element: 48609734 a47b2792",
+        "an unknown element in another namespace: 02556277 11fb062d",
+        "unknown attributes: db3ddee8 210d6e5a",
+        "a CDATA section of whitespace: 3c61bbbf f1a04d03",
+        "whitespace after the root: a157a707 c6dd8ebd",
+        "upper-case encoding and standalone: d9ec7be3 2b7043d9",
+        "nesting 32 levels deep: 8f8e23c7 a828e9ed",
+        "1,000 unknown siblings: da8a1b87 8d1f062d",
+        "character and predefined entity references: a910e5d1 47b66fe1",
+        "the namespace declared on every element: 872da365 097548e3",
+        "a declaration and no root: a33359b8 a33359b8",
+        "a body cut short by one character: 80d5eac3 d8cdfa01",
+        "a body cut in half: f5de1639 1b1b812d",
+        "a mismatched end tag: 6999c173 eed1aa86",
+        "an unclosed root: 591f9c6c e09ef6dd",
+        "two root elements: 26600bd9 4e354395",
+        "text before the root: 61b2a37d 9a050e1f",
+        "whitespace before the declaration: b9273930 6c0d846e",
+        "a declaration after the start: 728ed2d0 3c4c0d4a",
+        "an undeclared prefix: 7f8c0457 7082234f",
+        "an undefined entity: 673ffb64 5878d70c",
+        "a character reference to NUL: 9fbc0e09 38858fb3",
+        "a raw control character: 55e552b4 57c108a4",
+        "a raw < in an attribute: 17eee7a4 c6af1a96",
+        "an unquoted attribute: 440778e1 960a21ef",
+        "a duplicate attribute: 63dee0c8 827628ce",
+        "a name starting with a digit: 5b9896f4 72ea93c8",
+        "an unterminated CDATA section: d89dbcb7 6255c20b",
+        "an unterminated comment: a9e1c6cc f576ee9a",
+        "a double hyphen in a comment: b02b8ccf a9dbd177",
+        "a bare DOCTYPE: 5d53e06c 19d8e803",
+        "an internal entity: b99726b8 f272b618",
+        "billion laughs: 8bf6f809 885d2ff9",
+        "an external entity: 8c50a974 ef9e5684",
+        "an external parameter entity: dc0eb20e 1a59ddb8",
+        "an external DTD: b5e39505 2d091ff7",
+        "a root without a namespace: 5a2d336f d827c9c1",
+        "a root in the namespace DAV: 75a77427 69ce0063",
+        "a root in the namespace dav:: ae410ba7 a75a7fcd",
+        "a root with the wrong name: f58db6c7 2f00c9f3",
+        "another method's document: e00ea300 8cc54a3a",
+        "nesting 5,000 levels deep: 688ae5e7 a441a51d",
+        "100,000 elements: be11c187 9e1d9bed",
+        "2 MiB of whitespace: 0940ec47 ac40f12d",
+        "a 2 MiB text node: b75f5d9c 04c30f30",
       ]
     `);
   });

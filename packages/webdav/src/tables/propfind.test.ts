@@ -75,13 +75,13 @@ describe("PROPFIND live properties", () => {
 // file, a collection, the root and a Mount root, and whether allprop returns it; then each value
 // check against values that pass and values that do not. A change to a rule or to a check fails
 // here, not only in the comparison with the handler.
-describe("the PROPFIND oracle, written out", () => {
-  const property = (name: string) => {
-    const found = PROPERTIES[name];
-    if (!found) throw new Error(name);
-    return found;
-  };
+const property = (name: string) => {
+  const found = PROPERTIES[name];
+  if (!found) throw new Error(name);
+  return found;
+};
 
+describe("the PROPFIND oracle, written out", () => {
   it("has these rules", () => {
     expect(
       Object.entries(PROPERTIES).map(
@@ -114,7 +114,7 @@ describe("the PROPFIND oracle, written out", () => {
     expect(TABLE).toHaveLength(Object.keys(PROPERTIES).length * KINDS.length * FORMS.length);
   });
 
-  const get: Get = {
+  const sample: Get = {
     etag: '"e1"',
     lastModified: "Mon, 02 Nov 2026 00:00:00 GMT",
     length: "15",
@@ -191,7 +191,7 @@ describe("the PROPFIND oracle, written out", () => {
   ];
 
   it.each(CHECKS)("checks %s %j on the %s as %s", (name, value, kind, valid) => {
-    expect(property(name).valid(value, kind, get)).toBe(valid);
+    expect(property(name).valid(value, kind, sample)).toBe(valid);
   });
 
   it("finds a property in each propstat, across lines", () => {

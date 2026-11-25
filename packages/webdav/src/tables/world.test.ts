@@ -64,9 +64,9 @@ describe("the table world", () => {
     const storage = createMemoryStorage({ now: () => 0 });
     await storage.createCollection(["c"]);
     await storage.write(["c", "f.txt"], new Blob(["text"]).stream(), {});
-    await storage.patchProperties(["c"], [{ name: "{urn:z}p", value: "<v/>" }], []);
+    await storage.patchProperties(["c"], [{ name: "{urn:z}p", xml: '<Z:p xmlns:Z="urn:z"/>' }], []);
     expect(await snapshot(storage, "pre")).toEqual({
-      "pre/c/": 'collection [{"name":"{urn:z}p","value":"<v/>"}]',
+      "pre/c/": 'collection [{"name":"{urn:z}p","xml":"<Z:p xmlns:Z=\\"urn:z\\"/>"}]',
       "pre/c/f.txt": "file text []",
     });
     expect(await snapshot(unavailableBackend(), "pre")).toEqual({});
@@ -93,18 +93,18 @@ describe("the table world", () => {
   });
 });
 
-describe("a backend that refuses names", () => {
-  const refusing = async () => {
-    const inner = createMemoryStorage({ now: () => 0 });
-    await inner.createCollection(["c"]);
-    await inner.write(["c", "bad-file"], new Blob(["old"]).stream(), {});
-    await inner.write(["c", "ok"], new Blob(["ok"]).stream(), {});
-    const backend = refusingBackend(inner, (names, kind) =>
-      names.some((name) => name.startsWith("bad") || (kind === "collection" && name === "dir")),
-    );
-    return { inner, backend };
-  };
+const refusing = async () => {
+  const inner = createMemoryStorage({ now: () => 0 });
+  await inner.createCollection(["c"]);
+  await inner.write(["c", "bad-file"], new Blob(["old"]).stream(), {});
+  await inner.write(["c", "ok"], new Blob(["ok"]).stream(), {});
+  const backend = refusingBackend(inner, (names, kind) =>
+    names.some((name) => name.startsWith("bad") || (kind === "collection" && name === "dir")),
+  );
+  return { inner, backend };
+};
 
+describe("a backend that refuses names", () => {
   it("refuses to create a refused file, and cancels its body", async () => {
     const { backend } = await refusing();
     const { state, stream } = body();

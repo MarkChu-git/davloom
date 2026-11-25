@@ -162,6 +162,17 @@ describe("the If header", () => {
   });
 });
 
+/** RFC 4918 §7.3: another client creates /race.txt between the check and the write. */
+const racing = (inner: StorageBackend): StorageBackend => ({
+  ...inner,
+  stat: (path) =>
+    path.join("/") === "race.txt" ? Promise.resolve(fail("not-found")) : inner.stat(path),
+  write: (path, body, options) =>
+    path.join("/") === "race.txt" && options.ifAbsent === true
+      ? Promise.resolve(fail("exists"))
+      : inner.write(path, body, options),
+});
+
 describe("LOCK", () => {
   it.each([
     ["a lock scope that is neither exclusive nor shared", lockinfo("bogus")],
@@ -218,17 +229,6 @@ describe("LOCK", () => {
     expect(response.status).toBe(423);
     expect(response.headers.get("lock-token")).toBeNull();
     expect(await response.text()).toBe(NO_CONFLICTING_LOCK);
-  });
-
-  // RFC 4918 §7.3: another client created the resource between the check and the write.
-  const racing = (inner: StorageBackend): StorageBackend => ({
-    ...inner,
-    stat: (path) =>
-      path.join("/") === "race.txt" ? Promise.resolve(fail("not-found")) : inner.stat(path),
-    write: (path, body, options) =>
-      path.join("/") === "race.txt" && options.ifAbsent === true
-        ? Promise.resolve(fail("exists"))
-        : inner.write(path, body, options),
   });
 
   it("locks a resource another client created meanwhile, with 200", async () => {
@@ -332,9 +332,9 @@ describe("PROPFIND values", () => {
     ]) {
       const response = await w.dav("PROPFIND", "/", { headers: { depth: "1" }, body });
       const xml = await response.text();
-      const used = xml.split("<D:response>").flatMap((response) => {
-        const href = /<D:href>([^<]*)<\/D:href>/.exec(response)?.[1];
-        const bytes = /<D:quota-used-bytes>(\d+)</.exec(response)?.[1];
+      const used = xml.split("<D:response>").flatMap((part) => {
+        const href = /<D:href>([^<]*)<\/D:href>/.exec(part)?.[1];
+        const bytes = /<D:quota-used-bytes>(\d+)</.exec(part)?.[1];
         return href && bytes ? [`${href} ${bytes}`] : [];
       });
       expect(used).toEqual([`${BASE}/files/ 5`, `${BASE}/media/ 3`]);
@@ -342,8 +342,7 @@ describe("PROPFIND values", () => {
   });
 
   it("leaves the quota out without failing when the backend has none", async () => {
-    const { quota: _quota, ...rest } = createMemoryStorage();
-    const w = setup({ storage: rest });
+    const w = setup({ storage: { ...createMemoryStorage(), quota: undefined } });
     await w.mkcol("/c");
     for (const body of [
       propfindBody("<D:allprop/><D:include><D:quota-used-bytes/></D:include>"),
@@ -398,12 +397,12 @@ describe("PUT Content-Length", () => {
   });
 });
 
-describe("a backend that fails part way", () => {
-  const failing = (operation: keyof StorageBackend): StorageBackend => {
-    const inner = createMemoryStorage();
-    return { ...inner, [operation]: () => Promise.resolve(fail("unavailable")) };
-  };
+const failing = (operation: keyof StorageBackend): StorageBackend => {
+  const inner = createMemoryStorage();
+  return { ...inner, [operation]: () => Promise.resolve(fail("unavailable")) };
+};
 
+describe("a backend that fails part way", () => {
   it.each([
     ["GET", "read", "/f.txt", undefined],
     ["PROPFIND", "list", "/", undefined],
