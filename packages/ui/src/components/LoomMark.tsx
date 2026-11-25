@@ -67,17 +67,22 @@ const LoomGlyph = (props: Omit<SVGProps<SVGSVGElement>, "ref">) => {
  * Davloom's mark: a planet with a ring around it, tilted up to the right. The ring fades from 22%
  * of the ink behind the planet to the full ink in front of it, where a seam parts it from the
  * planet. It is drawn in the accent, which Icon sets as its color, so the mark inverts with the
- * mode. It is decorative; the product name beside it names the link.
+ * mode. It is decorative; the product name beside it names the link. `size="large"` is for a page
+ * that the brand leads on its own, such as sign-in, beside the product name at a matching size.
  */
-export const LoomMark = () => (
-  <Icon icon={LoomGlyph} size="lg" color="accent" xstyle={styles.mark} />
+export const LoomMark = ({ size = "default" }: { size?: "default" | "large" }) => (
+  <Icon icon={LoomGlyph} size="lg" color="accent" xstyle={styles[size]} />
 );
 
 // Larger than Icon's largest size, 24 px, so the mark leads beside the product name: 32 px at a
-// 16 px root, and scaling with it.
+// 16 px root, 48 px when large, and scaling with it.
 const styles = stylex.create({
-  mark: {
+  default: {
     width: spacingVars["--spacing-8"],
     height: spacingVars["--spacing-8"],
+  },
+  large: {
+    width: spacingVars["--spacing-12"],
+    height: spacingVars["--spacing-12"],
   },
 });

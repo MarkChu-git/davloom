@@ -1,0 +1,42 @@
+{
+  // The Worker that the Deploy to Cloudflare button deploys into a new account: apps/api/wrangler.jsonc
+  // with its paths taken from the repository root, because the button reads the Wrangler config at
+  // the root of the repository it clones. It leaves out the project's custom domain and names no
+  // database of the project's. The button creates a D1 database and writes its id here, in the
+  // copy it makes. scripts/root-wrangler-config.test.ts keeps the two files in step. The project's
+  // own deploy (.github/workflows/deploy.yml) runs from apps/api and uses apps/api/wrangler.jsonc.
+  "$schema": "./apps/api/node_modules/wrangler/config-schema.json",
+  "name": "davloom",
+  "main": "apps/api/src/entry.workers.ts",
+  "compatibility_date": "2026-11-04",
+  // Better Auth needs node:async_hooks.
+  "compatibility_flags": ["nodejs_compat"],
+  // Plain variables set on the deployed Worker, such as DAVLOOM_URL, survive each deploy.
+  "keep_vars": true,
+  // The AWS SDK's XML utilities without the browser parser, as in apps/api/wrangler.jsonc.
+  "alias": {
+    "@aws-sdk/xml-builder": "./apps/api/node_modules/@aws-sdk/xml-builder/dist-cjs/index.js",
+  },
+  // The API and WebDAV share an origin with the Dashboard, as in apps/api/wrangler.jsonc.
+  "assets": {
+    "directory": "apps/web/dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/", "/api", "/api/*", "/dav", "/dav/*"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "davloom",
+      // A placeholder: the button replaces it with the id of the database it creates. To deploy
+      // by hand from the root, put the id of your own database here.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "packages/database/drizzle",
+    },
+  ],
+  // One Durable Object per storage backend, on the SQLite storage that Workers Free offers.
+  "durable_objects": {
+    "bindings": [{ "name": "STORAGE", "class_name": "StorageObject" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["StorageObject"] }],
+}

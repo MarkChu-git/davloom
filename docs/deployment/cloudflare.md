@@ -17,7 +17,51 @@ is one SQLite-backed Durable Object that keeps file content in 1 MiB rows.
 R2 and S3-compatible backends are optional. Enabling R2 needs a payment method; Davloom offers the
 R2 kind only when the Worker has an R2 binding.
 
-## Steps
+## Deploy with the button
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/MarkChu-git/davloom)
+
+The button needs only a Cloudflare account and a GitHub or GitLab account. It:
+
+1. Copies this repository into a new repository in your GitHub or GitLab account.
+2. Reads `wrangler.jsonc` at the repository root and creates what it names in your Cloudflare
+   account: the Worker (`davloom` unless you rename it), a D1 database (`davloom` unless you rename
+   it), and the Durable Object namespace that holds files. It writes the new database's id into the
+   copy's `wrangler.jsonc`.
+3. Asks for the secret `DAVLOOM_SECRET`, listed in `.dev.vars.example`. Use at least 32 random
+   bytes, for example from `openssl rand -base64 48`, and keep a copy: changing it later signs
+   everyone out and makes stored S3 secret keys unreadable. The value the form suggests is a
+   placeholder that is too short on purpose, so a Worker deployed with it answers every API and
+   WebDAV request with an error instead of running with a published secret.
+4. Connects the new repository to Workers Builds, which runs `bun run build` (the Dashboard) and
+   `bun run deploy`. That applies the D1 migrations by the binding name, `DB`, and then deploys
+   with the root `wrangler.jsonc`. Each push to the new repository deploys again the same way.
+
+The root `wrangler.jsonc` is `apps/api/wrangler.jsonc` with paths taken from the repository root,
+without the project's custom domain and with a placeholder D1 database id;
+`scripts/root-wrangler-config.test.ts` keeps the two in step. Workers Builds installs with the Bun
+that `packageManager` in `package.json` names.
+
+Once the deploy finishes, open the Worker's address, `https://davloom.<your subdomain>.workers.dev`,
+and create your account right away: the first account becomes the owner, and registration closes
+for everyone once it exists. Until then anyone who finds the address could register first. The
+button cannot set the optional `DAVLOOM_SETUP_TOKEN` before the first deploy; if you cannot register
+at once, add it as a secret under the Worker's **Settings > Variables and Secrets** first.
+
+To answer on your own domain, open the Worker in the Cloudflare dashboard and add the domain under
+**Settings > Domains & Routes > Add > Custom domain** (the domain's zone must be on the same
+account). Then add the plain variable `DAVLOOM_URL`, such as `https://files.example.com`, under
+**Settings > Variables and Secrets**: passkeys need it, and `keep_vars` keeps it across later
+deploys. To keep the domain in code instead, add a `routes` entry to your copy's `wrangler.jsonc`,
+as `apps/api/wrangler.jsonc` does.
+
+The button flow has not been run end to end by the project yet: `bun run build` and the Worker's
+bundle (`wrangler deploy --dry-run` with the root config) are tested, and the root config runs in
+local workerd, but how the button fills the D1 database id, its secret form, and whether a custom
+domain added in the dashboard survives the next build are as Cloudflare's documentation describes
+them, not tested.
+
+## Deploy by hand
 
 You need Bun and a Cloudflare account. From a clone of the repository, build the Dashboard first
 (from the repository root, so the build runs on Bun):
