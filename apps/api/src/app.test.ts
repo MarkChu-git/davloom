@@ -210,6 +210,25 @@ describe("the app without an instance", () => {
     }
   });
 
+  it("skips the same-origin check only for the paths the caller exempts", async () => {
+    const app = createApp({
+      classify: (_method, route) => (route.startsWith("/api/extra/") ? "public" : undefined),
+      sameOriginExempt: (pathname) => pathname.startsWith("/api/extra/"),
+    }).put("/api/extra/upload", () => new Response(null, { status: 204 }));
+    const send = (path: string) =>
+      app.handle(
+        new Request(`${ORIGIN}${path}`, {
+          method: "PUT",
+          headers: { origin: "https://evil.example", "content-type": "application/octet-stream" },
+          body: "bytes",
+        }),
+      );
+    expect((await send("/api/extra/upload")).status).toBe(204);
+    const refused = await send("/api/registration");
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ error: { code: "cross_site" } });
+  });
+
   it("hands WebDAV to a handler of the caller's own", async () => {
     const app = createApp({ webdavHandler: () => new Response("probe", { status: 299 }) });
     const response = await app.handle(new Request(`${ORIGIN}/dav/x`, { method: "PROPFIND" }));

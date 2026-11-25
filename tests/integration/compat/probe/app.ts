@@ -17,6 +17,8 @@ export const createProbeApp = ({ getAuth, ...options }: ProbeOptions) =>
     webdavHandler: probeHandler,
     // The probe's routes guard themselves (token-guard.ts) and take no session.
     classify: (_method, route) => (route.startsWith("/api/__probe/") ? "public" : undefined),
+    // They take the probe token, not a session cookie, so a page elsewhere cannot ride on them.
+    sameOriginExempt: (pathname) => pathname.startsWith("/api/__probe/"),
   })
     .use(effectRoutes)
     .use(streamRoutes)

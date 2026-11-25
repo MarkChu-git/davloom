@@ -3,3 +3,7 @@
 # 45d0ee7 added a SHA-256 test digest and a made-up API Key to the hashApiKey and verifyApiKey tests.
 45d0ee756254b0b515c4e79e5a8d44a934a68454:packages/core/src/instance.test.ts:generic-api-key:786
 45d0ee756254b0b515c4e79e5a8d44a934a68454:packages/core/src/instance.test.ts:generic-api-key:796
+# 8277928 added a made-up S3 secret key to the backend route tests.
+8277928bd32f9253693fafcc7a1406ca82c5d9f4:apps/api/src/instance-routes.test.ts:generic-api-key:34
+# b1b9c0b added the published SHA-1 secret of RFC 6238 Appendix B to the TOTP helper tests.
+b1b9c0b6e561a37386827b16769ab8a285d63376:packages/auth/src/testing.test.ts:generic-api-key:8

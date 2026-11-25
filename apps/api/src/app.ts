@@ -143,6 +143,11 @@ export interface AppOptions {
    * classifies answers 404.
    */
   readonly classify?: (method: string, route: string) => RouteEffect | undefined;
+  /**
+   * Whether a path the caller adds under /api/ skips the same-origin and JSON check, for routes
+   * that carry their own credential rather than a session cookie.
+   */
+  readonly sameOriginExempt?: (pathname: string) => boolean;
 }
 
 // PRD §12: WebDAV is exposed over HTTPS only. API Keys and session cookies travel with every
@@ -303,6 +308,7 @@ export const createApp = ({
   allowHttp = false,
   publicOrigin,
   classify = () => undefined,
+  sameOriginExempt = () => false,
 }: AppOptions = {}) => {
   let built:
     | {
@@ -546,13 +552,13 @@ export const createApp = ({
   return (
     new Elysia(adapter ? { adapter } : {})
       .onRequest(({ request }) => {
-        if (allowHttp || !isInsecure(request)) return crossSiteRefusal(request, publicOrigin);
         const pathname = URL.canParse(request.url) ? new URL(request.url).pathname : "/api";
+        const refuseCrossSite = () =>
+          sameOriginExempt(pathname) ? undefined : crossSiteRefusal(request, publicOrigin);
+        if (allowHttp || !isInsecure(request)) return refuseCrossSite();
         // The health check carries no credential, and load balancers often probe it over HTTP.
         if (pathname === "/api/health" || pathname === "/api/health/") return undefined;
-        return /^\/(api|dav)(\/|$)/.test(pathname)
-          ? HTTPS_ONLY()
-          : crossSiteRefusal(request, publicOrigin);
+        return /^\/(api|dav)(\/|$)/.test(pathname) ? HTTPS_ONLY() : refuseCrossSite();
       })
       // Every route below names its effect in verification.ts; one that does not is refused, and
       // a step-up action without a fresh verification answers 403 verification_required.
