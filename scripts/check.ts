@@ -7,7 +7,7 @@ const STEPS: [name: string, command: string[]][] = [
   ["generated theme", ["bun", "--bun", "run", "--filter", "@davloom/ui", "check:theme"]],
   ["typecheck", ["bun", "--bun", "run", "typecheck"]],
   ["unit tests", ["bun", "--bun", "run", "test"]],
-  ["build", ["bun", "--bun", "run", "build"]],
+  ["build", ["bun", "--bun", "run", "build:all"]],
 ];
 
 const failed: string[] = [];

@@ -1,0 +1,7 @@
+# The secrets the Deploy to Cloudflare button asks for (docs/deployment/cloudflare.md).
+#
+# DAVLOOM_SECRET signs sessions and encrypts stored S3 secret keys. Use at least 32 random bytes,
+# for example the output of `openssl rand -base64 48`, and keep it: changing it signs everyone out
+# and makes stored S3 secret keys unreadable. The value below is too short on purpose, so a Worker
+# deployed with it fails every API and WebDAV request instead of running with a published secret.
+DAVLOOM_SECRET=replace-me

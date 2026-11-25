@@ -51,8 +51,12 @@ interface WranglerResult {
   readonly stderr: string;
 }
 
+// Every command names a config: Wrangler otherwise searches upward from its working directory and
+// would find the repository root's wrangler.jsonc, Davloom's own Worker.
 const wrangler = (...args: string[]): WranglerResult => {
-  const { exitCode, stdout, stderr } = Bun.spawnSync(["bunx", "--bun", "wrangler", ...args], {
+  const config = args.includes("--config") ? [] : ["--config", BASE_CONFIG];
+  const command = ["bunx", "--bun", "wrangler", ...args, ...config];
+  const { exitCode, stdout, stderr } = Bun.spawnSync(command, {
     cwd: COMPAT_DIRECTORY,
     // CI keeps Wrangler from asking questions, since nobody can answer them here.
     env: { ...process.env, WRANGLER_SEND_METRICS: "false", CI: "true" },
