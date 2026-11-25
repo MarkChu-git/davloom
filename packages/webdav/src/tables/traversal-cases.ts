@@ -1,7 +1,7 @@
 import { REFUSED, type Refuses } from "./names-cases";
 import { BASE, FILES, under } from "./world";
 
-// Path traversal and encoding (PRD §11, §12): 80 payloads at each entry point that takes a path,
+// Path traversal and encoding (PRD §11, §12): 93 payloads at each entry point that takes a path,
 // for a Read / Write key limited to /files/photos. Each payload follows /dav/files/photos/ in a
 // URL. The oracle resolves it the way the standards do, independently of the handler: the WHATWG
 // URL parser that every client and runtime shares removes dot segments (including %2e forms and
@@ -98,6 +98,10 @@ export const PAYLOADS: readonly (readonly [label: string, payload: string])[] = 
   ["empty segments", "//sub//b.jpg"],
   ["empty segments around a parent", "/../docs/secret.txt"],
   ["the scope root again", "photos"],
+  ["parents back to the bare base path", "../../../dav"],
+  ["a collection inside the scope", "sub"],
+  ["a new file in a collection inside the scope", "sub/new.txt"],
+  ["a name below a file", "a.jpg/below.txt"],
   ["a name of 255 bytes", "a".repeat(255)],
   ["a name of 256 bytes", "a".repeat(256)],
   ["a name of 254 bytes in two-byte characters", "%C3%A9".repeat(127)],
@@ -149,11 +153,11 @@ const startsWith = (path: readonly string[], prefix: readonly string[]) =>
 const relationOf = (names: readonly string[]) =>
   startsWith(names, SCOPE) ? "inside" : startsWith(SCOPE, names) ? "above" : "outside";
 
+/** What is at `names`, for a path inside the scope or the parent of one. */
 const kindOf = (names: readonly string[]): "file" | "collection" | "missing" => {
   const key = names.join("/");
   if (Object.hasOwn(FILES, key)) return "file";
   if (names.length <= 1 || key === SCOPE_KEY || key === `${SCOPE_KEY}/sub`) return "collection";
-  if (["files/docs", "files/photos2", "media/music"].includes(key)) return "collection";
   return "missing";
 };
 

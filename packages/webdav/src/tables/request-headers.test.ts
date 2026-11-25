@@ -9,6 +9,7 @@ import {
   readOverwrite,
   TIMEOUTS,
   WORLD,
+  type Where,
 } from "./request-headers-cases";
 
 // Depth, Overwrite, Timeout and Destination (RFC 4918 §10.2, §10.6, §10.7, §10.3): the tables and
@@ -178,5 +179,172 @@ describe("Destination", () => {
     }
     expect((await w.storage.stat(["f.txt"])).ok).toBe(!(method === "MOVE" && done));
     if (!done) expect(await (await w.dav("GET", "/g.txt")).text()).toBe("g-content");
+  });
+});
+
+// What the grammars read and what the tables hold, written out (RFC 4918 §10.2, §10.6, §10.7,
+// §10.3), so a change to a value or to a grammar that moves an answer fails here, not only in the
+// comparison with the handler.
+describe("the request-header tables, written out", () => {
+  it("reads each Depth", () => {
+    expect(DEPTHS.map((depth) => `${JSON.stringify(depth)} -> ${readDepth(depth)}`))
+      .toMatchInlineSnapshot(`
+      [
+        "undefined -> null",
+        ""0" -> 0",
+        ""1" -> 1",
+        ""infinity" -> infinity",
+        ""Infinity" -> infinity",
+        ""INFINITY" -> infinity",
+        "" 1 " -> 1",
+        ""2" -> bad",
+        ""-1" -> bad",
+        ""01" -> bad",
+        ""1.0" -> bad",
+        ""one" -> bad",
+        ""0, 1" -> bad",
+        """ -> bad",
+        ""infinite" -> bad",
+      ]
+    `);
+  });
+
+  it("reads each Overwrite", () => {
+    expect(OVERWRITES.map((value) => `${JSON.stringify(value)} -> ${readOverwrite(value)}`))
+      .toMatchInlineSnapshot(`
+      [
+        "undefined -> true",
+        ""T" -> true",
+        ""F" -> false",
+        ""t" -> true",
+        ""f" -> false",
+        "" F " -> false",
+        ""X" -> bad",
+        ""TRUE" -> bad",
+        ""false" -> bad",
+        """ -> bad",
+        ""T, F" -> bad",
+        ""0" -> bad",
+      ]
+    `);
+  });
+
+  it("asks for each Timeout", () => {
+    expect(TIMEOUTS.map(([value, seconds]) => `${JSON.stringify(value)} -> ${seconds}`))
+      .toMatchInlineSnapshot(`
+      [
+        "undefined -> null",
+        ""Second-60" -> 60",
+        ""Second-1" -> 1",
+        ""second-60" -> 60",
+        ""SECOND-120" -> 120",
+        ""Second-3600" -> 3600",
+        ""Second-3601" -> 3601",
+        ""Second-4100000000" -> 4100000000",
+        ""Infinite" -> null",
+        ""infinite" -> null",
+        ""Infinite, Second-60" -> null",
+        ""Second-60, Infinite" -> 60",
+        ""Second-0" -> 0",
+        ""Second--5" -> null",
+        ""Second-abc" -> null",
+        ""Minutes-5" -> null",
+        """ -> null",
+        ""Second- 60" -> null",
+        ""60" -> null",
+      ]
+    `);
+  });
+
+  const destinations = (where: Where) =>
+    destinationsOf(where).map(
+      ([label, value, statuses, created]) =>
+        `${label}: ${JSON.stringify(value)} -> ${statuses.join("/")} ${created}`,
+    );
+
+  it("lists the Destinations for the namespace root of an https origin", () => {
+    expect(destinations({ origin: "https://dav.example", namespace: "/dav", root: "/dav" }))
+      .toMatchInlineSnapshot(`
+      [
+        "an absolute URL: "https://dav.example/dav/new.txt" -> 201 new.txt",
+        "an absolute path: "/dav/new.txt" -> 201 new.txt",
+        "a relative reference: "new.txt" -> 201 new.txt",
+        "a network-path reference: "//dav.example/dav/new.txt" -> 201 new.txt",
+        "an upper-case host: "https://DAV.EXAMPLE/dav/new.txt" -> 201 new.txt",
+        "dot segments: "https://dav.example/dav/c/../new.txt" -> 201 new.txt",
+        "a query: "https://dav.example/dav/new.txt?x=1" -> 201 new.txt",
+        "a fragment: "https://dav.example/dav/new.txt#top" -> 201 new.txt",
+        "an encoded space: "https://dav.example/dav/new%20name.txt" -> 201 new name.txt",
+        "encoded UTF-8: "https://dav.example/dav/%C3%A9t%C3%A9.txt" -> 201 été.txt",
+        "a collection to replace: "https://dav.example/dav/c/" -> 204 c",
+        "a file to replace: "https://dav.example/dav/g.txt" -> 204 g.txt",
+        "another host: "https://other.example/dav/new.txt" -> 502 null",
+        "another port: "https://dav.example:8443/dav/new.txt" -> 502 null",
+        "another host by network path: "//other.example/dav/new.txt" -> 502 null",
+        "another scheme: "http://dav.example/dav/new.txt" -> 201/502 null",
+        "a path outside the namespace: "https://dav.example/other/new.txt" -> 502/403 null",
+        "a path that only starts like the namespace: "https://dav.example/davx/new.txt" -> 502/403 null",
+        "the source itself: "https://dav.example/dav/f.txt" -> 403 null",
+        "the namespace root: "https://dav.example/dav/" -> 403 null",
+        "below the source file: "https://dav.example/dav/f.txt/new.txt" -> 403/409 null",
+        "a missing parent: "https://dav.example/dav/missing/new.txt" -> 409 null",
+        "an invalid escape: "https://dav.example/dav/%zz" -> 400 null",
+        "an encoded NUL: "https://dav.example/dav/a%00b" -> 400 null",
+        "an encoded slash in a name: "https://dav.example/dav/a%2Fb" -> 400 null",
+        "an unparsable URL: "http://[" -> 400 null",
+        "a URN: "urn:example:x" -> 400/502 null",
+        "no Destination: undefined -> 400 null",
+      ]
+    `);
+  });
+
+  it("lists the Destinations for a folder on an http origin on port 8443", () => {
+    expect(destinations({ origin: "http://h.example:8443", namespace: "/w", root: "/w/folder" }))
+      .toMatchInlineSnapshot(`
+      [
+        "an absolute URL: "http://h.example:8443/w/folder/new.txt" -> 201 new.txt",
+        "an absolute path: "/w/folder/new.txt" -> 201 new.txt",
+        "a relative reference: "new.txt" -> 201 new.txt",
+        "a network-path reference: "//h.example:8443/w/folder/new.txt" -> 201 new.txt",
+        "an upper-case host: "http://H.EXAMPLE:8443/w/folder/new.txt" -> 201 new.txt",
+        "dot segments: "http://h.example:8443/w/folder/c/../new.txt" -> 201 new.txt",
+        "a query: "http://h.example:8443/w/folder/new.txt?x=1" -> 201 new.txt",
+        "a fragment: "http://h.example:8443/w/folder/new.txt#top" -> 201 new.txt",
+        "an encoded space: "http://h.example:8443/w/folder/new%20name.txt" -> 201 new name.txt",
+        "encoded UTF-8: "http://h.example:8443/w/folder/%C3%A9t%C3%A9.txt" -> 201 été.txt",
+        "a collection to replace: "http://h.example:8443/w/folder/c/" -> 204 c",
+        "a file to replace: "http://h.example:8443/w/folder/g.txt" -> 204 g.txt",
+        "another host: "http://other.example/w/folder/new.txt" -> 502 null",
+        "another port: "http://h.example:8444/w/folder/new.txt" -> 502 null",
+        "another host by network path: "//other.example/w/folder/new.txt" -> 502 null",
+        "another scheme: "https://h.example:8443/w/folder/new.txt" -> 201/502 null",
+        "a path outside the namespace: "http://h.example:8443/other/new.txt" -> 502/403 null",
+        "a path that only starts like the namespace: "http://h.example:8443/wx/new.txt" -> 502/403 null",
+        "the source itself: "http://h.example:8443/w/folder/f.txt" -> 403 null",
+        "the namespace root: "http://h.example:8443/w/" -> 403 null",
+        "below the source file: "http://h.example:8443/w/folder/f.txt/new.txt" -> 403/409 null",
+        "a missing parent: "http://h.example:8443/w/folder/missing/new.txt" -> 409 null",
+        "an invalid escape: "http://h.example:8443/w/folder/%zz" -> 400 null",
+        "an encoded NUL: "http://h.example:8443/w/folder/a%00b" -> 400 null",
+        "an encoded slash in a name: "http://h.example:8443/w/folder/a%2Fb" -> 400 null",
+        "an unparsable URL: "http://[" -> 400 null",
+        "a URN: "urn:example:x" -> 400/502 null",
+        "no Destination: undefined -> 400 null",
+      ]
+    `);
+  });
+
+  it("builds the world and sends a lock body", () => {
+    expect(WORLD).toEqual({
+      "/c/": "",
+      "/c/x.txt": "x",
+      "/c/d/": "",
+      "/c/d/y.txt": "y",
+      "/f.txt": "f-content",
+      "/g.txt": "g-content",
+    });
+    expect(LOCK_BODY).toBe(
+      '<?xml version="1.0" encoding="utf-8"?><D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype></D:lockinfo>',
+    );
   });
 });
