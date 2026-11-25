@@ -12,6 +12,9 @@
     "test:workerd": "vitest run --config vitest.workerd.config.ts",
     "test:bun-sqlite": "bun --bun vitest run --config vitest.bun-sqlite.config.ts",
     "test:ui": "bun run build:web && playwright test",
+    "test:ui:docker": "bun scripts/playwright-docker.ts",
+    "test:ui:screenshots": "bun scripts/playwright-docker.ts --project=screenshots-desktop --project=screenshots-tablet --project=screenshots-phone",
+    "test:ui:screenshots:update": "bun scripts/playwright-docker.ts --update-snapshots --project=screenshots-desktop --project=screenshots-tablet --project=screenshots-phone",
     "test:ui:brand": "bun scripts/verify-brand-change.ts",
     "playwright:install": "playwright install chromium firefox webkit",
     "test:cloud": "vitest run --config vitest.cloud.config.ts",
@@ -27,6 +30,7 @@
   "dependencies": {
     "@davloom/api": "workspace:*",
     "@davloom/auth": "workspace:*",
+    "@davloom/client": "workspace:*",
     "@davloom/core": "workspace:*",
     "@davloom/database": "workspace:*",
     "@davloom/laws": "workspace:*",

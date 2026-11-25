@@ -237,6 +237,13 @@ export const IMAGES: Readonly<Record<string, Image>> = {
     version: "2.4.0",
     digest: "sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276",
   },
+  // Bun's image of the release that packageManager names, whose binary the browser tests copy into
+  // the CI job's Playwright image to run there locally (tests/integration/compat/scripts/playwright-docker.ts).
+  bun: {
+    repository: "oven/bun",
+    version: "1.4.4",
+    digest: "sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d",
+  },
 };
 
 /** The reference `docker run` takes for a pinned image: its tag, checked against its digest. */

@@ -203,6 +203,7 @@
       "dependencies": {
         "@davloom/api": "workspace:*",
         "@davloom/auth": "workspace:*",
+        "@davloom/client": "workspace:*",
         "@davloom/core": "workspace:*",
         "@davloom/database": "workspace:*",
         "@davloom/laws": "workspace:*",
