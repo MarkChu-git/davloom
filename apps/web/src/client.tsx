@@ -4,12 +4,15 @@ import { StrictMode, startTransition } from "react";
 import { createRoot } from "react-dom/client";
 import { prefetchPage } from "./features/api/prefetch";
 import { browserQueryClient } from "./features/api/queries";
+import { carryFrameInput } from "./features/frame/carry";
 
 // Each page's HTML is a frame prerendered without data (vite.config.ts), which the browser paints
 // before any script runs. React renders the Dashboard afresh in its place instead of hydrating it:
 // what the Dashboard shows depends on the window, the stored appearance, the browser's storage and
 // the API, none of which the prerender knows, and a hydrated page would have to match the frame
-// first and then change. New elements in place of the frame move nothing that was on screen.
+// first and then change. New elements in place of the frame move nothing that was on screen. A
+// person can type into the frame's fields before then, and carryFrameInput writes what they typed,
+// and the caret, into the page's fields once the page is in the frame's place.
 
 /** How long the page waits for its first reads before it renders without them. */
 const FIRST_READS_MS = 3000;
@@ -22,6 +25,7 @@ const FIRST_READS_MS = 3000;
 const nextTask = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 const start = async () => {
+  carryFrameInput();
   // The task that evaluated this module and the libraries it imports ends here.
   await nextTask();
   const client = browserQueryClient();

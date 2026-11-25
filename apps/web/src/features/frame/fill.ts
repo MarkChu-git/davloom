@@ -218,7 +218,7 @@ export function fillFrame(
       (value) => {
         const run = () => {
           // Once React has rendered the page over the frame, the page shows the value itself.
-          if (!document.body.hasAttribute("inert")) return;
+          if (!document.body.hasAttribute("data-frame")) return;
           try {
             write(value);
           } catch {
@@ -250,7 +250,9 @@ export function fillFrame(
     for (const [name, value] of Object.entries(profileValues(user))) {
       for (const slot of slots(`profile-${name}`)) {
         const input = slot instanceof HTMLInputElement ? slot : slot.querySelector("input");
-        if (input !== null) input.value = value;
+        // As the field's default, so that a value the person has already typed stays, and the
+        // page takes only what they typed from the frame (carry.ts).
+        if (input !== null) input.defaultValue = value;
       }
     }
   };
@@ -258,7 +260,7 @@ export function fillFrame(
   once(Promise.resolve(), () => {
     for (const slot of slots("webdav-address")) {
       const input = slot instanceof HTMLInputElement ? slot : slot.querySelector("input");
-      if (input !== null) input.value = webdavAddress(location.origin);
+      if (input !== null) input.defaultValue = webdavAddress(location.origin);
     }
   });
   const section = new URLSearchParams(location.search).get("section");

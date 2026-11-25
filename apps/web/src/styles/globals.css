@@ -4,7 +4,7 @@
 
 /* AppShell draws a menu button in the prerendered phone frame (DashboardShell), whose bar has
    the page's own Menu button instead. */
-body[inert] [data-testid="mobile-nav-toggle"] {
+body[data-frame] [data-testid="mobile-nav-toggle"] {
   display: none;
 }
 

@@ -3,11 +3,14 @@ import { answerStepUp } from "./instances";
 
 /**
  * Waits until the Dashboard has rendered the page. Each page's HTML is a frame prerendered without
- * data, inert until `apps/web/src/client.tsx` renders the page in its place (`__root.tsx`), so a
- * test that acted on it at once would click, type into or read the frame instead of the page.
+ * data, marked `data-frame` until `apps/web/src/client.tsx` renders the page in its place
+ * (`__root.tsx`), so a test that acted on it at once would click or read the frame instead of the
+ * page.
  */
-const untilRendered = async (page: Page) => {
-  await page.waitForFunction(() => document.body !== null && !document.body.hasAttribute("inert"));
+export const untilRendered = async (page: Page) => {
+  await page.waitForFunction(
+    () => document.body !== null && !document.body.hasAttribute("data-frame"),
+  );
 };
 
 /**
