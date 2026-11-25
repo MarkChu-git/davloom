@@ -141,9 +141,11 @@ describe("the dictionaries", () => {
     const leftovers = KEYS.filter((key) => {
       const english = formsOf(en[key]).join(" ");
       return formsOf(MESSAGES["zh-CN"][key]).some((form) =>
-        (form.replace(/\{\w+\}|<\/?\w+>/g, "").match(/[A-Za-z][\w.@/:-]*/g) ?? []).some(
-          (word) => !english.includes(word),
-        ),
+        form
+          // The words between placeholders and tags, which name nothing English must match.
+          .split(/\{\w+\}|<\/?\w+>/)
+          .flatMap((part) => part.match(/[A-Za-z][\w.@/:-]*/g) ?? [])
+          .some((word) => !english.includes(word)),
       );
     });
     expect(leftovers.map((key) => `${key}: ${JSON.stringify(MESSAGES["zh-CN"][key])}`)).toEqual([]);
