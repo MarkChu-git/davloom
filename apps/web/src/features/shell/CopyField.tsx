@@ -29,6 +29,7 @@ export const CopyField = ({
   copyLabel,
   isLabelHidden = false,
   width,
+  frameSlot,
 }: {
   label: string;
   value: string;
@@ -39,6 +40,8 @@ export const CopyField = ({
    * fill the row.
    */
   width?: string;
+  /** The slot the frame's script (features/frame/fill.ts) writes the value into, if any. */
+  frameSlot?: string;
 }) => {
   const { copy, isCopied } = useClipboard({ announce: `${label} copied` });
   const announce = useAnnounce();
@@ -62,6 +65,7 @@ export const CopyField = ({
           isReadOnly
           autoComplete="off"
           hasSpellCheck={false}
+          {...(frameSlot === undefined ? {} : { "data-frame-slot": frameSlot })}
         />
         <Button
           label={buttonLabel}

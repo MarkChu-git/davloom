@@ -33,7 +33,11 @@ export const KNOWN_FINDINGS: readonly KnownFinding[] = [
   },
   {
     rule: "label-title-only",
-    matches: (html) => html.includes("readonly") && html.includes('/dav/"'),
+    // axe shortens the HTML it reports, so the header's field, whose frame slot comes first,
+    // may be cut before its value.
+    matches: (html) =>
+      html.includes('data-frame-slot="webdav-address"') ||
+      (html.includes("readonly") && html.includes('/dav/"')),
     why: "The Overview's header hides the WebDAV address field's label; the field keeps its name through aria-labelledby, and axe asks for a visible one once the copy warning describes it.",
   },
 ];

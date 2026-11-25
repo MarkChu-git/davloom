@@ -1,7 +1,8 @@
 import { davloomTheme } from "@davloom/ui/themes/davloom";
-import { Asset, createRootRoute, Scripts, useTags } from "@tanstack/react-router";
+import { Asset, createRootRoute, Scripts, useRouterState, useTags } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { APPEARANCE_SCRIPT, SUPPORTED_COLOR_SCHEMES } from "../features/appearance/script";
+import { FILL_SCRIPT, FRAME_PARSED_SCRIPT, frameTexts } from "../features/frame/fill";
 import globals from "../styles/globals.css?url";
 
 /**
@@ -15,6 +16,24 @@ const PageHead = () => {
   return tags.map((tag) => <Asset {...tag} key={`tsr-meta-${JSON.stringify(tag)}`} />);
 };
 
+/**
+ * Preloads for the reads the frame's script starts, in the prerendered HTML only. The browser's
+ * preload scanner finds them as the HTML arrives, so the reads run while the stylesheet loads,
+ * and the script's own fetch of each takes the preloaded answer. `crossOrigin` "anonymous" gives
+ * the request fetch()'s defaults (CORS mode, same-origin credentials), so the two match.
+ */
+const FramePreloads = () => {
+  const { pathname, search } = useRouterState({
+    select: (state) => ({ pathname: state.location.pathname, search: state.location.searchStr }),
+  });
+  const section = new URLSearchParams(search).get("section");
+  return frameTexts
+    .framePaths(pathname, section)
+    .map((path) => (
+      <link key={path} rel="preload" href={path} as="fetch" crossOrigin="anonymous" />
+    ));
+};
+
 // Prerendered into each page's HTML file. The appearance script puts the stored mode on <html>
 // before the page renders. React writes the stylesheet first in <head>, so the script runs once the
 // stylesheet has loaded, still before <body> is parsed. A stylesheet in <head> holds back
@@ -25,10 +44,17 @@ const Document = ({ children }: { children: ReactNode }) => (
   <html lang="en" data-astryx-theme={davloomTheme.name} suppressHydrationWarning>
     <head>
       <PageHead />
+      {import.meta.env.SSR ? <FramePreloads /> : null}
       <script dangerouslySetInnerHTML={{ __html: APPEARANCE_SCRIPT }} />
+      {/* Starts the reads whose values the frame shows first, and writes them into it. */}
+      <script dangerouslySetInnerHTML={{ __html: FILL_SCRIPT }} />
     </head>
     <body inert={import.meta.env.SSR ? true : undefined}>
       {children}
+      {/* The frame is parsed: the script in <head> may write into it before the code below runs. */}
+      {import.meta.env.SSR ? (
+        <script dangerouslySetInnerHTML={{ __html: FRAME_PARSED_SCRIPT }} />
+      ) : null}
       <Scripts />
     </body>
   </html>

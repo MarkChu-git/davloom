@@ -18,15 +18,48 @@ import {
 type Prefetchable = (client: QueryClient) => Promise<void>;
 
 const read =
-  <TData, TKey extends QueryKey>(options: FetchQueryOptions<TData, Error, TData, TKey>) =>
-  (client: QueryClient) =>
-    client.prefetchQuery(options);
+  <TData, TKey extends QueryKey>(
+    options: FetchQueryOptions<TData, Error, TData, TKey>,
+    framePath?: string,
+  ) =>
+  (client: QueryClient) => {
+    const started = framePath === undefined ? undefined : takeFrameRead(framePath);
+    if (started === undefined) return client.prefetchQuery(options);
+    const { queryFn } = options;
+    return client.prefetchQuery({
+      ...options,
+      // The answer the frame's script already asked for; a failed one is read again, so the
+      // page learns why from the API client.
+      queryFn: (context) =>
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API's own answer for this query
+        (started as Promise<TData>).catch(() =>
+          typeof queryFn === "function" ? queryFn(context) : Promise.reject(new Error(framePath)),
+        ),
+    });
+  };
+
+/**
+ * The read the script in the page's head (features/frame/fill.ts) started for `path`, if any. It
+ * is handed out once: a later read of the same data asks the API afresh.
+ */
+export const takeFrameRead = (path: string): Promise<unknown> | undefined => {
+  if (typeof window === "undefined") return undefined;
+  const reads = window.davloomFrameReads;
+  const started = reads?.[path];
+  if (reads !== undefined) delete reads[path];
+  return started;
+};
 
 /** What the Dashboard's shell reads on every page inside it. */
-const SHELL: readonly Prefetchable[] = [read(meQuery), read(backendsQuery)];
+const SHELL: readonly Prefetchable[] = [read(meQuery, "/api/me"), read(backendsQuery)];
 
 const PAGES: Readonly<Record<string, readonly Prefetchable[]>> = {
-  "/": [...SHELL, read(overviewQuery), read(operationsQuery), read(storageSettingsQuery)],
+  "/": [
+    ...SHELL,
+    read(overviewQuery, "/api/overview"),
+    read(operationsQuery),
+    read(storageSettingsQuery),
+  ],
   "/files": [...SHELL, read(mountsQuery)],
   "/credentials": [...SHELL, read(apiKeysQuery), read(mountsQuery)],
   "/storage": [...SHELL, read(mountsQuery)],

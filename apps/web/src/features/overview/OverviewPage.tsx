@@ -27,6 +27,7 @@ import {
 } from "../api/queries";
 import { filesHref } from "../files/paths";
 import { backendStatus } from "../storage/backendStatus";
+import { frameTexts } from "../frame/fill";
 import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { CopyField } from "../shell/CopyField";
 import { formatBytes, formatCount } from "../shell/format";
@@ -131,33 +132,64 @@ export const knownCapacity = (
   };
 };
 
-const TILE_LABELS = ["Stored", "Known capacity", "Mounts"];
+/** The tiles, with the name of the slot the frame's script writes each one's texts into. */
+const TILE_SLOTS = [
+  ["Stored", "stored"],
+  ["Known capacity", "capacity"],
+  ["Mounts", "mounts"],
+] as const;
+
+/**
+ * The tiles while the overview is on its way. Beside each skeleton is an empty, hidden slot of
+ * the type the value takes, so in the prerendered frame the script in the page's head
+ * (features/frame/fill.ts) can write the value there as soon as the API answers, before the
+ * page's code has loaded.
+ */
+const LoadingTiles = () => (
+  <Grid xstyle={styles.tiles} gap={4}>
+    {TILE_SLOTS.map(([label, slot], index) => (
+      <Tile
+        key={label}
+        label={label}
+        value={
+          <>
+            <Skeleton width={96} height={32} index={index} data-frame-placeholder={slot} />
+            <Text type="display-3" weight="semibold" data-frame-slot={slot} hidden>
+              {""}
+            </Text>
+          </>
+        }
+      >
+        <Skeleton
+          width={140}
+          height={14}
+          index={index + 3}
+          data-frame-placeholder={`${slot}-caption`}
+        />
+        <Text type="supporting" color="secondary" data-frame-slot={`${slot}-caption`} hidden>
+          {""}
+        </Text>
+      </Tile>
+    ))}
+  </Grid>
+);
 
 const Tiles = ({ overview }: { overview: Overview | undefined }) => {
-  if (overview === undefined) {
-    return (
-      <Grid xstyle={styles.tiles} gap={4}>
-        {TILE_LABELS.map((label, index) => (
-          <Tile key={label} label={label} value={<Skeleton width={96} height={32} index={index} />}>
-            <Skeleton width={140} height={14} index={index + 3} />
-          </Tile>
-        ))}
-      </Grid>
-    );
-  }
-  const { usage, mounts, backends } = overview;
-  const known = knownCapacity(backends);
+  if (overview === undefined) return <LoadingTiles />;
+  const known = knownCapacity(overview.backends);
+  // The texts the frame's script wrote before the page's code loaded, written the same way.
+  const texts = frameTexts.overviewTexts(overview);
   return (
     <Grid xstyle={styles.tiles} gap={4}>
-      <Tile label="Stored" value={formatBytes(usage.bytes)}>
+      <Tile label="Stored" value={texts.stored}>
         <Text type="supporting" color="secondary">
-          {`${plural(usage.files, "file", "files")} in ${plural(usage.collections, "folder", "folders")}`}
+          {texts["stored-caption"]}
         </Text>
       </Tile>
       {known === null ? (
-        <Tile label="Known capacity" value="No fixed limit">
+        <Tile label="Known capacity" value={texts.capacity}>
           <Text type="supporting" color="secondary">
-            {`${formatBytes(usage.bytes)} stored`}
+            {texts["capacity-caption"]}
           </Text>
         </Tile>
       ) : (
@@ -178,9 +210,9 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
           </Text>
         </Tile>
       )}
-      <Tile label="Mounts" value={formatCount(mounts.length)}>
+      <Tile label="Mounts" value={texts.mounts}>
         <Text type="supporting" color="secondary">
-          {`On ${new Set(mounts.map((mount) => mount.backendId)).size} of ${plural(backends.length, "backend", "backends")}`}
+          {texts["mounts-caption"]}
         </Text>
       </Tile>
     </Grid>
@@ -291,6 +323,8 @@ export const OverviewPage = () => {
                   label="WebDAV address"
                   isLabelHidden
                   value={webdavAddress()}
+                  // Prerendered without the origin: the frame's script writes the whole address.
+                  frameSlot="webdav-address"
                   copyLabel="Copy address"
                   width="28rem"
                 />
@@ -306,10 +340,9 @@ export const OverviewPage = () => {
               />
             ) : (
               <>
+                {/* In the frame, so the figures paint as soon as the overview arrives. */}
+                <Tiles overview={data} />
                 {/* Built one part at a time once the page's header is on screen. */}
-                <AfterFirstPaint>
-                  <Tiles overview={data} />
-                </AfterFirstPaint>
                 <AfterFirstPaint>
                   <OperationsPanel />
                 </AfterFirstPaint>

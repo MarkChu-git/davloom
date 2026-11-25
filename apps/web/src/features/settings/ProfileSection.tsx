@@ -20,7 +20,23 @@ interface Problems {
   email?: string;
 }
 
-const ProfileForm = ({ user }: { user: User }) => {
+/** The empty profile the prerendered frame shows its fields with. */
+const FRAME_USER: User = {
+  id: "",
+  name: "",
+  username: null,
+  email: null,
+  twoFactorEnabled: false,
+  verifiedAt: 0,
+};
+
+/**
+ * The profile's fields. In the prerendered frame (`isFrame`) they start empty and carry slots the
+ * script in the page's head (features/frame/fill.ts) writes the profile into as soon as the API
+ * answers, before the page's code has loaded.
+ */
+const ProfileForm = ({ user, isFrame = false }: { user: User; isFrame?: boolean }) => {
+  const slot = (name: string) => (isFrame ? { "data-frame-slot": `profile-${name}` } : {});
   const toast = useToast();
   const client = useQueryClient();
   const [name, setName] = useState(user.name);
@@ -92,6 +108,7 @@ const ProfileForm = ({ user }: { user: User }) => {
           }}
           onEnter={() => void save()}
           autoComplete="name"
+          {...slot("name")}
           // Spell check would mark most names as mistakes.
           hasSpellCheck={false}
           status={
@@ -107,6 +124,7 @@ const ProfileForm = ({ user }: { user: User }) => {
           }}
           onEnter={() => void save()}
           autoComplete="username"
+          {...slot("username")}
           autoCapitalize="none"
           hasAutoCorrect={false}
           hasSpellCheck={false}
@@ -127,6 +145,7 @@ const ProfileForm = ({ user }: { user: User }) => {
           }}
           onEnter={() => void save()}
           autoComplete="email"
+          {...slot("email")}
           autoCapitalize="none"
           hasSpellCheck={false}
           status={
@@ -149,6 +168,7 @@ const ProfileForm = ({ user }: { user: User }) => {
 /** Settings > Profile: the display name, the username and the email, saved through Better Auth. */
 export const ProfileContent = () => {
   const me = useMe();
+  if (import.meta.env.SSR) return <ProfileForm user={FRAME_USER} isFrame />;
   return (
     <QueryState query={me} title="Cannot read the profile" loading={<LoadingRows rows={3} />}>
       {(user) => <ProfileForm key={user.id} user={user} />}
