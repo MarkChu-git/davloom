@@ -1,0 +1,4 @@
+# Workers static assets read this file. A file under /assets/ has its content hash in its name, so
+# it never changes and browsers may keep it for a year; every other file is checked on each visit.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

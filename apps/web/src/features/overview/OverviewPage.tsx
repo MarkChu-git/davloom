@@ -10,12 +10,14 @@ import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { spacingVars } from "@astryxdesign/core/theme/tokens.stylex";
 import * as stylex from "@stylexjs/stylex";
+import { useQuery } from "@tanstack/react-query";
 import { Folder, HardDrive, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
 import { describeError } from "../api/client";
 import { webdavAddress } from "../api/dav";
 import {
   kindLabel,
+  operationsQuery,
   useCheckBackends,
   useOperations,
   useOverview,
@@ -25,6 +27,8 @@ import {
 } from "../api/queries";
 import { filesHref } from "../files/paths";
 import { backendStatus } from "../storage/backendStatus";
+import { frameTexts } from "../frame/fill";
+import { AfterFirstPaint } from "../shell/AfterFirstPaint";
 import { CopyField } from "../shell/CopyField";
 import { formatBytes, formatCount } from "../shell/format";
 import { PageHeader } from "../shell/PageHeader";
@@ -32,7 +36,7 @@ import { usePageGutter } from "../shell/pageWidth";
 import { LoadError } from "../shell/QueryState";
 import { StatusLabel } from "../shell/StatusLabel";
 import { TitleAction, TitleRow } from "../shell/TitleRow";
-import { OperationsChart, StorageChart } from "./charts";
+import { OperationsChart, StorageChart } from "./lazyCharts";
 import { ErrorViewSwitch, RecentErrors } from "./RecentErrors";
 
 const TILE_GAP = spacingVars["--spacing-4"];
@@ -128,33 +132,64 @@ export const knownCapacity = (
   };
 };
 
-const TILE_LABELS = ["Stored", "Known capacity", "Mounts"];
+/** The tiles, with the name of the slot the frame's script writes each one's texts into. */
+const TILE_SLOTS = [
+  ["Stored", "stored"],
+  ["Known capacity", "capacity"],
+  ["Mounts", "mounts"],
+] as const;
+
+/**
+ * The tiles while the overview is on its way. Beside each skeleton is an empty, hidden slot of
+ * the type the value takes, so in the prerendered frame the script in the page's head
+ * (features/frame/fill.ts) can write the value there as soon as the API answers, before the
+ * page's code has loaded.
+ */
+const LoadingTiles = () => (
+  <Grid xstyle={styles.tiles} gap={4}>
+    {TILE_SLOTS.map(([label, slot], index) => (
+      <Tile
+        key={label}
+        label={label}
+        value={
+          <>
+            <Skeleton width={96} height={32} index={index} data-frame-placeholder={slot} />
+            <Text type="display-3" weight="semibold" data-frame-slot={slot} hidden>
+              {""}
+            </Text>
+          </>
+        }
+      >
+        <Skeleton
+          width={140}
+          height={14}
+          index={index + 3}
+          data-frame-placeholder={`${slot}-caption`}
+        />
+        <Text type="supporting" color="secondary" data-frame-slot={`${slot}-caption`} hidden>
+          {""}
+        </Text>
+      </Tile>
+    ))}
+  </Grid>
+);
 
 const Tiles = ({ overview }: { overview: Overview | undefined }) => {
-  if (overview === undefined) {
-    return (
-      <Grid xstyle={styles.tiles} gap={4}>
-        {TILE_LABELS.map((label, index) => (
-          <Tile key={label} label={label} value={<Skeleton width={96} height={32} index={index} />}>
-            <Skeleton width={140} height={14} index={index + 3} />
-          </Tile>
-        ))}
-      </Grid>
-    );
-  }
-  const { usage, mounts, backends } = overview;
-  const known = knownCapacity(backends);
+  if (overview === undefined) return <LoadingTiles />;
+  const known = knownCapacity(overview.backends);
+  // The texts the frame's script wrote before the page's code loaded, written the same way.
+  const texts = frameTexts.overviewTexts(overview);
   return (
     <Grid xstyle={styles.tiles} gap={4}>
-      <Tile label="Stored" value={formatBytes(usage.bytes)}>
+      <Tile label="Stored" value={texts.stored}>
         <Text type="supporting" color="secondary">
-          {`${plural(usage.files, "file", "files")} in ${plural(usage.collections, "folder", "folders")}`}
+          {texts["stored-caption"]}
         </Text>
       </Tile>
       {known === null ? (
-        <Tile label="Known capacity" value="No fixed limit">
+        <Tile label="Known capacity" value={texts.capacity}>
           <Text type="supporting" color="secondary">
-            {`${formatBytes(usage.bytes)} stored`}
+            {texts["capacity-caption"]}
           </Text>
         </Tile>
       ) : (
@@ -175,9 +210,9 @@ const Tiles = ({ overview }: { overview: Overview | undefined }) => {
           </Text>
         </Tile>
       )}
-      <Tile label="Mounts" value={formatCount(mounts.length)}>
+      <Tile label="Mounts" value={texts.mounts}>
         <Text type="supporting" color="secondary">
-          {`On ${new Set(mounts.map((mount) => mount.backendId)).size} of ${plural(backends.length, "backend", "backends")}`}
+          {texts["mounts-caption"]}
         </Text>
       </Tile>
     </Grid>
@@ -225,7 +260,9 @@ const OperationsPanel = () => {
 };
 
 const RecentErrorsPanel = () => {
-  const operations = useOperations();
+  // The Operations panel above shows a failed read and offers Try again; this panel, put on the
+  // page after it, does not read again on its own.
+  const operations = useQuery({ ...operationsQuery, retryOnMount: false });
   const errors = operations.data?.errors;
   return (
     <Panel title="Recent operation errors" action={<ErrorViewSwitch />}>
@@ -286,6 +323,8 @@ export const OverviewPage = () => {
                   label="WebDAV address"
                   isLabelHidden
                   value={webdavAddress()}
+                  // Prerendered without the origin: the frame's script writes the whole address.
+                  frameSlot="webdav-address"
                   copyLabel="Copy address"
                   width="28rem"
                 />
@@ -301,109 +340,120 @@ export const OverviewPage = () => {
               />
             ) : (
               <>
+                {/* In the frame, so the figures paint as soon as the overview arrives. */}
                 <Tiles overview={data} />
-                <OperationsPanel />
-                <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
+                {/* Built one part at a time once the page's header is on screen. */}
+                <AfterFirstPaint>
+                  <OperationsPanel />
+                </AfterFirstPaint>
+                <AfterFirstPaint>
+                  <Grid columns={{ minWidth: 340, max: 2, repeat: "fit" }} gap={4}>
+                    <Panel
+                      title="Storage by backend"
+                      action={
+                        <TitleAction
+                          label="Manage storage"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Icon icon={HardDrive} size="sm" />}
+                          href="/storage"
+                        />
+                      }
+                    >
+                      {data === undefined ? (
+                        <Skeleton width="100%" height={44} />
+                      ) : (
+                        <StorageChart
+                          bars={data.backends.map((backend) => ({
+                            name: backend.name,
+                            bytes: backend.usage?.bytes ?? 0,
+                            objects:
+                              (backend.usage?.files ?? 0) + (backend.usage?.collections ?? 0),
+                          }))}
+                        />
+                      )}
+                    </Panel>
+                    <Panel
+                      title="Connections"
+                      action={
+                        <TitleAction
+                          label="Check connections"
+                          variant="secondary"
+                          size="sm"
+                          icon={<Icon icon={RefreshCw} size="sm" />}
+                          isLoading={check.isPending}
+                          isDisabled={data === undefined}
+                          onClick={checkConnections}
+                        />
+                      }
+                    >
+                      {data === undefined ? (
+                        <Skeleton width="100%" height={44} />
+                      ) : (
+                        <List density="compact" edge="flush" hasDividers>
+                          {data.backends.map((backend) => {
+                            const paths = data.mounts
+                              .filter((mount) => mount.backendId === backend.id)
+                              .map((mount) => `/${mount.name}`);
+                            // The default backend's mark leads the line of its mounts, so a narrow
+                            // window cuts the paths short rather than the mark.
+                            const details = [
+                              ...(backend.id === defaultBackendId ? ["Default"] : []),
+                              kindLabel(backend.kind),
+                              ...paths,
+                            ];
+                            return (
+                              <ListItem
+                                key={backend.id}
+                                label={backend.name}
+                                description={details.join(" · ")}
+                                endContent={<StatusLabel {...backendStatus(backend)} />}
+                              />
+                            );
+                          })}
+                        </List>
+                      )}
+                    </Panel>
+                  </Grid>
+                </AfterFirstPaint>
+                <AfterFirstPaint>
                   <Panel
-                    title="Storage by backend"
+                    title="Mounts"
                     action={
                       <TitleAction
-                        label="Manage storage"
+                        label="Open Files"
                         variant="secondary"
                         size="sm"
-                        icon={<Icon icon={HardDrive} size="sm" />}
-                        href="/storage"
+                        icon={<Icon icon={Folder} size="sm" />}
+                        href="/files"
                       />
                     }
                   >
                     {data === undefined ? (
                       <Skeleton width="100%" height={44} />
+                    ) : data.mounts.length === 0 ? (
+                      <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
                     ) : (
-                      <StorageChart
-                        bars={data.backends.map((backend) => ({
-                          name: backend.name,
-                          bytes: backend.usage?.bytes ?? 0,
-                          objects: (backend.usage?.files ?? 0) + (backend.usage?.collections ?? 0),
-                        }))}
-                      />
-                    )}
-                  </Panel>
-                  <Panel
-                    title="Connections"
-                    action={
-                      <TitleAction
-                        label="Check connections"
-                        variant="secondary"
-                        size="sm"
-                        icon={<Icon icon={RefreshCw} size="sm" />}
-                        isLoading={check.isPending}
-                        isDisabled={data === undefined}
-                        onClick={checkConnections}
-                      />
-                    }
-                  >
-                    {data === undefined ? (
-                      <Skeleton width="100%" height={44} />
-                    ) : (
-                      <List density="compact" edge="flush" hasDividers>
-                        {data.backends.map((backend) => {
-                          const paths = data.mounts
-                            .filter((mount) => mount.backendId === backend.id)
-                            .map((mount) => `/${mount.name}`);
-                          // The default backend's mark leads the line of its mounts, so a narrow
-                          // window cuts the paths short rather than the mark.
-                          const details = [
-                            ...(backend.id === defaultBackendId ? ["Default"] : []),
-                            kindLabel(backend.kind),
-                            ...paths,
-                          ];
-                          return (
-                            <ListItem
-                              key={backend.id}
-                              label={backend.name}
-                              description={details.join(" · ")}
-                              endContent={<StatusLabel {...backendStatus(backend)} />}
-                            />
-                          );
-                        })}
+                      <List density="compact" edge="outset">
+                        {data.mounts.map((mount) => (
+                          <ListItem
+                            key={mount.id}
+                            label={`/${mount.name}`}
+                            description={[
+                              data.backends.find((backend) => backend.id === mount.backendId)
+                                ?.name ?? "Unknown backend",
+                              mount.root === "" ? "whole backend" : `/${mount.root}`,
+                            ].join(" · ")}
+                            href={filesHref(`/${mount.name}`)}
+                          />
+                        ))}
                       </List>
                     )}
                   </Panel>
-                </Grid>
-                <Panel
-                  title="Mounts"
-                  action={
-                    <TitleAction
-                      label="Open Files"
-                      variant="secondary"
-                      size="sm"
-                      icon={<Icon icon={Folder} size="sm" />}
-                      href="/files"
-                    />
-                  }
-                >
-                  {data === undefined ? (
-                    <Skeleton width="100%" height={44} />
-                  ) : data.mounts.length === 0 ? (
-                    <Text color="secondary">No mounts yet. Add one on Storage & Mounts.</Text>
-                  ) : (
-                    <List density="compact" edge="outset">
-                      {data.mounts.map((mount) => (
-                        <ListItem
-                          key={mount.id}
-                          label={`/${mount.name}`}
-                          description={[
-                            data.backends.find((backend) => backend.id === mount.backendId)?.name ??
-                              "Unknown backend",
-                            mount.root === "" ? "whole backend" : `/${mount.root}`,
-                          ].join(" · ")}
-                          href={filesHref(`/${mount.name}`)}
-                        />
-                      ))}
-                    </List>
-                  )}
-                </Panel>
-                <RecentErrorsPanel />
+                </AfterFirstPaint>
+                <AfterFirstPaint>
+                  <RecentErrorsPanel />
+                </AfterFirstPaint>
               </>
             )}
           </VStack>

@@ -2,6 +2,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { forgetBrowserQueryClient } from "../features/api/queries";
 import { json, ORIGIN, type Handler } from "../test/render";
 import { getRouter } from "../router";
 import { Route as FilesRoute } from "./_app/_dashboard/files";
@@ -15,6 +16,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  forgetBrowserQueryClient();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });

@@ -17,8 +17,8 @@ import {
   verifyTotp,
 } from "../api/account";
 import { describeError, isApiError } from "../api/client";
-import { keys, meQuery } from "../api/queries";
-import { AuthFrame, Waiting } from "./AuthFrame";
+import { keys, sessionQuery } from "../api/queries";
+import { AuthFrame } from "./AuthFrame";
 import { safeRedirect } from "./forms";
 import { GoTo } from "./GoTo";
 
@@ -127,7 +127,9 @@ const SecondStep = ({
 export const SignInPage = ({ redirect }: { redirect?: string }) => {
   const client = useQueryClient();
   const navigate = useNavigate();
-  const me = useQuery({ ...meQuery, retry: false });
+  // Better Auth's session answers 200 with null for a visitor who is not signed in, where /api/me
+  // answers 401, which the browser reports as an error.
+  const session = useQuery(sessionQuery);
   const registration = useQuery(registrationQuery);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -137,15 +139,15 @@ export const SignInPage = ({ redirect }: { redirect?: string }) => {
   const [isSecondStep, setIsSecondStep] = useState(false);
   const target = safeRedirect(redirect);
 
-  if (me.isSuccess) {
+  if (session.data != null) {
     return <GoTo href={target} />;
   }
   if (registration.data?.open === true) {
     return <GoTo href="/register" />;
   }
-  if (me.isPending || registration.isPending) {
-    return <Waiting label="Checking the session" />;
-  }
+  // While the session and the instance are being read, the form shows already: the prerendered
+  // page paints it before any script runs, and a visitor who is signed in moves on once the
+  // answer comes.
 
   const signedIn = async () => {
     await client.invalidateQueries({ queryKey: keys.me });

@@ -1,5 +1,6 @@
 import { useAppShellMobile } from "@astryxdesign/core/AppShell";
 import { useLayoutEffect, useState } from "react";
+import { useWindowWidth } from "./frame";
 
 /**
  * Width of the side navigation in pixels. Let go narrower than 160 px, or flung towards there, its
@@ -39,11 +40,9 @@ const isNarrow = (): boolean => {
  * wrong guess is never seen.
  */
 export const useIsNarrowPage = (): boolean => {
-  const [narrow, setNarrow] = useState(
-    () =>
-      typeof window !== "undefined" &&
-      window.innerWidth <= NARROW_PAGE_WIDTH + NAV_WIDTH.defaultWidth,
-  );
+  // In the prerender the window is the frame being drawn (frame.tsx).
+  const width = useWindowWidth();
+  const [narrow, setNarrow] = useState(() => width <= NARROW_PAGE_WIDTH + NAV_WIDTH.defaultWidth);
   useLayoutEffect(() => {
     const update = () => setNarrow(isNarrow());
     update();

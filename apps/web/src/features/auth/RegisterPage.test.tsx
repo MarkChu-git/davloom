@@ -1,8 +1,11 @@
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { handleCanceledAnimations } from "../../test/layout";
 import { json, renderPage, type Handler } from "../../test/render";
 import { RegisterPage } from "./RegisterPage";
+
+handleCanceledAnimations();
 
 afterEach(() => {
   cleanup();
@@ -45,11 +48,12 @@ const importForm = async (api: Record<string, Handler> = {}) => {
 };
 
 describe("RegisterPage", () => {
-  it("waits while it asks whether the instance has an owner", async () => {
+  it("shows the form while it asks whether the instance has an owner", async () => {
     await renderPage(<RegisterPage />, {
       api: { "GET /api/registration": () => new Promise<Response>(() => undefined) },
     });
-    expect(screen.getByText("Checking this instance")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Create account" })).toBeTruthy();
+    expect(screen.getByLabelText("Username")).toBeTruthy();
   });
 
   it("sends every visitor to sign in once an owner exists", async () => {

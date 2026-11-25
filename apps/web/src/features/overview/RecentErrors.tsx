@@ -12,7 +12,7 @@ import type { OperationError } from "../api/queries";
 import { FileName } from "../files/FileName";
 import { formatRelative } from "../shell/format";
 import { ExpandableRows } from "../shell/ExpandableList";
-import { ErrorTimeline } from "./charts";
+import { ErrorTimeline } from "./lazyCharts";
 import { Age, CauseMark, ErrorDetails, ErrorSubject } from "./ErrorParts";
 import { causeOf, kindOf, nameOf } from "./errors";
 import { isErrorView, setErrorView, useErrorView, type ErrorView } from "./errorView";

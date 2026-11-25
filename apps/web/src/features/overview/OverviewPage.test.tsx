@@ -142,8 +142,10 @@ describe("OverviewPage, tiles", () => {
     const { container } = await renderPage(<OverviewPage />, {
       api: { "GET /api/overview": () => new Promise<Response>(() => undefined) },
     });
-    for (const label of ["Stored", "Mounts", "Known capacity"]) {
-      expect(screen.getAllByText(label, { exact: true }).length).toBeGreaterThan(0);
+    // The tiles come once the header is on screen, with placeholders for their figures.
+    expect((await screen.findAllByText("Stored", { exact: true })).length).toBeGreaterThan(0);
+    for (const label of ["Mounts", "Known capacity"]) {
+      expect((await screen.findAllByText(label, { exact: true })).length).toBeGreaterThan(0);
     }
     expect(screen.queryByRole("img", { name: "Bytes stored on each backend" })).toBeNull();
     expect(screen.queryAllByRole("listitem")).toHaveLength(0);

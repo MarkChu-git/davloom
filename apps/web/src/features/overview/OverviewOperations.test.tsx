@@ -95,9 +95,9 @@ describe("OverviewPage, operations", () => {
     const chart = await screen.findByRole("img", { name: "Operations per hour, last 24 hours" });
     expect(chart.querySelector("desc")?.textContent).toBe("No operations in the last 24 hours.");
     expect(screen.queryByText(/failed$/)).toBeNull();
-    expect(screen.getAllByText("No failed operations in the last 24 hours").length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      (await screen.findAllByText("No failed operations in the last 24 hours")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("says why the operations could not be read", async () => {
