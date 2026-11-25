@@ -60,6 +60,16 @@ interface Mounted {
 }
 
 /**
+ * Removes a mount's directory. davfs2 runs as root and leaves files of its own in the cache, which
+ * a test that is not root cannot remove, so those go through the same root as the mount.
+ */
+const removeBase = (base: string) => {
+  const removed = asRoot("rm", ["-rf", base]);
+  if (removed.status !== 0)
+    throw new Error(`rm ${base} failed: ${removed.stdout}${removed.stderr}`);
+};
+
+/**
  * Mounts a WebDAV address with davfs2, which asks for the username and password on its input. Its
  * cache lives in a directory of the mount's own, which the unprivileged user davfs2 runs as can
  * write. Uploads start as soon as a file closes, and listings older than a second are read again,
@@ -91,7 +101,7 @@ const mountDav = (url: string, key: string): Mounted => {
   const options = `conf=${conf},uid=${uid},gid=${gid},file_mode=0644,dir_mode=0755`;
   const mounted = asRoot("mount.davfs", [url, root, "-o", options], `davloom\n${key}\n`);
   if (mounted.status !== 0) {
-    rmSync(base, { recursive: true, force: true });
+    removeBase(base);
     throw new Error(`mount.davfs ${url} failed: ${mounted.stdout}${mounted.stderr}`);
   }
   return {
@@ -102,7 +112,7 @@ const mountDav = (url: string, key: string): Mounted => {
       if (unmounted.status !== 0) {
         throw new Error(`umount ${root} failed: ${unmounted.stdout}${unmounted.stderr}`);
       }
-      rmSync(base, { recursive: true, force: true });
+      removeBase(base);
     },
   };
 };
