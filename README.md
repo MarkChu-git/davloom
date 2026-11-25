@@ -1,11 +1,11 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/davloom-mark-dark.svg">
-  <img src="docs/assets/davloom-mark-light.svg" alt="" width="96" height="96">
-</picture>
-
-<h1>Davloom</h1>
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/davloom-logo-dark.svg">
+    <img src="docs/assets/davloom-logo-light.svg" alt="Davloom" width="320">
+  </picture>
+</h1>
 
 <p><strong>Your own WebDAV drive, free on Cloudflare Workers or self-hosted with Docker.</strong></p>
 
