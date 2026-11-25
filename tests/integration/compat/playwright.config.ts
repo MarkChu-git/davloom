@@ -28,19 +28,45 @@ const WITHOUT_API = [
 ];
 
 /**
- * The core flows (PRD §11): signing in and setup, storage and mounts, credentials, files, settings
- * and the Overview. `workers` runs them at a desktop size, and the projects of `SIZES` run them
- * again at tablet and phone sizes.
+ * The core flows (PRD §11): signing in and setup, finding one's way, storage and mounts,
+ * credentials and access, files and their names, settings and preferences, and the Overview. They
+ * run in Chromium, Firefox and WebKit, each at a desktop, a tablet and a phone size: `workers`,
+ * `firefox` and `webkit` at a desktop size, the projects of `SIZES` and `OTHER_BROWSERS` at the
+ * others.
  */
 const CORE_FLOWS = [
   "auth.spec.ts",
+  "navigation.spec.ts",
   "storage.spec.ts",
   "credentials.spec.ts",
+  "access.spec.ts",
   "file-explorer-browsing.spec.ts",
   "file-explorer-changes.spec.ts",
+  "file-names.spec.ts",
   "settings.spec.ts",
+  "preferences.spec.ts",
   "overview.spec.ts",
 ];
+
+/** The screenshot regression, which its own projects run (`SCREENSHOT_SIZES`). */
+const SCREENSHOTS = "screenshots.spec.ts";
+
+/** Specs that only desktop Chromium runs (PRD §11): the large directory lists. */
+const DESKTOP_CHROMIUM_ONLY = ["large-lists.spec.ts"];
+
+/** What `workers` leaves to other projects. */
+const NOT_ON_WORKERS = ["dev-server.spec.ts", "no-api.spec.ts", "instances.setup.ts", SCREENSHOTS];
+
+/**
+ * The screenshots' three sizes (PRD §11: 30 screenshot cases at three sizes in Chromium). They show
+ * data of their own (ui/screens.ts) on the Dashboard that Bun serves, so no other test changes
+ * what they show.
+ */
+const SCREENSHOT_SIZES = [
+  { name: "screenshots-desktop", viewport: { width: 1280, height: 720 } },
+  { name: "screenshots-tablet", viewport: { width: 820, height: 1180 } },
+  { name: "screenshots-phone", viewport: { width: 390, height: 844 } },
+] as const;
 
 /**
  * A tablet, and phones from the narrowest the owner checks, 320 px, to the widest, 430 px, in light
@@ -55,7 +81,10 @@ const SIZES = [
   { name: "phone-430-dark", viewport: { width: 430, height: 932 }, colorScheme: "dark" },
 ] as const;
 
-/** Firefox and WebKit: at a desktop size with every Worker spec, and at a tablet and phone size. */
+/**
+ * Firefox and WebKit: at a desktop size with every Worker spec but the large lists, and with the
+ * core flows at a tablet and a phone size.
+ */
 const OTHER_BROWSERS: {
   name: string;
   device: "Desktop Firefox" | "Desktop Safari";
@@ -65,6 +94,12 @@ const OTHER_BROWSERS: {
 }[] = [
   { name: "firefox", device: "Desktop Firefox" },
   { name: "webkit", device: "Desktop Safari" },
+  {
+    name: "webkit-tablet",
+    device: "Desktop Safari",
+    viewport: { width: 820, height: 1180 },
+    testMatch: CORE_FLOWS,
+  },
   {
     name: "webkit-phone",
     device: "Desktop Safari",
@@ -76,6 +111,12 @@ const OTHER_BROWSERS: {
     device: "Desktop Firefox",
     viewport: { width: 820, height: 1180 },
     colorScheme: "dark",
+    testMatch: CORE_FLOWS,
+  },
+  {
+    name: "firefox-phone",
+    device: "Desktop Firefox",
+    viewport: { width: 390, height: 844 },
     testMatch: CORE_FLOWS,
   },
 ];
@@ -106,6 +147,12 @@ export default defineConfig({
   forbidOnly: true,
   fullyParallel: true,
   reporter: "list",
+  // The baselines of the screenshot projects, one folder per project, committed with the specs.
+  snapshotPathTemplate: "{testDir}/__screenshots__/{projectName}/{arg}{ext}",
+  expect: {
+    // Animations stop, and a few pixels of anti-aliasing may differ between runs of the image.
+    toHaveScreenshot: { animations: "disabled", caret: "hide", maxDiffPixelRatio: 0.001 },
+  },
   use: {
     ...devices["Desktop Chrome"],
     // Dates on the pages show in the browser's time zone, so every machine sees the same text.
@@ -119,7 +166,7 @@ export default defineConfig({
       name: "workers",
       use: { baseURL: WORKERS_ORIGIN, storageState: STATE.workers },
       dependencies: ["setup"],
-      testIgnore: ["dev-server.spec.ts", "no-api.spec.ts", "instances.setup.ts"],
+      testIgnore: NOT_ON_WORKERS,
     },
     {
       name: "dev",
@@ -137,7 +184,7 @@ export default defineConfig({
       grepInvert: /@desktop/,
     })),
     // Every Worker spec again in Firefox and WebKit at a desktop size, and the core flows on a
-    // WebKit phone and a Firefox tablet (PRD §11: the core flows in three browsers).
+    // tablet and a phone in each (PRD §11: the core flows in three browsers at three sizes).
     ...OTHER_BROWSERS.map(({ name, device, viewport, colorScheme, testMatch }) => ({
       name,
       use: {
@@ -152,7 +199,12 @@ export default defineConfig({
       dependencies: ["setup"],
       ...(testMatch
         ? { testMatch, grepInvert: /@desktop/ }
-        : { testIgnore: ["dev-server.spec.ts", "no-api.spec.ts", "instances.setup.ts"] }),
+        : { testIgnore: [...NOT_ON_WORKERS, ...DESKTOP_CHROMIUM_ONLY] }),
+    })),
+    ...SCREENSHOT_SIZES.map(({ name, viewport }) => ({
+      name,
+      use: { baseURL: BUN_ORIGIN, viewport },
+      testMatch: SCREENSHOTS,
     })),
   ],
   webServer: [

@@ -292,7 +292,7 @@ jobs:
           echo "Found $total error-context.md under $dir"
 
   # The Playwright specs against the production build, in Chromium, Firefox and WebKit, split in
-  # six shards that run side by side; together they are what `bun run test:compat` runs last.
+  # ten shards that run side by side; together they are what `bun run test:compat` runs last.
 
   # The one check the main Ruleset requires of the compatibility tests: it passes when every suite
   # and every shard of compat-suite and ui passed.
@@ -323,7 +323,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -342,17 +342,18 @@ jobs:
           '
       - name: Build the Dashboard
         run: bun run --filter @davloom/compat-tests build:web
-      - name: Run shard ${{ matrix.shard }} of 6 of the Playwright specs
+      - name: Run shard ${{ matrix.shard }} of 10 of the Playwright specs
         working-directory: tests/integration/compat
         env:
           SHARD: ${{ matrix.shard }}
           # Firefox refuses to start as root with a HOME another user owns, as /github/home is.
           HOME: /root
-        run: bunx --bun playwright test --shard="$SHARD/6"
+        run: bunx --bun playwright test --shard="$SHARD/10"
       # The runner discards test-results/ with the job. The config sets no screenshot, trace or
       # video, so error-context.md (the error, the page's accessibility tree at the failure and the
-      # test source) is the one file a failed test writes, and the log shows only its path. Every
-      # file prints, in a collapsed group, because each failed test can have its own cause.
+      # test source) is the one file a failed test writes beside the images of a screenshot that
+      # differs, and the log shows only its path. Every file prints, in a collapsed group, because
+      # each failed test can have its own cause.
       - name: Print the Playwright failure context
         if: failure()
         # The job runs in a container whose default shell is sh, which has no process substitution.
@@ -368,3 +369,12 @@ jobs:
             echo "::endgroup::"
           done < <(find "$dir" -name error-context.md 2>/dev/null | sort)
           echo "Found $total error-context.md under $dir"
+      # A screenshot that differs from its baseline leaves the actual image and the difference next
+      # to error-context.md; they are the pictures a reviewer needs, so they go up as an artifact.
+      - name: Upload the screenshot differences
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: screenshot-differences-${{ matrix.shard }}
+          path: tests/integration/compat/test-results/**/*.png
+          if-no-files-found: ignore
