@@ -7,6 +7,10 @@ import { davloomTheme } from "../themes/davloom.js";
 
 afterEach(cleanup);
 
+/** The class of the element that sizes a mark: Icon's box, hidden from assistive technology. */
+const box = (svg: Element | undefined) =>
+  svg?.closest("[aria-hidden='true']")?.getAttribute("class");
+
 const themed = (mode: "light" | "dark", ui: ReactNode) =>
   render(
     <Theme theme={davloomTheme} mode={mode}>
@@ -30,6 +34,20 @@ describe("LoomMark", () => {
     expect(svg?.getAttribute("viewBox")).toBe("0 0 32 32");
     expect(svg?.querySelectorAll("ellipse")).toHaveLength(1);
     expect(svg?.querySelectorAll("circle[fill='currentColor']")).toHaveLength(1);
+  });
+
+  it("draws the large mark at a size of its own, with the same artwork", () => {
+    const { container } = themed(
+      "light",
+      <>
+        <LoomMark />
+        <LoomMark size="large" />
+      </>,
+    );
+    const [small, large] = [...container.querySelectorAll("svg")];
+    expect(large?.getAttribute("viewBox")).toBe("0 0 32 32");
+    expect(box(large)).toBeTruthy();
+    expect(box(large)).not.toBe(box(small));
   });
 
   it("is hidden from assistive technology, as the name beside it names the link", () => {

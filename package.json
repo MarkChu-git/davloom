@@ -22,7 +22,10 @@
     "scan:actionlint": "bun scripts/tool.ts actionlint -shellcheck= -pyflakes=",
     "scan:zizmor": "bun scripts/tool.ts zizmor --offline --strict-collection .",
     "laws:setup": "bun scripts/laws-setup.ts",
-    "build": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
+    "build": "bun run --filter @davloom/web build",
+    "build:all": "bun run --filter @davloom/web build && bun run --filter @davloom/api build",
+    "deploy": "bun run db:migrations:apply && apps/api/node_modules/.bin/wrangler deploy --config wrangler.jsonc",
+    "db:migrations:apply": "apps/api/node_modules/.bin/wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
     "test:compat": "bun run --filter @davloom/compat-tests test",
     "lighthouse": "bun tests/integration/compat/scripts/lighthouse.ts",
     "laws:build": "bun scripts/laws-build.ts",
@@ -53,5 +56,18 @@
   "overrides": {
     "qs": "6.17.1"
   },
-  "packageManager": "bun@1.4.4"
+  "packageManager": "bun@1.4.4",
+  "cloudflare": {
+    "bindings": {
+      "DAVLOOM_SECRET": {
+        "description": "The instance secret: it signs sessions and encrypts stored S3 secret keys, and must be at least 32 bytes. Generate one with `openssl rand -base64 48`. Keep it: changing it signs everyone out and makes stored S3 keys unreadable."
+      },
+      "DB": {
+        "description": "The D1 database that keeps the records: the owner's account, API Keys, Mounts and locks. The deploy applies its migrations."
+      },
+      "STORAGE": {
+        "description": "One SQLite-backed Durable Object per storage backend. It keeps file content on the Workers Free plan."
+      }
+    }
+  }
 }
