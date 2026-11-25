@@ -64,3 +64,15 @@ describe("capabilities", () => {
     expect(response.status).toBe(404);
   });
 });
+
+describe("reading Allow", () => {
+  it.each([
+    ["GET, PUT", ["GET", "PUT"]],
+    [" PUT ,GET,, ", ["GET", "PUT"]],
+    ["", []],
+    [null, []],
+  ] as const)("reads %j as %j", (allow, methods) => {
+    const response = new Response(null, allow === null ? {} : { headers: { allow } });
+    expect(allowOf(response)).toEqual(methods);
+  });
+});
