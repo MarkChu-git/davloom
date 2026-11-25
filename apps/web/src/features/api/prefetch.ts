@@ -3,6 +3,7 @@ import { registrationQuery } from "./account";
 import {
   apiKeysQuery,
   backendsQuery,
+  instanceInfoQuery,
   meQuery,
   mountsQuery,
   operationsQuery,
@@ -62,7 +63,7 @@ const PAGES: Readonly<Record<string, readonly Prefetchable[]>> = {
   ],
   "/files": [...SHELL, read(mountsQuery)],
   "/credentials": [...SHELL, read(apiKeysQuery), read(mountsQuery)],
-  "/storage": [...SHELL, read(mountsQuery)],
+  "/storage": [...SHELL, read(mountsQuery), read(storageSettingsQuery), read(instanceInfoQuery)],
   "/settings": SHELL,
   "/sign-in": [read(sessionQuery), read(registrationQuery)],
   "/register": [read(registrationQuery)],

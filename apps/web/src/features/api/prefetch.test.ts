@@ -27,7 +27,10 @@ describe("prefetchPage", () => {
     ["/files", ["/api/me", "/api/backends", "/api/mounts"]],
     ["/files/", ["/api/me", "/api/backends", "/api/mounts"]],
     ["/credentials", ["/api/me", "/api/backends", "/api/keys", "/api/mounts"]],
-    ["/storage", ["/api/me", "/api/backends", "/api/mounts"]],
+    [
+      "/storage",
+      ["/api/me", "/api/backends", "/api/mounts", "/api/settings/storage", "/api/instance"],
+    ],
     ["/settings", ["/api/me", "/api/backends"]],
     ["/sign-in", ["/api/auth/get-session", "/api/registration"]],
     ["/register", ["/api/registration"]],
