@@ -152,6 +152,9 @@ test.beforeAll(async ({ browser }) => {
 
 for (const path of PAGES) {
   test(`The same page on both servers: ${path}`, async ({ page, baseURL }) => {
+    // Both loads read one clock, so a relative time such as "1 minute ago" cannot tick over
+    // between them and change a text's width.
+    await page.clock.setFixedTime(Date.now());
     for (const { width, height, colorScheme } of VIEWS) {
       await page.setViewportSize({ width, height });
       await page.emulateMedia({ colorScheme, reducedMotion: "reduce" });

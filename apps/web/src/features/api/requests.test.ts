@@ -291,4 +291,33 @@ describe("management requests", () => {
       .catch(() => undefined);
     expect(invalidate).not.toHaveBeenCalled();
   });
+
+  it.each([{ queryKey: keys.me }, { queryKey: keys.apiKeys }, { queryKey: keys.overview }])(
+    "a 401 on $queryKey forgets a session the sign-in page read, so it shows the form",
+    async ({ queryKey }) => {
+      const client = createQueryClient();
+      client.setQueryData(keys.session, { user: { id: "u" } });
+      await client
+        .fetchQuery({
+          queryKey,
+          queryFn: () => Promise.reject(new ApiError(401, "unauthorized")),
+          retry: false,
+        })
+        .catch(() => undefined);
+      expect(client.getQueryData(keys.session)).toBeNull();
+    },
+  );
+
+  it("a refusal other than 401 keeps the session", async () => {
+    const client = createQueryClient();
+    client.setQueryData(keys.session, { user: { id: "u" } });
+    await client
+      .fetchQuery({
+        queryKey: keys.apiKeys,
+        queryFn: () => Promise.reject(new ApiError(403, "forbidden")),
+        retry: false,
+      })
+      .catch(() => undefined);
+    expect(client.getQueryData(keys.session)).toEqual({ user: { id: "u" } });
+  });
 });

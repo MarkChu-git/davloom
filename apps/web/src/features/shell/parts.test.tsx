@@ -106,6 +106,13 @@ describe("PageHeader", () => {
   });
 });
 
+/** The Files title row with `actions`. */
+const filesRow = (actions: ReactNode) => (
+  <Theme theme={davloomTheme} mode="light">
+    <TitleRow title={<h1>Files</h1>} actions={actions} />
+  </Theme>
+);
+
 describe("TitleRow", () => {
   it("keeps the actions' words where they fit beside the title", () => {
     layOut(1000, 300);
@@ -130,6 +137,29 @@ describe("TitleRow", () => {
       expect(screen.getByRole("button", { name: "Upload" }).textContent).toBe(""),
     );
     expect(screen.getByRole("button", { name: "New folder" }).textContent).toBe("");
+  });
+
+  it("shows only the icon of a button that joins a row without room for words", async () => {
+    layOut(300, 250);
+    const { rerender } = render(filesRow(<TitleAction label="Upload" />));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Upload" }).textContent).toBe(""),
+    );
+    rerender(
+      filesRow(
+        <>
+          <TitleAction label="Upload" />
+          <TitleAction label="New folder" />
+        </>,
+      ),
+    );
+    expect(screen.getByRole("button", { name: "New folder" }).textContent).toBe("");
+  });
+
+  it("keeps the words of a button outside any title row", () => {
+    layOut(100, 250);
+    themed(<TitleAction label="Upload" />);
+    expect(screen.getByRole("button", { name: "Upload" }).textContent).toBe("Upload");
   });
 
   it("shows a title without actions", () => {
