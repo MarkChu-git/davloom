@@ -224,6 +224,16 @@ function $url_of(_f_0, _host_ok_0) {
   }
 }
 
+function $root_answer(_m_0) {
+  if (_m_0.$ === "RRead") {
+    return {$: "ADashboard"};
+  } else if (_m_0.$ === "RDav") {
+    return {$: "AToDav"};
+  } else {
+    return {$: "ARefuse"};
+  }
+}
+
 function $Bool_and(_a_0, _b_0) {
   if (!_a_0) {
     return false;
@@ -249,4 +259,5 @@ const $$host_from = $host_from;export default {
   "fixed_length": run_lib((a0,a1,a2,a3,a4) => run_loop($fixed_length(a0,a1,a2,a3,a4)), 5),
   "host_from": run_lib((a0) => run_loop($host_from(a0)), 1),
   "url_of": run_lib((a0,a1) => run_loop($url_of(a0,a1)), 2),
+  "root_answer": run_lib((a0) => run_loop($root_answer(a0)), 1),
 };

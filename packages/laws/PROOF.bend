@@ -8593,6 +8593,24 @@ def L.url_path_exact(f, host_ok):
         case True{}:
           {==}
 
+def L.root_dashboard_exact(m):
+  match m:
+    case H.RRead{}:
+      {==}
+    case H.RDav{}:
+      {==}
+    case H.ROther{}:
+      {==}
+
+def L.root_to_dav_exact(m):
+  match m:
+    case H.RRead{}:
+      {==}
+    case H.RDav{}:
+      {==}
+    case H.ROther{}:
+      {==}
+
 def L.step_up_exactly_sensitive(e):
   match e:
     case U.EffRead{}:

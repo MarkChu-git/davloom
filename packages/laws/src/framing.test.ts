@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { fixesLength, planUrl, sendsMeasuredLength, type TargetForm } from "./framing";
+import {
+  fixesLength,
+  planUrl,
+  rootAnswer,
+  ROOT_DAV_METHODS,
+  sendsMeasuredLength,
+  type RootAnswer,
+  type TargetForm,
+} from "./framing";
 
 const STATUSES = [100, 101, 103, 199, 200, 201, 204, 206, 207, 304, 404, 500];
 
@@ -40,5 +48,47 @@ describe("request URLs (RFC 9112 §3.2)", () => {
     ["invalid", false, { path: "slash", host: "none" }],
   ] as const)("%s form, host ok %s", (form: TargetForm, hostOk, expected) => {
     expect(planUrl(form, hostOk)).toEqual(expected);
+  });
+});
+
+describe("the root path", () => {
+  it.each<[string, RootAnswer]>([
+    ["GET", "dashboard"],
+    ["HEAD", "dashboard"],
+    ["get", "dashboard"],
+    ["OPTIONS", "to-dav"],
+    ["PROPFIND", "to-dav"],
+    ["propfind", "to-dav"],
+    ["PROPPATCH", "to-dav"],
+    ["MKCOL", "to-dav"],
+    ["PUT", "to-dav"],
+    ["DELETE", "to-dav"],
+    ["COPY", "to-dav"],
+    ["MOVE", "to-dav"],
+    ["LOCK", "to-dav"],
+    ["UNLOCK", "to-dav"],
+    ["POST", "refuse"],
+    ["PATCH", "refuse"],
+    ["TRACE", "refuse"],
+    ["REPORT", "refuse"],
+    ["SEARCH", "refuse"],
+    ["", "refuse"],
+  ])("%s answers %s", (method, expected) => {
+    expect(rootAnswer(method)).toBe(expected);
+  });
+
+  it("sends every WebDAV method but GET and HEAD to /dav/", () => {
+    expect([...ROOT_DAV_METHODS].toSorted()).toEqual([
+      "COPY",
+      "DELETE",
+      "LOCK",
+      "MKCOL",
+      "MOVE",
+      "OPTIONS",
+      "PROPFIND",
+      "PROPPATCH",
+      "PUT",
+      "UNLOCK",
+    ]);
   });
 });
