@@ -81,6 +81,36 @@ describe("the Dashboard handler", () => {
   });
 });
 
+describe("the Dashboard handler without a build", () => {
+  const warnings: string[] = [];
+  const missing = join(root, "not-built");
+  const serveMissing = createDashboardHandler(missing, (message) => warnings.push(message));
+  const getMissing = (path: string, method = "GET") =>
+    serveMissing(new Request(`http://davloom.test${path}`, { method }));
+
+  it.each(["/", "/files", "/assets/app.js", "/robots.txt"])(
+    "answers GET %s with 503 and a page that says so",
+    async (path) => {
+      const response = await getMissing(path);
+      expect(response.status).toBe(503);
+      expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(await response.text()).toContain("The Dashboard has not been built");
+    },
+  );
+
+  it("leaves /api and /dav paths and other methods as they were", async () => {
+    expect((await getMissing("/api/me")).status).toBe(404);
+    expect((await getMissing("/dav/")).status).toBe(404);
+    expect((await getMissing("/", "POST")).status).toBe(405);
+  });
+
+  it("warns once, naming the missing file", () => {
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(join(missing, "index.html"));
+  });
+});
+
 describe("the Dashboard handler's compression", () => {
   const serveLarge = createDashboardHandler(largeRoot);
   const withEncoding = (path: string, acceptEncoding?: string) =>

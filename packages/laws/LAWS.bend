@@ -1457,6 +1457,54 @@ law url_path_exact:
   for host_ok: Bool
   {Bool.and(Bool.and(implies(as_target(url_path(H.url_of(f, host_ok))), keeps_target(f)), implies(keeps_target(f), as_target(url_path(H.url_of(f, host_ok))))), Bool.and(implies(at_slash(url_path(H.url_of(f, host_ok))), Bool.not(names_resource(f))), implies(Bool.not(names_resource(f)), at_slash(url_path(H.url_of(f, host_ok)))))) == True{} : Bool}
 
+def root_reads(m: H.RootMethod) -> Bool:
+  match m:
+    case H.RRead{}:
+      True{}
+    case H.RDav{}:
+      False{}
+    case H.ROther{}:
+      False{}
+
+def root_dav(m: H.RootMethod) -> Bool:
+  match m:
+    case H.RRead{}:
+      False{}
+    case H.RDav{}:
+      True{}
+    case H.ROther{}:
+      False{}
+
+def shows_dashboard(a: H.RootAnswer) -> Bool:
+  match a:
+    case H.ADashboard{}:
+      True{}
+    case H.AToDav{}:
+      False{}
+    case H.ARefuse{}:
+      False{}
+
+def sends_to_dav(a: H.RootAnswer) -> Bool:
+  match a:
+    case H.ADashboard{}:
+      False{}
+    case H.AToDav{}:
+      True{}
+    case H.ARefuse{}:
+      False{}
+
+# The root shows the Dashboard exactly to GET and HEAD: a browser that opens the instance's
+# address gets the page it always got, and no other method reaches the Dashboard.
+law root_dashboard_exact:
+  for m: H.RootMethod
+  {shows_dashboard(H.root_answer(m)) == root_reads(m) : Bool}
+
+# The root sends exactly the WebDAV methods other than GET and HEAD on to /dav/: a WebDAV client
+# given the bare address finds the WebDAV root, and nothing else is redirected.
+law root_to_dav_exact:
+  for m: H.RootMethod
+  {sends_to_dav(H.root_answer(m)) == root_dav(m) : Bool}
+
 # --- Step-up verification of management actions (PRD §6) -------------------------------------
 
 # Whether an action deletes, overwrites or discloses data, or touches a credential.

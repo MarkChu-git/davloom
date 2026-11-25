@@ -87,3 +87,32 @@ def url_of(f: Form, host_ok: Bool) -> Url:
       Url{PSlash{}, HNone{}}
     case FInvalid{}:
       Url{PSlash{}, HNone{}}
+
+# A request to the root path `/`, by its method. The Dashboard answers there and WebDAV under
+# /dav/, yet a WebDAV client given the bare address of the instance, as Finder's Connect to
+# Server is, sends its OPTIONS and PROPFIND to `/`.
+type RootMethod is Data:
+  # GET and HEAD, which a browser sends to open the Dashboard.
+  RRead{}
+  # A WebDAV method other than GET and HEAD: OPTIONS, PROPFIND, PROPPATCH, MKCOL, PUT, DELETE,
+  # COPY, MOVE, LOCK and UNLOCK (RFC 4918 §9).
+  RDav{}
+  # Any other method.
+  ROther{}
+
+type RootAnswer is Data:
+  # The Dashboard's page.
+  ADashboard{}
+  # 308 Permanent Redirect to /dav/, which keeps the method and the body (RFC 9110 §15.4.9).
+  AToDav{}
+  # 405 Method Not Allowed.
+  ARefuse{}
+
+def root_answer(m: RootMethod) -> RootAnswer:
+  match m:
+    case RRead{}:
+      ADashboard{}
+    case RDav{}:
+      AToDav{}
+    case ROther{}:
+      ARefuse{}

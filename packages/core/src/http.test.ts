@@ -4,10 +4,15 @@ import { makeHttpRunner, responseFromExit } from "./http";
 
 class FileNotFound extends Data.TaggedError("FileNotFound")<{ readonly path: string }> {}
 class Refused extends Data.TaggedError("Refused")<{ readonly reason: unknown }> {}
+class FieldRefused extends Data.TaggedError("FieldRefused")<{
+  readonly reason: string;
+  readonly reasonCode: unknown;
+}> {}
 
 const errors = {
   FileNotFound: { status: 404, code: "file_not_found" },
   Refused: { status: 422, code: "refused" },
+  FieldRefused: { status: 400, code: "password_refused" },
 };
 
 describe("responseFromExit", () => {
@@ -49,6 +54,24 @@ describe("responseFromExit", () => {
   ])("sends %s", async (_, reason, body) => {
     const response = responseFromExit(Exit.fail(new Refused({ reason })), { errors });
     expect(response.status).toBe(422);
+    expect(await response.text()).toBe(body);
+  });
+
+  it.each([
+    [
+      "a reason code as its reason",
+      "too_short",
+      '{"error":{"code":"password_refused","message":"Password too short","reason":"too_short"}}',
+    ],
+    [
+      "no reason for a code that is not text",
+      7,
+      '{"error":{"code":"password_refused","message":"Password too short"}}',
+    ],
+  ])("sends %s", async (_, reasonCode, body) => {
+    const exit = Exit.fail(new FieldRefused({ reason: "Password too short", reasonCode }));
+    const response = responseFromExit(exit, { errors });
+    expect(response.status).toBe(400);
     expect(await response.text()).toBe(body);
   });
 

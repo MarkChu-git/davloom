@@ -47,6 +47,15 @@ itself" by the address the request names, so a proxy that serves plain HTTP to o
 and passes requests on to `localhost` defeats the check: a proxy in front of Davloom must serve
 HTTPS and send `X-Forwarded-Proto`.
 
+Finder may be given the bare address, `https://<host>`: the root path answers WebDAV's methods
+with a 308 redirect to `/dav/`, which names `DAVLOOM_URL`, or else the address the request was
+sent to, on `https://` when the proxy sends `X-Forwarded-Proto: https`. Finder refuses a redirect
+from HTTPS to plain HTTP, so behind a proxy set one of the two.
+
+The Bun server starts without the Dashboard's build (`apps/web/dist/client`, or
+`DASHBOARD_DIRECTORY`): WebDAV and the API work, the Dashboard's paths answer 503 with a page that
+says the build is missing, and the log says so once. The Docker image always holds the build.
+
 ## Behind a reverse proxy
 
 Set `DAVLOOM_URL` to the address people open, such as `https://files.example.com`. Davloom takes

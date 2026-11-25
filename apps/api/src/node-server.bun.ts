@@ -154,7 +154,15 @@ export const writeResponse = async (
     outgoing.end();
     return;
   }
-  const reader = response.body.getReader();
+  let reader: ReadableStreamDefaultReader<Uint8Array>;
+  try {
+    // Bun opens a file's body here, and throws when the file is not there.
+    reader = response.body.getReader();
+  } catch {
+    outgoing.writeHead(500);
+    outgoing.end();
+    return;
+  }
   // node:http on Bun does not mark a response destroyed when its client goes away; close does.
   let gone = false;
   outgoing.once("close", () => {

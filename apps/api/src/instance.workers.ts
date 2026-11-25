@@ -45,6 +45,8 @@ declare global {
     interface Env {
       readonly DB: D1Database;
       readonly STORAGE: DurableObjectNamespace<StorageObject>;
+      /** The Dashboard's static assets; absent from a deploy that embeds them in the Worker. */
+      readonly ASSETS?: Fetcher;
       /** The instance secret: signs sessions. At least 32 bytes. */
       readonly DAVLOOM_SECRET?: string;
       /** `off` turns off the check of new passwords against Have I Been Pwned. */

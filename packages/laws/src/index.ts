@@ -66,7 +66,10 @@ export {
 export {
   fixesLength,
   planUrl,
+  rootAnswer,
+  ROOT_DAV_METHODS,
   sendsMeasuredLength,
+  type RootAnswer,
   type TargetForm,
   type UrlPlan,
 } from "./framing";

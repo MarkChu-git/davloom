@@ -111,6 +111,19 @@ export interface SessionUser {
   readonly verifiedAt: number;
 }
 
+/**
+ * Why the identity provider refused a field, as a stable code the client can translate: a value
+ * that is too short or too long, a password found in known breaches, a username or email that
+ * another account has, a username with characters it does not take, or another invalid value.
+ */
+export type FieldRefusal =
+  | "too_short"
+  | "too_long"
+  | "compromised"
+  | "taken"
+  | "invalid_characters"
+  | "invalid";
+
 /** What the identity provider made of a registration. */
 export type RegistrationResult =
   | { readonly ok: true; readonly id: string }
@@ -119,6 +132,7 @@ export type RegistrationResult =
       readonly ok: false;
       readonly refusal: "field";
       readonly field: "username" | "password" | "email";
+      readonly code: FieldRefusal;
       readonly reason: string;
     }
   | { readonly ok: false; readonly refusal: "check-failed"; readonly reason: string };
@@ -184,14 +198,22 @@ export class InstanceConfig extends Context.Service<
 export class RegistrationClosed extends Data.TaggedError("RegistrationClosed")<{}> {}
 /** The deployment sets a setup token, and the registration or import did not name it. */
 export class SetupTokenInvalid extends Data.TaggedError("SetupTokenInvalid")<{}> {}
-/** The identity provider refused a field of a registration, for the reason it gives. */
+/**
+ * The identity provider refused a field of a registration: `reason` in its own English words,
+ * `reasonCode` as a code the API sends as `reason` for the client to translate.
+ */
 export class UsernameRefused extends Data.TaggedError("UsernameRefused")<{
   readonly reason: string;
+  readonly reasonCode: FieldRefusal;
 }> {}
 export class PasswordRefused extends Data.TaggedError("PasswordRefused")<{
   readonly reason: string;
+  readonly reasonCode: FieldRefusal;
 }> {}
-export class EmailRefused extends Data.TaggedError("EmailRefused")<{ readonly reason: string }> {}
+export class EmailRefused extends Data.TaggedError("EmailRefused")<{
+  readonly reason: string;
+  readonly reasonCode: FieldRefusal;
+}> {}
 /** The leaked-password check could not reach its service, so the password was not accepted. */
 export class PasswordCheckFailed extends Data.TaggedError("PasswordCheckFailed")<{
   readonly reason: string;
@@ -298,13 +320,13 @@ export const registerOwner = (input: {
       if (result.refusal === "closed") return yield* Effect.fail(new RegistrationClosed());
       if (result.refusal === "check-failed")
         return yield* Effect.fail(new PasswordCheckFailed({ reason: result.reason }));
-      const reason = result.reason;
+      const refused = { reason: result.reason, reasonCode: result.code };
       return yield* Effect.fail(
         result.field === "username"
-          ? new UsernameRefused({ reason })
+          ? new UsernameRefused(refused)
           : result.field === "password"
-            ? new PasswordRefused({ reason })
-            : new EmailRefused({ reason }),
+            ? new PasswordRefused(refused)
+            : new EmailRefused(refused),
       );
     }
     // The owner's files go only to the backend and Mount registration creates now. A record that

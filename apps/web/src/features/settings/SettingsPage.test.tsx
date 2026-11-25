@@ -163,7 +163,10 @@ describe("SettingsPage", () => {
     await userEvent.clear(username);
     await userEvent.type(username, "taken");
     await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
-    expect((await screen.findAllByText("Username is already taken.")).length).toBeGreaterThan(0);
+    // Better Auth's code, in the Dashboard's own words rather than Better Auth's English.
+    expect(
+      (await screen.findAllByText("That username is already taken. Choose another.")).length,
+    ).toBeGreaterThan(0);
   });
 
   it("exports, downloads the file and shows the key", async () => {
