@@ -81,7 +81,7 @@ Issues live in Linear team Mark's Workplace, project davloom (P-MAR-3), with a m
 
 ## Code intelligence
 
-Use GitNexus (section below), not graphify. Run its CLI on Bun as `bunx --bun gitnexus <command>` wherever the generated section or a GitNexus skill gives `node .gitnexus/run.cjs`, `npx` or a `bunx` without `--bun`. `bun .gitnexus/run.cjs` is not enough, because it starts the global `gitnexus` launcher, whose shebang names Node.
+Use GitNexus (section below), not graphify. Run its CLI on Bun as `bunx --bun gitnexus <command>` wherever the generated section or a GitNexus skill gives `node .gitnexus/run.cjs`, `npx` or a `bunx` without `--bun`. `bun .gitnexus/run.cjs` is not enough, because it starts the global `gitnexus` launcher, whose shebang names Node. The GitNexus skills under `.claude/skills/gitnexus-*` are not in the repository, because GitNexus's license forbids commercial use; `bunx --bun gitnexus analyze --skip-agents-md --force` writes them into a checkout.
 
 ## Judging many files
 
