@@ -12,6 +12,10 @@ deploys every push to `main` (see [cloudflare.md](cloudflare.md)).
 - No law in `packages/laws/LAWS.bend` is unproven (PRD §4): the `laws` check runs the proofs.
 - The macOS Finder acceptance and the Cloud Free quota check of PRD §11 are done.
 
+Write what the release brings to `docs/releases/v<version>.md` and merge it before tagging: the
+`release` job puts that file at the top of the GitHub Release, above the image's digest and the
+notes GitHub generates from the pull requests.
+
 Then tag the commit on `main` and push the tag:
 
 ```bash
